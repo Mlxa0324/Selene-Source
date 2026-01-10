@@ -28,6 +28,8 @@ class VideoPlayerWidget extends StatefulWidget {
   final VoidCallback? onExitFullScreen;
   final bool live;
   final Function(bool isPipMode)? onPipModeChanged;
+  final void Function(BuildContext context)? onEpisodesButtonPressed;
+  final void Function(BuildContext context)? onSourcesButtonPressed;
 
   const VideoPlayerWidget({
     super.key,
@@ -50,6 +52,8 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onExitFullScreen,
     this.live = false,
     this.onPipModeChanged,
+    this.onEpisodesButtonPressed,
+    this.onSourcesButtonPressed,
   });
 
   @override
@@ -521,6 +525,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         onSetSpeed: _setPlaybackSpeed,
                         onEnterPipMode: _enterPipMode,
                         isPipMode: _isPipMode,
+                        onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
+                        onSourcesButtonPressed: widget.onSourcesButtonPressed,
                       );
               },
             )

@@ -30,6 +30,8 @@ class MobilePlayerControls extends StatefulWidget {
   final Future<void> Function(double speed) onSetSpeed;
   final Future<void> Function() onEnterPipMode;
   final bool isPipMode;
+  final void Function(BuildContext context)? onEpisodesButtonPressed;
+  final void Function(BuildContext context)? onSourcesButtonPressed;
 
   const MobilePlayerControls({
     super.key,
@@ -54,6 +56,8 @@ class MobilePlayerControls extends StatefulWidget {
     required this.onSetSpeed,
     required this.onEnterPipMode,
     required this.isPipMode,
+    this.onEpisodesButtonPressed,
+    this.onSourcesButtonPressed,
   });
 
   @override
@@ -881,6 +885,43 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                       padding: EdgeInsets.only(right: _isFullscreen ? 22 : 10),
                       child: Icon(
                         Icons.speed,
+                        color: Colors.white,
+                        size: _isFullscreen ? 22 : 20,
+                      ),
+                    ),
+                  ),
+                // 选集按钮（仅在横屏且集数大于1时显示）
+                if (_isFullscreen &&
+                    widget.totalEpisodes != null &&
+                    widget.totalEpisodes! > 1 &&
+                    widget.onEpisodesButtonPressed != null)
+                  GestureDetector(
+                    onTap: () {
+                      _onUserInteraction();
+                      widget.onEpisodesButtonPressed?.call(context);
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.list,
+                        color: Colors.white,
+                        size: _isFullscreen ? 22 : 20,
+                      ),
+                    ),
+                  ),
+                // 换源按钮（仅在横屏时显示）
+                if (_isFullscreen && widget.onSourcesButtonPressed != null)
+                  GestureDetector(
+                    onTap: () {
+                      _onUserInteraction();
+                      widget.onSourcesButtonPressed?.call(context);
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.sync_alt,
                         color: Colors.white,
                         size: _isFullscreen ? 22 : 20,
                       ),

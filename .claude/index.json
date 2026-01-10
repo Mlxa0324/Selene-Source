@@ -1,0 +1,307 @@
+{
+  "timestamp": "2026-01-11T00:42:13.000Z",
+  "version": "1.0.0",
+  "project": {
+    "name": "Selene-Source",
+    "description": "Flutter 视频播放应用",
+    "language": "Dart",
+    "framework": "Flutter 3.4.3+"
+  },
+  "modules": [
+    {
+      "path": "lib/screens",
+      "name": "Screens",
+      "language": "Dart",
+      "responsibility": "应用页面（登录、首页、播放器、搜索等）",
+      "entryFiles": [
+        "lib/screens/home_screen.dart",
+        "lib/screens/login_screen.dart",
+        "lib/screens/player_screen.dart"
+      ],
+      "fileCount": 11,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        "lib/screens/home_screen.dart",
+        "lib/screens/login_screen.dart",
+        "lib/screens/player_screen.dart",
+        "lib/screens/search_screen.dart",
+        "lib/screens/movie_screen.dart",
+        "lib/screens/show_screen.dart",
+        "lib/screens/tv_screen.dart",
+        "lib/screens/anime_screen.dart",
+        "lib/screens/live_screen.dart",
+        "lib/screens/live_player_screen.dart"
+      ],
+      "dependencies": [
+        "lib/services/api_service.dart",
+        "lib/services/search_service.dart",
+        "lib/widgets/video_player_widget.dart"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "medium",
+        "missingItems": ["测试文件", "集成测试"]
+      }
+    },
+    {
+      "path": "lib/widgets",
+      "name": "Widgets",
+      "language": "Dart",
+      "responsibility": "可复用 UI 组件（播放器控件、卡片、对话框等）",
+      "entryFiles": [
+        "lib/widgets/video_player_widget.dart",
+        "lib/widgets/main_layout.dart"
+      ],
+      "fileCount": 42,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        "lib/widgets/video_player_widget.dart",
+        "lib/widgets/pc_player_controls.dart",
+        "lib/widgets/mobile_player_controls.dart",
+        "lib/widgets/video_card.dart",
+        "lib/widgets/dlna_player.dart",
+        "lib/widgets/main_layout.dart"
+      ],
+      "dependencies": [
+        "media_kit",
+        "media_kit_video",
+        "dlna_dart",
+        "pip"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "medium",
+        "missingItems": ["Widget 测试", "Golden 测试"]
+      }
+    },
+    {
+      "path": "lib/services",
+      "name": "Services",
+      "language": "Dart",
+      "responsibility": "业务逻辑服务（API、搜索、缓存、主题等）",
+      "entryFiles": [
+        "lib/services/api_service.dart",
+        "lib/services/search_service.dart"
+      ],
+      "fileCount": 17,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        "lib/services/api_service.dart",
+        "lib/services/search_service.dart",
+        "lib/services/user_data_service.dart",
+        "lib/services/theme_service.dart",
+        "lib/services/douban_service.dart",
+        "lib/services/douban_cache_service.dart"
+      ],
+      "dependencies": [
+        "http",
+        "dio",
+        "shared_preferences",
+        "path_provider"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "medium",
+        "missingItems": ["单元测试", "Mock 测试"]
+      }
+    },
+    {
+      "path": "lib/models",
+      "name": "Models",
+      "language": "Dart",
+      "responsibility": "数据模型定义",
+      "entryFiles": [],
+      "fileCount": 14,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        "lib/models/search_result.dart",
+        "lib/models/video_info.dart",
+        "lib/models/douban_movie.dart",
+        "lib/models/play_record.dart",
+        "lib/models/favorite_item.dart",
+        "lib/models/live_channel.dart"
+      ],
+      "dependencies": [],
+      "coverage": {
+        "scanned": true,
+        "depth": "light",
+        "missingItems": ["序列化测试", "验证测试"]
+      }
+    },
+    {
+      "path": "lib/utils",
+      "name": "Utils",
+      "language": "Dart",
+      "responsibility": "工具函数（设备检测、字体、图片处理）",
+      "entryFiles": [],
+      "fileCount": 3,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        "lib/utils/device_utils.dart",
+        "lib/utils/font_utils.dart",
+        "lib/utils/image_url.dart"
+      ],
+      "dependencies": [],
+      "coverage": {
+        "scanned": true,
+        "depth": "light",
+        "missingItems": ["单元测试"]
+      }
+    },
+    {
+      "path": "android",
+      "name": "Android",
+      "language": "Kotlin",
+      "responsibility": "Android 原生模块",
+      "entryFiles": [
+        "android/app/src/main/kotlin/org/moontechlab/selene/MainActivity.kt"
+      ],
+      "fileCount": 1,
+      "hasTests": false,
+      "hasConfig": true,
+      "keyFiles": [
+        "android/app/src/main/kotlin/org/moontechlab/selene/MainActivity.kt",
+        "android/app/build.gradle.kts",
+        "android/build.gradle.kts",
+        "android/app/src/main/AndroidManifest.xml"
+      ],
+      "dependencies": [
+        "Flutter Gradle Plugin",
+        "Kotlin Android Plugin"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "medium",
+        "missingItems": ["Instrumentation 测试"]
+      }
+    },
+    {
+      "path": "ios",
+      "name": "iOS",
+      "language": "Swift",
+      "responsibility": "iOS 原生模块",
+      "entryFiles": [
+        "ios/Runner/AppDelegate.swift"
+      ],
+      "fileCount": 1,
+      "hasTests": false,
+      "hasConfig": true,
+      "keyFiles": [
+        "ios/Runner/AppDelegate.swift",
+        "ios/Podfile",
+        "ios/Runner.xcodeproj/project.pbxproj"
+      ],
+      "dependencies": [
+        "CocoaPods",
+        "AVFoundation"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "medium",
+        "missingItems": ["XCTest", "UI 测试"]
+      }
+    },
+    {
+      "path": ".spec-workflow",
+      "name": "Spec-Workflow",
+      "language": "Markdown",
+      "responsibility": "文档模板工作流",
+      "entryFiles": [],
+      "fileCount": 7,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        ".spec-workflow/templates/requirements-template.md",
+        ".spec-workflow/templates/product-template.md",
+        ".spec-workflow/templates/design-template.md",
+        ".spec-workflow/templates/tech-template.md"
+      ],
+      "dependencies": [],
+      "coverage": {
+        "scanned": true,
+        "depth": "light",
+        "missingItems": []
+      }
+    }
+  ],
+  "statistics": {
+    "totalModules": 8,
+    "totalFiles": 96,
+    "dartFiles": 87,
+    "kotlinFiles": 1,
+    "swiftFiles": 1,
+    "markdownFiles": 7,
+    "estimatedLines": 35000,
+    "hasTests": false,
+    "testCoverage": "0%"
+  },
+  "coverage": {
+    "overallPercentage": 75,
+    "scannedModules": 8,
+    "totalModules": 8,
+    "gaps": [
+      {
+        "module": "lib/screens",
+        "missing": ["单元测试", "Widget 测试", "集成测试"]
+      },
+      {
+        "module": "lib/widgets",
+        "missing": ["Widget 测试", "Golden 测试"]
+      },
+      {
+        "module": "lib/services",
+        "missing": ["单元测试", "Mock 测试", "API 测试"]
+      },
+      {
+        "module": "lib/models",
+        "missing": ["序列化测试", "数据验证测试"]
+      },
+      {
+        "module": "lib/utils",
+        "missing": ["单元测试"]
+      },
+      {
+        "module": "android",
+        "missing": ["Instrumentation 测试"]
+      },
+      {
+        "module": "ios",
+        "missing": ["XCTest", "UI 测试"]
+      }
+    ],
+    "ignoredPaths": [
+      "build/**",
+      "build-arm64/**",
+      "build-x86_64/**",
+      "dist/**",
+      "ios-build/**",
+      ".dart_tool/**",
+      ".git/**",
+      "android/.gradle/**",
+      "ios/Pods/**",
+      "*.lock",
+      "*.log"
+    ]
+  },
+  "nextSteps": [
+    "为 Services 层添加单元测试（优先级：高）",
+    "为关键 Widgets 添加 Widget 测试（优先级：高）",
+    "为 Models 添加序列化测试（优先级：中）",
+    "添加端到端集成测试（优先级：中）",
+    "补充 API 文档和接口说明（优先级：低）"
+  ],
+  "truncated": false,
+  "scanDepth": "medium",
+  "notes": [
+    "项目结构清晰，模块划分合理",
+    "缺少测试覆盖，建议优先添加 Services 和 Widgets 测试",
+    "原生代码较少，主要逻辑在 Flutter 层",
+    "使用 Provider 进行状态管理，架构简洁",
+    "支持本地模式和服务器模式双运行方式"
+  ]
+}

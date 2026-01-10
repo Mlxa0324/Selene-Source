@@ -127,6 +127,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 网页全屏状态
   bool _isWebFullscreen = false;
 
+  // 侧边面板显示状态
+  bool _isEpisodesPanelVisible = false;
+  bool _isSourcesPanelVisible = false;
+
   // 播放器的 GlobalKey，用于保持播放器状态
   final GlobalKey _playerKey = GlobalKey();
 
@@ -864,6 +868,33 @@ class _PlayerScreenState extends State<PlayerScreen>
     _scrollToCurrentEpisode();
   }
 
+  /// 处理选集点击
+  void _onEpisodeTap(int index) {
+    if (currentDetail == null) return;
+
+    // 显示切换加载蒙版
+    setState(() {
+      _showSwitchLoadingOverlay = true;
+      _switchLoadingMessage = '切换选集...';
+    });
+
+    // 集数切换前保存进度
+    _saveProgress(force: true, scene: '选集切换');
+
+    // 播放指定集数
+    startPlay(index, 0);
+  }
+
+  /// 处理换源点击
+  void _onSourceTap(SearchResult source) {
+    _switchSource(source);
+  }
+
+  /// 刷新源列表
+  Future<void> _refreshSources() async {
+    await _refreshSourcesSpeed();
+  }
+
   /// 滚动到当前源
   void _scrollToCurrentSource() {
     if (currentDetail == null) return;
@@ -1057,6 +1088,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               setState(() {
                 _isWebFullscreen = isWebFullscreen;
               });
+            },
+            onEpisodesButtonPressed: (fullscreenContext) {
+              // 在全屏模式下，使用传入的 context 显示选集面板
+              _showEpisodesPanelInFullscreen(fullscreenContext);
+            },
+            onSourcesButtonPressed: (fullscreenContext) {
+              // 在全屏模式下，使用传入的 context 显示换源面板
+              _showSourcesPanelInFullscreen(fullscreenContext);
             },
           ),
         if (_isCasting && _dlnaDevice != null)
@@ -2200,6 +2239,142 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  /// 在全屏模式下显示换源面板（使用传入的 context）
+  void _showSourcesPanelInFullscreen(BuildContext fullscreenContext) {
+    final theme = Theme.of(fullscreenContext);
+    final screenHeight = MediaQuery.of(fullscreenContext).size.height;
+    final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+
+    // 全屏模式下从右侧滑入
+    final panelWidth = screenWidth * 0.4;
+    final panelHeight = screenHeight;
+
+    showGeneralDialog(
+      context: fullscreenContext,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: panelWidth,
+              height: panelHeight,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOut,
+                )),
+                child: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter dialogSetState) {
+                    return PlayerSourcesPanel(
+                      theme: theme,
+                      sources: allSources,
+                      currentSource: currentSource,
+                      currentId: currentID,
+                      sourcesSpeed: allSourcesSpeed,
+                      onSourceTap: (source) {
+                        setState(() {
+                          _switchSource(source);
+                        });
+                        Navigator.pop(dialogContext);
+                      },
+                      onRefresh: () async {
+                        await _refreshSourcesSpeed(dialogSetState);
+                      },
+                      videoCover: videoCover,
+                      videoTitle: videoTitle,
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      setState(() {});
+    });
+  }
+
+  /// 在全屏模式下显示选集面板（使用传入的 context）
+  void _showEpisodesPanelInFullscreen(BuildContext fullscreenContext) {
+    if (currentDetail == null) return;
+
+    final theme = Theme.of(fullscreenContext);
+    final screenHeight = MediaQuery.of(fullscreenContext).size.height;
+    final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+
+    // 全屏模式下从右侧滑入
+    final panelWidth = screenWidth * 0.4;
+    final panelHeight = screenHeight;
+
+    showGeneralDialog(
+      context: fullscreenContext,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: panelWidth,
+              height: panelHeight,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOut,
+                )),
+                child: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter dialogSetState) {
+                    return PlayerEpisodesPanel(
+                      theme: theme,
+                      episodes: currentDetail!.episodes,
+                      episodesTitles: currentDetail!.episodesTitles,
+                      currentEpisodeIndex: currentEpisodeIndex,
+                      isReversed: _isEpisodesReversed,
+                      crossAxisCount: 2,
+                      onEpisodeTap: (index) {
+                        Navigator.pop(dialogContext);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          setState(() {
+                            _showSwitchLoadingOverlay = true;
+                            _switchLoadingMessage = '切换选集...';
+                          });
+                        });
+                        _saveProgress(force: true, scene: '选集面板点击');
+                        startPlay(index, 0);
+                      },
+                      onToggleOrder: () {
+                        dialogSetState(() {
+                          _isEpisodesReversed = !_isEpisodesReversed;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      setState(() {});
+    });
+  }
+
   /// 刷新所有源的测速结果
   Future<void> _refreshSourcesSpeed([StateSetter? stateSetter]) async {
     if (allSources.isEmpty) return;
@@ -2641,6 +2816,61 @@ class _PlayerScreenState extends State<PlayerScreen>
                         _buildPhoneLayout(theme),
                     // 播放器层（使用 Positioned 控制位置和大小）
                     _buildPlayerLayer(theme),
+                    // 选集面板(从右侧滑入,仅手机横屏模式)
+                    if (!_isTablet)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        top: 0,
+                        bottom: 0,
+                        right: _isEpisodesPanelVisible ? 0 : -400,
+                        width: 400,
+                        child: PlayerEpisodesPanel(
+                          theme: theme,
+                          episodes: currentDetail?.episodes ?? [],
+                          episodesTitles: currentDetail?.episodesTitles ?? [],
+                          currentEpisodeIndex: currentEpisodeIndex,
+                          isReversed: _isEpisodesReversed,
+                          onEpisodeTap: (index) {
+                            setState(() {
+                              _isEpisodesPanelVisible = false;
+                            });
+                            _onEpisodeTap(index);
+                          },
+                          onToggleOrder: () {
+                            setState(() {
+                              _isEpisodesReversed = !_isEpisodesReversed;
+                            });
+                          },
+                          crossAxisCount: 4,
+                        ),
+                      ),
+                    // 换源面板(从右侧滑入,仅手机横屏模式)
+                    if (!_isTablet)
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        top: 0,
+                        bottom: 0,
+                        right: _isSourcesPanelVisible ? 0 : -400,
+                        width: 400,
+                        child: PlayerSourcesPanel(
+                          theme: theme,
+                          sources: allSources,
+                          currentSource: currentSource,
+                          currentId: currentID,
+                          sourcesSpeed: allSourcesSpeed,
+                          onSourceTap: (source) {
+                            setState(() {
+                              _isSourcesPanelVisible = false;
+                            });
+                            _onSourceTap(source);
+                          },
+                          onRefresh: _refreshSources,
+                          videoCover: videoCover,
+                          videoTitle: videoTitle,
+                        ),
+                      ),
                     // 错误覆盖层
                     if (_showError && _errorMessage != null)
                       _buildErrorOverlay(theme),
