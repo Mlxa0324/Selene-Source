@@ -220,7 +220,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onLongPressStart(LongPressStartDetails details) {
-    if (_isLocked || widget.live || !_isPlaying) return;
+    if (widget.live || !_isPlaying) return;  // 锁定状态下也允许长按倍速
     setState(() {
       _isLongPressing = true;
       _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
@@ -229,7 +229,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
-    if (_isLocked || !_isLongPressing || widget.live) return;
+    if (!_isLongPressing || widget.live) return;  // 锁定状态下也允许
     widget.onSetSpeed(_originalPlaybackSpeed);
     setState(() => _isLongPressing = false);
   }
@@ -512,7 +512,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildCenterPlayPause(),
         _buildProgressBar(),
         _buildBottomControls(),
-        if (_isLongPressing && !_isLocked) _buildLongPressIndicator(),
+        if (_isLongPressing) _buildLongPressIndicator(),  // 锁定状态下也显示倍速指示器
         if (_isFullscreen && _showBrightnessIndicator && !_isLocked)
           _buildBrightnessIndicator(),
         if (_isFullscreen) _buildRightOverlay(),
@@ -547,6 +547,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               flex: 1,
               child: GestureDetector(
                 onTap: _toggleControlsVisibility,
+                onDoubleTap: _togglePlayPause,
                 onLongPressStart: _onLongPressStart,
                 onLongPressEnd: _onLongPressEnd,
                 onLongPressCancel: () {
@@ -567,6 +568,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             flex: _isFullscreen ? 2 : 1,
             child: GestureDetector(
               onTap: _toggleControlsVisibility,
+              onDoubleTap: _isFullscreen ? _togglePlayPause : null,
               onLongPressStart: _onLongPressStart,
               onLongPressEnd: _onLongPressEnd,
               onLongPressCancel: () {
@@ -585,6 +587,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               flex: 1,
               child: GestureDetector(
                 onTap: _toggleControlsVisibility,
+                onDoubleTap: _togglePlayPause,
                 onLongPressStart: _onLongPressStart,
                 onLongPressEnd: _onLongPressEnd,
                 onLongPressCancel: () {

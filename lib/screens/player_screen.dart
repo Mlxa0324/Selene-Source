@@ -3332,7 +3332,7 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                       fontWeight: FontWeight.w400,
                     ),
                     textAlign: TextAlign.center,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
