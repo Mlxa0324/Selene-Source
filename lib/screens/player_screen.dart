@@ -23,6 +23,9 @@ import '../widgets/player_episodes_panel.dart';
 import '../widgets/player_sources_panel.dart';
 import '../widgets/player_settings_panel.dart';
 import '../widgets/windows_title_bar.dart';
+import '../services/danmaku_service.dart';
+import '../models/danmaku_model.dart';
+import 'package:canvas_danmaku/canvas_danmaku.dart';
 
 class PlayerScreen extends StatefulWidget {
   final String? source;
@@ -138,6 +141,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showPlaybackTime = true;
   bool _showCurrentTime = true;
 
+  // 弹幕相关状态
+  DanmakuController? _danmakuController;
+  List<DanmakuComment> _danmakuList = [];
+  int _danmakuIndex = 0;
+  DanmakuSettings _danmakuSettings = const DanmakuSettings();
+  int? _currentDanmakuEpisodeId;
+  bool _isDanmakuLoading = false;
+
   // 播放器的 GlobalKey，用于保持播放器状态
   final GlobalKey _playerKey = GlobalKey();
 
@@ -162,6 +173,111 @@ class _PlayerScreenState extends State<PlayerScreen>
     )..repeat();
     // 添加应用生命周期监听器
     WidgetsBinding.instance.addObserver(this);
+    // 加载弹幕设置
+    _loadDanmakuSettings();
+  }
+
+  /// 加载弹幕设置
+  Future<void> _loadDanmakuSettings() async {
+    final settings = await DanmakuService().getSettings();
+    if (mounted) {
+      setState(() {
+        _danmakuSettings = settings;
+      });
+    }
+  }
+
+  /// 加载弹幕数据
+  Future<void> _loadDanmaku() async {
+    if (!_danmakuSettings.enabled) return;
+
+    final baseApi = await DanmakuService().getBaseApi();
+    if (baseApi == null || baseApi.isEmpty) return;
+
+    setState(() => _isDanmakuLoading = true);
+
+    try {
+      // 构建匹配文件名
+      final fileName = DanmakuService.buildFileName(
+        videoTitle,
+        currentEpisodeIndex,
+        currentDetail?.sourceName ?? currentSource,
+      );
+
+      // 匹配弹幕源
+      final matchResult = await DanmakuService().matchDanmaku(fileName);
+      if (matchResult == null || !matchResult.isMatched || matchResult.matches.isEmpty) {
+        debugPrint('弹幕匹配失败或无匹配结果');
+        setState(() => _isDanmakuLoading = false);
+        return;
+      }
+
+      final episodeId = matchResult.matches.first.episodeId;
+
+      // 如果是同一个 episodeId，不重复加载
+      if (_currentDanmakuEpisodeId == episodeId && _danmakuList.isNotEmpty) {
+        setState(() => _isDanmakuLoading = false);
+        return;
+      }
+
+      // 获取弹幕列表
+      final comments = await DanmakuService().getDanmakuList(episodeId);
+
+      if (mounted) {
+        setState(() {
+          _danmakuList = comments;
+          _danmakuIndex = 0;
+          _currentDanmakuEpisodeId = episodeId;
+          _isDanmakuLoading = false;
+        });
+        debugPrint('弹幕加载成功: ${comments.length} 条');
+      }
+    } catch (e) {
+      debugPrint('弹幕加载失败: $e');
+      if (mounted) {
+        setState(() => _isDanmakuLoading = false);
+      }
+    }
+  }
+
+  /// 根据播放进度发送弹幕
+  void _sendDanmakuByPosition(Duration position) {
+    if (_danmakuController == null || _danmakuList.isEmpty || !_danmakuSettings.enabled) return;
+
+    final currentTime = position.inMilliseconds / 1000.0;
+
+    // 发送当前时间点之前的所有未发送弹幕
+    while (_danmakuIndex < _danmakuList.length) {
+      final comment = _danmakuList[_danmakuIndex];
+      if (comment.time <= currentTime) {
+        _danmakuController!.addDanmaku(
+          DanmakuService.convertToDanmakuItem(comment),
+        );
+        _danmakuIndex++;
+      } else {
+        break;
+      }
+    }
+  }
+
+  /// 重置弹幕索引（用于 seek 操作）
+  void _resetDanmakuIndex(Duration position) {
+    if (_danmakuList.isEmpty) return;
+
+    final targetTime = position.inMilliseconds / 1000.0;
+    _danmakuIndex = 0;
+
+    // 找到第一个时间大于目标时间的弹幕索引
+    for (int i = 0; i < _danmakuList.length; i++) {
+      if (_danmakuList[i].time > targetTime) {
+        _danmakuIndex = i;
+        break;
+      }
+      _danmakuIndex = i + 1;
+    }
+
+    // 清空当前显示的弹幕
+    _danmakuController?.clear();
   }
 
   /// 设置竖屏方向
@@ -723,6 +839,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 添加视频播放状态监听器来触发保存检查
     _addVideoProgressListener();
 
+    // 加载弹幕
+    _loadDanmaku();
+
     // 延时三秒 seek 到 _resumeStartAt
     if (_resumeStartAt != null) {
       final tmpStartAt = _resumeStartAt;
@@ -754,6 +873,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onVideoProgressUpdate() {
     // 检查并保存进度（基于时间间隔）
     _checkAndSaveProgress();
+    // 根据播放进度发送弹幕
+    final position = _videoPlayerController?.currentPosition;
+    if (position != null) {
+      _sendDanmakuByPosition(position);
+    }
   }
 
   /// 处理下一集按钮点击
@@ -1131,6 +1255,25 @@ class _PlayerScreenState extends State<PlayerScreen>
             onControllerCreated: (controller) {
               _dlnaPlayerController = controller;
             },
+          ),
+        // 弹幕层
+        if (!_isCasting && _danmakuSettings.enabled)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DanmakuScreen(
+                createdController: (controller) {
+                  _danmakuController = controller;
+                },
+                option: DanmakuOption(
+                  fontSize: _danmakuSettings.fontSize,
+                  opacity: _danmakuSettings.opacity,
+                  duration: _danmakuSettings.duration,
+                  hideScroll: _danmakuSettings.hideScroll,
+                  hideTop: _danmakuSettings.hideTop,
+                  hideBottom: _danmakuSettings.hideBottom,
+                ),
+              ),
+            ),
           ),
         // 切换播放源/集数时的加载蒙版（只遮挡播放器）
         SwitchLoadingOverlay(

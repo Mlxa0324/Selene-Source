@@ -10,6 +10,7 @@ import '../services/page_cache_service.dart';
 import '../services/live_service.dart';
 import '../services/local_search_cache_service.dart';
 import '../services/version_service.dart';
+import '../services/danmaku_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import 'update_dialog.dart';
@@ -34,6 +35,7 @@ class _UserMenuState extends State<UserMenu> {
   String _doubanDataSource = '直连';
   String _doubanImageSource = '直连';
   String _m3u8ProxyUrl = '';
+  String _danmakuBaseApi = '';
   String _version = '';
   bool _preferSpeedTest = true;
   bool _localSearch = false;
@@ -64,6 +66,7 @@ class _UserMenuState extends State<UserMenu> {
     final doubanImageSource =
         await UserDataService.getDoubanImageSourceDisplayName();
     final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
+    final danmakuBaseApi = await DanmakuService().getBaseApi();
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
 
@@ -75,6 +78,7 @@ class _UserMenuState extends State<UserMenu> {
         _doubanDataSource = doubanDataSource;
         _doubanImageSource = doubanImageSource;
         _m3u8ProxyUrl = m3u8ProxyUrl;
+        _danmakuBaseApi = danmakuBaseApi ?? '';
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
       });
@@ -502,6 +506,123 @@ class _UserMenuState extends State<UserMenu> {
     );
   }
 
+  void _showDanmakuBaseApiDialog() {
+    final controller = TextEditingController(text: _danmakuBaseApi);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor:
+              widget.isDarkMode ? const Color(0xFF2c2c2c) : Colors.white,
+          title: Text(
+            '弹幕服务器地址',
+            style: FontUtils.poppins(
+              fontSize: 18,
+              color: widget.isDarkMode
+                  ? const Color(0xFFffffff)
+                  : const Color(0xFF1f2937),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                style: FontUtils.poppins(
+                  fontSize: 14,
+                  color: widget.isDarkMode
+                      ? const Color(0xFFffffff)
+                      : const Color(0xFF1f2937),
+                ),
+                decoration: InputDecoration(
+                  hintText: '例如: http://192.168.1.1:9321/xxx/',
+                  hintStyle: FontUtils.poppins(
+                    fontSize: 14,
+                    color: widget.isDarkMode
+                        ? const Color(0xFF9ca3af)
+                        : const Color(0xFF6b7280),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: widget.isDarkMode
+                          ? const Color(0xFF374151)
+                          : const Color(0xFFe5e7eb),
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(
+                      color: widget.isDarkMode
+                          ? const Color(0xFF374151)
+                          : const Color(0xFFe5e7eb),
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF10b981),
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '用于加载弹幕数据，留空则不显示弹幕',
+                style: FontUtils.poppins(
+                  fontSize: 12,
+                  color: widget.isDarkMode
+                      ? const Color(0xFF9ca3af)
+                      : const Color(0xFF6b7280),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                '取消',
+                style: FontUtils.poppins(
+                  fontSize: 14,
+                  color: widget.isDarkMode
+                      ? const Color(0xFF9ca3af)
+                      : const Color(0xFF6b7280),
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                final url = controller.text.trim();
+                await DanmakuService().setBaseApi(url);
+                setState(() {
+                  _danmakuBaseApi = url;
+                });
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: Text(
+                '保存',
+                style: FontUtils.poppins(
+                  fontSize: 14,
+                  color: const Color(0xFF10b981),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildInputOption({
     required String title,
     required String currentValue,
@@ -790,6 +911,20 @@ class _UserMenuState extends State<UserMenu> {
                       currentValue: _m3u8ProxyUrl,
                       onTap: _showM3u8ProxyUrlDialog,
                       icon: LucideIcons.link,
+                    ),
+                    // 分割线
+                    Container(
+                      height: 1,
+                      color: widget.isDarkMode
+                          ? const Color(0xFF374151)
+                          : const Color(0xFFe5e7eb),
+                    ),
+                    // 弹幕服务器地址选项
+                    _buildInputOption(
+                      title: '弹幕服务器',
+                      currentValue: _danmakuBaseApi,
+                      onTap: _showDanmakuBaseApiDialog,
+                      icon: LucideIcons.messageSquare,
                     ),
                     // 分割线
                     Container(
