@@ -21,6 +21,7 @@ import '../utils/device_utils.dart';
 import '../widgets/player_details_panel.dart';
 import '../widgets/player_episodes_panel.dart';
 import '../widgets/player_sources_panel.dart';
+import '../widgets/player_settings_panel.dart';
 import '../widgets/windows_title_bar.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -130,6 +131,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
   bool _isSourcesPanelVisible = false;
+
+  // 播放设置状态
+  VideoFitType _currentFitType = VideoFitType.contain;
+  double _longPressSpeed = 2.0;
+  bool _showPlaybackTime = true;
+  bool _showCurrentTime = true;
 
   // 播放器的 GlobalKey，用于保持播放器状态
   final GlobalKey _playerKey = GlobalKey();
@@ -1097,6 +1104,12 @@ class _PlayerScreenState extends State<PlayerScreen>
               // 在全屏模式下，使用传入的 context 显示换源面板
               _showSourcesPanelInFullscreen(fullscreenContext);
             },
+            onSettingsButtonPressed: (fullscreenContext) {
+              // 在全屏模式下，使用传入的 context 显示设置面板
+              _showSettingsPanelInFullscreen(fullscreenContext);
+            },
+            longPressSpeed: _longPressSpeed,
+            showTimeWhenControlsHidden: _showCurrentTime,
           ),
         if (_isCasting && _dlnaDevice != null)
           DLNAPlayer(
@@ -2303,6 +2316,68 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  /// 在全屏模式下显示设置面板（使用传入的 context）
+  void _showSettingsPanelInFullscreen(BuildContext fullscreenContext) {
+    final theme = Theme.of(fullscreenContext);
+    final screenHeight = MediaQuery.of(fullscreenContext).size.height;
+    final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+
+    final panelWidth = screenWidth * 0.4;
+    final panelHeight = screenHeight;
+
+    showGeneralDialog(
+      context: fullscreenContext,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: panelWidth,
+              height: panelHeight,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOut,
+                )),
+                child: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter dialogSetState) {
+                    return PlayerSettingsPanel(
+                      theme: theme,
+                      currentFitType: _currentFitType,
+                      currentLongPressSpeed: _longPressSpeed,
+                      showTimeWhenControlsHidden: _showCurrentTime,
+                      onFitTypeChanged: (type) {
+                        setState(() => _currentFitType = type);
+                        dialogSetState(() {});
+                        _videoPlayerController?.setVideoFit(type);
+                      },
+                      onLongPressSpeedChanged: (speed) {
+                        setState(() => _longPressSpeed = speed);
+                        dialogSetState(() {});
+                      },
+                      onShowTimeChanged: (show) {
+                        setState(() => _showCurrentTime = show);
+                        dialogSetState(() {});
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   /// 在全屏模式下显示选集面板（使用传入的 context）
   void _showEpisodesPanelInFullscreen(BuildContext fullscreenContext) {
     if (currentDetail == null) return;
@@ -2345,7 +2420,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       episodesTitles: currentDetail!.episodesTitles,
                       currentEpisodeIndex: currentEpisodeIndex,
                       isReversed: _isEpisodesReversed,
-                      crossAxisCount: 2,
+                      crossAxisCount: widget.title.length > 6 ? 2 : 3,
                       onEpisodeTap: (index) {
                         Navigator.pop(dialogContext);
                         WidgetsBinding.instance.addPostFrameCallback((_) {

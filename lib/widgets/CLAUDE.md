@@ -4,6 +4,19 @@
 
 # Widgets 模块
 
+## 变更记录 (Changelog)
+
+### 2026-01-11 13:45:58
+- 新增 `player_settings_panel.dart`：播放器设置面板（倍速、画面比例）
+- 更新文件统计：40 个组件
+
+### 2026-01-11 00:42:13
+- 初始化模块文档
+- 识别可复用组件
+- 按功能分类整理
+
+---
+
 ## 模块职责
 
 Widgets 模块包含应用的所有可复用 UI 组件，提供从基础控件到复杂交互组件的完整封装。这些组件被 Screens 模块引用，实现 UI 的模块化和复用。
@@ -18,7 +31,7 @@ Widgets 模块包含应用的所有可复用 UI 组件，提供从基础控件�
 - `pc_player_controls.dart` / `mobile_player_controls.dart`：播放器控件
 
 **组件分类：**
-1. **播放器相关**：视频播放、控制、投屏
+1. **播放器相关**：视频播放、控制、投屏、设置
 2. **内容展示**：卡片、网格、列表
 3. **交互控件**：开关、选择器、对话框
 4. **布局组件**：标题栏、导航、面板
@@ -47,6 +60,17 @@ VideoCard({
   String? subtitle,                 // 副标题
   VoidCallback? onTap,              // 点击回调
   double? progress,                 // 播放进度
+})
+```
+
+**PlayerSettingsPanel** (新增)
+```dart
+PlayerSettingsPanel({
+  required ThemeData theme,                    // 主题数据
+  required VideoFitType currentFitType,        // 当前画面比例
+  required double currentPlaybackSpeed,        // 当前播放速度
+  required Function(VideoFitType) onFitTypeChanged,      // 比例变更回调
+  required Function(double) onPlaybackSpeedChanged,      // 速度变更回调
 })
 ```
 
@@ -91,6 +115,7 @@ DlnaPlayer({
 - `FavoriteItem`：收藏项（用于收藏网格）
 - `PlayRecord`：播放记录（用于历史网格）
 - `LiveChannel`：直播频道（用于直播卡片）
+- `VideoFitType`：画面比例枚举（用于设置面板）
 
 ---
 
@@ -103,6 +128,7 @@ DlnaPlayer({
    - `VideoCard` 点击和显示
    - `CustomSwitch` 状态切换
    - `FilterOptionsSelector` 选项选择
+   - `PlayerSettingsPanel` 设置选择
 2. **Golden 测试**：
    - 播放器控件在不同状态下的截图对比
    - 主题切换后的 UI 一致性
@@ -127,6 +153,11 @@ DlnaPlayer({
 2. 调用 `DlnaPlayer` 推送视频 URL
 3. 使用 `DlnaPlayerControls` 控制播放
 
+### Q4: 如何使用播放器设置面板？
+1. 导入 `player_settings_panel.dart`
+2. 使用 `showModalBottomSheet` 显示面板
+3. 处理 `onFitTypeChanged` 和 `onPlaybackSpeedChanged` 回调
+
 ---
 
 ## 相关文件清单
@@ -139,6 +170,7 @@ DlnaPlayer({
 - `player_details_panel.dart` (详情面板)
 - `player_episodes_panel.dart` (集数面板)
 - `player_sources_panel.dart` (源选择面板)
+- `player_settings_panel.dart` (设置面板 - 倍速/画面比例)
 
 ### DLNA 组件
 - `dlna_player.dart` (DLNA 播放器)
@@ -185,20 +217,11 @@ DlnaPlayer({
 - `hot_tv_section.dart` (热门电视剧)
 
 ### 文件统计
-- 总文件数：42
+- 总文件数：40
 - 代码行数：约 15,000+ 行（估算）
 - 最复杂组件：`video_player_widget.dart`、`pc_player_controls.dart`
 
 ---
 
-## 变更记录 (Changelog)
-
-### 2026-01-11
-- 初始化模块文档
-- 识别 42 个可复用组件
-- 按功能分类整理
-
----
-
-**模块版本：** 1.0.0
+**模块版本：** 1.1.0
 **最后更新：** 2026-01-11

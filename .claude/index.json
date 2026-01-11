@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-01-11T00:42:13.000Z",
-  "version": "1.0.0",
+  "timestamp": "2026-01-11T13:45:58.000Z",
+  "version": "1.1.0",
   "project": {
     "name": "Selene-Source",
     "description": "Flutter 视频播放应用",
@@ -53,13 +53,14 @@
         "lib/widgets/video_player_widget.dart",
         "lib/widgets/main_layout.dart"
       ],
-      "fileCount": 42,
+      "fileCount": 40,
       "hasTests": false,
       "hasConfig": false,
       "keyFiles": [
         "lib/widgets/video_player_widget.dart",
         "lib/widgets/pc_player_controls.dart",
         "lib/widgets/mobile_player_controls.dart",
+        "lib/widgets/player_settings_panel.dart",
         "lib/widgets/video_card.dart",
         "lib/widgets/dlna_player.dart",
         "lib/widgets/main_layout.dart"
@@ -74,7 +75,13 @@
         "scanned": true,
         "depth": "medium",
         "missingItems": ["Widget 测试", "Golden 测试"]
-      }
+      },
+      "recentChanges": [
+        {
+          "date": "2026-01-11T13:45:58.000Z",
+          "description": "新增 player_settings_panel.dart（倍速、画面比例设置）"
+        }
+      ]
     },
     {
       "path": "lib/services",
@@ -159,13 +166,13 @@
       "language": "Kotlin",
       "responsibility": "Android 原生模块",
       "entryFiles": [
-        "android/app/src/main/kotlin/org/moontechlab/selene/MainActivity.kt"
+        "android/app/src/main/kotlin/com/example/selene/MainActivity.kt"
       ],
       "fileCount": 1,
       "hasTests": false,
       "hasConfig": true,
       "keyFiles": [
-        "android/app/src/main/kotlin/org/moontechlab/selene/MainActivity.kt",
+        "android/app/src/main/kotlin/com/example/selene/MainActivity.kt",
         "android/app/build.gradle.kts",
         "android/build.gradle.kts",
         "android/app/src/main/AndroidManifest.xml"
@@ -231,8 +238,8 @@
   ],
   "statistics": {
     "totalModules": 8,
-    "totalFiles": 96,
-    "dartFiles": 87,
+    "totalFiles": 94,
+    "dartFiles": 85,
     "kotlinFiles": 1,
     "swiftFiles": 1,
     "markdownFiles": 7,
@@ -241,7 +248,7 @@
     "testCoverage": "0%"
   },
   "coverage": {
-    "overallPercentage": 75,
+    "overallPercentage": 80,
     "scannedModules": 8,
     "totalModules": 8,
     "gaps": [
@@ -288,6 +295,17 @@
       "*.log"
     ]
   },
+  "recentChanges": [
+    {
+      "timestamp": "2026-01-11T13:45:58.000Z",
+      "changes": [
+        "新增 lib/widgets/player_settings_panel.dart（播放器设置面板）",
+        "修改 lib/screens/player_screen.dart",
+        "修改 lib/widgets/mobile_player_controls.dart",
+        "修改 lib/widgets/video_player_widget.dart"
+      ]
+    }
+  ],
   "nextSteps": [
     "为 Services 层添加单元测试（优先级：高）",
     "为关键 Widgets 添加 Widget 测试（优先级：高）",
@@ -302,6 +320,7 @@
     "缺少测试覆盖，建议优先添加 Services 和 Widgets 测试",
     "原生代码较少，主要逻辑在 Flutter 层",
     "使用 Provider 进行状态管理，架构简洁",
-    "支持本地模式和服务器模式双运行方式"
+    "支持本地模式和服务器模式双运行方式",
+    "新增播放器设置面板支持倍速和画面比例调整"
   ]
 }

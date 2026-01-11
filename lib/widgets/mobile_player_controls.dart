@@ -32,6 +32,9 @@ class MobilePlayerControls extends StatefulWidget {
   final bool isPipMode;
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
+  final void Function(BuildContext context)? onSettingsButtonPressed;
+  final double longPressSpeed;
+  final bool showTimeWhenControlsHidden;
 
   const MobilePlayerControls({
     super.key,
@@ -58,6 +61,9 @@ class MobilePlayerControls extends StatefulWidget {
     required this.isPipMode,
     this.onEpisodesButtonPressed,
     this.onSourcesButtonPressed,
+    this.onSettingsButtonPressed,
+    this.longPressSpeed = 2.0,
+    this.showTimeWhenControlsHidden = true,
   });
 
   @override
@@ -225,7 +231,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _isLongPressing = true;
       _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
     });
-    widget.onSetSpeed(2.0);
+    widget.onSetSpeed(widget.longPressSpeed);
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
@@ -507,6 +513,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildTopGradient(),
         _buildBottomGradient(),
         if (_isFullscreen) _buildCurrentTime(),
+        if (_isFullscreen) _buildCurrentPlayTime(),
         _buildBackButton(),
         _buildCastButton(),
         _buildCenterPlayPause(),
@@ -638,11 +645,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildCurrentTime() {
     return Positioned(
-      top: 8,
+      top: 16,
       left: 0,
       right: 0,
       child: AnimatedOpacity(
-        opacity: (_controlsVisible && !_isLocked) ? 1.0 : 0.0,
+        opacity: ((_controlsVisible) && !_isLocked) ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           child: Center(
@@ -651,6 +658,29 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+    Widget _buildCurrentPlayTime() {
+    return Positioned(
+      left: 20,
+      bottom: 15,
+      child: AnimatedOpacity(
+        opacity: ((!_controlsVisible && widget.showTimeWhenControlsHidden) && !_isLocked) ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 200),
+        child: IgnorePointer(
+          child: Center(
+            child: Text(
+              currentPlayTime(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -696,27 +726,62 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           ignoring: !_controlsVisible || _isLocked,
-          child: GestureDetector(
-            onTap: () {
-              _onUserInteraction();
-              if (_isFullscreen) {
-                _exitFullscreen();
-              } else {
-                widget.onBackPressed?.call();
-              }
-            },
-            behavior: HitTestBehavior.opaque,
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                Icons.arrow_back,
-                color: Colors.white,
-                size: _isFullscreen ? 24 : 20,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  _onUserInteraction();
+                  if (_isFullscreen) {
+                    _exitFullscreen();
+                  } else {
+                    widget.onBackPressed?.call();
+                  }
+                },
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.arrow_back,
+                    color: Colors.white,
+                    size: _isFullscreen ? 24 : 20,
+                  ),
+                ),
               ),
-            ),
+              if (_isFullscreen) ...[
+                const SizedBox(width: 8),
+                _buildVideoInfo(),
+              ],
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildVideoInfo() {
+    final title = widget.videoTitle ?? '';
+    final episodeText = (widget.currentEpisodeIndex != null && widget.totalEpisodes != null && widget.totalEpisodes! > 1)
+        ? '第${widget.currentEpisodeIndex! + 1}集'
+        : '';
+    final source = widget.sourceName ?? '';
+
+    final parts = <String>[];
+    if (title.isNotEmpty) parts.add(title);
+    if (episodeText.isNotEmpty) parts.add(episodeText);
+    if (source.isNotEmpty) parts.add(source);
+
+    if (parts.isEmpty) return const SizedBox.shrink();
+
+    return Text(
+      parts.join(' · '),
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -817,9 +882,17 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     );
   }
 
-  Widget _buildBottomControls() {
+
+  String currentPlayTime() {
     final position = _dragPosition ?? _position;
     final duration = _duration;
+    return '${_formatDuration(position)} / ${_formatDuration(duration)}';
+  }
+
+  Widget _buildBottomControls() {
+    final iconSize = _isFullscreen ? 28.0 : 24.0;
+    final iconPadding = EdgeInsets.only(left: _isFullscreen ? 10 : 8, right: _isFullscreen ? 10 : 8);
+
     return Positioned(
       bottom: _isFullscreen ? 4.0 : -6.0,
       left: 0,
@@ -845,7 +918,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     child: Icon(
                       _isPlaying ? Icons.pause : Icons.play_arrow,
                       color: Colors.white,
-                      size: _isFullscreen ? 28 : 24,
+                      size: iconSize,
                     ),
                   ),
                 ),
@@ -857,42 +930,26 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: iconPadding,
                       child: Icon(
                         Icons.skip_next,
                         color: Colors.white,
-                        size: _isFullscreen ? 28 : 24,
+                        size: iconSize,
                       ),
                     ),
                   ),
                 if (!widget.live)
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 8.0, right: 8.0),
+                      padding: iconPadding,
                       child: Text(
-                        '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                        currentPlayTime(),
                         style:
-                            const TextStyle(color: Colors.white, fontSize: 12),
+                            const TextStyle(color: Colors.white, fontSize: 14),
                       ),
                     ),
                   ),
                 if (widget.live) const Spacer(),
-                if (!widget.live)
-                  GestureDetector(
-                    onTap: () async {
-                      _onUserInteraction();
-                      await _showSpeedDialog();
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: EdgeInsets.only(right: _isFullscreen ? 22 : 10),
-                      child: Icon(
-                        Icons.speed,
-                        color: Colors.white,
-                        size: _isFullscreen ? 22 : 20,
-                      ),
-                    ),
-                  ),
                 // 选集按钮（仅在横屏且集数大于1时显示）
                 if (_isFullscreen &&
                     widget.totalEpisodes != null &&
@@ -905,11 +962,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: iconPadding,
                       child: Icon(
                         Icons.list,
                         color: Colors.white,
-                        size: _isFullscreen ? 22 : 20,
+                        size: _isFullscreen ? 32.0 : 24.0,
                       ),
                     ),
                   ),
@@ -922,11 +979,44 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: iconPadding,
                       child: Icon(
                         Icons.sync_alt,
                         color: Colors.white,
-                        size: _isFullscreen ? 22 : 20,
+                        size: iconSize,
+                      ),
+                    ),
+                  ),
+                // 设置按钮（仅在横屏时显示）
+                if (_isFullscreen && widget.onSettingsButtonPressed != null)
+                  GestureDetector(
+                    onTap: () {
+                      _onUserInteraction();
+                      widget.onSettingsButtonPressed?.call(context);
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: iconPadding,
+                      child: Icon(
+                        Icons.settings,
+                        color: Colors.white,
+                        size: iconSize,
+                      ),
+                    ),
+                  ),
+                  if (!widget.live)
+                  GestureDetector(
+                    onTap: () async {
+                      _onUserInteraction();
+                      await _showSpeedDialog();
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: iconPadding,
+                      child: Icon(
+                        Icons.speed,
+                        color: Colors.white,
+                        size: _isFullscreen ? 30.0 : 24.0,
                       ),
                     ),
                   ),
@@ -939,11 +1029,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     },
                     behavior: HitTestBehavior.opaque,
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: iconPadding,
                       child: Icon(
                         Icons.picture_in_picture_alt,
                         color: Colors.white,
-                        size: _isFullscreen ? 22 : 20,
+                        size:  _isFullscreen ? 26.0 : 22.0,
                       ),
                     ),
                   ),
@@ -958,11 +1048,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                   },
                   behavior: HitTestBehavior.opaque,
                   child: Container(
-                    padding: EdgeInsets.only(left: _isFullscreen ? 12 : 5, right: _isFullscreen ? 12 : 8),
+                    padding: iconPadding,
                     child: Icon(
                       _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
                       color: Colors.white,
-                      size: _isFullscreen ? 28 : 24,
+                      size: _isFullscreen ? 32.0 : 26.0,
                     ),
                   ),
                 ),
@@ -975,21 +1065,36 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildLongPressIndicator() {
-    return const Positioned(
+    return Positioned(
       top: 10,
       left: 0,
       right: 0,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('2x',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold)),
-          SizedBox(width: 6),
-          Icon(Icons.fast_forward, color: Colors.white, size: 32),
-        ],
+      child: Center(  // 添加 Center 使整个指示器居中
+        child: IntrinsicWidth(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),  // 添加垂直 padding
+            decoration: BoxDecoration(
+              color: widget.showTimeWhenControlsHidden ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.7),  // 修正为 withOpacity
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,  // 确保 Row 只占用所需空间
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${widget.longPressSpeed}x',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Icon(Icons.fast_forward, color: Colors.white, size: 26),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1146,10 +1251,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               behavior: HitTestBehavior.opaque,
               child: Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(24),
-                ),
+                // decoration: BoxDecoration(
+                //   color: Colors.black.withValues(alpha: 0.5),
+                //   borderRadius: BorderRadius.circular(24),
+                // ),
                 child: Icon(
                   _isLocked ? Icons.lock : Icons.lock_open,
                   color: Colors.white,

@@ -7,6 +7,7 @@ import 'package:pip/pip.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
 import 'video_player_surface.dart';
+import 'player_settings_panel.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
@@ -30,6 +31,9 @@ class VideoPlayerWidget extends StatefulWidget {
   final Function(bool isPipMode)? onPipModeChanged;
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
+  final void Function(BuildContext context)? onSettingsButtonPressed;
+  final double longPressSpeed;
+  final bool showTimeWhenControlsHidden;
 
   const VideoPlayerWidget({
     super.key,
@@ -54,6 +58,9 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onPipModeChanged,
     this.onEpisodesButtonPressed,
     this.onSourcesButtonPressed,
+    this.onSettingsButtonPressed,
+    this.longPressSpeed = 2.0,
+    this.showTimeWhenControlsHidden = true,
   });
 
   @override
@@ -123,6 +130,10 @@ class VideoPlayerWidgetController {
   }
 
   bool get isPipMode => _state._isPipMode;
+
+  void setVideoFit(VideoFitType fitType) {
+    _state._setVideoFit(fitType);
+  }
 }
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
@@ -144,6 +155,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   VoidCallback? _exitWebFullscreenCallback;
   final Pip _pip = Pip();
   bool _isPipMode = false;
+  VideoFitType _currentFitType = VideoFitType.contain;
 
   @override
   void initState() {
@@ -349,6 +361,27 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     await _player?.setRate(speed);
   }
 
+  void _setVideoFit(VideoFitType fitType) {
+    setState(() {
+      _currentFitType = fitType;
+    });
+  }
+
+  BoxFit _getBoxFit() {
+    switch (_currentFitType) {
+      case VideoFitType.contain:
+        return BoxFit.contain;
+      case VideoFitType.aspectRatio16_9:
+        return BoxFit.contain;
+      case VideoFitType.fill:
+        return BoxFit.fill;
+      case VideoFitType.fitWidth:
+        return BoxFit.fitWidth;
+      case VideoFitType.fitHeight:
+        return BoxFit.fitHeight;
+    }
+  }
+
   void _exitWebFullscreen() {
     _exitWebFullscreenCallback?.call();
   }
@@ -478,6 +511,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       child: _isInitialized && _videoController != null
           ? Video(
               controller: _videoController!,
+              fit: _getBoxFit(),
               controls: (state) {
                 return widget.surface == VideoPlayerSurface.desktop
                     ? PCPlayerControls(
@@ -527,6 +561,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         isPipMode: _isPipMode,
                         onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
                         onSourcesButtonPressed: widget.onSourcesButtonPressed,
+                        onSettingsButtonPressed: widget.onSettingsButtonPressed,
+                        longPressSpeed: widget.longPressSpeed,
+                        showTimeWhenControlsHidden: widget.showTimeWhenControlsHidden,
                       );
               },
             )

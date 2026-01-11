@@ -2,6 +2,11 @@
 
 ## 变更记录 (Changelog)
 
+### 2026-01-11 13:45:58
+- 增量更新：新增 `player_settings_panel.dart` 组件
+- 播放器功能增强：支持倍速播放和画面比例调整
+- 更新 widgets 模块文档
+
 ### 2026-01-11 00:42:13
 - 初始化 AI 上下文文档
 - 完成项目结构分析和模块识别
@@ -23,6 +28,7 @@ Selene 是一个基于 MoonTV 的跨平台视频播放应用，使用 Flutter �
 - 豆瓣电影信息集成
 - 本地/服务器双模式运行
 - 深色/浅色主题切换
+- 倍速播放与画面比例调整
 
 ---
 
@@ -74,16 +80,16 @@ graph TD
 
 ## 模块索引
 
-| 模块路径 | 职责描述 | 语言 | 入口文件 |
-|---------|---------|------|---------|
-| `lib/screens/` | 应用页面（登录、首页、播放器、搜索等） | Dart | `home_screen.dart` |
-| `lib/widgets/` | 可复用 UI 组件（播放器控件、卡片、对话框等） | Dart | - |
-| `lib/services/` | 业务逻辑服务（API、搜索、缓存、主题等） | Dart | `api_service.dart` |
-| `lib/models/` | 数据模型定义 | Dart | - |
-| `lib/utils/` | 工具函数（设备检测、字体、图片处理） | Dart | - |
-| `android/` | Android 原生模块 | Kotlin | `MainActivity.kt` |
-| `ios/` | iOS 原生模块 | Swift | `AppDelegate.swift` |
-| `.spec-workflow/` | 文档模板工作流 | Markdown | - |
+| 模块路径 | 职责描述 | 语言 | 文件数 |
+|---------|---------|------|-------|
+| `lib/screens/` | 应用页面（登录、首页、播放器、搜索等） | Dart | 11 |
+| `lib/widgets/` | 可复用 UI 组件（播放器控件、卡片、对话框等） | Dart | 40 |
+| `lib/services/` | 业务逻辑服务（API、搜索、缓存、主题等） | Dart | 17 |
+| `lib/models/` | 数据模型定义 | Dart | 14 |
+| `lib/utils/` | 工具函数（设备检测、字体、图片处理） | Dart | 3 |
+| `android/` | Android 原生模块 | Kotlin | 1 |
+| `ios/` | iOS 原生模块 | Swift | 1 |
+| `.spec-workflow/` | 文档模板工作流 | Markdown | 7 |
 
 ---
 
@@ -156,7 +162,7 @@ flutter format .
 **建议测试覆盖：**
 1. **单元测试**：Services 层的业务逻辑（API 调用、数据解析）
 2. **Widget 测试**：关键 UI 组件（播放器控件、搜索框）
-3. **集成测试**：完整用户流程（登录 → 搜索 → 播放）
+3. **集成测试**：完整用户流程（登录 -> 搜索 -> 播放）
 
 **测试命令：**
 ```bash
@@ -212,6 +218,7 @@ lib/
 - `lib/services/api_service.dart`：API 调用封装
 - `lib/screens/player_screen.dart`：播放器核心逻辑
 - `lib/services/search_service.dart`：搜索聚合逻辑
+- `lib/widgets/player_settings_panel.dart`：播放器设置面板
 - `pubspec.yaml`：依赖管理
 
 ### 常见开发场景
@@ -232,6 +239,11 @@ lib/
 2. 调整缓存过期时间和清理策略
 3. 测试内存和磁盘占用
 
+**场景 4：添加播放器设置选项**
+1. 修改 `lib/widgets/player_settings_panel.dart`
+2. 添加新的设置项（如字幕、音轨选择）
+3. 在播放器控件中集成设置回调
+
 ### 注意事项
 - **不要修改**：`.gitignore` 中的忽略规则（除非必要）
 - **谨慎修改**：原生代码（`android/`、`ios/`），可能影响平台兼容性
@@ -249,6 +261,6 @@ lib/
 
 ---
 
-**文档版本：** 1.0.0
+**文档版本：** 1.1.0
 **最后更新：** 2026-01-11
 **维护者：** Selene 开发团队
