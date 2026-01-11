@@ -33,6 +33,7 @@ class MobilePlayerControls extends StatefulWidget {
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
   final void Function(BuildContext context)? onSettingsButtonPressed;
+  final void Function(BuildContext context)? onDanmakuButtonPressed;
   final double longPressSpeed;
   final bool showTimeWhenControlsHidden;
 
@@ -62,6 +63,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.onEpisodesButtonPressed,
     this.onSourcesButtonPressed,
     this.onSettingsButtonPressed,
+    this.onDanmakuButtonPressed,
     this.longPressSpeed = 2.0,
     this.showTimeWhenControlsHidden = true,
   });
@@ -950,6 +952,23 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     ),
                   ),
                 if (widget.live) const Spacer(),
+                // 弹幕设置按钮（仅在横屏时显示）
+                if (_isFullscreen && widget.onDanmakuButtonPressed != null)
+                  GestureDetector(
+                    onTap: () {
+                      _onUserInteraction();
+                      widget.onDanmakuButtonPressed?.call(context);
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding: iconPadding,
+                      child: Icon(
+                        Icons.subtitles,
+                        color: Colors.white,
+                        size: iconSize,
+                      ),
+                    ),
+                  ),
                 // 选集按钮（仅在横屏且集数大于1时显示）
                 if (_isFullscreen &&
                     widget.totalEpisodes != null &&

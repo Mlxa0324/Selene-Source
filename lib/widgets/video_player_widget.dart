@@ -32,6 +32,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
   final void Function(BuildContext context)? onSettingsButtonPressed;
+  final void Function(BuildContext context)? onDanmakuButtonPressed;
   final double longPressSpeed;
   final bool showTimeWhenControlsHidden;
 
@@ -59,6 +60,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onEpisodesButtonPressed,
     this.onSourcesButtonPressed,
     this.onSettingsButtonPressed,
+    this.onDanmakuButtonPressed,
     this.longPressSpeed = 2.0,
     this.showTimeWhenControlsHidden = true,
   });
@@ -562,6 +564,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
                         onSourcesButtonPressed: widget.onSourcesButtonPressed,
                         onSettingsButtonPressed: widget.onSettingsButtonPressed,
+                        onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
                         longPressSpeed: widget.longPressSpeed,
                         showTimeWhenControlsHidden: widget.showTimeWhenControlsHidden,
                       );

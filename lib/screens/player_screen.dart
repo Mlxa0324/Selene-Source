@@ -22,6 +22,7 @@ import '../widgets/player_details_panel.dart';
 import '../widgets/player_episodes_panel.dart';
 import '../widgets/player_sources_panel.dart';
 import '../widgets/player_settings_panel.dart';
+import '../widgets/danmaku_settings_panel.dart';
 import '../widgets/windows_title_bar.dart';
 import '../services/danmaku_service.dart';
 import '../models/danmaku_model.dart';
@@ -1231,6 +1232,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             onSettingsButtonPressed: (fullscreenContext) {
               // 在全屏模式下，使用传入的 context 显示设置面板
               _showSettingsPanelInFullscreen(fullscreenContext);
+            },
+            onDanmakuButtonPressed: (fullscreenContext) {
+              // 在全屏模式下，使用传入的 context 显示弹幕设置面板
+              _showDanmakuPanelInFullscreen(fullscreenContext);
             },
             longPressSpeed: _longPressSpeed,
             showTimeWhenControlsHidden: _showCurrentTime,
@@ -2509,6 +2514,66 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onShowTimeChanged: (show) {
                         setState(() => _showCurrentTime = show);
                         dialogSetState(() {});
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 在全屏模式下显示弹幕设置面板（使用传入的 context）
+  void _showDanmakuPanelInFullscreen(BuildContext fullscreenContext) {
+    final theme = Theme.of(fullscreenContext);
+    final screenHeight = MediaQuery.of(fullscreenContext).size.height;
+    final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+
+    final panelWidth = screenWidth * 0.4;
+    final panelHeight = screenHeight;
+
+    showGeneralDialog(
+      context: fullscreenContext,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: panelWidth,
+              height: panelHeight,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOut,
+                )),
+                child: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter dialogSetState) {
+                    return DanmakuSettingsPanel(
+                      theme: theme,
+                      settings: _danmakuSettings,
+                      onSettingsChanged: (settings) {
+                        setState(() => _danmakuSettings = settings);
+                        dialogSetState(() {});
+                        // 更新弹幕控制器的设置
+                        _danmakuController?.updateOption(DanmakuOption(
+                          fontSize: settings.fontSize,
+                          opacity: settings.opacity,
+                          duration: settings.duration,
+                          hideScroll: settings.hideScroll,
+                          hideTop: settings.hideTop,
+                          hideBottom: settings.hideBottom,
+                        ));
                       },
                     );
                   },
