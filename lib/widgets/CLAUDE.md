@@ -6,6 +6,10 @@
 
 ## 变更记录 (Changelog)
 
+### 2026-01-12 16:55:00
+- 重构 `danmaku_settings_panel.dart`：支持中文屏蔽按钮、行间距范围扩展、功能开关。
+- 更新 `video_player_widget.dart`：新增 `danmakuLayer` 参数，支持在全屏 Overlay 中渲染弹幕。
+
 ### 2026-01-11 13:45:58
 - 新增 `player_settings_panel.dart`：播放器设置面板（倍速、画面比例）
 - 更新文件统计：40 个组件

@@ -220,6 +220,9 @@ class LiveChannel {
 
 ## 变更记录 (Changelog)
 
+### 2026-01-12 16:55:00
+- 增强 `DanmakuSettings` 模型：新增 `scale`, `lineSpacing`, `fontWeight`, `displayArea`, `preventOverlap`, `syncVideoSpeed` 等字段，支持更精细的弹幕控制。
+
 ### 2026-01-11
 - 初始化模块文档
 - 识别 14 个数据模型

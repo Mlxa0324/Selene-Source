@@ -35,6 +35,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final double longPressSpeed;
   final bool showTimeWhenControlsHidden;
+  final Widget? danmakuLayer;
 
   const VideoPlayerWidget({
     super.key,
@@ -63,6 +64,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onDanmakuButtonPressed,
     this.longPressSpeed = 2.0,
     this.showTimeWhenControlsHidden = true,
+    this.danmakuLayer,
   });
 
   @override
@@ -515,7 +517,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
               controller: _videoController!,
               fit: _getBoxFit(),
               controls: (state) {
-                return widget.surface == VideoPlayerSurface.desktop
+                final controls = widget.surface == VideoPlayerSurface.desktop
                     ? PCPlayerControls(
                         state: state,
                         player: _player!,
@@ -568,6 +570,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         longPressSpeed: widget.longPressSpeed,
                         showTimeWhenControlsHidden: widget.showTimeWhenControlsHidden,
                       );
+
+                return Stack(
+                  children: [
+                    if (widget.danmakuLayer != null) widget.danmakuLayer!,
+                    controls,
+                  ],
+                );
               },
             )
           : const Center(

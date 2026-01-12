@@ -129,18 +129,32 @@ class DanmakuSettings {
   final double fontSize;
   final double opacity;
   final double duration; // 滚动弹幕持续时间（秒）
+  final double scale; // 弹幕缩放
+  final double lineSpacing; // 行间距
+  final double fontWeight; // 字体粗细
+  final double displayArea; // 显示区域 (0.25, 0.5, 0.75, 1.0)
+  final bool preventOverlap; // 防止重叠
+  final bool syncVideoSpeed; // 同步视频速度
   final bool hideScroll;
   final bool hideTop;
   final bool hideBottom;
+  final bool hideColor;
 
   const DanmakuSettings({
     this.enabled = true,
     this.fontSize = 18,
     this.opacity = 1.0,
     this.duration = 8.0,
+    this.scale = 1.0,
+    this.lineSpacing = 1.3,
+    this.fontWeight = 1.0,
+    this.displayArea = 0.5,
+    this.preventOverlap = false,
+    this.syncVideoSpeed = false,
     this.hideScroll = false,
     this.hideTop = false,
     this.hideBottom = false,
+    this.hideColor = false,
   });
 
   DanmakuSettings copyWith({
@@ -148,18 +162,32 @@ class DanmakuSettings {
     double? fontSize,
     double? opacity,
     double? duration,
+    double? scale,
+    double? lineSpacing,
+    double? fontWeight,
+    double? displayArea,
+    bool? preventOverlap,
+    bool? syncVideoSpeed,
     bool? hideScroll,
     bool? hideTop,
     bool? hideBottom,
+    bool? hideColor,
   }) {
     return DanmakuSettings(
       enabled: enabled ?? this.enabled,
       fontSize: fontSize ?? this.fontSize,
       opacity: opacity ?? this.opacity,
       duration: duration ?? this.duration,
+      scale: scale ?? this.scale,
+      lineSpacing: lineSpacing ?? this.lineSpacing,
+      fontWeight: fontWeight ?? this.fontWeight,
+      displayArea: displayArea ?? this.displayArea,
+      preventOverlap: preventOverlap ?? this.preventOverlap,
+      syncVideoSpeed: syncVideoSpeed ?? this.syncVideoSpeed,
       hideScroll: hideScroll ?? this.hideScroll,
       hideTop: hideTop ?? this.hideTop,
       hideBottom: hideBottom ?? this.hideBottom,
+      hideColor: hideColor ?? this.hideColor,
     );
   }
 
@@ -168,9 +196,16 @@ class DanmakuSettings {
         'fontSize': fontSize,
         'opacity': opacity,
         'duration': duration,
+        'scale': scale,
+        'lineSpacing': lineSpacing,
+        'fontWeight': fontWeight,
+        'displayArea': displayArea,
+        'preventOverlap': preventOverlap,
+        'syncVideoSpeed': syncVideoSpeed,
         'hideScroll': hideScroll,
         'hideTop': hideTop,
         'hideBottom': hideBottom,
+        'hideColor': hideColor,
       };
 
   factory DanmakuSettings.fromJson(Map<String, dynamic> json) {
@@ -179,9 +214,16 @@ class DanmakuSettings {
       fontSize: (json['fontSize'] ?? 18).toDouble(),
       opacity: (json['opacity'] ?? 1.0).toDouble(),
       duration: (json['duration'] ?? 8.0).toDouble(),
+      scale: (json['scale'] ?? 1.0).toDouble(),
+      lineSpacing: (json['lineSpacing'] ?? 1.0).toDouble(),
+      fontWeight: (json['fontWeight'] ?? 1.0).toDouble(),
+      displayArea: (json['displayArea'] ?? 1.0).toDouble(),
+      preventOverlap: json['preventOverlap'] ?? false,
+      syncVideoSpeed: json['syncVideoSpeed'] ?? false,
       hideScroll: json['hideScroll'] ?? false,
       hideTop: json['hideTop'] ?? false,
       hideBottom: json['hideBottom'] ?? false,
+      hideColor: json['hideColor'] ?? false,
     );
   }
 }

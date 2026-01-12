@@ -2,6 +2,12 @@
 
 ## 变更记录 (Changelog)
 
+### 2026-01-12 16:55:00
+- 弹幕功能重大更新：重构 `DanmakuSettingsPanel`，支持文字屏蔽按钮、防止重叠和速度同步
+- 修复全屏弹幕消失问题：将弹幕层集成至 `VideoPlayerWidget` 内部
+- 增强 `DanmakuSettings` 模型：新增缩放、行间距、防止重叠等字段
+- 更新 widgets 和 screens 模块文档
+
 ### 2026-01-11 13:45:58
 - 增量更新：新增 `player_settings_panel.dart` 组件
 - 播放器功能增强：支持倍速播放和画面比例调整

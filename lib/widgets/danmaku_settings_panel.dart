@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/danmaku_model.dart';
 import '../services/danmaku_service.dart';
-import '../utils/device_utils.dart';
 
 /// 弹幕设置面板
 class DanmakuSettingsPanel extends StatefulWidget {
@@ -37,29 +36,37 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = widget.theme.brightness == Brightness.dark;
-
+    // 使用深色主题风格，匹配图片
     return Container(
+      width: 320,
       decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1c1c1e) : Colors.white,
+        color: Colors.black.withOpacity(0.85),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+        ),
       ),
       child: Column(
         children: [
           // 标题栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 20, 12, 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
+                const Text(
                   '弹幕设置',
-                  style: widget.theme.textTheme.titleLarge?.copyWith(
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
                   onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
@@ -67,54 +74,111 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
 
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 弹幕开关
-                  _buildSwitchRow('弹幕开关', _settings.enabled, isDarkMode, (v) {
+                  _buildSwitchRow('开启弹幕', _settings.enabled, (v) {
                     _updateSettings(_settings.copyWith(enabled: v));
                   }),
 
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white12, height: 1),
+                  const SizedBox(height: 16),
+
+                  // 显示设置
+                  _buildSectionHeader('显示设置'),
+                  const SizedBox(height: 12),
+                  _buildSliderRow(
+                    '不透明度',
+                    _settings.opacity,
+                    0.1,
+                    1.0,
+                    (v) => _updateSettings(_settings.copyWith(opacity: v)),
+                    valueLabel: '${( _settings.opacity * 100).toInt()}%',
+                  ),
+                  _buildSliderRow(
+                    '弹幕缩放',
+                    _settings.scale,
+                    0.5,
+                    2.0,
+                    (v) => _updateSettings(_settings.copyWith(scale: v)),
+                    valueLabel: '${_settings.scale.toStringAsFixed(1)}x',
+                  ),
+                  _buildSliderRow(
+                    '弹幕速度',
+                    _settings.duration,
+                    3.0,
+                    15.0,
+                    (v) => _updateSettings(_settings.copyWith(duration: v)),
+                    valueLabel: '${(18 - _settings.duration).toStringAsFixed(1)}x',
+                    reverse: true,
+                  ),
+                  _buildSliderRow(
+                    '行间距',
+                    _settings.lineSpacing,
+                    0.5,
+                    4.0, // 增加到 4.0
+                    (v) => _updateSettings(_settings.copyWith(lineSpacing: v)),
+                    valueLabel: '${_settings.lineSpacing.toStringAsFixed(1)}x',
+                  ),
+                  _buildSliderRow(
+                    '字体粗细',
+                    _settings.fontWeight,
+                    1.0,
+                    3.0,
+                    (v) => _updateSettings(_settings.copyWith(fontWeight: v)),
+                    valueLabel: '${_settings.fontWeight.toStringAsFixed(1)}x',
+                  ),
+
                   const SizedBox(height: 24),
 
-                  // 字体大小
-                  _buildSectionTitle('字体大小', isDarkMode),
+                  // 显示区域
+                  _buildSectionHeader('显示区域'),
                   const SizedBox(height: 12),
-                  _buildFontSizeSelector(isDarkMode),
-
-                  const SizedBox(height: 24),
-
-                  // 透明度
-                  _buildSectionTitle('透明度', isDarkMode),
-                  const SizedBox(height: 12),
-                  _buildOpacitySelector(isDarkMode),
-
-                  const SizedBox(height: 24),
-
-                  // 弹幕速度
-                  _buildSectionTitle('弹幕速度', isDarkMode),
-                  const SizedBox(height: 12),
-                  _buildDurationSelector(isDarkMode),
-
-                  const SizedBox(height: 24),
-
-                  // 弹幕类型过滤
-                  _buildSectionTitle('弹幕类型', isDarkMode),
-                  const SizedBox(height: 12),
-                  _buildSwitchRow('隐藏滚动弹幕', _settings.hideScroll, isDarkMode, (v) {
-                    _updateSettings(_settings.copyWith(hideScroll: v));
+                  _buildSliderRow(
+                    '占满屏幕',
+                    _settings.displayArea,
+                    0.25,
+                    1.0,
+                    (v) => _updateSettings(_settings.copyWith(displayArea: v)),
+                    valueLabel: _getDisplayAreaLabel(_settings.displayArea),
+                  ),
+                  
+                  // 功能开关
+                  _buildSwitchRow('防止弹幕重叠', _settings.preventOverlap, (v) {
+                    _updateSettings(_settings.copyWith(preventOverlap: v));
                   }),
-                  const SizedBox(height: 8),
-                  _buildSwitchRow('隐藏顶部弹幕', _settings.hideTop, isDarkMode, (v) {
-                    _updateSettings(_settings.copyWith(hideTop: v));
-                  }),
-                  const SizedBox(height: 8),
-                  _buildSwitchRow('隐藏底部弹幕', _settings.hideBottom, isDarkMode, (v) {
-                    _updateSettings(_settings.copyWith(hideBottom: v));
+                  _buildSwitchRow('同步视频速度', _settings.syncVideoSpeed, (v) {
+                    _updateSettings(_settings.copyWith(syncVideoSpeed: v));
                   }),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
+
+                  // 屏蔽设置
+                  _buildSectionHeader('屏蔽设置'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _buildBlockTextButton('滚动', _settings.hideScroll, (v) {
+                        _updateSettings(_settings.copyWith(hideScroll: v));
+                      }),
+                      _buildBlockTextButton('顶部', _settings.hideTop, (v) {
+                        _updateSettings(_settings.copyWith(hideTop: v));
+                      }),
+                      _buildBlockTextButton('底部', _settings.hideBottom, (v) {
+                        _updateSettings(_settings.copyWith(hideBottom: v));
+                      }),
+                      _buildBlockTextButton('彩色', _settings.hideColor, (v) {
+                        _updateSettings(_settings.copyWith(hideColor: v));
+                      }),
+                    ],
+                  ),
+
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -124,164 +188,124 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     );
   }
 
-  Widget _buildSectionTitle(String title, bool isDarkMode) {
+  Widget _buildSectionHeader(String title) {
     return Text(
       title,
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: isDarkMode ? Colors.white : Colors.black87,
+      style: const TextStyle(
+        color: Colors.white54,
+        fontSize: 13,
       ),
     );
   }
 
-  Widget _buildSwitchRow(String title, bool value, bool isDarkMode, Function(bool) onChanged) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: isDarkMode ? Colors.white : Colors.black87,
+  Widget _buildSwitchRow(String title, bool value, Function(bool) onChanged) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
-        ),
-        Transform.scale(
-          scale: 0.85,
-          child: Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: Colors.green,
-            activeTrackColor: Colors.green.withOpacity(0.3),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFontSizeSelector(bool isDarkMode) {
-    final sizes = [
-      (16.0, '小'),
-      (20.0, '中'),
-      (24.0, '大'),
-    ];
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: sizes.map((item) {
-        final isSelected = (_settings.fontSize - item.$1).abs() < 0.1;
-        return _SettingsItemWithHover(
-          isSelected: isSelected,
-          isDarkMode: isDarkMode,
-          label: item.$2,
-          onTap: () => _updateSettings(_settings.copyWith(fontSize: item.$1)),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildOpacitySelector(bool isDarkMode) {
-    final opacities = [0.5, 0.75, 1.0];
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: opacities.map((opacity) {
-        final isSelected = (_settings.opacity - opacity).abs() < 0.01;
-        return _SettingsItemWithHover(
-          isSelected: isSelected,
-          isDarkMode: isDarkMode,
-          label: '${(opacity * 100).toInt()}%',
-          onTap: () => _updateSettings(_settings.copyWith(opacity: opacity)),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildDurationSelector(bool isDarkMode) {
-    final durations = [
-      (6, '慢'),
-      (8, '中'),
-      (10, '快'),
-    ];
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: durations.map((item) {
-        final isSelected = _settings.duration == item.$1;
-        return _SettingsItemWithHover(
-          isSelected: isSelected,
-          isDarkMode: isDarkMode,
-          label: item.$2,
-          onTap: () => _updateSettings(_settings.copyWith(duration: item.$1.toDouble())),
-        );
-      }).toList(),
-    );
-  }
-}
-
-/// 带 hover 效果的设置项
-class _SettingsItemWithHover extends StatefulWidget {
-  final bool isSelected;
-  final bool isDarkMode;
-  final String label;
-  final VoidCallback onTap;
-
-  const _SettingsItemWithHover({
-    required this.isSelected,
-    required this.isDarkMode,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  State<_SettingsItemWithHover> createState() => _SettingsItemWithHoverState();
-}
-
-class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
-  bool _isHovering = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
-      onEnter: (_) {
-        if (DeviceUtils.isPC()) setState(() => _isHovering = true);
-      },
-      onExit: (_) {
-        if (DeviceUtils.isPC()) setState(() => _isHovering = false);
-      },
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: Container(
-          width: 80,
-          height: 40,
-          decoration: BoxDecoration(
-            color: widget.isSelected
-                ? Colors.green.withOpacity(0.2)
-                : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode ? const Color(0xFF1A3D2E) : const Color(0xFFE8F5E9))
-                    : (widget.isDarkMode ? Colors.grey[800] : Colors.grey[200])),
-            borderRadius: BorderRadius.circular(8),
-            border: widget.isSelected ? Border.all(color: Colors.green, width: 2) : null,
-          ),
-          child: Center(
-            child: Text(
-              widget.label,
-              style: TextStyle(
-                color: widget.isSelected
-                    ? Colors.green
-                    : (widget.isDarkMode ? Colors.white : Colors.black87),
-                fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.normal,
-                fontSize: 14,
+          SizedBox(
+            height: 30,
+            child: Transform.scale(
+              scale: 0.8,
+              child: Switch(
+                value: value,
+                onChanged: onChanged,
+                activeColor: Colors.green,
+                activeTrackColor: Colors.green.withOpacity(0.3),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSliderRow(
+    String label,
+    double value,
+    double min,
+    double max,
+    Function(double) onChanged, {
+    required String valueLabel,
+    bool reverse = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                activeTrackColor: Colors.green,
+                inactiveTrackColor: Colors.white24,
+                thumbColor: Colors.green,
+                overlayColor: Colors.green.withOpacity(0.2),
+              ),
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 45,
+            child: Text(
+              valueLabel,
+              textAlign: TextAlign.right,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockTextButton(String text, bool isSelected, Function(bool) onTap) {
+    return GestureDetector(
+      onTap: () => onTap(!isSelected),
+      child: Container(
+        width: 65,
+        height: 32,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.green.withOpacity(0.2) : Colors.white12,
+          borderRadius: BorderRadius.circular(4),
+          border: isSelected ? Border.all(color: Colors.green, width: 1) : null,
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.green : Colors.white70,
+              fontSize: 13,
             ),
           ),
         ),
       ),
     );
+  }
+
+  String _getDisplayAreaLabel(double value) {
+    if (value >= 1.0) return '占满';
+    if (value <= 0.25) return '1/4';
+    if (value <= 0.5) return '1/2';
+    if (value <= 0.75) return '3/4';
+    return '${(value * 100).toInt()}%';
   }
 }

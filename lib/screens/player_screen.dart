@@ -1239,6 +1239,34 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
             longPressSpeed: _longPressSpeed,
             showTimeWhenControlsHidden: _showCurrentTime,
+            danmakuLayer: _danmakuSettings.enabled
+                ? IgnorePointer(
+                    child: LayoutBuilder(builder: (context, constraints) {
+                      return SizedBox(
+                        height: constraints.maxHeight * _danmakuSettings.displayArea,
+                        child: DanmakuScreen(
+                          key: ValueKey('danmaku_${_currentDanmakuEpisodeId}'),
+                          createdController: (controller) {
+                            _danmakuController = controller;
+                          },
+                          option: DanmakuOption(
+                            fontSize: _danmakuSettings.fontSize * _danmakuSettings.scale,
+                            opacity: _danmakuSettings.opacity,
+                            duration: _danmakuSettings.syncVideoSpeed 
+                                ? (_danmakuSettings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+                                : _danmakuSettings.duration,
+                            hideScroll: _danmakuSettings.hideScroll,
+                            hideTop: _danmakuSettings.hideTop,
+                            hideBottom: _danmakuSettings.hideBottom,
+                            lineHeight: _danmakuSettings.lineSpacing,
+                            fontWeight: (_danmakuSettings.fontWeight * 4).round().clamp(1, 9),
+                            massiveMode: !_danmakuSettings.preventOverlap,
+                          ),
+                        ),
+                      );
+                    }),
+                  )
+                : null,
           ),
         if (_isCasting && _dlnaDevice != null)
           DLNAPlayer(
@@ -1260,25 +1288,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             onControllerCreated: (controller) {
               _dlnaPlayerController = controller;
             },
-          ),
-        // 弹幕层
-        if (!_isCasting && _danmakuSettings.enabled)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DanmakuScreen(
-                createdController: (controller) {
-                  _danmakuController = controller;
-                },
-                option: DanmakuOption(
-                  fontSize: _danmakuSettings.fontSize,
-                  opacity: _danmakuSettings.opacity,
-                  duration: _danmakuSettings.duration,
-                  hideScroll: _danmakuSettings.hideScroll,
-                  hideTop: _danmakuSettings.hideTop,
-                  hideBottom: _danmakuSettings.hideBottom,
-                ),
-              ),
-            ),
           ),
         // 切换播放源/集数时的加载蒙版（只遮挡播放器）
         SwitchLoadingOverlay(
@@ -2567,12 +2576,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                         dialogSetState(() {});
                         // 更新弹幕控制器的设置
                         _danmakuController?.updateOption(DanmakuOption(
-                          fontSize: settings.fontSize,
+                          fontSize: settings.fontSize * settings.scale,
                           opacity: settings.opacity,
-                          duration: settings.duration,
+                          duration: settings.syncVideoSpeed 
+                              ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+                              : settings.duration,
                           hideScroll: settings.hideScroll,
                           hideTop: settings.hideTop,
                           hideBottom: settings.hideBottom,
+                          lineHeight: settings.lineSpacing,
+                          fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
+                          massiveMode: !settings.preventOverlap,
                         ));
                       },
                     );

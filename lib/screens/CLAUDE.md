@@ -156,6 +156,10 @@ Navigator.push(
 
 ## 变更记录 (Changelog)
 
+### 2026-01-12 16:55:00
+- 修复 `player_screen.dart` 全屏弹幕显示：通过 `danmakuLayer` 将弹幕注入 `VideoPlayerWidget`。
+- 实现弹幕与视频播放速度同步逻辑。
+
 ### 2026-01-11
 - 初始化模块文档
 - 识别 11 个页面组件
