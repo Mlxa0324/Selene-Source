@@ -220,7 +220,8 @@ class LiveChannel {
 
 ## 变更记录 (Changelog)
 
-### 2026-01-12 16:55:00
+### 2026-01-12 17:35:00
+- 优化 `DanmakuSearchAnime` 模型：增加 `year` 字段及其自动从标题提取逻辑，支持结果按年份排序。
 - 增强 `DanmakuSettings` 模型：新增 `scale`, `lineSpacing`, `fontWeight`, `displayArea`, `preventOverlap`, `syncVideoSpeed` 等字段，支持更精细的弹幕控制。
 
 ### 2026-01-11

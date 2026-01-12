@@ -71,6 +71,7 @@ class DanmakuSearchAnime {
   final String type;
   final String typeDescription;
   final List<DanmakuSearchEpisode> episodes;
+  final int year; // 新增年份字段用于排序
 
   DanmakuSearchAnime({
     required this.animeId,
@@ -78,14 +79,27 @@ class DanmakuSearchAnime {
     required this.type,
     required this.typeDescription,
     required this.episodes,
+    this.year = 0,
   });
 
   factory DanmakuSearchAnime.fromJson(Map<String, dynamic> json) {
+    final title = json['animeTitle'] ?? '';
+    // 尝试从标题中提取年份，如 "作品名(2024)"
+    int extractedYear = json['year'] ?? 0;
+    if (extractedYear == 0 && title.isNotEmpty) {
+      final regExp = RegExp(r'\((\d{4})\)');
+      final match = regExp.firstMatch(title);
+      if (match != null) {
+        extractedYear = int.tryParse(match.group(1) ?? '0') ?? 0;
+      }
+    }
+
     return DanmakuSearchAnime(
       animeId: json['animeId'] ?? 0,
-      animeTitle: json['animeTitle'] ?? '',
+      animeTitle: title,
       type: json['type'] ?? '',
       typeDescription: json['typeDescription'] ?? '',
+      year: extractedYear,
       episodes: (json['episodes'] as List<dynamic>?)
               ?.map((e) => DanmakuSearchEpisode.fromJson(e))
               .toList() ??

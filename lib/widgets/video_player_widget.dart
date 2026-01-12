@@ -22,6 +22,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool isLastEpisode;
   final Function(dynamic)? onCastStarted;
   final String? videoTitle;
+  final String? videoYear;
   final int? currentEpisodeIndex;
   final int? totalEpisodes;
   final String? sourceName;
@@ -52,6 +53,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.isLastEpisode = false,
     this.onCastStarted,
     this.videoTitle,
+    this.videoYear,
     this.currentEpisodeIndex,
     this.totalEpisodes,
     this.sourceName,
@@ -531,6 +533,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         isLoadingVideo: _isLoadingVideo,
                         onCastStarted: widget.onCastStarted,
                         videoTitle: widget.videoTitle,
+                        videoYear: widget.videoYear,
                         currentEpisodeIndex: widget.currentEpisodeIndex,
                         totalEpisodes: widget.totalEpisodes,
                         sourceName: widget.sourceName,
@@ -556,6 +559,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         isLoadingVideo: _isLoadingVideo,
                         onCastStarted: widget.onCastStarted,
                         videoTitle: widget.videoTitle,
+                        videoYear: widget.videoYear,
                         currentEpisodeIndex: widget.currentEpisodeIndex,
                         totalEpisodes: widget.totalEpisodes,
                         sourceName: widget.sourceName,
@@ -569,14 +573,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         onSourcesButtonPressed: widget.onSourcesButtonPressed,
                         onSettingsButtonPressed: widget.onSettingsButtonPressed,
                         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-                        onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+                        onDanmakuMatchButtonPressed:
+                            widget.onDanmakuMatchButtonPressed,
                         longPressSpeed: widget.longPressSpeed,
-                        showTimeWhenControlsHidden: widget.showTimeWhenControlsHidden,
+                        showTimeWhenControlsHidden:
+                            widget.showTimeWhenControlsHidden,
                       );
 
                 return Stack(
                   children: [
-                    if (widget.danmakuLayer != null) 
+                    if (widget.danmakuLayer != null)
                       RepaintBoundary(child: widget.danmakuLayer!),
                     controls,
                   ],

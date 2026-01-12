@@ -36,15 +36,29 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    // 使用深色主题风格，匹配图片
+    final isDarkMode = widget.theme.brightness == Brightness.dark;
+    final backgroundColor = isDarkMode 
+        ? Colors.black.withOpacity(0.85) 
+        : Colors.white.withOpacity(0.95);
+    final textColor = isDarkMode ? Colors.white : Colors.black87;
+    final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
+    final dividerColor = isDarkMode ? Colors.white12 : Colors.black12;
+
     return Container(
       width: 320,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.85),
+        color: backgroundColor,
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(16),
           bottomLeft: Radius.circular(16),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            spreadRadius: 1,
+          )
+        ],
       ),
       child: Column(
         children: [
@@ -54,16 +68,16 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   '弹幕设置',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: textColor,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  icon: Icon(Icons.close, color: textColor, size: 20),
                   onPressed: () => Navigator.pop(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -79,22 +93,24 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 弹幕开关
-                  _buildSwitchRow('开启弹幕', _settings.enabled, (v) {
+                  _buildSwitchRow('开启弹幕', _settings.enabled, textColor, (v) {
                     _updateSettings(_settings.copyWith(enabled: v));
                   }),
 
                   const SizedBox(height: 16),
-                  const Divider(color: Colors.white12, height: 1),
+                  Divider(color: dividerColor, height: 1),
                   const SizedBox(height: 16),
 
                   // 显示设置
-                  _buildSectionHeader('显示设置'),
+                  _buildSectionHeader('显示设置', subTextColor),
                   const SizedBox(height: 12),
                   _buildSliderRow(
                     '不透明度',
                     _settings.opacity,
                     0.1,
                     1.0,
+                    textColor,
+                    subTextColor,
                     (v) => _updateSettings(_settings.copyWith(opacity: v)),
                     valueLabel: '${( _settings.opacity * 100).toInt()}%',
                   ),
@@ -103,6 +119,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     _settings.scale,
                     0.5,
                     2.0,
+                    textColor,
+                    subTextColor,
                     (v) => _updateSettings(_settings.copyWith(scale: v)),
                     valueLabel: '${_settings.scale.toStringAsFixed(1)}x',
                   ),
@@ -111,6 +129,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     _settings.duration,
                     3.0,
                     15.0,
+                    textColor,
+                    subTextColor,
                     (v) => _updateSettings(_settings.copyWith(duration: v)),
                     valueLabel: '${(18 - _settings.duration).toStringAsFixed(1)}x',
                     reverse: true,
@@ -119,7 +139,9 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     '行间距',
                     _settings.lineSpacing,
                     0.5,
-                    4.0, // 增加到 4.0
+                    4.0,
+                    textColor,
+                    subTextColor,
                     (v) => _updateSettings(_settings.copyWith(lineSpacing: v)),
                     valueLabel: '${_settings.lineSpacing.toStringAsFixed(1)}x',
                   ),
@@ -128,6 +150,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     _settings.fontWeight,
                     1.0,
                     3.0,
+                    textColor,
+                    subTextColor,
                     (v) => _updateSettings(_settings.copyWith(fontWeight: v)),
                     valueLabel: '${_settings.fontWeight.toStringAsFixed(1)}x',
                   ),
@@ -135,44 +159,46 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                   const SizedBox(height: 24),
 
                   // 显示区域
-                  _buildSectionHeader('显示区域'),
+                  _buildSectionHeader('显示区域', subTextColor),
                   const SizedBox(height: 12),
                   _buildSliderRow(
                     '占满屏幕',
                     _settings.displayArea,
                     0.25,
                     1.0,
+                    textColor,
+                    subTextColor,
                     (v) => _updateSettings(_settings.copyWith(displayArea: v)),
                     valueLabel: _getDisplayAreaLabel(_settings.displayArea),
                   ),
                   
                   // 功能开关
-                  _buildSwitchRow('防止弹幕重叠', _settings.preventOverlap, (v) {
+                  _buildSwitchRow('防止弹幕重叠', _settings.preventOverlap, textColor, (v) {
                     _updateSettings(_settings.copyWith(preventOverlap: v));
                   }),
-                  _buildSwitchRow('同步视频速度', _settings.syncVideoSpeed, (v) {
+                  _buildSwitchRow('同步视频速度', _settings.syncVideoSpeed, textColor, (v) {
                     _updateSettings(_settings.copyWith(syncVideoSpeed: v));
                   }),
 
                   const SizedBox(height: 24),
 
                   // 屏蔽设置
-                  _buildSectionHeader('屏蔽设置'),
+                  _buildSectionHeader('屏蔽设置', subTextColor),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _buildBlockTextButton('滚动', _settings.hideScroll, (v) {
+                      _buildBlockTextButton('滚动', _settings.hideScroll, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideScroll: v));
                       }),
-                      _buildBlockTextButton('顶部', _settings.hideTop, (v) {
+                      _buildBlockTextButton('顶部', _settings.hideTop, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideTop: v));
                       }),
-                      _buildBlockTextButton('底部', _settings.hideBottom, (v) {
+                      _buildBlockTextButton('底部', _settings.hideBottom, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideBottom: v));
                       }),
-                      _buildBlockTextButton('彩色', _settings.hideColor, (v) {
+                      _buildBlockTextButton('彩色', _settings.hideColor, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideColor: v));
                       }),
                     ],
@@ -188,17 +214,17 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
+  Widget _buildSectionHeader(String title, Color color) {
     return Text(
       title,
-      style: const TextStyle(
-        color: Colors.white54,
+      style: TextStyle(
+        color: color,
         fontSize: 13,
       ),
     );
   }
 
-  Widget _buildSwitchRow(String title, bool value, Function(bool) onChanged) {
+  Widget _buildSwitchRow(String title, bool value, Color textColor, Function(bool) onChanged) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -206,7 +232,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
         children: [
           Text(
             title,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
+            style: TextStyle(color: textColor, fontSize: 14),
           ),
           SizedBox(
             height: 30,
@@ -230,6 +256,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     double value,
     double min,
     double max,
+    Color textColor,
+    Color subTextColor,
     Function(double) onChanged, {
     required String valueLabel,
     bool reverse = false,
@@ -242,7 +270,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
             width: 70,
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(color: textColor, fontSize: 14),
             ),
           ),
           Expanded(
@@ -252,7 +280,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                 activeTrackColor: Colors.green,
-                inactiveTrackColor: Colors.white24,
+                inactiveTrackColor: textColor.withOpacity(0.1),
                 thumbColor: Colors.green,
                 overlayColor: Colors.green.withOpacity(0.2),
               ),
@@ -269,7 +297,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
             child: Text(
               valueLabel,
               textAlign: TextAlign.right,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: subTextColor, fontSize: 13),
             ),
           ),
         ],
@@ -277,14 +305,16 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     );
   }
 
-  Widget _buildBlockTextButton(String text, bool isSelected, Function(bool) onTap) {
+  Widget _buildBlockTextButton(String text, bool isSelected, bool isDarkMode, Function(bool) onTap) {
     return GestureDetector(
       onTap: () => onTap(!isSelected),
       child: Container(
         width: 65,
         height: 32,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.green.withOpacity(0.2) : Colors.white12,
+          color: isSelected 
+              ? Colors.green.withOpacity(0.2) 
+              : (isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05)),
           borderRadius: BorderRadius.circular(4),
           border: isSelected ? Border.all(color: Colors.green, width: 1) : null,
         ),
@@ -292,7 +322,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
           child: Text(
             text,
             style: TextStyle(
-              color: isSelected ? Colors.green : Colors.white70,
+              color: isSelected ? Colors.green : (isDarkMode ? Colors.white70 : Colors.black54),
               fontSize: 13,
             ),
           ),

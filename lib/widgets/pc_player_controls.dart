@@ -60,6 +60,7 @@ class PCPlayerControls extends StatefulWidget {
   final bool isLoadingVideo;
   final Function(dynamic)? onCastStarted;
   final String? videoTitle;
+  final String? videoYear;
   final int? currentEpisodeIndex;
   final int? totalEpisodes;
   final String? sourceName;
@@ -83,6 +84,7 @@ class PCPlayerControls extends StatefulWidget {
     this.isLoadingVideo = false,
     this.onCastStarted,
     this.videoTitle,
+    this.videoYear,
     this.currentEpisodeIndex,
     this.totalEpisodes,
     this.sourceName,

@@ -21,6 +21,7 @@ class MobilePlayerControls extends StatefulWidget {
   final bool isLoadingVideo;
   final Function(dynamic)? onCastStarted;
   final String? videoTitle;
+  final String? videoYear;
   final int? currentEpisodeIndex;
   final int? totalEpisodes;
   final String? sourceName;
@@ -52,6 +53,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.isLoadingVideo = false,
     this.onCastStarted,
     this.videoTitle,
+    this.videoYear,
     this.currentEpisodeIndex,
     this.totalEpisodes,
     this.sourceName,
@@ -230,7 +232,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onLongPressStart(LongPressStartDetails details) {
-    if (widget.live || !_isPlaying) return;  // 锁定状态下也允许长按倍速
+    if (widget.live || !_isPlaying) return; // 锁定状态下也允许长按倍速
     setState(() {
       _isLongPressing = true;
       _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
@@ -239,7 +241,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
-    if (!_isLongPressing || widget.live) return;  // 锁定状态下也允许
+    if (!_isLongPressing || widget.live) return; // 锁定状态下也允许
     widget.onSetSpeed(_originalPlaybackSpeed);
     setState(() => _isLongPressing = false);
   }
@@ -523,7 +525,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildCenterPlayPause(),
         _buildProgressBar(),
         _buildBottomControls(),
-        if (_isLongPressing) _buildLongPressIndicator(),  // 锁定状态下也显示倍速指示器
+        if (_isLongPressing) _buildLongPressIndicator(), // 锁定状态下也显示倍速指示器
         if (_isFullscreen && _showBrightnessIndicator && !_isLocked)
           _buildBrightnessIndicator(),
         if (_isFullscreen) _buildRightOverlay(),
@@ -671,12 +673,15 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     );
   }
 
-    Widget _buildCurrentPlayTime() {
+  Widget _buildCurrentPlayTime() {
     return Positioned(
       left: 20,
       bottom: 15,
       child: AnimatedOpacity(
-        opacity: ((!_controlsVisible && widget.showTimeWhenControlsHidden) && !_isLocked) ? 1.0 : 0.0,
+        opacity: ((!_controlsVisible && widget.showTimeWhenControlsHidden) &&
+                !_isLocked)
+            ? 1.0
+            : 0.0,
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           child: Center(
@@ -765,14 +770,18 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildVideoInfo() {
     final title = widget.videoTitle ?? '';
-    final episodeText = (widget.currentEpisodeIndex != null && widget.totalEpisodes != null && widget.totalEpisodes! > 1)
+    final episodeText = (widget.currentEpisodeIndex != null &&
+            widget.totalEpisodes != null &&
+            widget.totalEpisodes! > 1)
         ? '第${widget.currentEpisodeIndex! + 1}集'
         : '';
+    final year = widget.videoYear ?? '';
     final source = widget.sourceName ?? '';
 
     final parts = <String>[];
     if (title.isNotEmpty) parts.add(title);
     if (episodeText.isNotEmpty) parts.add(episodeText);
+    if (year.isNotEmpty && year != 'unknown') parts.add(year);
     if (source.isNotEmpty) parts.add(source);
 
     if (parts.isEmpty) return const SizedBox.shrink();
@@ -886,7 +895,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     );
   }
 
-
   String currentPlayTime() {
     final position = _dragPosition ?? _position;
     final duration = _duration;
@@ -895,7 +903,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildBottomControls() {
     final iconSize = _isFullscreen ? 28.0 : 24.0;
-    final iconPadding = EdgeInsets.only(left: _isFullscreen ? 10 : 8, right: _isFullscreen ? 10 : 8);
+    final iconPadding = EdgeInsets.only(
+        left: _isFullscreen ? 10 : 8, right: _isFullscreen ? 10 : 8);
 
     return Positioned(
       bottom: _isFullscreen ? 4.0 : -6.0,
@@ -1042,7 +1051,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                       ),
                     ),
                   ),
-                  if (!widget.live)
+                if (!widget.live)
                   GestureDetector(
                     onTap: () async {
                       _onUserInteraction();
@@ -1071,7 +1080,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                       child: Icon(
                         Icons.picture_in_picture_alt,
                         color: Colors.white,
-                        size:  _isFullscreen ? 26.0 : 22.0,
+                        size: _isFullscreen ? 26.0 : 22.0,
                       ),
                     ),
                   ),
@@ -1107,16 +1116,20 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       top: 10,
       left: 0,
       right: 0,
-      child: Center(  // 添加 Center 使整个指示器居中
+      child: Center(
+        // 添加 Center 使整个指示器居中
         child: IntrinsicWidth(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),  // 添加垂直 padding
+            padding: const EdgeInsets.symmetric(
+                horizontal: 8, vertical: 4), // 添加垂直 padding
             decoration: BoxDecoration(
-              color: widget.showTimeWhenControlsHidden ? Colors.black.withOpacity(0.3) : Colors.black.withOpacity(0.7),  // 修正为 withOpacity
+              color: widget.showTimeWhenControlsHidden
+                  ? Colors.black.withOpacity(0.3)
+                  : Colors.black.withOpacity(0.7), // 修正为 withOpacity
               borderRadius: BorderRadius.circular(5),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,  // 确保 Row 只占用所需空间
+              mainAxisSize: MainAxisSize.min, // 确保 Row 只占用所需空间
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
@@ -1124,7 +1137,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.normal,
                   ),
                 ),
                 const SizedBox(width: 6),

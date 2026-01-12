@@ -208,7 +208,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // 匹配弹幕源
       final matchResult = await DanmakuService().matchDanmaku(fileName);
-      if (matchResult == null || !matchResult.isMatched || matchResult.matches.isEmpty) {
+      if (matchResult == null ||
+          !matchResult.isMatched ||
+          matchResult.matches.isEmpty) {
         debugPrint('弹幕匹配失败或无匹配结果');
         if (mounted && _danmakuSettings.enabled) {
           _showToast('自动匹配弹幕失败，可尝试手动匹配');
@@ -252,10 +254,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 根据播放进度发送弹幕
   void _sendDanmakuByPosition(Duration position) {
-    if (_danmakuController == null || _danmakuList.isEmpty || !_danmakuSettings.enabled) return;
+    if (_danmakuController == null ||
+        _danmakuList.isEmpty ||
+        !_danmakuSettings.enabled) return;
 
     final currentTime = position.inMilliseconds / 1000.0;
-    
+
     // 节流：每 150ms 检查一次逻辑，极大减少循环次数
     if ((currentTime - _lastDanmakuCheckTime).abs() < 0.15) return;
     _lastDanmakuCheckTime = currentTime;
@@ -269,7 +273,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           _danmakuIndex++;
           continue;
         }
-        
+
         _danmakuController!.addDanmaku(
           DanmakuService.convertToDanmakuItem(comment),
         );
@@ -1232,6 +1236,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 currentEpisodeIndex >= currentDetail!.episodes.length - 1,
             onCastStarted: _onCastStarted,
             videoTitle: videoTitle,
+            videoYear: videoYear,
             currentEpisodeIndex: currentEpisodeIndex,
             totalEpisodes: totalEpisodes,
             sourceName: currentDetail?.sourceName ?? currentSource,
@@ -1266,23 +1271,29 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ? IgnorePointer(
                     child: LayoutBuilder(builder: (context, constraints) {
                       return SizedBox(
-                        height: constraints.maxHeight * _danmakuSettings.displayArea,
+                        height: constraints.maxHeight *
+                            _danmakuSettings.displayArea,
                         child: DanmakuScreen(
                           key: ValueKey('danmaku_${_currentDanmakuEpisodeId}'),
                           createdController: (controller) {
                             _danmakuController = controller;
                           },
                           option: DanmakuOption(
-                            fontSize: _danmakuSettings.fontSize * _danmakuSettings.scale,
+                            fontSize: _danmakuSettings.fontSize *
+                                _danmakuSettings.scale,
                             opacity: _danmakuSettings.opacity,
-                            duration: _danmakuSettings.syncVideoSpeed 
-                                ? (_danmakuSettings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+                            duration: _danmakuSettings.syncVideoSpeed
+                                ? (_danmakuSettings.duration /
+                                    (_videoPlayerController?.playbackSpeed ??
+                                        1.0))
                                 : _danmakuSettings.duration,
                             hideScroll: _danmakuSettings.hideScroll,
                             hideTop: _danmakuSettings.hideTop,
                             hideBottom: _danmakuSettings.hideBottom,
                             lineHeight: _danmakuSettings.lineSpacing,
-                            fontWeight: (_danmakuSettings.fontWeight * 4).round().clamp(1, 9),
+                            fontWeight: (_danmakuSettings.fontWeight * 4)
+                                .round()
+                                .clamp(1, 9),
                             massiveMode: !_danmakuSettings.preventOverlap,
                           ),
                         ),
@@ -2526,6 +2537,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 在全屏模式下显示弹幕匹配面板（使用传入的 context）
   void _showDanmakuMatchPanelInFullscreen(BuildContext fullscreenContext) {
+    final theme = Theme.of(fullscreenContext);
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
 
@@ -2555,6 +2567,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   curve: Curves.easeInOut,
                 )),
                 child: DanmakuMatchPanel(
+                  theme: theme,
                   initialQuery: videoTitle,
                   onEpisodeSelected: (episodeId) {
                     Navigator.pop(dialogContext);
@@ -2674,14 +2687,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                         _danmakuController?.updateOption(DanmakuOption(
                           fontSize: settings.fontSize * settings.scale,
                           opacity: settings.opacity,
-                          duration: settings.syncVideoSpeed 
-                              ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+                          duration: settings.syncVideoSpeed
+                              ? (settings.duration /
+                                  (_videoPlayerController?.playbackSpeed ??
+                                      1.0))
                               : settings.duration,
                           hideScroll: settings.hideScroll,
                           hideTop: settings.hideTop,
                           hideBottom: settings.hideBottom,
                           lineHeight: settings.lineSpacing,
-                          fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
+                          fontWeight:
+                              (settings.fontWeight * 4).round().clamp(1, 9),
                           massiveMode: !settings.preventOverlap,
                         ));
                       },
