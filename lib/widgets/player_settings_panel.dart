@@ -34,27 +34,39 @@ class PlayerSettingsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    final backgroundColor = isDarkMode 
+        ? Colors.black.withOpacity(0.85) 
+        : Colors.white.withOpacity(0.95);
+    final textColor = isDarkMode ? Colors.white : Colors.black87;
+    final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
 
     return Container(
+      width: 320,
       decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1c1c1e) : Colors.white,
+        color: backgroundColor,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+        ),
       ),
       child: Column(
         children: [
           // 标题栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '设置',
-                  style: theme.textTheme.titleLarge?.copyWith(
+                  '播放设置',
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: Icon(Icons.close, color: textColor, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -63,28 +75,28 @@ class PlayerSettingsPanel extends StatelessWidget {
 
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 画面设置
-                  _buildSectionTitle('画面', isDarkMode),
-                  const SizedBox(height: 12),
-                  _buildFitTypeSelector(isDarkMode, context),
-
-                  const SizedBox(height: 24),
-
-                  // 长按倍速
-                  _buildSectionTitle('长按倍速', isDarkMode),
-                  const SizedBox(height: 12),
-                  _buildLongPressSpeedSelector(isDarkMode, context),
-
-                  const SizedBox(height: 24),
-
-                  // 播放时间显示开关
-                  _buildTimeDisplaySwitch(isDarkMode, context),
+                  _buildSectionHeader('画面比例', subTextColor),
+                  const SizedBox(height: 10),
+                  _buildFitTypeSelector(isDarkMode),
 
                   const SizedBox(height: 20),
+
+                  // 长按倍速
+                  _buildSectionHeader('长按倍速', subTextColor),
+                  const SizedBox(height: 10),
+                  _buildLongPressSpeedSelector(isDarkMode),
+
+                  const SizedBox(height: 20),
+
+                  // 播放时间显示开关
+                  _buildTimeDisplaySwitch(isDarkMode, textColor, subTextColor),
+
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -94,18 +106,17 @@ class PlayerSettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionTitle(String title, bool isDarkMode) {
+  Widget _buildSectionHeader(String title, Color color) {
     return Text(
       title,
       style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-        color: isDarkMode ? Colors.white : Colors.black87,
+        color: color,
+        fontSize: 13,
       ),
     );
   }
 
-  Widget _buildFitTypeSelector(bool isDarkMode, BuildContext context) {
+  Widget _buildFitTypeSelector(bool isDarkMode) {
     final fitTypes = [
       (VideoFitType.contain, '适应'),
       (VideoFitType.fill, '填充'),
@@ -115,43 +126,39 @@ class PlayerSettingsPanel extends StatelessWidget {
     ];
 
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: 8,
+      runSpacing: 8,
       children: fitTypes.map((item) {
         final isSelected = currentFitType == item.$1;
         return _SettingsItemWithHover(
           isSelected: isSelected,
           isDarkMode: isDarkMode,
           label: item.$2,
-          onTap: () {
-            onFitTypeChanged(item.$1);
-          },
+          onTap: () => onFitTypeChanged(item.$1),
         );
       }).toList(),
     );
   }
 
-  Widget _buildLongPressSpeedSelector(bool isDarkMode, BuildContext context) {
+  Widget _buildLongPressSpeedSelector(bool isDarkMode) {
     final speeds = [2.0, 2.5, 3.0];
 
     return Wrap(
-      spacing: 12,
-      runSpacing: 12,
+      spacing: 8,
+      runSpacing: 8,
       children: speeds.map((speed) {
         final isSelected = (currentLongPressSpeed - speed).abs() < 0.01;
         return _SettingsItemWithHover(
           isSelected: isSelected,
           isDarkMode: isDarkMode,
           label: '${speed}x',
-          onTap: () {
-            onLongPressSpeedChanged(speed);
-          },
+          onTap: () => onLongPressSpeedChanged(speed),
         );
       }).toList(),
     );
   }
 
-  Widget _buildTimeDisplaySwitch(bool isDarkMode, BuildContext context) {
+  Widget _buildTimeDisplaySwitch(bool isDarkMode, Color textColor, Color subTextColor) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -162,31 +169,31 @@ class PlayerSettingsPanel extends StatelessWidget {
               Text(
                 '显示播放时间',
                 style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isDarkMode ? Colors.white : Colors.black87,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: textColor,
                 ),
               ),
-              const SizedBox(height: 4),
               Text(
-                '控制按钮隐藏时仍显示播放时间',
+                '隐藏控制栏时显示时间',
                 style: TextStyle(
-                  fontSize: 12,
-                  color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                  fontSize: 11,
+                  color: subTextColor,
                 ),
               ),
             ],
           ),
         ),
-        // 播放时间显示开关
-        // 按钮有点大，我想小一点
-        Transform.scale(
-          scale: 0.85, // 调整这个值来改变大小（0.7 表示原始大小的70%）
-          child: Switch(
-            value: showTimeWhenControlsHidden,
-            onChanged: onShowTimeChanged,
-            activeColor: Colors.green,
-            activeTrackColor: Colors.green.withOpacity(0.3),
+        SizedBox(
+          height: 30,
+          child: Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: showTimeWhenControlsHidden,
+              onChanged: onShowTimeChanged,
+              activeColor: Colors.green,
+              activeTrackColor: Colors.green.withOpacity(0.3),
+            ),
           ),
         )
       ],
@@ -194,7 +201,6 @@ class PlayerSettingsPanel extends StatelessWidget {
   }
 }
 
-/// 带 hover 效果的设置项（PC 端专用）
 class _SettingsItemWithHover extends StatefulWidget {
   final bool isSelected;
   final bool isDarkMode;
@@ -220,32 +226,22 @@ class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
     return MouseRegion(
       cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
       onEnter: (_) {
-        if (DeviceUtils.isPC()) {
-          setState(() => _isHovering = true);
-        }
+        if (DeviceUtils.isPC()) setState(() => _isHovering = true);
       },
       onExit: (_) {
-        if (DeviceUtils.isPC()) {
-          setState(() => _isHovering = false);
-        }
+        if (DeviceUtils.isPC()) setState(() => _isHovering = false);
       },
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          width: 80,
-          height: 40,
+          width: 65, // 缩小宽度
+          height: 32, // 缩小高度
           decoration: BoxDecoration(
             color: widget.isSelected
-                ? Colors.green.withValues(alpha: 0.2)
-                : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode
-                        ? const Color(0xFF1A3D2E)
-                        : const Color(0xFFE8F5E9))
-                    : (widget.isDarkMode ? Colors.grey[800] : Colors.grey[200])),
-            borderRadius: BorderRadius.circular(8),
-            border: widget.isSelected
-                ? Border.all(color: Colors.green, width: 2)
-                : null,
+                ? Colors.green.withOpacity(0.2)
+                : (widget.isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05)),
+            borderRadius: BorderRadius.circular(6),
+            border: widget.isSelected ? Border.all(color: Colors.green, width: 1.5) : null,
           ),
           child: Center(
             child: Text(
@@ -253,9 +249,9 @@ class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
               style: TextStyle(
                 color: widget.isSelected
                     ? Colors.green
-                    : (widget.isDarkMode ? Colors.white : Colors.black87),
-                fontWeight: widget.isSelected ? FontWeight.w600 : FontWeight.normal,
-                fontSize: 14,
+                    : (widget.isDarkMode ? Colors.white70 : Colors.black87),
+                fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
               ),
             ),
           ),

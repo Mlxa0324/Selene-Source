@@ -58,13 +58,13 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
         : widget.currentEpisodeIndex;
 
     final crossAxisCount = widget.crossAxisCount;
-    const mainAxisSpacing = 12.0;
+    const mainAxisSpacing = 8.0;
     final childAspectRatio = widget.crossAxisCount == 4 
         ? 2.2 
         : (widget.crossAxisCount == 3 ? 2.0 : 3.0);
 
     final itemWidth =
-        (gridBox.size.width - (crossAxisCount - 1) * 12) / crossAxisCount;
+        (gridBox.size.width - (crossAxisCount - 1) * 8) / crossAxisCount;
     final itemHeight = itemWidth / childAspectRatio;
 
     final row = (targetIndex / crossAxisCount).floor();
@@ -80,27 +80,37 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
+    final backgroundColor = isDarkMode 
+        ? Colors.black.withOpacity(0.85) 
+        : Colors.white.withOpacity(0.95);
+    final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
       decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1c1c1e) : Colors.white,
+        color: backgroundColor,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+        ),
       ),
       child: Column(
         children: [
-          // 标题和关闭按钮
+          // 标题栏 - 紧凑化
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   '选集 (${widget.episodes.length})',
-                  style: widget.theme.textTheme.titleLarge?.copyWith(
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: Icon(Icons.close, color: textColor, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -112,11 +122,11 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
             child: GridView.builder(
               key: _gridKey,
               controller: _scrollController,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: widget.crossAxisCount,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
                 childAspectRatio: widget.crossAxisCount == 4 
                     ? 2.2 
                     : (widget.crossAxisCount == 3 ? 2.0 : 3.0),
@@ -153,7 +163,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
 }
 
 
-/// 带 hover 效果的选集面板项（PC 端专用）
+/// 带 hover 效果的选集面板项
 class _EpisodePanelItemWithHover extends StatefulWidget {
   final bool isCurrentEpisode;
   final bool isDarkMode;
@@ -195,20 +205,20 @@ class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> 
         child: Container(
           decoration: BoxDecoration(
             color: widget.isCurrentEpisode
-                ? Colors.green.withValues(alpha: 0.2)
+                ? Colors.green.withOpacity(0.2)
                 : (_isHovering && DeviceUtils.isPC()
                     ? (widget.isDarkMode 
-                        ? const Color(0xFF1A3D2E)  // 深色模式下的浅绿色
-                        : const Color(0xFFE8F5E9))  // 浅色模式下的浅绿色
-                    : (widget.isDarkMode ? Colors.grey[800] : Colors.grey[200])),
+                        ? const Color(0xFF1A3D2E)
+                        : const Color(0xFFE8F5E9))
+                    : (widget.isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05))),
             borderRadius: BorderRadius.circular(8),
             border: widget.isCurrentEpisode
-                ? Border.all(color: Colors.green, width: 2)
+                ? Border.all(color: Colors.green, width: 1.5)
                 : null,
           ),
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
                 widget.episodeTitle,
                 textAlign: TextAlign.center,
@@ -218,10 +228,10 @@ class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> 
                   color: widget.isCurrentEpisode
                       ? Colors.green
                       : (widget.isDarkMode
-                          ? Colors.white
-                          : Colors.black),
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
+                          ? Colors.white70
+                          : Colors.black87),
+                  fontWeight: widget.isCurrentEpisode ? FontWeight.bold : FontWeight.normal,
+                  fontSize: 13,
                 ),
               ),
             ),

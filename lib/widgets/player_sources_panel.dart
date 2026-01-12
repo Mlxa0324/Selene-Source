@@ -89,17 +89,15 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
 
     if (currentIndex == -1) return;
 
-    // 计算每个项目的高度（包括间距）
-    const itemHeight = 100.0; // 每个卡片的高度
-    const itemSpacing = 12.0; // 卡片间距
+    // 计算每个项目的高度（根据紧凑型 UI 调整）
+    const itemHeight = 84.0; 
+    const itemSpacing = 8.0; 
     const totalItemHeight = itemHeight + itemSpacing;
 
-    // 计算目标位置
     final targetOffset = currentIndex * totalItemHeight;
 
-    // 滚动到目标位置
     _scrollController.animateTo(
-      targetOffset,
+      targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
@@ -126,47 +124,51 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
+    final backgroundColor = isDarkMode 
+        ? Colors.black.withOpacity(0.85) 
+        : Colors.white.withOpacity(0.95);
+    final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
       decoration: BoxDecoration(
-        color: isDarkMode ? const Color(0xFF1c1c1e) : Colors.white,
+        color: backgroundColor,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          bottomLeft: Radius.circular(16),
+        ),
       ),
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.fromLTRB(20, 16, 8, 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   '换源 (${widget.sources.length})',
-                  style: widget.theme.textTheme.titleLarge?.copyWith(
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Row(
                   children: [
-                    MouseRegion(
-                      cursor: (!_isRefreshing)
-                          ? SystemMouseCursors.click
-                          : MouseCursor.defer,
-                      child: IconButton(
-                        icon: RotationTransition(
-                          turns: _rotationController,
-                          child: Icon(
-                            Icons.refresh,
-                            color: _isRefreshing
-                                ? Colors.green
-                                : (isDarkMode
-                                    ? Colors.grey[400]
-                                    : Colors.grey[600]),
-                          ),
+                    IconButton(
+                      icon: RotationTransition(
+                        turns: _rotationController,
+                        child: Icon(
+                          Icons.refresh,
+                          size: 20,
+                          color: _isRefreshing
+                              ? Colors.green
+                              : textColor.withOpacity(0.6),
                         ),
-                        onPressed: _isRefreshing ? null : _handleRefresh,
                       ),
+                      onPressed: _isRefreshing ? null : _handleRefresh,
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: Icon(Icons.close, color: textColor, size: 20),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -177,7 +179,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               itemCount: widget.sources.length,
               itemBuilder: (context, index) {
                 final source = widget.sources[index];
@@ -203,7 +205,6 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
   }
 }
 
-/// 带 hover 效果的换源面板项（PC 端专用）
 class _SourcePanelItemWithHover extends StatefulWidget {
   final bool isCurrent;
   final bool isDarkMode;
@@ -231,6 +232,8 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
 
   @override
   Widget build(BuildContext context) {
+    final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
+    
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrent)
           ? SystemMouseCursors.click
@@ -248,163 +251,116 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: 8),
+          height: 84, // 紧凑高度
           decoration: BoxDecoration(
             color: widget.isCurrent
-                ? (widget.isDarkMode ? Colors.grey[850] : Colors.grey[200])
+                ? Colors.green.withOpacity(0.1)
                 : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode
-                        ? const Color(0xFF1A3D2E) // 深色模式下的浅绿色
-                        : const Color(0xFFE8F5E9)) // 浅色模式下的浅绿色
-                    : (widget.isDarkMode
-                        ? Colors.grey[850]
-                        : Colors.grey[200])),
-            borderRadius: BorderRadius.circular(12),
+                    ? (widget.isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05))
+                    : (widget.isDarkMode ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03))),
+            borderRadius: BorderRadius.circular(10),
             border: widget.isCurrent
-                ? Border.all(color: Colors.green, width: 2)
-                : null,
+                ? Border.all(color: Colors.green, width: 1.5)
+                : Border.all(color: Colors.transparent, width: 1.5),
           ),
           child: Padding(
             padding: const EdgeInsets.all(8.0),
-            child: SizedBox(
-              height: 100,
-              child: Stack(
-                children: [
-                  Row(
-                    children: [
-                      // Left side: Cover
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: AspectRatio(
-                          aspectRatio: 2 / 3,
-                          child: CachedNetworkImage(
-                            imageUrl: widget.source.poster,
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              decoration: BoxDecoration(
-                                color: widget.isDarkMode
-                                    ? const Color(0xFF333333)
-                                    : Colors.grey[300],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              decoration: BoxDecoration(
-                                color: widget.isDarkMode
-                                    ? const Color(0xFF333333)
-                                    : Colors.grey[300],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                Icons.movie,
-                                color: widget.isDarkMode
-                                    ? const Color(0xFF666666)
-                                    : Colors.grey,
-                                size: 40,
-                              ),
-                            ),
-                            fadeInDuration: const Duration(milliseconds: 200),
-                            fadeOutDuration: const Duration(milliseconds: 100),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Right side: Info
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Title
-                            Text(
-                              widget.source.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: widget.theme.textTheme.bodyLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            // Source Name
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 3),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                    color: widget.isDarkMode
-                                        ? Colors.grey[600]!
-                                        : Colors.grey[400]!),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                widget.source.sourceName,
-                                style: widget.theme.textTheme.bodyMedium,
-                              ),
-                            ),
-                            const Spacer(),
-                            // Bottom row
-                            Row(
-                              children: [
-                                if (widget.speedInfo != null) ...[
-                                  if (widget.speedInfo!.loadSpeed.isNotEmpty &&
-                                      !widget.speedInfo!.loadSpeed
-                                          .toLowerCase()
-                                          .contains('超时'))
-                                    Text(
-                                      widget.speedInfo!.loadSpeed,
-                                      style: widget.theme.textTheme.bodyMedium
-                                          ?.copyWith(color: Colors.green),
-                                    ),
-                                  if (widget.speedInfo!.loadSpeed.isNotEmpty &&
-                                      !widget.speedInfo!.loadSpeed
-                                          .toLowerCase()
-                                          .contains('超时') &&
-                                      widget.speedInfo!.pingTime.isNotEmpty &&
-                                      !widget.speedInfo!.pingTime
-                                          .toLowerCase()
-                                          .contains('超时'))
-                                    const SizedBox(width: 8),
-                                  if (widget.speedInfo!.pingTime.isNotEmpty &&
-                                      !widget.speedInfo!.pingTime
-                                          .toLowerCase()
-                                          .contains('超时'))
-                                    Text(
-                                      widget.speedInfo!.pingTime,
-                                      style: widget.theme.textTheme.bodyMedium
-                                          ?.copyWith(color: Colors.orange),
-                                    ),
-                                ],
-                                const Spacer(),
-                                if (widget.source.episodes.length > 1)
-                                  Text(
-                                    '${widget.source.episodes.length} 集',
-                                    style: widget.theme.textTheme.bodyMedium,
-                                  ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Resolution tag in top right
-                  if (widget.speedInfo != null &&
-                      widget.speedInfo!.quality.isNotEmpty &&
-                      widget.speedInfo!.quality.toLowerCase() != '未知')
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: Text(
-                        widget.speedInfo!.quality,
-                        style: widget.theme.textTheme.bodyMedium?.copyWith(
-                          color: widget.isDarkMode
-                              ? Colors.grey[400]
-                              : Colors.grey[600],
-                          fontWeight: FontWeight.w500,
-                        ),
+            child: Row(
+              children: [
+                // 封面图
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: CachedNetworkImage(
+                      imageUrl: widget.source.poster,
+                      fit: BoxFit.cover,
+                      errorWidget: (context, url, error) => Container(
+                        color: widget.isDarkMode ? Colors.white10 : Colors.black12,
+                        child: const Icon(Icons.movie, size: 20, color: Colors.grey),
                       ),
                     ),
-                ],
-              ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // 信息区
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        widget.source.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            widget.source.sourceName,
+                            style: TextStyle(
+                              color: textColor.withOpacity(0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                          if (widget.source.episodes.length > 1) ...[
+                            Text(' • ', style: TextStyle(color: textColor.withOpacity(0.3))),
+                            Text(
+                              '${widget.source.episodes.length}集',
+                              style: TextStyle(
+                                color: textColor.withOpacity(0.6),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      // 测速信息
+                      if (widget.speedInfo != null)
+                        Row(
+                          children: [
+                            if (widget.speedInfo!.loadSpeed.isNotEmpty &&
+                                !widget.speedInfo!.loadSpeed.contains('超时'))
+                              Text(
+                                widget.speedInfo!.loadSpeed,
+                                style: const TextStyle(color: Colors.green, fontSize: 11),
+                              ),
+                            const SizedBox(width: 8),
+                            if (widget.speedInfo!.pingTime.isNotEmpty &&
+                                !widget.speedInfo!.pingTime.contains('超时'))
+                              Text(
+                                widget.speedInfo!.pingTime,
+                                style: const TextStyle(color: Colors.orange, fontSize: 11),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                // 清晰度标识
+                if (widget.speedInfo != null &&
+                    widget.speedInfo!.quality.isNotEmpty &&
+                    widget.speedInfo!.quality != '未知')
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      widget.speedInfo!.quality,
+                      style: const TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
