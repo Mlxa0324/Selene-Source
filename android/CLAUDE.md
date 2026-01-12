@@ -53,7 +53,7 @@ class MainActivity : FlutterActivity()
 - 最低 SDK：由 Flutter 配置决定
 - 目标 SDK：由 Flutter 配置决定
 - 编译 SDK：由 Flutter 配置决定
-- NDK 版本：29.0.14033849
+- NDK 版本：29.0.14206865
 - Kotlin 版本：1.9+
 - Java 版本：11
 
