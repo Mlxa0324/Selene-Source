@@ -64,6 +64,81 @@ class DanmakuMatchItem {
   }
 }
 
+/// 弹幕搜索动画结果
+class DanmakuSearchAnime {
+  final int animeId;
+  final String animeTitle;
+  final String type;
+  final String typeDescription;
+  final List<DanmakuSearchEpisode> episodes;
+
+  DanmakuSearchAnime({
+    required this.animeId,
+    required this.animeTitle,
+    required this.type,
+    required this.typeDescription,
+    required this.episodes,
+  });
+
+  factory DanmakuSearchAnime.fromJson(Map<String, dynamic> json) {
+    return DanmakuSearchAnime(
+      animeId: json['animeId'] ?? 0,
+      animeTitle: json['animeTitle'] ?? '',
+      type: json['type'] ?? '',
+      typeDescription: json['typeDescription'] ?? '',
+      episodes: (json['episodes'] as List<dynamic>?)
+              ?.map((e) => DanmakuSearchEpisode.fromJson(e))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+/// 弹幕搜索剧集结果
+class DanmakuSearchEpisode {
+  final int episodeId;
+  final String episodeTitle;
+
+  DanmakuSearchEpisode({
+    required this.episodeId,
+    required this.episodeTitle,
+  });
+
+  factory DanmakuSearchEpisode.fromJson(Map<String, dynamic> json) {
+    return DanmakuSearchEpisode(
+      episodeId: json['episodeId'] ?? 0,
+      episodeTitle: json['episodeTitle'] ?? '',
+    );
+  }
+}
+
+/// 弹幕搜索响应
+class DanmakuSearchResult {
+  final int errorCode;
+  final bool success;
+  final String errorMessage;
+  final List<DanmakuSearchAnime> animes;
+
+  DanmakuSearchResult({
+    required this.errorCode,
+    required this.success,
+    required this.errorMessage,
+    required this.animes,
+  });
+
+  factory DanmakuSearchResult.fromJson(Map<String, dynamic> json) {
+    return DanmakuSearchResult(
+      errorCode: json['errorCode'] ?? 0,
+      success: json['success'] ?? false,
+      errorMessage: json['errorMessage'] ?? '',
+      animes: (json['animes'] as List<dynamic>?)
+              ?.map((e) => DanmakuSearchAnime.fromJson(e))
+              .toList() ??
+          [],
+    );
+  }
+}
+
 /// 弹幕列表响应
 class DanmakuListResult {
   final int count;

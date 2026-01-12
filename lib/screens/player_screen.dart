@@ -23,6 +23,7 @@ import '../widgets/player_episodes_panel.dart';
 import '../widgets/player_sources_panel.dart';
 import '../widgets/player_settings_panel.dart';
 import '../widgets/danmaku_settings_panel.dart';
+import '../widgets/danmaku_match_panel.dart';
 import '../widgets/windows_title_bar.dart';
 import '../services/danmaku_service.dart';
 import '../models/danmaku_model.dart';
@@ -209,6 +210,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       final matchResult = await DanmakuService().matchDanmaku(fileName);
       if (matchResult == null || !matchResult.isMatched || matchResult.matches.isEmpty) {
         debugPrint('弹幕匹配失败或无匹配结果');
+        if (mounted && _danmakuSettings.enabled) {
+          _showToast('自动匹配弹幕失败，可尝试手动匹配');
+        }
         setState(() => _isDanmakuLoading = false);
         return;
       }
@@ -231,6 +235,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           _currentDanmakuEpisodeId = episodeId;
           _isDanmakuLoading = false;
         });
+        if (comments.isEmpty && _danmakuSettings.enabled) {
+          _showToast('匹配成功，但该剧集暂无弹幕');
+        }
         debugPrint('弹幕加载成功: ${comments.length} 条');
       }
     } catch (e) {
@@ -241,16 +248,28 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  double _lastDanmakuCheckTime = -1;
+
   /// 根据播放进度发送弹幕
   void _sendDanmakuByPosition(Duration position) {
     if (_danmakuController == null || _danmakuList.isEmpty || !_danmakuSettings.enabled) return;
 
     final currentTime = position.inMilliseconds / 1000.0;
+    
+    // 节流：每 150ms 检查一次逻辑，极大减少循环次数
+    if ((currentTime - _lastDanmakuCheckTime).abs() < 0.15) return;
+    _lastDanmakuCheckTime = currentTime;
 
     // 发送当前时间点之前的所有未发送弹幕
     while (_danmakuIndex < _danmakuList.length) {
       final comment = _danmakuList[_danmakuIndex];
       if (comment.time <= currentTime) {
+        // 如果开启了彩色屏蔽且弹幕不是白色/浅色，则跳过
+        if (_danmakuSettings.hideColor && comment.color != 16777215) {
+          _danmakuIndex++;
+          continue;
+        }
+        
         _danmakuController!.addDanmaku(
           DanmakuService.convertToDanmakuItem(comment),
         );
@@ -1236,6 +1255,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             onDanmakuButtonPressed: (fullscreenContext) {
               // 在全屏模式下，使用传入的 context 显示弹幕设置面板
               _showDanmakuPanelInFullscreen(fullscreenContext);
+            },
+            onDanmakuMatchButtonPressed: (fullscreenContext) {
+              // 在全屏模式下，使用传入的 context 显示弹幕手动匹配面板
+              _showDanmakuMatchPanelInFullscreen(fullscreenContext);
             },
             longPressSpeed: _longPressSpeed,
             showTimeWhenControlsHidden: _showCurrentTime,
@@ -2471,6 +2494,79 @@ class _PlayerScreenState extends State<PlayerScreen>
     ).then((_) {
       setState(() {});
     });
+  }
+
+  /// 手动加载指定 episodeId 的弹幕
+  Future<void> _loadDanmakuById(int episodeId) async {
+    setState(() => _isDanmakuLoading = true);
+    try {
+      final comments = await DanmakuService().getDanmakuList(episodeId);
+      if (mounted) {
+        setState(() {
+          _danmakuList = comments;
+          _danmakuIndex = 0;
+          _currentDanmakuEpisodeId = episodeId;
+          _isDanmakuLoading = false;
+        });
+        _danmakuController?.clear();
+        if (comments.isEmpty) {
+          _showToast('手动匹配成功，但该剧集暂无弹幕');
+        } else {
+          _showToast('已加载 ${comments.length} 条弹幕');
+        }
+        debugPrint('手动加载弹幕成功: ${comments.length} 条');
+      }
+    } catch (e) {
+      debugPrint('手动加载弹幕失败: $e');
+      if (mounted) {
+        setState(() => _isDanmakuLoading = false);
+      }
+    }
+  }
+
+  /// 在全屏模式下显示弹幕匹配面板（使用传入的 context）
+  void _showDanmakuMatchPanelInFullscreen(BuildContext fullscreenContext) {
+    final screenHeight = MediaQuery.of(fullscreenContext).size.height;
+    final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+
+    final panelWidth = screenWidth * 0.4;
+    final panelHeight = screenHeight;
+
+    showGeneralDialog(
+      context: fullscreenContext,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.3),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Align(
+          alignment: Alignment.centerRight,
+          child: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: panelWidth,
+              height: panelHeight,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(1, 0),
+                  end: Offset.zero,
+                ).animate(CurvedAnimation(
+                  parent: animation,
+                  curve: Curves.easeInOut,
+                )),
+                child: DanmakuMatchPanel(
+                  initialQuery: videoTitle,
+                  onEpisodeSelected: (episodeId) {
+                    Navigator.pop(dialogContext);
+                    _loadDanmakuById(episodeId);
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// 在全屏模式下显示设置面板（使用传入的 context）

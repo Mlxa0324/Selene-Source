@@ -78,6 +78,26 @@ class DanmakuService {
     return null;
   }
 
+  /// 搜索弹幕剧集
+  Future<DanmakuSearchResult?> searchEpisodes(String animeName) async {
+    final baseApi = await getBaseApi();
+    if (baseApi == null || baseApi.isEmpty) return null;
+
+    try {
+      final response = await _dio.get(
+        '${baseApi}api/v2/search/episodes',
+        queryParameters: {'anime': animeName},
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        return DanmakuSearchResult.fromJson(response.data);
+      }
+    } catch (e) {
+      debugPrint('搜索弹幕失败: $e');
+    }
+    return null;
+  }
+
   /// 获取弹幕列表
   Future<List<DanmakuComment>> getDanmakuList(int episodeId) async {
     final baseApi = await getBaseApi();

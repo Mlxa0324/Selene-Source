@@ -33,6 +33,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final void Function(BuildContext context)? onSourcesButtonPressed;
   final void Function(BuildContext context)? onSettingsButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
+  final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final double longPressSpeed;
   final bool showTimeWhenControlsHidden;
   final Widget? danmakuLayer;
@@ -62,6 +63,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onSourcesButtonPressed,
     this.onSettingsButtonPressed,
     this.onDanmakuButtonPressed,
+    this.onDanmakuMatchButtonPressed,
     this.longPressSpeed = 2.0,
     this.showTimeWhenControlsHidden = true,
     this.danmakuLayer,
@@ -567,13 +569,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         onSourcesButtonPressed: widget.onSourcesButtonPressed,
                         onSettingsButtonPressed: widget.onSettingsButtonPressed,
                         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+                        onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
                         longPressSpeed: widget.longPressSpeed,
                         showTimeWhenControlsHidden: widget.showTimeWhenControlsHidden,
                       );
 
                 return Stack(
                   children: [
-                    if (widget.danmakuLayer != null) widget.danmakuLayer!,
+                    if (widget.danmakuLayer != null) 
+                      RepaintBoundary(child: widget.danmakuLayer!),
                     controls,
                   ],
                 );
