@@ -143,6 +143,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showPlaybackTime = true;
   ProgressDisplayMode _progressMode = ProgressDisplayMode.time;
   bool _showSystemTime = true; // 是否在右下角显示系统时间
+  int _skipIntroDuration = 0;
+  int _skipOutroDuration = 0;
 
   // 弹幕相关状态
   DanmakuController? _danmakuController;
@@ -178,6 +180,20 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.addObserver(this);
     // 加载弹幕设置
     _loadDanmakuSettings();
+    // 加载跳过设置
+    _loadSkipSettings();
+  }
+
+  /// 加载跳过设置
+  Future<void> _loadSkipSettings() async {
+    final intro = await UserDataService.getSkipIntroDuration();
+    final outro = await UserDataService.getSkipOutroDuration();
+    if (mounted) {
+      setState(() {
+        _skipIntroDuration = intro;
+        _skipOutroDuration = outro;
+      });
+    }
   }
 
   /// 加载弹幕设置
@@ -898,9 +914,30 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onVideoProgressUpdate() {
     // 检查并保存进度（基于时间间隔）
     _checkAndSaveProgress();
-    // 根据播放进度发送弹幕
+
     final position = _videoPlayerController?.currentPosition;
+    final duration = _videoPlayerController?.duration;
+
     if (position != null) {
+      // 自动跳过片头
+      if (_skipIntroDuration > 0 && 
+          position.inSeconds < _skipIntroDuration && 
+          !_isRefreshing) { // 避免刷新时跳转
+        _videoPlayerController?.seekTo(Duration(seconds: _skipIntroDuration));
+        _showToast('已自动跳过片头');
+      }
+
+      // 自动跳过片尾
+      if (_skipOutroDuration > 0 && duration != null) {
+        final remainingSeconds = duration.inSeconds - position.inSeconds;
+        if (remainingSeconds <= _skipOutroDuration && remainingSeconds > 0) {
+          if (currentEpisodeIndex < totalEpisodes - 1) {
+            _showToast('已自动跳过片尾，播放下一集');
+            _onNextEpisode();
+          }
+        }
+      }
+
       _sendDanmakuByPosition(position);
     }
   }
@@ -2633,6 +2670,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       currentLongPressSpeed: _longPressSpeed,
                       progressMode: _progressMode,
                       showSystemTime: _showSystemTime,
+                      skipIntro: _skipIntroDuration,
+                      skipOutro: _skipOutroDuration,
                       onFitTypeChanged: (type) {
                         setState(() => _currentFitType = type);
                         dialogSetState(() {});
@@ -2649,6 +2688,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onShowSystemTimeChanged: (show) {
                         setState(() => _showSystemTime = show);
                         dialogSetState(() {});
+                      },
+                      onSkipIntroChanged: (v) {
+                        setState(() => _skipIntroDuration = v);
+                        dialogSetState(() {});
+                        UserDataService.saveSkipIntroDuration(v);
+                      },
+                      onSkipOutroChanged: (v) {
+                        setState(() => _skipOutroDuration = v);
+                        dialogSetState(() {});
+                        UserDataService.saveSkipOutroDuration(v);
                       },
                     );
                   },

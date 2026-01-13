@@ -11,9 +11,35 @@ class UserDataService {
   static const String _preferSpeedTestKey = 'prefer_speed_test';
   static const String _localSearchKey = 'local_search';
   static const String _isLocalModeKey = 'is_local_mode';
+  static const String _skipIntroKey = 'skip_intro_duration';
+  static const String _skipOutroKey = 'skip_outro_duration';
   
   // 内存缓存
   static bool? _isLocalModeCache;
+
+  // 保存跳过片头时长
+  static Future<void> saveSkipIntroDuration(int duration) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_skipIntroKey, duration);
+  }
+
+  // 获取跳过片头时长（默认 0）
+  static Future<int> getSkipIntroDuration() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_skipIntroKey) ?? 0;
+  }
+
+  // 保存跳过片尾时长
+  static Future<void> saveSkipOutroDuration(int duration) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_skipOutroKey, duration);
+  }
+
+  // 获取跳过片尾时长（默认 0）
+  static Future<int> getSkipOutroDuration() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_skipOutroKey) ?? 0;
+  }
 
   // 保存用户登录信息
   static Future<void> saveUserData({

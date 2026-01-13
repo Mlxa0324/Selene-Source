@@ -89,12 +89,13 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
-    final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(0.9) 
+    final backgroundColor = isDarkMode
+        ? Colors.black.withOpacity(0.9)
         : Colors.white.withOpacity(0.98);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white38 : Colors.black38;
-    final inputColor = isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05);
+    final inputColor =
+        isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05);
 
     return Container(
       width: 360,
@@ -140,7 +141,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 ),
                 // 关闭按钮
                 IconButton(
-                  icon: Icon(Icons.close, color: textColor.withOpacity(0.7), size: 20),
+                  icon: Icon(Icons.close,
+                      color: textColor.withOpacity(0.7), size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -159,20 +161,24 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                   decoration: BoxDecoration(
                     color: inputColor,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: textColor.withOpacity(0.05), width: 1),
+                    border: Border.all(
+                        color: textColor.withOpacity(0.05), width: 1),
                   ),
                   child: TextField(
                     controller: _searchController,
                     style: TextStyle(color: textColor, fontSize: 14),
+                    textAlignVertical: TextAlignVertical.center, // 强制垂直居中
                     decoration: InputDecoration(
                       hintText: '输入作品名称搜索',
                       hintStyle: TextStyle(color: subTextColor),
-                      prefixIcon: Icon(Icons.search, color: subTextColor, size: 18),
+                      prefixIcon:
+                          Icon(Icons.search, color: subTextColor, size: 18),
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      contentPadding: EdgeInsets.zero, // 移除多余填充
                       suffixIcon: IconButton(
-                        icon: const Icon(Icons.send, color: Colors.green, size: 18),
+                        icon: const Icon(Icons.send,
+                            color: Colors.green, size: 18),
                         onPressed: _onSearch,
                       ),
                     ),
@@ -184,21 +190,28 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 if (_isLoading)
                   const Padding(
                     padding: EdgeInsets.only(top: 40),
-                    child: Center(child: CircularProgressIndicator(color: Colors.green, strokeWidth: 2)),
+                    child: Center(
+                        child: CircularProgressIndicator(
+                            color: Colors.green, strokeWidth: 2)),
                   )
                 else if (_errorMessage != null)
-                  Center(child: Padding(
+                  Center(
+                      child: Padding(
                     padding: const EdgeInsets.only(top: 40),
-                    child: Text(_errorMessage!, style: TextStyle(color: textColor.withOpacity(0.5))),
+                    child: Text(_errorMessage!,
+                        style: TextStyle(color: textColor.withOpacity(0.5))),
                   ))
                 else if (_searchResults.isEmpty)
-                  Center(child: Padding(
+                  Center(
+                      child: Padding(
                     padding: const EdgeInsets.only(top: 40),
-                    child: Text('未找到相关弹幕', style: TextStyle(color: subTextColor)),
+                    child:
+                        Text('未找到相关弹幕', style: TextStyle(color: subTextColor)),
                   ))
                 else
-                  ..._searchResults.map((anime) => _buildAnimeItem(anime, isDarkMode, textColor, subTextColor)),
-                
+                  ..._searchResults.map((anime) => _buildAnimeItem(
+                      anime, isDarkMode, textColor, subTextColor)),
+
                 const SizedBox(height: 40),
               ],
             ),
@@ -208,7 +221,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     );
   }
 
-  Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode, Color textColor, Color subTextColor) {
+  Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
+      Color textColor, Color subTextColor) {
     return Theme(
       data: Theme.of(context).copyWith(
         dividerColor: Colors.transparent,
@@ -224,7 +238,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           title: Text(
             anime.animeTitle,
-            style: TextStyle(color: textColor, fontSize: 14, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: textColor, fontSize: 14, fontWeight: FontWeight.w600),
           ),
           subtitle: Text(
             '${anime.typeDescription} • ${anime.episodes.length}个结果',
@@ -233,7 +248,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           iconColor: textColor.withOpacity(0.5),
           collapsedIconColor: textColor.withOpacity(0.5),
           childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-          children: anime.episodes.map((ep) => _buildEpisodeItem(ep, textColor)).toList(),
+          children: anime.episodes
+              .map((ep) => _buildEpisodeItem(ep, textColor))
+              .toList(),
         ),
       ),
     );
@@ -249,7 +266,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: textColor.withOpacity(0.05), width: 0.5)),
+            border: Border(
+                bottom:
+                    BorderSide(color: textColor.withOpacity(0.05), width: 0.5)),
           ),
           child: Text(
             episode.episodeTitle,
