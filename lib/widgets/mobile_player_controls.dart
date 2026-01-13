@@ -173,10 +173,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       subscription.cancel();
     }
     _subscriptions.clear();
-    
+
     // 移除系统监听
     VolumeController.instance.removeListener();
-    
+
     _hideTimer?.cancel();
     _volumeHideTimer?.cancel();
     _brightnessHideTimer?.cancel();
@@ -780,33 +780,37 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           ignoring: !_controlsVisible || _isLocked,
-          child: Row(
-            mainAxisSize: _isFullscreen ? MainAxisSize.max : MainAxisSize.min,
-            children: [
-              GestureDetector(
-                onTap: () {
-                  _onUserInteraction();
-                  if (_isFullscreen) {
-                    _exitFullscreen();
-                  } else {
-                    widget.onBackPressed?.call();
-                  }
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  child: Icon(
-                    Icons.arrow_back,
-                    color: Colors.white,
-                    size: _isFullscreen ? 24 : 20,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: _isFullscreen ? MainAxisSize.max : MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    _onUserInteraction();
+                    if (_isFullscreen) {
+                      _exitFullscreen();
+                    } else {
+                      widget.onBackPressed?.call();
+                    }
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.arrow_back,
+                      color: Colors.white,
+                      size: _isFullscreen ? 24 : 20,
+                    ),
                   ),
                 ),
-              ),
-              if (_isFullscreen) ...[
-                const SizedBox(width: 8),
-                Expanded(child: _buildVideoInfo()),
+                if (_isFullscreen) ...[
+                  const SizedBox(width: 8),
+                  _buildVideoInfo(),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -829,15 +833,20 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
     if (parts.isEmpty) return const SizedBox.shrink();
 
-    return Text(
-      parts.join(' · '),
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 15,
-        fontWeight: FontWeight.w500,
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.maybeOf(context)?.size.width ?? 300,
       ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
+      child: Text(
+        parts.join(' · '),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 
@@ -944,210 +953,230 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return '${_formatDuration(position)} / ${_formatDuration(duration)}';
   }
 
-  Widget _buildBottomControls() {
-    final iconSize = _isFullscreen ? 28.0 : 24.0;
-    final iconPadding = EdgeInsets.only(
-        left: _isFullscreen ? 10 : 8, right: _isFullscreen ? 10 : 8);
-
-    return Positioned(
-      bottom: _isFullscreen ? 4.0 : -6.0,
-      left: 0,
-      right: 0,
-      child: AnimatedOpacity(
-        opacity: (_controlsVisible && !_isLocked) ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 200),
-        child: IgnorePointer(
-          ignoring: !_controlsVisible || _isLocked,
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: _isFullscreen ? 16.0 : 8.0,
-              right: _isFullscreen ? 16.0 : 8.0,
-              bottom: _isFullscreen ? 8.0 : 8.0,
-            ),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: _togglePlayPause,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
-                    child: Icon(
-                      _isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                      size: iconSize,
-                    ),
-                  ),
-                ),
-                if (!widget.isLastEpisode && !widget.live)
-                  GestureDetector(
-                    onTap: () {
-                      _onUserInteraction();
-                      widget.onNextEpisode?.call();
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.skip_next,
-                        color: Colors.white,
-                        size: iconSize,
-                      ),
-                    ),
-                  ),
-                if (!widget.live)
-                  Expanded(
+    Widget _buildBottomControls() {
+      final iconSize = _isFullscreen ? 28.0 : 24.0;
+      final iconPadding = EdgeInsets.only(
+          left: _isFullscreen ? 10 : 8, right: _isFullscreen ? 10 : 8);
+  
+      return Positioned(
+        bottom: _isFullscreen ? 4.0 : -6.0,
+        left: 0,
+        right: 0,
+        child: AnimatedOpacity(
+          opacity: (_controlsVisible && !_isLocked) ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: IgnorePointer(
+            ignoring: !_controlsVisible || _isLocked,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final screenWidth =
+                    MediaQuery.maybeOf(context)?.size.width ?? constraints.maxWidth;
+                return FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: _isFullscreen
+                        ? (screenWidth < 750 ? 750 : screenWidth)
+                        : screenWidth,
                     child: Padding(
-                      padding: iconPadding,
-                      child: Text(
-                        currentPlayTime(),
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 14),
+                      padding: EdgeInsets.only(
+                        left: _isFullscreen ? 16.0 : 8.0,
+                        right: _isFullscreen ? 16.0 : 8.0,
+                        bottom: _isFullscreen ? 8.0 : 8.0,
                       ),
-                    ),
-                  ),
-                if (widget.live) const Spacer(),
-                // 手动匹配弹幕按钮（仅在横屏时显示）
-                if (_isFullscreen && widget.onDanmakuMatchButtonPressed != null)
-                  GestureDetector(
-                    onTap: () {
-                      _onUserInteraction();
-                      widget.onDanmakuMatchButtonPressed?.call(context);
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.search,
-                        color: Colors.white,
-                        size: iconSize,
-                      ),
-                    ),
-                  ),
-                // 弹幕设置按钮（仅在横屏时显示）
-                if (_isFullscreen && widget.onDanmakuButtonPressed != null)
-                  GestureDetector(
-                    onTap: () {
-                      _onUserInteraction();
-                      widget.onDanmakuButtonPressed?.call(context);
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.subtitles,
-                        color: Colors.white,
-                        size: iconSize,
-                      ),
-                    ),
-                  ),
-                // 选集按钮（仅在横屏且集数大于1时显示）
-                if (_isFullscreen &&
-                    widget.totalEpisodes != null &&
-                    widget.totalEpisodes! > 1 &&
-                    widget.onEpisodesButtonPressed != null)
-                  GestureDetector(
-                    onTap: () {
-                      _onUserInteraction();
-                      widget.onEpisodesButtonPressed?.call(context);
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.list,
-                        color: Colors.white,
-                        size: _isFullscreen ? 32.0 : 24.0,
-                      ),
-                    ),
-                  ),
-                // 换源按钮（仅在横屏时显示）
-                if (_isFullscreen && widget.onSourcesButtonPressed != null)
-                  GestureDetector(
-                    onTap: () {
-                      _onUserInteraction();
-                      widget.onSourcesButtonPressed?.call(context);
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.sync_alt,
-                        color: Colors.white,
-                        size: iconSize,
-                      ),
-                    ),
-                  ),
-                // 设置按钮（仅在横屏时显示）
-                if (_isFullscreen && widget.onSettingsButtonPressed != null)
-                  GestureDetector(
-                    onTap: () {
-                      _onUserInteraction();
-                      widget.onSettingsButtonPressed?.call(context);
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.settings,
-                        color: Colors.white,
-                        size: iconSize,
-                      ),
-                    ),
-                  ),
-                if (!widget.live)
-                  GestureDetector(
-                    onTap: () async {
-                      _onUserInteraction();
-                      await _showSpeedDialog();
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.speed,
-                        color: Colors.white,
-                        size: _isFullscreen ? 30.0 : 24.0,
-                      ),
-                    ),
-                  ),
-                if (Platform.isAndroid)
-                  GestureDetector(
-                    onTap: () async {
-                      print('PIP button clicked!');
-                      _onUserInteraction();
-                      await _enterPipMode();
-                    },
-                    behavior: HitTestBehavior.opaque,
-                    child: Container(
-                      padding: iconPadding,
-                      child: Icon(
-                        Icons.picture_in_picture_alt,
-                        color: Colors.white,
-                        size: _isFullscreen ? 26.0 : 22.0,
-                      ),
-                    ),
-                  ),
-                GestureDetector(
-                  onTap: () {
-                    _onUserInteraction();
-                    if (_isFullscreen) {
-                      _exitFullscreen();
-                    } else {
-                      _enterFullscreen();
-                    }
-                  },
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    padding: iconPadding,
-                    child: Icon(
-                      _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                      color: Colors.white,
-                      size: _isFullscreen ? 32.0 : 26.0,
+                      child: Row(
+                        children: [
+                          GestureDetector(
+                            onTap: _togglePlayPause,
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
+                              child: Icon(
+                                _isPlaying ? Icons.pause : Icons.play_arrow,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),                        if (!widget.isLastEpisode && !widget.live)
+                          GestureDetector(
+                            onTap: () {
+                              _onUserInteraction();
+                              widget.onNextEpisode?.call();
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.skip_next,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),
+                        if (!widget.live)
+                          Expanded(
+                            child: Padding(
+                              padding: iconPadding,
+                              child: Text(
+                                currentPlayTime(),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 14),
+                              ),
+                            ),
+                          ),
+                        if (widget.live) const Spacer(),
+                        // 手动匹配弹幕按钮（仅在横屏时显示）
+                        if (_isFullscreen &&
+                            widget.onDanmakuMatchButtonPressed != null)
+                          GestureDetector(
+                            onTap: () {
+                              _onUserInteraction();
+                              widget.onDanmakuMatchButtonPressed?.call(context);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.search,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),
+                        // 弹幕设置按钮（仅在横屏时显示）
+                        if (_isFullscreen &&
+                            widget.onDanmakuButtonPressed != null)
+                          GestureDetector(
+                            onTap: () {
+                              _onUserInteraction();
+                              widget.onDanmakuButtonPressed?.call(context);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.subtitles,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),
+                        // 选集按钮（仅在横屏且集数大于1时显示）
+                        if (_isFullscreen &&
+                            widget.totalEpisodes != null &&
+                            widget.totalEpisodes! > 1 &&
+                            widget.onEpisodesButtonPressed != null)
+                          GestureDetector(
+                            onTap: () {
+                              _onUserInteraction();
+                              widget.onEpisodesButtonPressed?.call(context);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.list,
+                                color: Colors.white,
+                                size: _isFullscreen ? 32.0 : 24.0,
+                              ),
+                            ),
+                          ),
+                        // 换源按钮（仅在横屏时显示）
+                        if (_isFullscreen &&
+                            widget.onSourcesButtonPressed != null)
+                          GestureDetector(
+                            onTap: () {
+                              _onUserInteraction();
+                              widget.onSourcesButtonPressed?.call(context);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.sync_alt,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),
+                        // 设置按钮（仅在横屏时显示）
+                        if (_isFullscreen &&
+                            widget.onSettingsButtonPressed != null)
+                          GestureDetector(
+                            onTap: () {
+                              _onUserInteraction();
+                              widget.onSettingsButtonPressed?.call(context);
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.settings,
+                                color: Colors.white,
+                                size: iconSize,
+                              ),
+                            ),
+                          ),
+                        if (!widget.live)
+                          GestureDetector(
+                            onTap: () async {
+                              _onUserInteraction();
+                              await _showSpeedDialog();
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.speed,
+                                color: Colors.white,
+                                size: _isFullscreen ? 30.0 : 24.0,
+                              ),
+                            ),
+                          ),
+                        if (Platform.isAndroid)
+                          GestureDetector(
+                            onTap: () async {
+                              print('PIP button clicked!');
+                              _onUserInteraction();
+                              await _enterPipMode();
+                            },
+                            behavior: HitTestBehavior.opaque,
+                            child: Container(
+                              padding: iconPadding,
+                              child: Icon(
+                                Icons.picture_in_picture_alt,
+                                color: Colors.white,
+                                size: _isFullscreen ? 26.0 : 22.0,
+                              ),
+                            ),
+                          ),
+                        GestureDetector(
+                          onTap: () {
+                            _onUserInteraction();
+                            if (_isFullscreen) {
+                              _exitFullscreen();
+                            } else {
+                              _enterFullscreen();
+                            }
+                          },
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            padding: iconPadding,
+                            child: Icon(
+                              _isFullscreen
+                                  ? Icons.fullscreen_exit
+                                  : Icons.fullscreen,
+                              color: Colors.white,
+                              size: _isFullscreen ? 32.0 : 26.0,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),
