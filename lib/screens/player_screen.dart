@@ -2700,27 +2700,29 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     
-    // 类似于选集面板的逻辑
-    final panelWidth = _isTablet ? (_isPortraitTablet ? screenWidth : screenWidth * 0.35) : screenWidth;
+    // 统一使用全屏侧边面板的宽度逻辑 (40% 屏幕宽度)
+    final panelWidth = screenWidth * 0.4;
+    final statusBarHeight = MediaQuery.of(context).padding.top;
     
-    if (_isTablet) {
+    // 如果是平板或横屏，使用侧边滑出逻辑
+    if (_isTablet || MediaQuery.of(context).orientation == Orientation.landscape) {
       showGeneralDialog(
         context: context,
         barrierDismissible: true,
         barrierLabel: '',
-        barrierColor: Colors.transparent,
+        barrierColor: Colors.black.withValues(alpha: 0.3),
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
           return Align(
-            alignment: _isPortraitTablet ? Alignment.bottomCenter : Alignment.centerRight,
+            alignment: (_isTablet && _isPortraitTablet) ? Alignment.bottomCenter : Alignment.centerRight,
             child: Material(
               color: Colors.transparent,
               child: SizedBox(
-                width: panelWidth,
-                height: screenHeight,
+                width: (_isTablet && _isPortraitTablet) ? screenWidth : panelWidth,
+                height: (_isTablet && _isPortraitTablet) ? (screenHeight - statusBarHeight) * 0.5 : screenHeight,
                 child: SlideTransition(
                   position: Tween<Offset>(
-                    begin: _isPortraitTablet ? const Offset(0, 1) : const Offset(1, 0),
+                    begin: (_isTablet && _isPortraitTablet) ? const Offset(0, 1) : const Offset(1, 0),
                     end: Offset.zero,
                   ).animate(CurvedAnimation(
                     parent: animation,
@@ -2741,18 +2743,30 @@ class _PlayerScreenState extends State<PlayerScreen>
         },
       );
     } else {
+      // 手机竖屏模式：从底部弹出，高度与选集面板一致
+      final playerHeight = screenWidth / (16 / 9);
+      final panelHeight = screenHeight - statusBarHeight - playerHeight;
+
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (context) => PlayerDownloadPanel(
-          theme: theme,
-          title: videoTitle,
-          cover: videoCover,
-          episodes: currentDetail!.episodes,
-          episodesTitles: currentDetail!.episodesTitles,
-          isCompact: false,
-        ),
+        barrierColor: Colors.transparent,
+        enableDrag: false,
+        builder: (context) {
+          return SizedBox(
+            height: panelHeight,
+            width: double.infinity,
+            child: PlayerDownloadPanel(
+              theme: theme,
+              title: videoTitle,
+              cover: videoCover,
+              episodes: currentDetail!.episodes,
+              episodesTitles: currentDetail!.episodesTitles,
+              isCompact: false,
+            ),
+          );
+        },
       );
     }
   }
