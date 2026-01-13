@@ -17,9 +17,22 @@ class UserDataService {
   static const String _videoFitTypeKey = 'video_fit_type';
   static const String _progressDisplayModeKey = 'progress_display_mode';
   static const String _showSystemTimeKey = 'show_system_time';
+  static const String _adFilterEnabledKey = 'ad_filter_enabled';
   
   // 内存缓存
   static bool? _isLocalModeCache;
+
+  // 保存去广告开关
+  static Future<void> saveAdFilterEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_adFilterEnabledKey, enabled);
+  }
+
+  // 获取去广告开关（默认 false）
+  static Future<bool> getAdFilterEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_adFilterEnabledKey) ?? false;
+  }
 
   // 保存长按倍速
   static Future<void> saveLongPressSpeed(double speed) async {

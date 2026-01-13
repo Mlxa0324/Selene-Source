@@ -590,7 +590,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             flex: _isFullscreen ? 2 : 1,
             child: GestureDetector(
               onTap: _toggleControlsVisibility,
-              onDoubleTap: _isFullscreen ? _togglePlayPause : null,
+              onDoubleTap: _togglePlayPause,
               onLongPressStart: _onLongPressStart,
               onLongPressEnd: _onLongPressEnd,
               onLongPressCancel: () {

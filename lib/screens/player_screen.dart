@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 import 'dart:io' show Platform;
+import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../widgets/video_player_surface.dart';
@@ -143,6 +145,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showPlaybackTime = true;
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
+  bool _adFilterEnabled = false; // 是否开启自动去广告
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
 
@@ -192,13 +195,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fitIndex = await UserDataService.getVideoFitType();
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
+    final adFilterEnabled = await UserDataService.getAdFilterEnabled();
 
     if (mounted) {
       setState(() {
         _longPressSpeed = speed;
-        _currentFitType = VideoFitType.values[fitIndex.clamp(0, VideoFitType.values.length - 1)];
-        _progressMode = ProgressDisplayMode.values[progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
+        _currentFitType = VideoFitType
+            .values[fitIndex.clamp(0, VideoFitType.values.length - 1)];
+        _progressMode = ProgressDisplayMode.values[
+            progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
+        _adFilterEnabled = adFilterEnabled;
       });
     }
   }
@@ -824,15 +831,37 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> updateVideoUrl(String newUrl, {Duration? startAt}) async {
     print("newUrl: $newUrl, startAt: $startAt");
     try {
-      // 获取 M3U8 代理 URL
-      final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
-
-      // 如果代理 URL 不为空，则将 newUrl encode 后拼接到代理 URL 后面
       String finalUrl = newUrl;
-      if (m3u8ProxyUrl.isNotEmpty) {
-        final encodedUrl = Uri.encodeComponent(newUrl);
-        finalUrl = '$m3u8ProxyUrl$encodedUrl';
-        print("使用 M3U8 代理: $finalUrl");
+
+      // 1. 如果开启了去广告功能，且是 M3U8 链接
+      if (_adFilterEnabled &&
+          (newUrl.contains('.m3u8') || newUrl.contains('.M3U8'))) {
+        try {
+          final dio = Dio();
+          final response = await dio.get(newUrl);
+          if (response.statusCode == 200 && response.data is String) {
+            final filteredContent =
+                M3U8Service.filterAdsFromM3U8(response.data);
+            // 转换为 Data URI 格式，以便播放器直接读取内存内容
+            final bytes = utf8.encode(filteredContent);
+            final base64Content = base64.encode(bytes);
+            finalUrl =
+                'data:application/vnd.apple.mpegurl;base64,$base64Content';
+            print("M3U8 广告已过滤，使用 Data URI 播放");
+          }
+        } catch (e) {
+          debugPrint('去广告处理失败，降级使用原始链接: $e');
+        }
+      }
+
+      // 2. 获取 M3U8 代理 URL (如果没经过去广告处理)
+      if (finalUrl == newUrl) {
+        final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
+        if (m3u8ProxyUrl.isNotEmpty) {
+          final encodedUrl = Uri.encodeComponent(newUrl);
+          finalUrl = '$m3u8ProxyUrl$encodedUrl';
+          print("使用 M3U8 代理: $finalUrl");
+        }
       }
 
       if (_isCasting) {
@@ -939,9 +968,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     if (position != null) {
       // 自动跳过片头
-      if (_skipIntroDuration > 0 && 
-          position.inSeconds < _skipIntroDuration && 
-          !_isRefreshing) { // 避免刷新时跳转
+      if (_skipIntroDuration > 0 &&
+          position.inSeconds < _skipIntroDuration &&
+          !_isRefreshing) {
+        // 避免刷新时跳转
         _videoPlayerController?.seekTo(Duration(seconds: _skipIntroDuration));
         _showToast('已自动跳过片头');
       }
@@ -2689,6 +2719,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       currentLongPressSpeed: _longPressSpeed,
                       progressMode: _progressMode,
                       showSystemTime: _showSystemTime,
+                      adFilterEnabled: _adFilterEnabled,
                       skipIntro: _skipIntroDuration,
                       skipOutro: _skipOutroDuration,
                       onFitTypeChanged: (type) {
@@ -2711,6 +2742,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                         setState(() => _showSystemTime = show);
                         dialogSetState(() {});
                         UserDataService.saveShowSystemTime(show);
+                      },
+                      onAdFilterChanged: (enabled) {
+                        setState(() => _adFilterEnabled = enabled);
+                        dialogSetState(() {});
+                        UserDataService.saveAdFilterEnabled(enabled);
                       },
                       onSkipIntroChanged: (v) {
                         setState(() => _skipIntroDuration = v);
