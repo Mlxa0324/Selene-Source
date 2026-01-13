@@ -141,8 +141,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   VideoFitType _currentFitType = VideoFitType.contain;
   double _longPressSpeed = 2.0;
   bool _showPlaybackTime = true;
-  ProgressDisplayMode _progressMode = ProgressDisplayMode.time;
-  bool _showSystemTime = true; // 是否在右下角显示系统时间
+  ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
+  bool _showSystemTime = false; // 是否在右下角显示系统时间
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
 
@@ -182,6 +182,25 @@ class _PlayerScreenState extends State<PlayerScreen>
     _loadDanmakuSettings();
     // 加载跳过设置
     _loadSkipSettings();
+    // 加载通用播放设置
+    _loadPlayerGeneralSettings();
+  }
+
+  /// 加载通用播放设置
+  Future<void> _loadPlayerGeneralSettings() async {
+    final speed = await UserDataService.getLongPressSpeed();
+    final fitIndex = await UserDataService.getVideoFitType();
+    final progressIndex = await UserDataService.getProgressDisplayMode();
+    final showSystemTime = await UserDataService.getShowSystemTime();
+
+    if (mounted) {
+      setState(() {
+        _longPressSpeed = speed;
+        _currentFitType = VideoFitType.values[fitIndex.clamp(0, VideoFitType.values.length - 1)];
+        _progressMode = ProgressDisplayMode.values[progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
+        _showSystemTime = showSystemTime;
+      });
+    }
   }
 
   /// 加载跳过设置
@@ -2676,18 +2695,22 @@ class _PlayerScreenState extends State<PlayerScreen>
                         setState(() => _currentFitType = type);
                         dialogSetState(() {});
                         _videoPlayerController?.setVideoFit(type);
+                        UserDataService.saveVideoFitType(type.index);
                       },
                       onLongPressSpeedChanged: (speed) {
                         setState(() => _longPressSpeed = speed);
                         dialogSetState(() {});
+                        UserDataService.saveLongPressSpeed(speed);
                       },
                       onProgressModeChanged: (mode) {
                         setState(() => _progressMode = mode);
                         dialogSetState(() {});
+                        UserDataService.saveProgressDisplayMode(mode.index);
                       },
                       onShowSystemTimeChanged: (show) {
                         setState(() => _showSystemTime = show);
                         dialogSetState(() {});
+                        UserDataService.saveShowSystemTime(show);
                       },
                       onSkipIntroChanged: (v) {
                         setState(() => _skipIntroDuration = v);

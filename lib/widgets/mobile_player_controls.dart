@@ -172,6 +172,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
+    _subscriptions.clear();
+    
+    // 移除系统监听
+    VolumeController.instance.removeListener();
+    
     _hideTimer?.cancel();
     _volumeHideTimer?.cancel();
     _brightnessHideTimer?.cancel();
@@ -769,13 +774,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return Positioned(
       top: _isFullscreen ? 8 : 4,
       left: _isFullscreen ? 16.0 : 8.0,
+      right: _isFullscreen ? 64.0 : null, // 核心修复：全屏时始终限制右侧空间
       child: AnimatedOpacity(
         opacity: (_controlsVisible && !_isLocked) ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           ignoring: !_controlsVisible || _isLocked,
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: _isFullscreen ? MainAxisSize.max : MainAxisSize.min,
             children: [
               GestureDetector(
                 onTap: () {
@@ -798,7 +804,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               ),
               if (_isFullscreen) ...[
                 const SizedBox(width: 8),
-                _buildVideoInfo(),
+                Expanded(child: _buildVideoInfo()),
               ],
             ],
           ),

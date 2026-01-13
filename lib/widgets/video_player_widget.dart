@@ -70,8 +70,8 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
     this.longPressSpeed = 2.0,
-    this.progressMode = ProgressDisplayMode.time,
-    this.showSystemTime = true,
+    this.progressMode = ProgressDisplayMode.none,
+    this.showSystemTime = false,
     this.danmakuLayer,
   });
 
@@ -477,15 +477,32 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_playerDisposed) {
       return;
     }
-    _playerDisposed = true;
+    
+    // 1. 立即停止所有 Dart 侧的监听，防止回调进入
     _positionSubscription?.cancel();
     _playingSubscription?.cancel();
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
+    _positionSubscription = null;
+    _playingSubscription = null;
+    _completedSubscription = null;
+    _durationSubscription = null;
+    
     _progressListeners.clear();
-    await _player?.dispose();
-    _player = null;
-    _videoController = null;
+    
+    // 2. 标记已销毁，防止 setState 或后续操作
+    _playerDisposed = true;
+
+    try {
+      // 3. 停止播放并销毁原生资源
+      await _player?.pause();
+      await _player?.dispose();
+    } catch (e) {
+      debugPrint('VideoPlayerWidget: Error during player dispose: $e');
+    } finally {
+      _player = null;
+      _videoController = null;
+    }
   }
 
   @override

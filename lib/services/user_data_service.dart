@@ -13,9 +13,61 @@ class UserDataService {
   static const String _isLocalModeKey = 'is_local_mode';
   static const String _skipIntroKey = 'skip_intro_duration';
   static const String _skipOutroKey = 'skip_outro_duration';
+  static const String _longPressSpeedKey = 'long_press_speed';
+  static const String _videoFitTypeKey = 'video_fit_type';
+  static const String _progressDisplayModeKey = 'progress_display_mode';
+  static const String _showSystemTimeKey = 'show_system_time';
   
   // 内存缓存
   static bool? _isLocalModeCache;
+
+  // 保存长按倍速
+  static Future<void> saveLongPressSpeed(double speed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_longPressSpeedKey, speed);
+  }
+
+  // 获取长按倍速（默认 2.0）
+  static Future<double> getLongPressSpeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getDouble(_longPressSpeedKey) ?? 2.0;
+  }
+
+  // 保存画面比例
+  static Future<void> saveVideoFitType(int index) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_videoFitTypeKey, index);
+  }
+
+  // 获取画面比例（默认 0 - contain）
+  static Future<int> getVideoFitType() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_videoFitTypeKey) ?? 0;
+  }
+
+  // 保存进度显示模式
+  static Future<void> saveProgressDisplayMode(int index) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_progressDisplayModeKey, index);
+  }
+
+  // 获取进度显示模式（默认 0 - none）
+  static Future<int> getProgressDisplayMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_progressDisplayModeKey) ?? 0;
+  }
+
+  // 保存系统时间开关
+  static Future<void> saveShowSystemTime(bool show) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showSystemTimeKey, show);
+  }
+
+  // 获取系统时间开关（默认 false）
+  static Future<bool> getShowSystemTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_showSystemTimeKey) ?? false;
+  }
 
   // 保存跳过片头时长
   static Future<void> saveSkipIntroDuration(int duration) async {

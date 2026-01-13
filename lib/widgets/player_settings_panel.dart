@@ -150,58 +150,65 @@ class PlayerSettingsPanel extends StatelessWidget {
       );
     }
   
-    Widget _buildSkipSlider(
-      String label,
-      int value,
-      double max,
-      Function(int) onChanged,
-      Color textColor,
-      Color subTextColor,
-    ) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 65,
-              child: Text(
-                label,
-                style: TextStyle(color: textColor, fontSize: 14),
-              ),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 2,
-                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                  activeTrackColor: Colors.green,
-                  inactiveTrackColor: textColor.withOpacity(0.1),
-                  thumbColor: Colors.green,
-                  overlayColor: Colors.green.withOpacity(0.2),
-                ),
-                child: Slider(
-                  value: value.toDouble().clamp(0.0, max),
-                  min: 0,
-                  max: max,
-                  divisions: max.toInt(),
-                  onChanged: (v) => onChanged(v.round()),
+      String _formatSeconds(int seconds) {
+        if (seconds < 60) return '${seconds}s';
+        final m = seconds ~/ 60;
+        final s = seconds % 60;
+        if (s == 0) return '${m}m';
+        return '${m}m${s}s';
+      }
+    
+      Widget _buildSkipSlider(
+        String label,
+        int value,
+        double max,
+        Function(int) onChanged,
+        Color textColor,
+        Color subTextColor,
+      ) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 65,
+                child: Text(
+                  label,
+                  style: TextStyle(color: textColor, fontSize: 14),
                 ),
               ),
-            ),
-            SizedBox(
-              width: 40,
-              child: Text(
-                '${value}s',
-                textAlign: TextAlign.right,
-                style: TextStyle(color: subTextColor, fontSize: 13),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 2,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                    activeTrackColor: Colors.green,
+                    inactiveTrackColor: textColor.withOpacity(0.1),
+                    thumbColor: Colors.green,
+                    overlayColor: Colors.green.withOpacity(0.2),
+                  ),
+                  child: Slider(
+                    value: value.toDouble().clamp(0.0, max),
+                    min: 0,
+                    max: max,
+                    divisions: max.toInt(),
+                    onChanged: (v) => onChanged(v.round()),
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-      );
-    }
-  Widget _buildFitTypeSelector(bool isDarkMode) {
+              SizedBox(
+                width: 50, // 增加一点宽度以容纳 XmYs
+                child: Text(
+                  _formatSeconds(value),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(color: subTextColor, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        );
+      }  Widget _buildFitTypeSelector(bool isDarkMode) {
     final fitTypes = [
       (VideoFitType.contain, '适应'),
       (VideoFitType.fill, '填充'),
