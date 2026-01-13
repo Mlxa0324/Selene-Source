@@ -233,7 +233,7 @@ class DanmakuSettings {
     this.enabled = true,
     this.fontSize = 18,
     this.opacity = 1.0,
-    this.duration = 8.0,
+    this.duration = 7.0,
     this.scale = 1.0,
     this.lineSpacing = 1.0,
     this.fontWeight = 1.0,
