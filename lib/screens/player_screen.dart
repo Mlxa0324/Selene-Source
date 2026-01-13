@@ -26,8 +26,10 @@ import '../widgets/player_sources_panel.dart';
 import '../widgets/player_settings_panel.dart';
 import '../widgets/danmaku_settings_panel.dart';
 import '../widgets/danmaku_match_panel.dart';
+import '../widgets/player_download_panel.dart';
 import '../widgets/windows_title_bar.dart';
 import '../services/danmaku_service.dart';
+import '../services/download_service.dart';
 import '../models/danmaku_model.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 
@@ -1937,6 +1939,18 @@ class _PlayerScreenState extends State<PlayerScreen>
 
               const SizedBox(width: 20),
 
+              // 下载按钮
+              _HoverButton(
+                onTap: _showDownloadPanel,
+                child: Icon(
+                  Icons.download_for_offline_outlined,
+                  size: 22,
+                  color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+
+              const SizedBox(width: 20),
+
               // 展开按钮
               _HoverButton(
                 onTap: _showEpisodesPanel,
@@ -2678,6 +2692,69 @@ class _PlayerScreenState extends State<PlayerScreen>
         );
       },
     );
+  }
+
+  /// 显示下载面板
+  void _showDownloadPanel() {
+    final theme = Theme.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
+    
+    // 类似于选集面板的逻辑
+    final panelWidth = _isTablet ? (_isPortraitTablet ? screenWidth : screenWidth * 0.35) : screenWidth;
+    
+    if (_isTablet) {
+      showGeneralDialog(
+        context: context,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.transparent,
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return Align(
+            alignment: _isPortraitTablet ? Alignment.bottomCenter : Alignment.centerRight,
+            child: Material(
+              color: Colors.transparent,
+              child: SizedBox(
+                width: panelWidth,
+                height: screenHeight,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: _isPortraitTablet ? const Offset(0, 1) : const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOut,
+                  )),
+                  child: PlayerDownloadPanel(
+                    theme: theme,
+                    title: videoTitle,
+                    cover: videoCover,
+                    episodes: currentDetail!.episodes,
+                    episodesTitles: currentDetail!.episodesTitles,
+                    isCompact: true,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => PlayerDownloadPanel(
+          theme: theme,
+          title: videoTitle,
+          cover: videoCover,
+          episodes: currentDetail!.episodes,
+          episodesTitles: currentDetail!.episodesTitles,
+          isCompact: false,
+        ),
+      );
+    }
   }
 
   /// 在全屏模式下显示设置面板（使用传入的 context）

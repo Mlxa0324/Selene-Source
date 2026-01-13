@@ -11,6 +11,8 @@ import '../services/live_service.dart';
 import '../services/local_search_cache_service.dart';
 import '../services/version_service.dart';
 import '../services/danmaku_service.dart';
+import '../services/download_service.dart';
+import '../screens/download_screen.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import 'update_dialog.dart';
@@ -944,6 +946,51 @@ class _UserMenuState extends State<UserMenu> {
                         });
                       },
                       icon: LucideIcons.zap,
+                    ),
+                    // 分割线
+                    Container(
+                      height: 1,
+                      color: widget.isDarkMode
+                          ? const Color(0xFF374151)
+                          : const Color(0xFFe5e7eb),
+                    ),
+                    // 下载管理按钮
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          widget.onClose?.call();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (context) => const DownloadScreen()),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.cloud_download_outlined,
+                                size: 20,
+                                color: const Color(0xFF10b981),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                '下载管理',
+                                style: FontUtils.poppins(
+                                  fontSize: 16,
+                                  color: widget.isDarkMode
+                                      ? const Color(0xFFffffff)
+                                      : const Color(0xFF1f2937),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
                     // 本地搜索选项（本地模式下不显示）
                     if (!_isLocalMode) ...[
