@@ -25,6 +25,8 @@ class PlayerSourcesPanel extends StatefulWidget {
   final Future<void> Function() onRefresh;
   final String videoCover;
   final String videoTitle;
+  final double? backgroundOpacity;
+  final bool isCompact;
 
   const PlayerSourcesPanel({
     super.key,
@@ -37,6 +39,8 @@ class PlayerSourcesPanel extends StatefulWidget {
     required this.onRefresh,
     required this.videoCover,
     required this.videoTitle,
+    this.backgroundOpacity,
+    this.isCompact = true,
   });
 
   @override
@@ -89,10 +93,10 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
 
     if (currentIndex == -1) return;
 
-    // 计算每个项目的高度（根据紧凑型 UI 调整）
-    const itemHeight = 84.0; 
-    const itemSpacing = 8.0; 
-    const totalItemHeight = itemHeight + itemSpacing;
+    // 计算每个项目的高度
+    final itemHeight = widget.isCompact ? 84.0 : 100.0; 
+    final itemSpacing = widget.isCompact ? 8.0 : 12.0; 
+    final totalItemHeight = itemHeight + itemSpacing;
 
     final targetOffset = currentIndex * totalItemHeight;
 
@@ -124,9 +128,10 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
+    final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(0.85) 
-        : Colors.white.withOpacity(0.95);
+        ? Colors.black.withOpacity(opacity) 
+        : Colors.white.withOpacity(opacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
@@ -140,7 +145,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 8, 4),
+            padding: EdgeInsets.fromLTRB(20, widget.isCompact ? 16 : 20, 8, widget.isCompact ? 4 : 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -148,7 +153,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                   '换源 (${widget.sources.length})',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 17,
+                    fontSize: widget.isCompact ? 17 : 19,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -179,7 +184,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              padding: EdgeInsets.fromLTRB(16, 4, 16, widget.isCompact ? 16 : 24),
               itemCount: widget.sources.length,
               itemBuilder: (context, index) {
                 final source = widget.sources[index];
@@ -194,6 +199,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                   source: source,
                   speedInfo: speedInfo,
                   theme: widget.theme,
+                  isCompact: widget.isCompact,
                   onTap: isCurrent ? null : () => widget.onSourceTap(source),
                 );
               },
@@ -211,6 +217,7 @@ class _SourcePanelItemWithHover extends StatefulWidget {
   final SearchResult source;
   final SourceSpeed? speedInfo;
   final ThemeData theme;
+  final bool isCompact;
   final VoidCallback? onTap;
 
   const _SourcePanelItemWithHover({
@@ -219,6 +226,7 @@ class _SourcePanelItemWithHover extends StatefulWidget {
     required this.source,
     this.speedInfo,
     required this.theme,
+    required this.isCompact,
     this.onTap,
   });
 
@@ -233,6 +241,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
   @override
   Widget build(BuildContext context) {
     final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
+    final itemHeight = widget.isCompact ? 84.0 : 100.0;
     
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrent)
@@ -251,8 +260,8 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          height: 84, // 紧凑高度
+          margin: EdgeInsets.only(bottom: widget.isCompact ? 8 : 12),
+          height: itemHeight,
           decoration: BoxDecoration(
             color: widget.isCurrent
                 ? Colors.green.withOpacity(0.1)
@@ -278,7 +287,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                       fit: BoxFit.cover,
                       errorWidget: (context, url, error) => Container(
                         color: widget.isDarkMode ? Colors.white10 : Colors.black12,
-                        child: const Icon(Icons.movie, size: 20, color: Colors.grey),
+                        child: Icon(Icons.movie, size: widget.isCompact ? 20 : 24, color: Colors.grey),
                       ),
                     ),
                   ),
@@ -292,11 +301,11 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                     children: [
                       Text(
                         widget.source.title,
-                        maxLines: 1,
+                        maxLines: widget.isCompact ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: textColor,
-                          fontSize: 14,
+                          fontSize: widget.isCompact ? 14 : 15,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -307,7 +316,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                             widget.source.sourceName,
                             style: TextStyle(
                               color: textColor.withOpacity(0.6),
-                              fontSize: 12,
+                              fontSize: widget.isCompact ? 12 : 13,
                             ),
                           ),
                           if (widget.source.episodes.length > 1) ...[
@@ -316,7 +325,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                               '${widget.source.episodes.length}集',
                               style: TextStyle(
                                 color: textColor.withOpacity(0.6),
-                                fontSize: 12,
+                                fontSize: widget.isCompact ? 12 : 13,
                               ),
                             ),
                           ],
@@ -331,14 +340,14 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                                 !widget.speedInfo!.loadSpeed.contains('超时'))
                               Text(
                                 widget.speedInfo!.loadSpeed,
-                                style: const TextStyle(color: Colors.green, fontSize: 11),
+                                style: TextStyle(color: Colors.green, fontSize: widget.isCompact ? 11 : 12),
                               ),
                             const SizedBox(width: 8),
                             if (widget.speedInfo!.pingTime.isNotEmpty &&
                                 !widget.speedInfo!.pingTime.contains('超时'))
                               Text(
                                 widget.speedInfo!.pingTime,
-                                style: const TextStyle(color: Colors.orange, fontSize: 11),
+                                style: TextStyle(color: Colors.orange, fontSize: widget.isCompact ? 11 : 12),
                               ),
                           ],
                         ),
@@ -357,7 +366,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                     ),
                     child: Text(
                       widget.speedInfo!.quality,
-                      style: const TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: Colors.green, fontSize: widget.isCompact ? 10 : 11, fontWeight: FontWeight.bold),
                     ),
                   ),
               ],

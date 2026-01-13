@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 import 'dlna_device_dialog.dart';
+import 'player_settings_panel.dart';
 
 class MobilePlayerControls extends StatefulWidget {
   final Player player;
@@ -37,7 +38,8 @@ class MobilePlayerControls extends StatefulWidget {
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final double longPressSpeed;
-  final bool showTimeWhenControlsHidden;
+  final ProgressDisplayMode progressMode;
+  final bool showSystemTime;
 
   const MobilePlayerControls({
     super.key,
@@ -69,7 +71,8 @@ class MobilePlayerControls extends StatefulWidget {
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
     this.longPressSpeed = 2.0,
-    this.showTimeWhenControlsHidden = true,
+    this.progressMode = ProgressDisplayMode.time,
+    this.showSystemTime = true,
   });
 
   @override
@@ -520,6 +523,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildBottomGradient(),
         if (_isFullscreen) _buildCurrentTime(),
         if (_isFullscreen) _buildCurrentPlayTime(),
+        if (_isFullscreen) _buildMiniProgressBar(),
         _buildBackButton(),
         _buildCastButton(),
         _buildCenterPlayPause(),
@@ -651,21 +655,20 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildCurrentTime() {
     return Positioned(
-      top: 16,
-      left: 0,
-      right: 0,
+      right: 20,
+      bottom: 15,
       child: AnimatedOpacity(
-        opacity: ((_controlsVisible) && !_isLocked) ? 1.0 : 0.0,
+        opacity: ((!_controlsVisible && widget.showSystemTime) && !_isLocked)
+            ? 1.0
+            : 0.0,
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
-          child: Center(
-            child: Text(
-              _currentTime,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+          child: Text(
+            _currentTime,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ),
@@ -678,7 +681,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       left: 20,
       bottom: 15,
       child: AnimatedOpacity(
-        opacity: ((!_controlsVisible && widget.showTimeWhenControlsHidden) &&
+        opacity: ((!_controlsVisible &&
+                    widget.progressMode == ProgressDisplayMode.time) &&
                 !_isLocked)
             ? 1.0
             : 0.0,
@@ -691,6 +695,41 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 color: Colors.white,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniProgressBar() {
+    final double value = widget.player.state.duration.inMilliseconds > 0
+        ? widget.player.state.position.inMilliseconds /
+            widget.player.state.duration.inMilliseconds
+        : 0.0;
+
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: AnimatedOpacity(
+        opacity: ((!_controlsVisible &&
+                    widget.progressMode == ProgressDisplayMode.bar) &&
+                !_isLocked)
+            ? 1.0
+            : 0.0,
+        duration: const Duration(milliseconds: 200),
+        child: IgnorePointer(
+          child: Container(
+            height: 2,
+            width: double.infinity,
+            alignment: Alignment.centerLeft,
+            color: Colors.white12,
+            child: FractionallySizedBox(
+              widthFactor: value.clamp(0.0, 1.0),
+              child: Container(
+                color: Colors.green,
               ),
             ),
           ),
@@ -776,13 +815,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         ? '第${widget.currentEpisodeIndex! + 1}集'
         : '';
     final year = widget.videoYear ?? '';
-    final source = widget.sourceName ?? '';
 
     final parts = <String>[];
     if (title.isNotEmpty) parts.add(title);
     if (episodeText.isNotEmpty) parts.add(episodeText);
     if (year.isNotEmpty && year != 'unknown') parts.add(year);
-    if (source.isNotEmpty) parts.add(source);
 
     if (parts.isEmpty) return const SizedBox.shrink();
 
@@ -1123,7 +1160,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             padding: const EdgeInsets.symmetric(
                 horizontal: 8, vertical: 4), // 添加垂直 padding
             decoration: BoxDecoration(
-              color: widget.showTimeWhenControlsHidden
+              color: widget.progressMode == ProgressDisplayMode.none
                   ? Colors.black.withOpacity(0.3)
                   : Colors.black.withOpacity(0.7), // 修正为 withOpacity
               borderRadius: BorderRadius.circular(5),
@@ -1309,7 +1346,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 child: Icon(
                   _isLocked ? Icons.lock : Icons.lock_open,
                   color: Colors.white,
-                  size: 24,
+                  size: 27,
                 ),
               ),
             ),

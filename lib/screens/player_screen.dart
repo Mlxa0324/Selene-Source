@@ -141,7 +141,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   VideoFitType _currentFitType = VideoFitType.contain;
   double _longPressSpeed = 2.0;
   bool _showPlaybackTime = true;
-  bool _showCurrentTime = true;
+  ProgressDisplayMode _progressMode = ProgressDisplayMode.time;
+  bool _showSystemTime = true; // 是否在右下角显示系统时间
 
   // 弹幕相关状态
   DanmakuController? _danmakuController;
@@ -1228,9 +1229,13 @@ class _PlayerScreenState extends State<PlayerScreen>
             onReady: _onVideoPlayerReady,
             onNextEpisode: _onNextEpisode,
             onVideoCompleted: _onVideoCompleted,
+            onPlay: () {
+              _danmakuController?.resume();
+            },
             onPause: () {
               // 暂停时保存进度
               _saveProgress(force: true, scene: '暂停');
+              _danmakuController?.pause();
             },
             isLastEpisode: currentDetail != null &&
                 currentEpisodeIndex >= currentDetail!.episodes.length - 1,
@@ -1266,7 +1271,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               _showDanmakuMatchPanelInFullscreen(fullscreenContext);
             },
             longPressSpeed: _longPressSpeed,
-            showTimeWhenControlsHidden: _showCurrentTime,
+            progressMode: _progressMode,
+            showSystemTime: _showSystemTime,
             danmakuLayer: _danmakuSettings.enabled
                 ? IgnorePointer(
                     child: LayoutBuilder(builder: (context, constraints) {
@@ -2002,6 +2008,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         currentEpisodeIndex: currentEpisodeIndex,
                         isReversed: _isEpisodesReversed,
                         crossAxisCount: crossAxisCount,
+                        isCompact: true, // 横屏使用紧凑模式
                         onEpisodeTap: (index) {
                           Navigator.pop(context);
                           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2053,6 +2060,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
                 crossAxisCount: crossAxisCount,
+                backgroundOpacity: 1.0, // 竖屏不透明
+                isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {
                   Navigator.pop(context);
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2373,6 +2382,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         currentSource: currentSource,
                         currentId: currentID,
                         sourcesSpeed: allSourcesSpeed,
+                        isCompact: true, // 横屏紧凑模式
                         onSourceTap: (source) {
                           this.setState(() {
                             _switchSource(source);
@@ -2420,6 +2430,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 currentSource: currentSource,
                 currentId: currentID,
                 sourcesSpeed: allSourcesSpeed,
+                backgroundOpacity: 1.0, // 竖屏不透明
+                isCompact: false, // 竖屏宽松模式
                 onSourceTap: (source) {
                   this.setState(() {
                     _switchSource(source);
@@ -2619,7 +2631,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       theme: theme,
                       currentFitType: _currentFitType,
                       currentLongPressSpeed: _longPressSpeed,
-                      showTimeWhenControlsHidden: _showCurrentTime,
+                      progressMode: _progressMode,
+                      showSystemTime: _showSystemTime,
                       onFitTypeChanged: (type) {
                         setState(() => _currentFitType = type);
                         dialogSetState(() {});
@@ -2629,8 +2642,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                         setState(() => _longPressSpeed = speed);
                         dialogSetState(() {});
                       },
-                      onShowTimeChanged: (show) {
-                        setState(() => _showCurrentTime = show);
+                      onProgressModeChanged: (mode) {
+                        setState(() => _progressMode = mode);
+                        dialogSetState(() {});
+                      },
+                      onShowSystemTimeChanged: (show) {
+                        setState(() => _showSystemTime = show);
                         dialogSetState(() {});
                       },
                     );
@@ -3737,7 +3754,7 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                       color: widget.isCurrentEpisode
                           ? Colors.green
                           : (widget.isDarkMode ? Colors.white : Colors.black),
-                      fontSize: 13,
+                      fontSize: 14,
                       fontWeight: FontWeight.w400,
                     ),
                     textAlign: TextAlign.center,

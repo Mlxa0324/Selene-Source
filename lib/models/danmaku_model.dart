@@ -235,7 +235,7 @@ class DanmakuSettings {
     this.opacity = 1.0,
     this.duration = 8.0,
     this.scale = 1.0,
-    this.lineSpacing = 1.3,
+    this.lineSpacing = 1.0,
     this.fontWeight = 1.0,
     this.displayArea = 0.5,
     this.preventOverlap = false,

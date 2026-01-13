@@ -10,32 +10,43 @@ enum VideoFitType {
   aspectRatio16_9, // 16:9
 }
 
+/// 播放进度显示模式
+enum ProgressDisplayMode {
+  none, // 关闭
+  time, // 时间
+  bar, // 进度条
+}
+
 /// 播放设置面板
 class PlayerSettingsPanel extends StatelessWidget {
   final ThemeData theme;
   final VideoFitType currentFitType;
   final double currentLongPressSpeed;
-  final bool showTimeWhenControlsHidden;
+  final ProgressDisplayMode progressMode;
+  final bool showSystemTime;
   final Function(VideoFitType) onFitTypeChanged;
   final Function(double) onLongPressSpeedChanged;
-  final Function(bool) onShowTimeChanged;
+  final Function(ProgressDisplayMode) onProgressModeChanged;
+  final Function(bool) onShowSystemTimeChanged;
 
   const PlayerSettingsPanel({
     super.key,
     required this.theme,
     required this.currentFitType,
     required this.currentLongPressSpeed,
-    required this.showTimeWhenControlsHidden,
+    required this.progressMode,
+    required this.showSystemTime,
     required this.onFitTypeChanged,
     required this.onLongPressSpeedChanged,
-    required this.onShowTimeChanged,
+    required this.onProgressModeChanged,
+    required this.onShowSystemTimeChanged,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = theme.brightness == Brightness.dark;
-    final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(0.85) 
+    final backgroundColor = isDarkMode
+        ? Colors.black.withOpacity(0.85)
         : Colors.white.withOpacity(0.95);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
@@ -93,8 +104,15 @@ class PlayerSettingsPanel extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // 播放时间显示开关
-                  _buildTimeDisplaySwitch(isDarkMode, textColor, subTextColor),
+                  // 播放进度
+                  _buildSectionHeader('显示播放进度 (控制栏隐藏时)', subTextColor),
+                  const SizedBox(height: 10),
+                  _buildProgressModeSelector(isDarkMode),
+
+                  const SizedBox(height: 20),
+
+                  // 系统时间显示开关
+                  _buildSystemTimeSwitch(isDarkMode, textColor, subTextColor),
 
                   const SizedBox(height: 32),
                 ],
@@ -158,7 +176,30 @@ class PlayerSettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildTimeDisplaySwitch(bool isDarkMode, Color textColor, Color subTextColor) {
+  Widget _buildProgressModeSelector(bool isDarkMode) {
+    final modes = [
+      (ProgressDisplayMode.none, '关闭'),
+      (ProgressDisplayMode.time, '时间'),
+      (ProgressDisplayMode.bar, '进度条'),
+    ];
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: modes.map((item) {
+        final isSelected = progressMode == item.$1;
+        return _SettingsItemWithHover(
+          isSelected: isSelected,
+          isDarkMode: isDarkMode,
+          label: item.$2,
+          onTap: () => onProgressModeChanged(item.$1),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildSystemTimeSwitch(
+      bool isDarkMode, Color textColor, Color subTextColor) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -167,7 +208,7 @@ class PlayerSettingsPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '显示播放时间',
+                '显示系统时间',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -175,7 +216,7 @@ class PlayerSettingsPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                '隐藏控制栏时显示时间',
+                '控制栏隐藏时在右下角显示',
                 style: TextStyle(
                   fontSize: 11,
                   color: subTextColor,
@@ -189,8 +230,8 @@ class PlayerSettingsPanel extends StatelessWidget {
           child: Transform.scale(
             scale: 0.8,
             child: Switch(
-              value: showTimeWhenControlsHidden,
-              onChanged: onShowTimeChanged,
+              value: showSystemTime,
+              onChanged: onShowSystemTimeChanged,
               activeColor: Colors.green,
               activeTrackColor: Colors.green.withOpacity(0.3),
             ),
@@ -234,14 +275,18 @@ class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
       child: GestureDetector(
         onTap: widget.onTap,
         child: Container(
-          width: 65, // 缩小宽度
-          height: 32, // 缩小高度
+          width: 65,
+          height: 32,
           decoration: BoxDecoration(
             color: widget.isSelected
                 ? Colors.green.withOpacity(0.2)
-                : (widget.isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05)),
+                : (widget.isDarkMode
+                    ? Colors.white12
+                    : Colors.black.withOpacity(0.05)),
             borderRadius: BorderRadius.circular(6),
-            border: widget.isSelected ? Border.all(color: Colors.green, width: 1.5) : null,
+            border: widget.isSelected
+                ? Border.all(color: Colors.green, width: 1.5)
+                : null,
           ),
           child: Center(
             child: Text(
@@ -250,7 +295,8 @@ class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
                 color: widget.isSelected
                     ? Colors.green
                     : (widget.isDarkMode ? Colors.white70 : Colors.black87),
-                fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.normal,
+                fontWeight:
+                    widget.isSelected ? FontWeight.bold : FontWeight.normal,
                 fontSize: 13,
               ),
             ),

@@ -18,6 +18,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final VoidCallback? onReady;
   final VoidCallback? onNextEpisode;
   final VoidCallback? onVideoCompleted;
+  final VoidCallback? onPlay;
   final VoidCallback? onPause;
   final bool isLastEpisode;
   final Function(dynamic)? onCastStarted;
@@ -36,7 +37,8 @@ class VideoPlayerWidget extends StatefulWidget {
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final double longPressSpeed;
-  final bool showTimeWhenControlsHidden;
+  final ProgressDisplayMode progressMode;
+  final bool showSystemTime;
   final Widget? danmakuLayer;
 
   const VideoPlayerWidget({
@@ -49,6 +51,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onReady,
     this.onNextEpisode,
     this.onVideoCompleted,
+    this.onPlay,
     this.onPause,
     this.isLastEpisode = false,
     this.onCastStarted,
@@ -67,7 +70,8 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
     this.longPressSpeed = 2.0,
-    this.showTimeWhenControlsHidden = true,
+    this.progressMode = ProgressDisplayMode.time,
+    this.showSystemTime = true,
     this.danmakuLayer,
   });
 
@@ -257,6 +261,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _playingSubscription = _player!.stream.playing.listen((playing) {
       if (!mounted) return;
       if (!playing) {
+        widget.onPause?.call();
         setState(() {
           _hasCompleted = false;
         });
@@ -269,6 +274,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           controlStyle: 2,
         ));
       } else {
+        widget.onPlay?.call();
         _pip.setup(const PipOptions(
           autoEnterEnabled: true,
           aspectRatioX: 16,
@@ -573,16 +579,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         onSourcesButtonPressed: widget.onSourcesButtonPressed,
                         onSettingsButtonPressed: widget.onSettingsButtonPressed,
                         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-                        onDanmakuMatchButtonPressed:
-                            widget.onDanmakuMatchButtonPressed,
+                        onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
                         longPressSpeed: widget.longPressSpeed,
-                        showTimeWhenControlsHidden:
-                            widget.showTimeWhenControlsHidden,
+                        progressMode: widget.progressMode,
+                        showSystemTime: widget.showSystemTime,
                       );
 
                 return Stack(
                   children: [
-                    if (widget.danmakuLayer != null)
+                    if (widget.danmakuLayer != null) 
                       RepaintBoundary(child: widget.danmakuLayer!),
                     controls,
                   ],

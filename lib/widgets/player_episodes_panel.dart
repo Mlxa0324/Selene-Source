@@ -10,6 +10,8 @@ class PlayerEpisodesPanel extends StatefulWidget {
   final Function(int) onEpisodeTap;
   final VoidCallback onToggleOrder;
   final int crossAxisCount;
+  final double? backgroundOpacity; // 背景不透明度
+  final bool isCompact; // 是否紧凑模式
 
   const PlayerEpisodesPanel({
     super.key,
@@ -21,6 +23,8 @@ class PlayerEpisodesPanel extends StatefulWidget {
     required this.onEpisodeTap,
     required this.onToggleOrder,
     this.crossAxisCount = 2,
+    this.backgroundOpacity,
+    this.isCompact = true,
   });
 
   @override
@@ -58,13 +62,13 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
         : widget.currentEpisodeIndex;
 
     final crossAxisCount = widget.crossAxisCount;
-    const mainAxisSpacing = 8.0;
+    final mainAxisSpacing = widget.isCompact ? 8.0 : 12.0;
     final childAspectRatio = widget.crossAxisCount == 4 
         ? 2.2 
-        : (widget.crossAxisCount == 3 ? 2.0 : 3.0);
+        : (widget.crossAxisCount == 3 ? 2.0 : (widget.isCompact ? 3.0 : 2.5));
 
     final itemWidth =
-        (gridBox.size.width - (crossAxisCount - 1) * 8) / crossAxisCount;
+        (gridBox.size.width - (crossAxisCount - 1) * mainAxisSpacing) / crossAxisCount;
     final itemHeight = itemWidth / childAspectRatio;
 
     final row = (targetIndex / crossAxisCount).floor();
@@ -80,9 +84,10 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
+    final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(0.85) 
-        : Colors.white.withOpacity(0.95);
+        ? Colors.black.withOpacity(opacity) 
+        : Colors.white.withOpacity(opacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
@@ -95,9 +100,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
       ),
       child: Column(
         children: [
-          // 标题栏 - 紧凑化
+          // 标题栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+            padding: EdgeInsets.fromLTRB(20, widget.isCompact ? 16 : 20, 8, widget.isCompact ? 8 : 12),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -105,7 +110,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                   '选集 (${widget.episodes.length})',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 17,
+                    fontSize: widget.isCompact ? 17 : 19,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -122,14 +127,14 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
             child: GridView.builder(
               key: _gridKey,
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              padding: EdgeInsets.fromLTRB(16, 4, 16, widget.isCompact ? 16 : 24),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: widget.crossAxisCount,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+                crossAxisSpacing: widget.isCompact ? 8 : 12,
+                mainAxisSpacing: widget.isCompact ? 8 : 12,
                 childAspectRatio: widget.crossAxisCount == 4 
                     ? 2.2 
-                    : (widget.crossAxisCount == 3 ? 2.0 : 3.0),
+                    : (widget.crossAxisCount == 3 ? 2.0 : (widget.isCompact ? 3.0 : 2.5)),
               ),
               itemCount: widget.episodes.length,
               itemBuilder: (context, index) {
@@ -151,6 +156,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                   isCurrentEpisode: isCurrentEpisode,
                   isDarkMode: isDarkMode,
                   episodeTitle: episodeTitle,
+                  isCompact: widget.isCompact,
                   onTap: isCurrentEpisode ? null : () => widget.onEpisodeTap(episodeIndex),
                 );
               },
@@ -168,12 +174,14 @@ class _EpisodePanelItemWithHover extends StatefulWidget {
   final bool isCurrentEpisode;
   final bool isDarkMode;
   final String episodeTitle;
+  final bool isCompact;
   final VoidCallback? onTap;
 
   const _EpisodePanelItemWithHover({
     required this.isCurrentEpisode,
     required this.isDarkMode,
     required this.episodeTitle,
+    required this.isCompact,
     this.onTap,
   });
 
@@ -218,7 +226,7 @@ class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> 
           ),
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: widget.isCompact ? 2 : 6),
               child: Text(
                 widget.episodeTitle,
                 textAlign: TextAlign.center,
@@ -231,7 +239,7 @@ class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> 
                           ? Colors.white70
                           : Colors.black87),
                   fontWeight: widget.isCurrentEpisode ? FontWeight.bold : FontWeight.normal,
-                  fontSize: 13,
+                  fontSize: widget.isCompact ? 13 : 14,
                 ),
               ),
             ),
