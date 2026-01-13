@@ -2064,7 +2064,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
     // 确定列数：竖屏平板4列，横屏平板3列，手机2列
-    final crossAxisCount = _isPortraitTablet ? 4 : (_isTablet ? 3 : 2);
+    final crossAxisCount = _isPortraitTablet ? 4 : (_isTablet ? 4 : 3);
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {

@@ -34,11 +34,18 @@ class PlayerEpisodesPanel extends StatefulWidget {
 class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   final GlobalKey _gridKey = GlobalKey();
   late final ScrollController _scrollController;
+  int _selectedGroupIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
+    
+    // 初始化选中的分组
+    if (widget.episodes.length > 50) {
+      _selectedGroupIndex = (widget.currentEpisodeIndex / 50).floor();
+    }
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _scrollToCurrent();
@@ -122,25 +129,88 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
             ),
           ),
 
+          // 分组选择器
+          if (widget.episodes.length > 50)
+            Container(
+              height: 40,
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: (widget.episodes.length / 50).ceil(),
+                itemBuilder: (context, index) {
+                  final start = index * 50 + 1;
+                  final end =
+                      ((index + 1) * 50).clamp(0, widget.episodes.length);
+                  final isSelected = _selectedGroupIndex == index;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text('$start-$end'),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _selectedGroupIndex = index;
+                          });
+                        }
+                      },
+                      selectedColor: Colors.green.withOpacity(0.2),
+                      backgroundColor: isDarkMode
+                          ? Colors.white10
+                          : Colors.black.withOpacity(0.05),
+                      labelStyle: TextStyle(
+                        color: isSelected
+                            ? Colors.green
+                            : textColor.withOpacity(0.7),
+                        fontSize: 13,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: BorderSide(
+                          color: isSelected ? Colors.green : Colors.transparent,
+                        ),
+                      ),
+                      showCheckmark: false,
+                    ),
+                  );
+                },
+              ),
+            ),
+
           // 集数网格
           Expanded(
             child: GridView.builder(
               key: _gridKey,
               controller: _scrollController,
-              padding: EdgeInsets.fromLTRB(16, 4, 16, widget.isCompact ? 16 : 24),
+              padding:
+                  EdgeInsets.fromLTRB(16, 4, 16, widget.isCompact ? 16 : 24),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: widget.crossAxisCount,
                 crossAxisSpacing: widget.isCompact ? 8 : 12,
                 mainAxisSpacing: widget.isCompact ? 8 : 12,
-                childAspectRatio: widget.crossAxisCount == 4 
-                    ? 2.2 
-                    : (widget.crossAxisCount == 3 ? 2.0 : (widget.isCompact ? 3.0 : 2.5)),
+                childAspectRatio: widget.crossAxisCount == 4
+                    ? 2.2
+                    : (widget.crossAxisCount == 3
+                        ? 2.0
+                        : (widget.isCompact ? 3.0 : 2.5)),
               ),
-              itemCount: widget.episodes.length,
+              itemCount: (widget.episodes.length > 50)
+                  ? (((_selectedGroupIndex + 1) * 50)
+                          .clamp(0, widget.episodes.length) -
+                      (_selectedGroupIndex * 50))
+                  : widget.episodes.length,
               itemBuilder: (context, index) {
-                final episodeIndex = widget.isReversed
-                    ? widget.episodes.length - 1 - index
+                final actualIndex = (widget.episodes.length > 50)
+                    ? (_selectedGroupIndex * 50 + index)
                     : index;
+
+                final episodeIndex = widget.isReversed
+                    ? widget.episodes.length - 1 - actualIndex
+                    : actualIndex;
                 final isCurrentEpisode =
                     episodeIndex == widget.currentEpisodeIndex;
 

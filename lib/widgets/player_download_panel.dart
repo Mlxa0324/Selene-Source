@@ -30,6 +30,12 @@ class PlayerDownloadPanel extends StatefulWidget {
 
 class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
   final Set<int> _selectedIndices = {};
+  int _selectedGroupIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   void _toggleSelection(int index) {
     setState(() {
@@ -130,61 +136,118 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
             ),
           ),
 
-          // 集数选择列表 (改为 Wrap 以支持动态宽高)
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: List.generate(widget.episodes.length, (index) {
-                  final isSelected = _selectedIndices.contains(index);
-                  String title = '';
-                  if (widget.episodesTitles.isNotEmpty && index < widget.episodesTitles.length) {
-                    title = widget.episodesTitles[index];
-                  } else {
-                    title = '第${index + 1}集';
-                  }
+          // 分组选择器
+          if (widget.episodes.length > 50)
+            Container(
+              height: 40,
+              margin: const EdgeInsets.only(bottom: 8),
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: (widget.episodes.length / 50).ceil(),
+                itemBuilder: (context, index) {
+                  final start = index * 50 + 1;
+                  final end =
+                      ((index + 1) * 50).clamp(0, widget.episodes.length);
+                  final isSelected = _selectedGroupIndex == index;
 
-                  return GestureDetector(
-                    onTap: () => _toggleSelection(index),
-                    child: IntrinsicWidth(
-                      child: Container(
-                        constraints: BoxConstraints(
-                          minWidth: widget.isCompact ? 50 : 60,
-                          maxWidth: 180,
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text('$start-$end'),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        if (selected) {
+                          setState(() {
+                            _selectedGroupIndex = index;
+                          });
+                        }
+                      },
+                      selectedColor: Colors.green.withOpacity(0.2),
+                      backgroundColor: isDarkMode
+                          ? Colors.white10
+                          : Colors.black.withOpacity(0.05),
+                      labelStyle: TextStyle(
+                        color: isSelected
+                            ? Colors.green
+                            : textColor.withOpacity(0.7),
+                        fontSize: 13,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: BorderSide(
+                          color: isSelected ? Colors.green : Colors.transparent,
                         ),
-                        decoration: BoxDecoration(
-                          color: isSelected 
-                              ? Colors.green.withOpacity(0.2) 
-                              : (isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05)),
-                          borderRadius: BorderRadius.circular(8),
-                          border: isSelected 
-                              ? Border.all(color: Colors.green, width: 1.5) 
-                              : null,
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: widget.isCompact ? 12 : 16,
-                            vertical: widget.isCompact ? 8 : 10
+                      ),
+                      showCheckmark: false,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          // 集数选择列表
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: widget.isCompact ? 3 : 2,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: widget.isCompact ? 2.8 : 3.2,
+              ),
+              itemCount: (widget.episodes.length > 50)
+                  ? (((_selectedGroupIndex + 1) * 50)
+                          .clamp(0, widget.episodes.length) -
+                      (_selectedGroupIndex * 50))
+                  : widget.episodes.length,
+              itemBuilder: (context, index) {
+                final actualIndex = (widget.episodes.length > 50)
+                    ? (_selectedGroupIndex * 50 + index)
+                    : index;
+
+                final isSelected = _selectedIndices.contains(actualIndex);
+                String title = '';
+                if (widget.episodesTitles.isNotEmpty &&
+                    actualIndex < widget.episodesTitles.length) {
+                  title = widget.episodesTitles[actualIndex];
+                } else {
+                  title = '第${actualIndex + 1}集';
+                }
+
+                return GestureDetector(
+                  onTap: () => _toggleSelection(actualIndex),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.green.withOpacity(0.2)
+                          : (isDarkMode
+                              ? Colors.white10
+                              : Colors.black.withOpacity(0.05)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: isSelected
+                          ? Border.all(color: Colors.green, width: 1.5)
+                          : null,
+                    ),
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            color: isSelected ? Colors.green : textColor,
+                            fontSize: 13,
                           ),
-                          child: Center(
-                            child: Text(
-                              title,
-                              style: TextStyle(
-                                color: isSelected ? Colors.green : textColor,
-                                fontSize: 13,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ),
-                  );
-                }),
-              ),
+                  ),
+                );
+              },
             ),
           ),
 
