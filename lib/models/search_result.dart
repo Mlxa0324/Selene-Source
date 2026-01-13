@@ -4,6 +4,7 @@ import 'video_info.dart';
 class SearchResult {
   final String id;
   final String title;
+  final String? url;
   final String poster;
   final List<String> episodes;
   final List<String> episodesTitles;
@@ -28,6 +29,7 @@ class SearchResult {
     this.desc,
     this.typeName,
     this.doubanId,
+    this.url
   });
 
   /// 从JSON创建SearchResult
@@ -35,6 +37,7 @@ class SearchResult {
     return SearchResult(
       id: json['id'] ?? '',
       title: json['title'] ?? '',
+      url: json['url']  ?? '',
       poster: json['poster'] ?? '',
       episodes: json['episodes'] != null 
           ? List<String>.from(json['episodes'])
@@ -57,6 +60,7 @@ class SearchResult {
     return {
       'id': id,
       'title': title,
+      'url': url,
       'poster': poster,
       'episodes': episodes,
       'episodes_titles': episodesTitles,

@@ -27,6 +27,13 @@ class DownloadService extends ChangeNotifier {
       if (_tasks[i].status == DownloadStatus.downloading) {
         _tasks[i] = _tasks[i].copyWith(status: DownloadStatus.paused);
       }
+      // 如果已完成但没有文件大小信息，则尝试计算
+      if (_tasks[i].status == DownloadStatus.completed && _tasks[i].fileSize == null) {
+        final size = await _calculateDirSize(Directory(_tasks[i].savePath));
+        if (size > 0) {
+          _tasks[i] = _tasks[i].copyWith(fileSize: size);
+        }
+      }
     }
     notifyListeners();
   }
@@ -238,6 +245,14 @@ class DownloadService extends ChangeNotifier {
       }
       await localM3u8File.writeAsString(localLines.join('\n'));
 
+      // 5. 计算最终文件大小
+      int totalSize = 0;
+      try {
+        totalSize = await _calculateDirSize(Directory(task.savePath));
+      } catch (e) {
+        debugPrint("Error calculating directory size: $e");
+      }
+
       // 完成
       final finalIndex = _tasks.indexWhere((t) => t.id == id);
       if (finalIndex != -1) {
@@ -245,6 +260,7 @@ class DownloadService extends ChangeNotifier {
           status: DownloadStatus.completed,
           progress: 1.0,
           downloadedSegments: segmentUrls.length,
+          fileSize: totalSize,
         );
         await _saveTasks();
         notifyListeners();
@@ -276,5 +292,21 @@ class DownloadService extends ChangeNotifier {
     }
     final uri = Uri.parse(baseUrl);
     return uri.resolve(url).toString();
+  }
+
+  Future<int> _calculateDirSize(Directory dir) async {
+    int totalSize = 0;
+    try {
+      if (await dir.exists()) {
+        await for (final entity in dir.list(recursive: true, followLinks: false)) {
+          if (entity is File) {
+            totalSize += await entity.length();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error calculating dir size: $e");
+    }
+    return totalSize;
   }
 }

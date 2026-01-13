@@ -41,6 +41,8 @@ class PlayerScreen extends StatefulWidget {
   final String? stitle;
   final String? stype;
   final String? prefer;
+  final String? localPath; // 本地播放路径
+  final SearchResult? initialVideoDetail; // 初始详情（用于离线播放）
 
   const PlayerScreen({
     super.key,
@@ -51,6 +53,8 @@ class PlayerScreen extends StatefulWidget {
     this.stitle,
     this.stype,
     this.prefer,
+    this.localPath,
+    this.initialVideoDetail,
   });
 
   @override
@@ -387,6 +391,27 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void initVideoData() async {
+    // 如果是离线播放模式
+    if (widget.localPath != null && widget.initialVideoDetail != null) {
+      updateLoadingMessage('正在加载本地缓存...');
+      updateLoadingProgress(0.8);
+      
+      currentDetail = widget.initialVideoDetail;
+      allSources = [currentDetail!];
+      
+      setInfosByDetail(currentDetail!);
+      
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+      
+      // 直接从第一集（唯一的本地路径）开始播放
+      startPlay(0, 0);
+      return;
+    }
+
     if (widget.source == null &&
         widget.id == null &&
         widget.title.isEmpty &&

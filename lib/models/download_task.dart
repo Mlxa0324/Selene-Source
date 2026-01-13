@@ -19,6 +19,7 @@ class DownloadTask {
   int totalSegments;
   int downloadedSegments;
   String? error;
+  int? fileSize; // 文件大小（字节）
 
   DownloadTask({
     required this.id,
@@ -33,6 +34,7 @@ class DownloadTask {
     this.totalSegments = 0,
     this.downloadedSegments = 0,
     this.error,
+    this.fileSize,
   });
 
   Map<String, dynamic> toJson() {
@@ -49,6 +51,7 @@ class DownloadTask {
       'totalSegments': totalSegments,
       'downloadedSegments': downloadedSegments,
       'error': error,
+      'fileSize': fileSize,
     };
   }
 
@@ -66,6 +69,7 @@ class DownloadTask {
       totalSegments: json['totalSegments'] ?? 0,
       downloadedSegments: json['downloadedSegments'] ?? 0,
       error: json['error'],
+      fileSize: json['fileSize'],
     );
   }
 
@@ -75,6 +79,7 @@ class DownloadTask {
     int? totalSegments,
     int? downloadedSegments,
     String? error,
+    int? fileSize,
   }) {
     return DownloadTask(
       id: id,
@@ -89,6 +94,7 @@ class DownloadTask {
       totalSegments: totalSegments ?? this.totalSegments,
       downloadedSegments: downloadedSegments ?? this.downloadedSegments,
       error: error ?? this.error,
+      fileSize: fileSize ?? this.fileSize,
     );
   }
 }

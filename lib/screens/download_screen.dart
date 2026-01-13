@@ -4,9 +4,59 @@ import '../services/download_service.dart';
 import '../models/download_task.dart';
 import '../services/theme_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
+import '../models/search_result.dart';
+import 'player_screen.dart';
 
 class DownloadScreen extends StatelessWidget {
   const DownloadScreen({super.key});
+
+  String _formatFileSize(int? bytes) {
+    if (bytes == null || bytes <= 0) return "未知大小";
+    const suffixes = ["B", "KB", "MB", "GB", "TB"];
+    var i = 0;
+    double size = bytes.toDouble();
+    while (size >= 1024 && i < suffixes.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    return "${size.toStringAsFixed(1)} ${suffixes[i]}";
+  }
+
+  void _playOfflineVideo(BuildContext context, DownloadTask task) {
+    // 播放本地 index.m3u8 文件
+    final localM3u8Path = "${task.savePath}/index.m3u8";
+    if (!File(localM3u8Path).existsSync()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("本地缓存文件不存在或已损坏")),
+      );
+      return;
+    }
+
+    // 构建一个临时的 SearchResult 进行播放，注意 episodes 里面传本地路径
+    final offlineDetail = SearchResult(
+      id: task.id,
+      title: task.title,
+      poster: task.cover,
+      year: '',
+      url: task.url,
+      source: 'local',
+      sourceName: '本地缓存',
+      episodes: [localM3u8Path],
+      episodesTitles: [task.subtitle],
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlayerScreen(
+          title: task.title,
+          localPath: localM3u8Path,
+          initialVideoDetail: offlineDetail,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,7 +182,9 @@ class DownloadScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        _getStatusText(task),
+                        task.status == DownloadStatus.completed 
+                            ? "已完成 | ${_formatFileSize(task.fileSize)}" 
+                            : _getStatusText(task),
                         style: TextStyle(
                           fontSize: 12,
                           color: _getStatusColor(task, isDarkMode),
@@ -157,7 +209,9 @@ class DownloadScreen extends StatelessWidget {
                     size: 24,
                   ),
                   onPressed: () {
-                    if (task.status == DownloadStatus.downloading) {
+                    if (task.status == DownloadStatus.completed) {
+                      _playOfflineVideo(context, task);
+                    } else if (task.status == DownloadStatus.downloading) {
                       downloadService.pauseTask(task.id);
                     } else {
                       downloadService.resumeTask(task.id);
