@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../widgets/video_player_surface.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/video_card.dart';
@@ -395,18 +396,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (widget.localPath != null && widget.initialVideoDetail != null) {
       updateLoadingMessage('正在加载本地缓存...');
       updateLoadingProgress(0.8);
-      
+
       currentDetail = widget.initialVideoDetail;
       allSources = [currentDetail!];
-      
+
       setInfosByDetail(currentDetail!);
-      
+
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
-      
+
       // 直接从第一集（唯一的本地路径）开始播放
       startPlay(0, 0);
       return;
@@ -1357,6 +1358,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             videoYear: videoYear,
             currentEpisodeIndex: currentEpisodeIndex,
             totalEpisodes: totalEpisodes,
+            episodesTitles: currentDetail?.episodesTitles,
             sourceName: currentDetail?.sourceName ?? currentSource,
             onWebFullscreenChanged: (isWebFullscreen) {
               setState(() {
@@ -1598,6 +1600,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
+                  // 下载按钮
+                  GestureDetector(
+                    onTap: _showDownloadPanel,
+                    child: Icon(
+                      LucideIcons.folderDown,
+                      color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
                   GestureDetector(
                     onTap: _toggleFavorite,
                     child: Icon(
@@ -1964,18 +1976,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
               const SizedBox(width: 20),
 
-              // 下载按钮
-              _HoverButton(
-                onTap: _showDownloadPanel,
-                child: Icon(
-                  Icons.download_for_offline_outlined,
-                  size: 22,
-                  color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                ),
-              ),
-
-              const SizedBox(width: 20),
-
               // 展开按钮
               _HoverButton(
                 onTap: _showEpisodesPanel,
@@ -1993,7 +1993,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 10),
                     Icon(
                       Icons.arrow_forward_ios,
                       size: 14,
@@ -2325,7 +2325,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     turns: _refreshAnimationController,
                     child: Icon(
                       Icons.refresh,
-                      size: 20,
+                      size: 21,
                       color: _isRefreshing
                           ? Colors.green
                           : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
@@ -2724,13 +2724,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     final theme = Theme.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
-    
+
     // 统一使用全屏侧边面板的宽度逻辑 (40% 屏幕宽度)
     final panelWidth = screenWidth * 0.4;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    
+
     // 如果是平板或横屏，使用侧边滑出逻辑
-    if (_isTablet || MediaQuery.of(context).orientation == Orientation.landscape) {
+    if (_isTablet ||
+        MediaQuery.of(context).orientation == Orientation.landscape) {
       showGeneralDialog(
         context: context,
         barrierDismissible: true,
@@ -2739,15 +2740,22 @@ class _PlayerScreenState extends State<PlayerScreen>
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
           return Align(
-            alignment: (_isTablet && _isPortraitTablet) ? Alignment.bottomCenter : Alignment.centerRight,
+            alignment: (_isTablet && _isPortraitTablet)
+                ? Alignment.bottomCenter
+                : Alignment.centerRight,
             child: Material(
               color: Colors.transparent,
               child: SizedBox(
-                width: (_isTablet && _isPortraitTablet) ? screenWidth : panelWidth,
-                height: (_isTablet && _isPortraitTablet) ? (screenHeight - statusBarHeight) * 0.5 : screenHeight,
+                width:
+                    (_isTablet && _isPortraitTablet) ? screenWidth : panelWidth,
+                height: (_isTablet && _isPortraitTablet)
+                    ? (screenHeight - statusBarHeight) * 0.5
+                    : screenHeight,
                 child: SlideTransition(
                   position: Tween<Offset>(
-                    begin: (_isTablet && _isPortraitTablet) ? const Offset(0, 1) : const Offset(1, 0),
+                    begin: (_isTablet && _isPortraitTablet)
+                        ? const Offset(0, 1)
+                        : const Offset(1, 0),
                     end: Offset.zero,
                   ).animate(CurvedAnimation(
                     parent: animation,

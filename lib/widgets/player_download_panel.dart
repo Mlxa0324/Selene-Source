@@ -62,11 +62,12 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
 
     final downloadService = context.read<DownloadService>();
     final appDir = await getApplicationDocumentsDirectory();
-    
+
     for (var index in _selectedIndices) {
       final episodeUrl = widget.episodes[index];
       String subtitle = '';
-      if (widget.episodesTitles.isNotEmpty && index < widget.episodesTitles.length) {
+      if (widget.episodesTitles.isNotEmpty &&
+          index < widget.episodesTitles.length) {
         subtitle = widget.episodesTitles[index];
       } else {
         subtitle = '第${index + 1}集';
@@ -99,9 +100,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
-    final backgroundColor = isDarkMode 
-        ? const Color(0xFF121212) 
-        : Colors.white;
+    final backgroundColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
@@ -193,10 +192,10 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
             child: GridView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: widget.isCompact ? 3 : 2,
+                crossAxisCount: widget.isCompact ? 5 : 4,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
-                childAspectRatio: widget.isCompact ? 2.8 : 3.2,
+                childAspectRatio: widget.isCompact ? 3.2 : 1.5,
               ),
               itemCount: (widget.episodes.length > 50)
                   ? (((_selectedGroupIndex + 1) * 50)
@@ -240,7 +239,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
                             color: isSelected ? Colors.green : textColor,
                             fontSize: 13,
                           ),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -253,12 +252,14 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
 
           // 查看缓存按钮 (位于底部按钮上方一点)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding:
+                const EdgeInsets.only(left: 16, right: 16, top: 6, bottom: 6),
             child: InkWell(
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const DownloadScreen()),
+                  MaterialPageRoute(
+                      builder: (context) => const DownloadScreen()),
                 );
               },
               borderRadius: BorderRadius.circular(10),
@@ -277,7 +278,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
                       color: Colors.green,
                       size: widget.isCompact ? 18 : 20,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 5),
                     Text(
                       '查看缓存',
                       style: TextStyle(
@@ -294,7 +295,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
 
           // 底部操作按钮
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding:
+                const EdgeInsets.only(left: 16, right: 16, top: 6, bottom: 16),
             child: Row(
               children: [
                 Expanded(
@@ -308,7 +310,10 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: Text(_selectedIndices.length == widget.episodes.length ? '取消全选' : '全选'),
+                    child: Text(
+                        _selectedIndices.length == widget.episodes.length
+                            ? '取消全选'
+                            : '全选'),
                   ),
                 ),
                 const SizedBox(width: 12),

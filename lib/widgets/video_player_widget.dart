@@ -26,6 +26,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final String? videoYear;
   final int? currentEpisodeIndex;
   final int? totalEpisodes;
+  final List<String>? episodesTitles;
   final String? sourceName;
   final Function(bool isWebFullscreen)? onWebFullscreenChanged;
   final VoidCallback? onExitFullScreen;
@@ -59,6 +60,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.videoYear,
     this.currentEpisodeIndex,
     this.totalEpisodes,
+    this.episodesTitles,
     this.sourceName,
     this.onWebFullscreenChanged,
     this.onExitFullScreen,
@@ -559,6 +561,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         videoYear: widget.videoYear,
                         currentEpisodeIndex: widget.currentEpisodeIndex,
                         totalEpisodes: widget.totalEpisodes,
+                        episodesTitles: widget.episodesTitles,
                         sourceName: widget.sourceName,
                         onWebFullscreenChanged: widget.onWebFullscreenChanged,
                         onExitWebFullscreenCallbackReady: (callback) {
@@ -585,6 +588,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         videoYear: widget.videoYear,
                         currentEpisodeIndex: widget.currentEpisodeIndex,
                         totalEpisodes: widget.totalEpisodes,
+                        episodesTitles: widget.episodesTitles,
                         sourceName: widget.sourceName,
                         onExitFullScreen: widget.onExitFullScreen,
                         live: widget.live,

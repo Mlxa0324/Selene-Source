@@ -25,6 +25,7 @@ class MobilePlayerControls extends StatefulWidget {
   final String? videoYear;
   final int? currentEpisodeIndex;
   final int? totalEpisodes;
+  final List<String>? episodesTitles;
   final String? sourceName;
   final VoidCallback? onExitFullScreen;
   final bool live;
@@ -58,6 +59,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.videoYear,
     this.currentEpisodeIndex,
     this.totalEpisodes,
+    this.episodesTitles,
     this.sourceName,
     this.onExitFullScreen,
     this.live = false,
@@ -819,11 +821,20 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildVideoInfo() {
     final title = widget.videoTitle ?? '';
-    final episodeText = (widget.currentEpisodeIndex != null &&
-            widget.totalEpisodes != null &&
-            widget.totalEpisodes! > 1)
-        ? '第${widget.currentEpisodeIndex! + 1}集'
-        : '';
+    
+    // 获取集数显示文本：优先使用标题列表中的名称，如果没有则使用"第X集"
+    String episodeText = '';
+    if (widget.currentEpisodeIndex != null &&
+        widget.totalEpisodes != null &&
+        widget.totalEpisodes! > 1) {
+      if (widget.episodesTitles != null &&
+          widget.currentEpisodeIndex! < widget.episodesTitles!.length) {
+        episodeText = widget.episodesTitles![widget.currentEpisodeIndex!];
+      } else {
+        episodeText = '第${widget.currentEpisodeIndex! + 1}集';
+      }
+    }
+
     final year = widget.videoYear ?? '';
 
     final parts = <String>[];
