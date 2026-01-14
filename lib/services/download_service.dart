@@ -62,7 +62,7 @@ class DownloadService extends ChangeNotifier {
     _tasks.add(task);
     await _saveTasks();
     notifyListeners();
-    _startDownload(task.id);
+    _checkQueue(); // 尝试从队列启动
   }
 
   void pauseTask(String id) {
@@ -70,8 +70,10 @@ class DownloadService extends ChangeNotifier {
     if (index != -1 && _tasks[index].status == DownloadStatus.downloading) {
       _cancelTokens[id]?.cancel("User paused");
       _tasks[index] = _tasks[index].copyWith(status: DownloadStatus.paused);
+      _tasks[index].speed = 0; // 重置速度
       _saveTasks();
       notifyListeners();
+      _checkQueue(); // 腾出一个位置，检查队列
     }
   }
 
@@ -81,7 +83,25 @@ class DownloadService extends ChangeNotifier {
       _tasks[index] = _tasks[index].copyWith(status: DownloadStatus.queued);
       _saveTasks();
       notifyListeners();
-      _startDownload(id);
+      _checkQueue(); // 加入队列等待调度
+    }
+  }
+
+  /// 检查并调度下载队列
+  void _checkQueue() {
+    // 统计当前正在下载的任务
+    int downloadingCount = _tasks.where((t) => t.status == DownloadStatus.downloading).length;
+    
+    // 如果下载中的任务已达3个，则不再启动新任务
+    if (downloadingCount >= 3) return;
+
+    // 查找处于等待中的任务
+    for (var i = 0; i < _tasks.length; i++) {
+      if (_tasks[i].status == DownloadStatus.queued) {
+        _startDownload(_tasks[i].id);
+        downloadingCount++;
+        if (downloadingCount >= 3) break;
+      }
     }
   }
 
@@ -93,6 +113,7 @@ class DownloadService extends ChangeNotifier {
       _tasks.removeAt(index);
       await _saveTasks();
       notifyListeners();
+      _checkQueue(); // 删除后也检查队列
       
       // 删除本地文件
       try {
@@ -125,19 +146,50 @@ class DownloadService extends ChangeNotifier {
         await saveDir.create(recursive: true);
       }
 
-      // 1. 获取 M3U8 内容
-      final response = await _dio.get(task.url, cancelToken: cancelToken);
-      final m3u8Content = response.data.toString();
+      // 1. 获取真正的 M3U8 内容（处理多级 M3U8）
+      String currentUrl = task.url;
+      String m3u8Content = '';
+      List<String> segmentUrls = [];
       
-      // 2. 解析分片 URL
-      final lines = m3u8Content.split('\n');
-      final segmentUrls = <String>[];
-      final baseUrl = task.url;
-      
-      for (var line in lines) {
-        final trimmed = line.trim();
-        if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
-          segmentUrls.add(_resolveUrl(trimmed, baseUrl));
+      // 循环解析直到找到包含分片的 M3U8
+      int maxRedirects = 3;
+      while (maxRedirects > 0) {
+        final response = await _dio.get(currentUrl, cancelToken: cancelToken);
+        m3u8Content = response.data.toString();
+        final lines = m3u8Content.split('\n');
+        
+        bool hasSegments = false;
+        bool hasSubPlaylist = false;
+        String? firstSubPlaylist;
+
+        for (var line in lines) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) continue;
+          if (!trimmed.startsWith('#')) {
+            if (trimmed.contains('.m3u8')) {
+              hasSubPlaylist = true;
+              firstSubPlaylist = _resolveUrl(trimmed, currentUrl);
+            } else {
+              hasSegments = true;
+            }
+          }
+        }
+
+        if (hasSegments) {
+          // 找到了真正的分片列表
+          for (var line in lines) {
+            final trimmed = line.trim();
+            if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
+              segmentUrls.add(_resolveUrl(trimmed, currentUrl));
+            }
+          }
+          break;
+        } else if (hasSubPlaylist && firstSubPlaylist != null) {
+          // 跳转到子播放列表
+          currentUrl = firstSubPlaylist;
+          maxRedirects--;
+        } else {
+          throw Exception("无法解析 M3U8 内容或未找到有效分片");
         }
       }
 
@@ -174,6 +226,10 @@ class DownloadService extends ChangeNotifier {
       int activeDownloads = 0;
       int completedInSession = 0;
       final completer = Completer<void>();
+      
+      // 用于计算速度
+      DateTime lastUpdateTime = DateTime.now();
+      int lastDownloadedSize = 0;
 
       void downloadNext() async {
         if (pendingIndices.isEmpty) {
@@ -201,14 +257,33 @@ class DownloadService extends ChangeNotifier {
           completedInSession++;
           downloaded++;
           
-          // 更新进度
+          // 获取文件大小以更新已下载字节数
+          final segSize = await segmentFile.length();
+          
+          // 更新进度和大小
           final currentIndex = _tasks.indexWhere((t) => t.id == id);
           if (currentIndex != -1) {
-            _tasks[currentIndex] = _tasks[currentIndex].copyWith(
-              downloadedSegments: downloaded,
-              progress: downloaded / segmentUrls.length,
-            );
-            if (completedInSession % 5 == 0) { // 减少通知频率
+            final now = DateTime.now();
+            
+            // 始终在内存中累加最新的数据，但不一定要立即同步给 UI 任务对象
+            // 我们通过一个临时变量来追踪真实的下载总量
+            _tasks[currentIndex].currentSize += segSize;
+            
+            final interval = now.difference(lastUpdateTime).inMilliseconds;
+            if (interval >= 1500) {
+              final currentTotalSize = _tasks[currentIndex].currentSize;
+              double newSpeed = (currentTotalSize - lastDownloadedSize) / (interval / 1000.0);
+              
+              lastUpdateTime = now;
+              lastDownloadedSize = currentTotalSize;
+              
+              // 只有达到间隔时，才创建新的 Task 对象并通知 UI
+              _tasks[currentIndex] = _tasks[currentIndex].copyWith(
+                downloadedSegments: downloaded,
+                progress: downloaded / segmentUrls.length,
+                currentSize: currentTotalSize,
+                speed: newSpeed,
+              );
               notifyListeners();
             }
           }
@@ -234,13 +309,20 @@ class DownloadService extends ChangeNotifier {
       final localM3u8File = File("${task.savePath}/index.m3u8");
       final localLines = <String>[];
       int segIdx = 0;
-      for (var line in lines) {
+      final finalLines = m3u8Content.split('\n'); // 使用最后解析成功的 m3u8 内容
+      for (var line in finalLines) {
         final trimmed = line.trim();
         if (trimmed.isNotEmpty && !trimmed.startsWith('#')) {
           localLines.add("seg_$segIdx.ts");
           segIdx++;
         } else {
-          localLines.add(line);
+          // 移除所有可能导致播放器尝试联网的标签，除了密钥标签
+          if (!trimmed.startsWith('#EXT-X-KEY')) {
+             localLines.add(line);
+          } else {
+             // 如果有加密，目前我们只是简单保留标签，实际上可能需要处理 Key 的下载
+             localLines.add(line);
+          }
         }
       }
       await localM3u8File.writeAsString(localLines.join('\n'));
@@ -283,6 +365,7 @@ class DownloadService extends ChangeNotifier {
       }
     } finally {
       _cancelTokens.remove(id);
+      _checkQueue(); // 任务结束，检查并启动下一个
     }
   }
 

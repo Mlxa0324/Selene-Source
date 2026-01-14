@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/download_service.dart';
 import '../models/download_task.dart';
@@ -8,8 +9,33 @@ import 'dart:io';
 import '../models/search_result.dart';
 import 'player_screen.dart';
 
-class DownloadScreen extends StatelessWidget {
+class DownloadScreen extends StatefulWidget {
   const DownloadScreen({super.key});
+
+  @override
+  State<DownloadScreen> createState() => _DownloadScreenState();
+}
+
+class _DownloadScreenState extends State<DownloadScreen> {
+  bool _isEditing = false;
+  final Set<String> _selectedIds = {};
+  final Set<String> _expandedTitles = {}; // 记录展开的剧集标题
+
+  // 归类任务
+  Map<String, List<DownloadTask>> _groupTasks(List<DownloadTask> tasks) {
+    final Map<String, List<DownloadTask>> groups = {};
+    for (var task in tasks) {
+      if (!groups.containsKey(task.title)) {
+        groups[task.title] = [];
+      }
+      groups[task.title]!.add(task);
+    }
+    // 对每个组内的集数按 episodeIndex 排序
+    groups.forEach((title, groupTasks) {
+      groupTasks.sort((a, b) => (a.episodeIndex ?? 0).compareTo(b.episodeIndex ?? 0));
+    });
+    return groups;
+  }
 
   String _formatFileSize(int? bytes) {
     if (bytes == null || bytes <= 0) return "未知大小";
@@ -23,7 +49,19 @@ class DownloadScreen extends StatelessWidget {
     return "${size.toStringAsFixed(1)} ${suffixes[i]}";
   }
 
-  void _playOfflineVideo(BuildContext context, DownloadTask task) {
+  String _formatSpeed(double bytesPerSecond) {
+    if (bytesPerSecond <= 0) return "0 B/s";
+    const suffixes = ["B/s", "KB/s", "MB/s", "GB/s"];
+    var i = 0;
+    double speed = bytesPerSecond;
+    while (speed >= 1024 && i < suffixes.length - 1) {
+      speed /= 1024;
+      i++;
+    }
+    return "${speed.toStringAsFixed(1)} ${suffixes[i]}";
+  }
+
+  void _playOfflineVideo(BuildContext context, DownloadTask task, List<DownloadTask> allEpisodes) {
     // 播放本地 index.m3u8 文件
     final localM3u8Path = "${task.savePath}/index.m3u8";
     if (!File(localM3u8Path).existsSync()) {
@@ -33,7 +71,24 @@ class DownloadScreen extends StatelessWidget {
       return;
     }
 
-    // 构建一个临时的 SearchResult 进行播放，注意 episodes 里面传本地路径
+    // 构建一个完整的列表用于连播
+    final List<String> episodesPaths = [];
+    final List<String> episodesTitles = [];
+    int initialIndex = 0;
+
+    for (int i = 0; i < allEpisodes.length; i++) {
+      final ep = allEpisodes[i];
+      final path = "${ep.savePath}/index.m3u8";
+      if (File(path).existsSync()) {
+        episodesPaths.add(path);
+        episodesTitles.add(ep.subtitle);
+        if (ep.id == task.id) {
+          initialIndex = episodesPaths.length - 1;
+        }
+      }
+    }
+
+    // 构建一个临时的 SearchResult 进行播放
     final offlineDetail = SearchResult(
       id: task.id,
       title: task.title,
@@ -42,8 +97,8 @@ class DownloadScreen extends StatelessWidget {
       url: task.url,
       source: 'local',
       sourceName: '本地缓存',
-      episodes: [localM3u8Path],
-      episodesTitles: [task.subtitle],
+      episodes: episodesPaths,
+      episodesTitles: episodesTitles,
     );
 
     Navigator.push(
@@ -51,8 +106,9 @@ class DownloadScreen extends StatelessWidget {
       MaterialPageRoute(
         builder: (context) => PlayerScreen(
           title: task.title,
-          localPath: localM3u8Path,
+          localPath: episodesPaths[initialIndex],
           initialVideoDetail: offlineDetail,
+          initialEpisodeIndex: initialIndex,
         ),
       ),
     );
@@ -64,25 +120,102 @@ class DownloadScreen extends StatelessWidget {
     final isDarkMode = themeService.isDarkMode;
     final downloadService = context.watch<DownloadService>();
     final tasks = downloadService.tasks;
+    final groupedTasks = _groupTasks(tasks);
+    final sortedTitles = groupedTasks.keys.toList();
 
     return Scaffold(
       backgroundColor: isDarkMode ? const Color(0xFF000000) : Colors.grey[50],
       appBar: AppBar(
-        title: const Text('下载管理', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(_isEditing ? '已选择 ${_selectedIds.length}' : '下载管理', 
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-      ),
-      body: tasks.isEmpty
-          ? _buildEmptyState(isDarkMode)
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: tasks.length,
-              itemBuilder: (context, index) {
-                final task = tasks[index];
-                return _buildDownloadItem(context, task, isDarkMode);
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
+          statusBarBrightness: isDarkMode ? Brightness.dark : Brightness.light,
+        ),
+        actions: [
+          if (tasks.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _isEditing = !_isEditing;
+                  if (!_isEditing) _selectedIds.clear();
+                });
               },
+              child: Text(_isEditing ? '取消' : '编辑', 
+                  style: TextStyle(color: isDarkMode ? Colors.white : Colors.black)),
             ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          tasks.isEmpty
+              ? _buildEmptyState(isDarkMode)
+              : ListView.builder(
+                  padding: EdgeInsets.only(left: 16, right: 16, top: 0, bottom: _isEditing ? 100 : 16),
+                  itemCount: sortedTitles.length,
+                  itemBuilder: (context, index) {
+                    final title = sortedTitles[index];
+                    final group = groupedTasks[title] ?? [];
+                    return _buildGroup(context, title, group, isDarkMode);
+                  },
+                ),
+          if (_isEditing)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: EdgeInsets.only(
+                  left: 20, 
+                  right: 20, 
+                  top: 12, 
+                  bottom: MediaQuery.of(context).padding.bottom + 12
+                ),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? const Color(0xFF1e1e1e) : Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    )
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          if (_selectedIds.length == tasks.length) {
+                            _selectedIds.clear();
+                          } else {
+                            _selectedIds.addAll(tasks.map((t) => t.id));
+                          }
+                        });
+                      },
+                      child: Text(_selectedIds.length == tasks.length ? '取消全选' : '全选'),
+                    ),
+                    ElevatedButton(
+                      onPressed: _selectedIds.isEmpty ? null : () => _confirmBatchDelete(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      ),
+                      child: Text('删除 (${_selectedIds.length})'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -109,122 +242,225 @@ class DownloadScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDownloadItem(BuildContext context, DownloadTask task, bool isDarkMode) {
-    final downloadService = context.read<DownloadService>();
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isDarkMode ? Colors.white.withOpacity(0.05) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: isDarkMode ? null : [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 封面图
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                width: 80,
-                height: 110,
-                child: CachedNetworkImage(
-                  imageUrl: task.cover,
-                  fit: BoxFit.cover,
-                  errorWidget: (context, url, error) => Container(
-                    color: isDarkMode ? Colors.white10 : Colors.black12,
-                    child: const Icon(Icons.movie, color: Colors.grey),
-                  ),
-                ),
+  Widget _buildGroup(BuildContext context, String title, List<DownloadTask> group, bool isDarkMode) {
+    final bool isExpanded = _expandedTitles.contains(title);
+    final completedCount = group.where((t) => t.status == DownloadStatus.completed).length;
+
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () {
+            setState(() {
+              if (isExpanded) {
+                _expandedTitles.remove(title);
+              } else {
+                _expandedTitles.add(title);
+              }
+            });
+          },
+          child: Container(
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDarkMode ? Colors.white.withOpacity(0.08) : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05),
               ),
             ),
-            const SizedBox(width: 12),
-            // 信息区
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    task.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: group[0].cover,
+                    width: 50,
+                    height: 70,
+                    fit: BoxFit.cover,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    task.subtitle,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isDarkMode ? Colors.white54 : Colors.black54,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // 进度条
-                  LinearProgressIndicator(
-                    value: task.progress,
-                    backgroundColor: isDarkMode ? Colors.white10 : Colors.black12,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      task.status == DownloadStatus.failed ? Colors.red : Colors.green,
-                    ),
-                    minHeight: 4,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        task.status == DownloadStatus.completed 
-                            ? "已完成 | ${_formatFileSize(task.fileSize)}" 
-                            : _getStatusText(task),
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "共 ${group.length} 集 · 已完成 $completedCount 集",
                         style: TextStyle(
                           fontSize: 12,
-                          color: _getStatusColor(task, isDarkMode),
+                          color: isDarkMode ? Colors.white54 : Colors.black54,
                         ),
-                      ),
-                      Text(
-                        '${(task.progress * 100).toInt()}%',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            // 操作区
-            Column(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    _getActionIcon(task),
-                    color: Colors.green,
-                    size: 24,
-                  ),
-                  onPressed: () {
-                    if (task.status == DownloadStatus.completed) {
-                      _playOfflineVideo(context, task);
-                    } else if (task.status == DownloadStatus.downloading) {
-                      downloadService.pauseTask(task.id);
-                    } else {
-                      downloadService.resumeTask(task.id);
-                    }
-                  },
                 ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 24),
-                  onPressed: () => _confirmDelete(context, task),
+                Icon(
+                  isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  color: isDarkMode ? Colors.white38 : Colors.black38,
                 ),
               ],
             ),
-          ],
+          ),
+        ),
+        if (isExpanded)
+          ...group.map((task) => _buildDownloadItem(context, task, group, isDarkMode)).toList(),
+      ],
+    );
+  }
+
+  Widget _buildDownloadItem(BuildContext context, DownloadTask task, List<DownloadTask> allEpisodes, bool isDarkMode) {
+    final downloadService = context.read<DownloadService>();
+    final isSelected = _selectedIds.contains(task.id);
+    
+    return Container(
+      margin: const EdgeInsets.only(left: 12, right: 0, top: 8),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.white.withOpacity(0.03) : Colors.white.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(12),
+        border: _isEditing && isSelected 
+            ? Border.all(color: Colors.green, width: 2) 
+            : Border.all(
+                color: isDarkMode 
+                    ? Colors.white.withOpacity(0.05) 
+                    : Colors.black.withOpacity(0.03),
+                width: 1,
+              ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            if (_isEditing) {
+              setState(() {
+                if (isSelected) {
+                  _selectedIds.remove(task.id);
+                } else {
+                  _selectedIds.add(task.id);
+                }
+              });
+            } else if (task.status == DownloadStatus.completed) {
+              _playOfflineVideo(context, task, allEpisodes);
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (_isEditing) ...[
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          _selectedIds.add(task.id);
+                        } else {
+                          _selectedIds.remove(task.id);
+                        }
+                      });
+                    },
+                    activeColor: Colors.green,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                // 信息区
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 8),
+                      // 进度条
+                      LinearProgressIndicator(
+                        value: task.progress,
+                        backgroundColor: isDarkMode ? Colors.white10 : Colors.black12,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          task.status == DownloadStatus.failed ? Colors.red : Colors.green,
+                        ),
+                        minHeight: 2,
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  task.status == DownloadStatus.downloading
+                                      ? "已下载 ${_formatFileSize(task.currentSize)}"
+                                      : (task.status == DownloadStatus.completed 
+                                          ? "已完成 | ${_formatFileSize(task.fileSize)}" 
+                                          : _getStatusText(task)),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _getStatusColor(task, isDarkMode),
+                                  ),
+                                ),
+                                if (task.status == DownloadStatus.downloading)
+                                  Text(
+                                    _formatSpeed(task.speed),
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '${(task.progress * 100).toInt()}%',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // 操作区
+                if (!_isEditing)
+                  Row(
+                    children: [
+                      if (task.status != DownloadStatus.completed)
+                        IconButton(
+                          icon: Icon(
+                            _getActionIcon(task),
+                            color: Colors.green,
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            if (task.status == DownloadStatus.downloading) {
+                              downloadService.pauseTask(task.id);
+                            } else {
+                              downloadService.resumeTask(task.id);
+                            }
+                          },
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                        onPressed: () => _confirmDelete(context, task),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -268,6 +504,33 @@ class DownloadScreen extends StatelessWidget {
               Navigator.pop(ctx);
             },
             child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBatchDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('批量删除'),
+        content: Text('确定要删除选中的 ${_selectedIds.length} 个任务吗？\n文件也将从本地删除。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              final downloadService = context.read<DownloadService>();
+              for (var id in _selectedIds) {
+                downloadService.deleteTask(id);
+              }
+              setState(() {
+                _isEditing = false;
+                _selectedIds.clear();
+              });
+              Navigator.pop(ctx);
+            },
+            child: const Text('全部删除', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),

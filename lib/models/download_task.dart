@@ -11,6 +11,7 @@ class DownloadTask {
   final String url;
   final String title;
   final String subtitle;
+  final int episodeIndex; // 新增：集数索引，用于排序
   final String cover;
   double progress;
   DownloadStatus status;
@@ -19,13 +20,18 @@ class DownloadTask {
   int totalSegments;
   int downloadedSegments;
   String? error;
-  int? fileSize; // 文件大小（字节）
+  int? fileSize; // 总大小（字节）
+  
+  // 运行时属性
+  double speed = 0; // 下载速度 (字节/秒)
+  int currentSize = 0; // 已下载大小 (字节)
 
   DownloadTask({
     required this.id,
     required this.url,
     required this.title,
     required this.subtitle,
+    required this.episodeIndex,
     required this.cover,
     this.progress = 0.0,
     this.status = DownloadStatus.queued,
@@ -35,6 +41,8 @@ class DownloadTask {
     this.downloadedSegments = 0,
     this.error,
     this.fileSize,
+    this.speed = 0,
+    this.currentSize = 0,
   });
 
   Map<String, dynamic> toJson() {
@@ -43,6 +51,7 @@ class DownloadTask {
       'url': url,
       'title': title,
       'subtitle': subtitle,
+      'episodeIndex': episodeIndex,
       'cover': cover,
       'progress': progress,
       'status': status.index,
@@ -52,6 +61,7 @@ class DownloadTask {
       'downloadedSegments': downloadedSegments,
       'error': error,
       'fileSize': fileSize,
+      // 不持久化 speed 和 currentSize，因为它们是运行时的
     };
   }
 
@@ -61,9 +71,10 @@ class DownloadTask {
       url: json['url'],
       title: json['title'],
       subtitle: json['subtitle'],
+      episodeIndex: json['episodeIndex'] ?? 0,
       cover: json['cover'],
-      progress: json['progress'],
-      status: DownloadStatus.values[json['status']],
+      progress: (json['progress'] ?? 0.0).toDouble(),
+      status: DownloadStatus.values[json['status'] ?? 0],
       savePath: json['savePath'],
       createdAt: DateTime.parse(json['createdAt']),
       totalSegments: json['totalSegments'] ?? 0,
@@ -80,12 +91,16 @@ class DownloadTask {
     int? downloadedSegments,
     String? error,
     int? fileSize,
+    double? speed,
+    int? currentSize,
+    int? episodeIndex,
   }) {
     return DownloadTask(
       id: id,
       url: url,
       title: title,
       subtitle: subtitle,
+      episodeIndex: episodeIndex ?? this.episodeIndex,
       cover: cover,
       progress: progress ?? this.progress,
       status: status ?? this.status,
@@ -95,6 +110,8 @@ class DownloadTask {
       downloadedSegments: downloadedSegments ?? this.downloadedSegments,
       error: error ?? this.error,
       fileSize: fileSize ?? this.fileSize,
+      speed: speed ?? this.speed,
+      currentSize: currentSize ?? this.currentSize,
     );
   }
 }

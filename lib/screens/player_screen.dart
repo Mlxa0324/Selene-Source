@@ -44,6 +44,7 @@ class PlayerScreen extends StatefulWidget {
   final String? prefer;
   final String? localPath; // 本地播放路径
   final SearchResult? initialVideoDetail; // 初始详情（用于离线播放）
+  final int initialEpisodeIndex; // 初始集数索引
 
   const PlayerScreen({
     super.key,
@@ -56,6 +57,7 @@ class PlayerScreen extends StatefulWidget {
     this.prefer,
     this.localPath,
     this.initialVideoDetail,
+    this.initialEpisodeIndex = 0,
   });
 
   @override
@@ -84,7 +86,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 播放信息
   SearchResult? currentDetail;
   String searchTitle = '';
-  String videoTitle = '';
+  late String videoTitle;
   String videoDesc = '';
   String videoYear = '';
   String videoCover = '';
@@ -93,7 +95,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String currentID = '';
   bool needPrefer = false;
   int totalEpisodes = 0;
-  int currentEpisodeIndex = 0;
+  late int currentEpisodeIndex;
 
   // 豆瓣详情数据
   DoubanMovieDetails? doubanDetails;
@@ -170,6 +172,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    videoTitle = widget.title;
+    currentEpisodeIndex = widget.initialEpisodeIndex;
     _refreshAnimationController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,

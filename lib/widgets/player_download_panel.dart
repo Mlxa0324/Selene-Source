@@ -60,6 +60,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
   Future<void> _startDownload() async {
     if (_selectedIndices.isEmpty) return;
 
+    debugPrint(
+        "开始下载任务: 标题=${widget.title}, 选中集数=${_selectedIndices.toList()}, 地址=${_selectedIndices.map((i) => widget.episodes[i]).toList()}");
+
     final downloadService = context.read<DownloadService>();
     final appDir = await getApplicationDocumentsDirectory();
 
@@ -81,6 +84,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
         url: episodeUrl,
         title: widget.title,
         subtitle: subtitle,
+        episodeIndex: index, // 记录原始索引
         cover: widget.cover,
         savePath: savePath,
         createdAt: DateTime.now(),
@@ -93,7 +97,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("已添加 ${_selectedIndices.length} 个下载任务")),
       );
-      Navigator.pop(context);
+      // Navigator.pop(context);
     }
   }
 
