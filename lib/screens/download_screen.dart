@@ -21,10 +21,11 @@ class _DownloadScreenState extends State<DownloadScreen> {
   final Set<String> _selectedIds = {};
   final Set<String> _expandedTitles = {}; // 记录展开的剧集标题
 
-  // 归类任务
-  Map<String, List<DownloadTask>> _groupTasks(List<DownloadTask> tasks) {
+  // 归类已完成任务
+  Map<String, List<DownloadTask>> _groupCompletedTasks(List<DownloadTask> tasks) {
     final Map<String, List<DownloadTask>> groups = {};
     for (var task in tasks) {
+      if (task.status != DownloadStatus.completed) continue;
       if (!groups.containsKey(task.title)) {
         groups[task.title] = [];
       }
@@ -62,33 +63,26 @@ class _DownloadScreenState extends State<DownloadScreen> {
   }
 
   void _playOfflineVideo(BuildContext context, DownloadTask task, List<DownloadTask> allEpisodes) {
-    // 播放本地 index.m3u8 文件
-    final localM3u8Path = "${task.savePath}/index.m3u8";
-    if (!File(localM3u8Path).existsSync()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("本地缓存文件不存在或已损坏")),
-      );
-      return;
-    }
-
-    // 构建一个完整的列表用于连播
     final List<String> episodesPaths = [];
     final List<String> episodesTitles = [];
     int initialIndex = 0;
 
     for (int i = 0; i < allEpisodes.length; i++) {
       final ep = allEpisodes[i];
-      final path = "${ep.savePath}/index.m3u8";
-      if (File(path).existsSync()) {
-        episodesPaths.add(path);
-        episodesTitles.add(ep.subtitle);
-        if (ep.id == task.id) {
-          initialIndex = episodesPaths.length - 1;
-        }
+      final localM3u8Path = "${ep.savePath}/index.m3u8";
+      
+      if (ep.status == DownloadStatus.completed && File(localM3u8Path).existsSync()) {
+        episodesPaths.add(localM3u8Path);
+      } else {
+        episodesPaths.add(ep.url);
+      }
+      
+      episodesTitles.add(ep.subtitle);
+      if (ep.id == task.id) {
+        initialIndex = episodesPaths.length - 1;
       }
     }
 
-    // 构建一个临时的 SearchResult 进行播放
     final offlineDetail = SearchResult(
       id: task.id,
       title: task.title,
@@ -106,7 +100,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
       MaterialPageRoute(
         builder: (context) => PlayerScreen(
           title: task.title,
-          localPath: episodesPaths[initialIndex],
+          localPath: episodesPaths[initialIndex].startsWith('http') ? null : episodesPaths[initialIndex],
           initialVideoDetail: offlineDetail,
           initialEpisodeIndex: initialIndex,
         ),
@@ -120,106 +114,164 @@ class _DownloadScreenState extends State<DownloadScreen> {
     final isDarkMode = themeService.isDarkMode;
     final downloadService = context.watch<DownloadService>();
     final tasks = downloadService.tasks;
-    final groupedTasks = _groupTasks(tasks);
-    final sortedTitles = groupedTasks.keys.toList();
+    
+    final downloadingTasks = tasks.where((t) => t.status != DownloadStatus.completed).toList();
+    final groupedCompletedTasks = _groupCompletedTasks(tasks);
+    final completedTitles = groupedCompletedTasks.keys.toList();
 
-    return Scaffold(
-      backgroundColor: isDarkMode ? const Color(0xFF000000) : Colors.grey[50],
-      appBar: AppBar(
-        title: Text(_isEditing ? '已选择 ${_selectedIds.length}' : '下载管理', 
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        systemOverlayStyle: SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
-          statusBarBrightness: isDarkMode ? Brightness.dark : Brightness.light,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: isDarkMode ? const Color(0xFF000000) : const Color(0xFFF5F5F7),
+        appBar: AppBar(
+          title: Text(_isEditing ? '已选择 ${_selectedIds.length}' : '下载管理', 
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: isDarkMode ? Brightness.light : Brightness.dark,
+            statusBarBrightness: isDarkMode ? Brightness.dark : Brightness.light,
+          ),
+          bottom: TabBar(
+            tabs: [
+              Tab(text: "正在下载 (${downloadingTasks.length})"),
+              Tab(text: "已完成 (${tasks.length - downloadingTasks.length})"),
+            ],
+            indicatorColor: Colors.green,
+            labelColor: Colors.green,
+            unselectedLabelColor: isDarkMode ? Colors.white38 : Colors.black38,
+            indicatorSize: TabBarIndicatorSize.label,
+            dividerColor: Colors.transparent,
+          ),
+          actions: [
+            if (tasks.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _isEditing = !_isEditing;
+                    if (!_isEditing) _selectedIds.clear();
+                  });
+                },
+                child: Text(_isEditing ? '取消' : '编辑', 
+                    style: TextStyle(color: isDarkMode ? Colors.white : Colors.black)),
+              ),
+          ],
         ),
-        actions: [
-          if (tasks.isNotEmpty)
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _isEditing = !_isEditing;
-                  if (!_isEditing) _selectedIds.clear();
-                });
-              },
-              child: Text(_isEditing ? '取消' : '编辑', 
-                  style: TextStyle(color: isDarkMode ? Colors.white : Colors.black)),
-            ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          tasks.isEmpty
-              ? _buildEmptyState(isDarkMode)
-              : ListView.builder(
-                  padding: EdgeInsets.only(left: 16, right: 16, top: 0, bottom: _isEditing ? 100 : 16),
-                  itemCount: sortedTitles.length,
-                  itemBuilder: (context, index) {
-                    final title = sortedTitles[index];
-                    final group = groupedTasks[title] ?? [];
-                    return _buildGroup(context, title, group, isDarkMode);
-                  },
-                ),
-          if (_isEditing)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: EdgeInsets.only(
-                  left: 20, 
-                  right: 20, 
-                  top: 12, 
-                  bottom: MediaQuery.of(context).padding.bottom + 12
-                ),
-                decoration: BoxDecoration(
-                  color: isDarkMode ? const Color(0xFF1e1e1e) : Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, -2),
-                    )
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          if (_selectedIds.length == tasks.length) {
-                            _selectedIds.clear();
-                          } else {
-                            _selectedIds.addAll(tasks.map((t) => t.id));
-                          }
-                        });
-                      },
-                      child: Text(_selectedIds.length == tasks.length ? '取消全选' : '全选'),
-                    ),
-                    ElevatedButton(
-                      onPressed: _selectedIds.isEmpty ? null : () => _confirmBatchDelete(context),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        body: Stack(
+          children: [
+            TabBarView(
+              children: [
+                // 正在下载标签页
+                downloadingTasks.isEmpty
+                    ? _buildEmptyState(isDarkMode, "暂无正在下载的任务")
+                    : ListView.builder(
+                        padding: EdgeInsets.only(left: 16, right: 16, top: 8, bottom: _isEditing ? 100 : 16),
+                        itemCount: downloadingTasks.length,
+                        itemBuilder: (context, index) {
+                          final task = downloadingTasks[index];
+                          return _buildDownloadItem(context, task, downloadingTasks, isDarkMode);
+                        },
                       ),
-                      child: Text('删除 (${_selectedIds.length})'),
-                    ),
-                  ],
+                // 已完成标签页
+                completedTitles.isEmpty
+                    ? _buildEmptyState(isDarkMode, "暂无已完成的任务")
+                    : ListView.builder(
+                        padding: EdgeInsets.only(left: 16, right: 16, top: 0, bottom: _isEditing ? 100 : 16),
+                        itemCount: completedTitles.length,
+                        itemBuilder: (context, index) {
+                          final title = completedTitles[index];
+                          final group = groupedCompletedTasks[title] ?? [];
+                          return _buildGroup(context, title, group, isDarkMode);
+                        },
+                      ),
+              ],
+            ),
+            if (_isEditing)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: EdgeInsets.only(
+                    left: 20, 
+                    right: 20, 
+                    top: 12, 
+                    bottom: MediaQuery.of(context).padding.bottom + 12
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDarkMode ? const Color(0xFF1e1e1e) : Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, -2),
+                      )
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            if (_selectedIds.length == tasks.length) {
+                              _selectedIds.clear();
+                            } else {
+                              _selectedIds.addAll(tasks.map((t) => t.id));
+                            }
+                          });
+                        },
+                        child: Text(_selectedIds.length == tasks.length ? '取消全选' : '全选'),
+                      ),
+                      Row(
+                        children: [
+                          TextButton.icon(
+                            onPressed: _selectedIds.isEmpty ? null : () {
+                              final downloadService = context.read<DownloadService>();
+                              for (var id in _selectedIds) {
+                                downloadService.pauseTask(id);
+                              }
+                            },
+                            icon: const Icon(Icons.pause_circle_outline, size: 20),
+                            label: const Text('暂停'),
+                          ),
+                          TextButton.icon(
+                            onPressed: _selectedIds.isEmpty ? null : () {
+                              final downloadService = context.read<DownloadService>();
+                              for (var id in _selectedIds) {
+                                downloadService.resumeTask(id);
+                              }
+                            },
+                            icon: const Icon(Icons.play_circle_outline, size: 20),
+                            label: const Text('开始'),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: _selectedIds.isEmpty ? null : () => _confirmBatchDelete(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.redAccent,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            ),
+                            child: Text('删除 (${_selectedIds.length})'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyState(bool isDarkMode) {
+  Widget _buildEmptyState(bool isDarkMode, String message) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -231,7 +283,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            '暂无下载内容',
+            message,
             style: TextStyle(
               fontSize: 16,
               color: isDarkMode ? Colors.white38 : Colors.black38,
@@ -265,7 +317,9 @@ class _DownloadScreenState extends State<DownloadScreen> {
               color: isDarkMode ? Colors.white.withOpacity(0.08) : Colors.white,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05),
+                color: isDarkMode 
+                    ? Colors.white10 
+                    : Colors.black.withOpacity(0.08),
               ),
             ),
             child: Row(
@@ -286,7 +340,11 @@ class _DownloadScreenState extends State<DownloadScreen> {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold, 
+                          fontSize: 16,
+                          color: isDarkMode ? Colors.white.withOpacity(0.9) : const Color(0xFF2c3e50),
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -295,7 +353,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
                         "共 ${group.length} 集 · 已完成 $completedCount 集",
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDarkMode ? Colors.white54 : Colors.black54,
+                          color: isDarkMode ? Colors.white38 : Colors.black45,
                         ),
                       ),
                     ],
@@ -320,16 +378,20 @@ class _DownloadScreenState extends State<DownloadScreen> {
     final isSelected = _selectedIds.contains(task.id);
     
     return Container(
-      margin: const EdgeInsets.only(left: 12, right: 0, top: 8),
+      margin: EdgeInsets.only(
+        left: task.status == DownloadStatus.completed ? 12 : 0, 
+        right: 0, 
+        top: 8
+      ),
       decoration: BoxDecoration(
-        color: isDarkMode ? Colors.white.withOpacity(0.03) : Colors.white.withOpacity(0.6),
+        color: isDarkMode ? Colors.white.withOpacity(0.03) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: _isEditing && isSelected 
             ? Border.all(color: Colors.green, width: 2) 
             : Border.all(
                 color: isDarkMode 
                     ? Colors.white.withOpacity(0.05) 
-                    : Colors.black.withOpacity(0.03),
+                    : Colors.black.withOpacity(0.05),
                 width: 1,
               ),
       ),
@@ -348,6 +410,13 @@ class _DownloadScreenState extends State<DownloadScreen> {
               });
             } else if (task.status == DownloadStatus.completed) {
               _playOfflineVideo(context, task, allEpisodes);
+            } else {
+              // 未完成任务：点击切换开始/暂停
+              if (task.status == DownloadStatus.downloading) {
+                downloadService.pauseTask(task.id);
+              } else {
+                downloadService.resumeTask(task.id);
+              }
             }
           },
           child: Padding(
@@ -371,18 +440,30 @@ class _DownloadScreenState extends State<DownloadScreen> {
                   ),
                   const SizedBox(width: 4),
                 ],
+                // 正在下载模式下显示封面，已完成的分组模式下隐藏封面（因为头部已显示）
+                if (task.status != DownloadStatus.completed) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: CachedNetworkImage(
+                      imageUrl: task.cover,
+                      width: 45,
+                      height: 60,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 // 信息区
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        task.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                      ),
-                      const SizedBox(height: 8),
+                                          Text(
+                                            task.status == DownloadStatus.completed ? task.subtitle : "${task.title} - ${task.subtitle}",
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                                          ),                      const SizedBox(height: 8),
                       // 进度条
                       LinearProgressIndicator(
                         value: task.progress,
@@ -398,36 +479,27 @@ class _DownloadScreenState extends State<DownloadScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  task.status == DownloadStatus.downloading
-                                      ? "已下载 ${_formatFileSize(task.currentSize)}"
-                                      : (task.status == DownloadStatus.completed 
-                                          ? "已完成 | ${_formatFileSize(task.fileSize)}" 
-                                          : _getStatusText(task)),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: _getStatusColor(task, isDarkMode),
-                                  ),
-                                ),
-                                if (task.status == DownloadStatus.downloading)
-                                  Text(
-                                    _formatSpeed(task.speed),
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                              ],
+                            child: Text(
+                              task.status == DownloadStatus.downloading
+                                  ? "已下载 ${_formatFileSize(task.currentSize)}"
+                                  : (task.status == DownloadStatus.completed 
+                                      ? "已完成 | ${_formatFileSize(task.fileSize)}" 
+                                      : _getStatusText(task)),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _getStatusColor(task, isDarkMode),
+                              ),
                             ),
                           ),
-                          Text(
-                            '${(task.progress * 100).toInt()}%',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
+                          if (task.status == DownloadStatus.downloading)
+                            Text(
+                              _formatSpeed(task.speed),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                         ],
                       ),
                     ],
@@ -437,21 +509,6 @@ class _DownloadScreenState extends State<DownloadScreen> {
                 if (!_isEditing)
                   Row(
                     children: [
-                      if (task.status != DownloadStatus.completed)
-                        IconButton(
-                          icon: Icon(
-                            _getActionIcon(task),
-                            color: Colors.green,
-                            size: 20,
-                          ),
-                          onPressed: () {
-                            if (task.status == DownloadStatus.downloading) {
-                              downloadService.pauseTask(task.id);
-                            } else {
-                              downloadService.resumeTask(task.id);
-                            }
-                          },
-                        ),
                       IconButton(
                         icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
                         onPressed: () => _confirmDelete(context, task),

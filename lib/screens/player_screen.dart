@@ -396,10 +396,31 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void initVideoData() async {
+    // 初始化参数
+    initParam();
+
+    // 统一获取播放记录（离线在线都需要）
+    int playEpisodeIndex = widget.initialEpisodeIndex;
+    int playTime = 0;
+    if (mounted) {
+      final allPlayRecords = await PageCacheService().getPlayRecords(context);
+      if (allPlayRecords.success && allPlayRecords.data != null) {
+        final matchingRecords = allPlayRecords.data!.where((record) =>
+            record.id == currentID && record.source == currentSource);
+        if (matchingRecords.isNotEmpty) {
+          // 如果没有通过 widget 强制指定集数，则使用历史进度
+          if (widget.initialEpisodeIndex == 0) {
+            playEpisodeIndex = matchingRecords.first.index - 1;
+          }
+          playTime = matchingRecords.first.playTime;
+        }
+      }
+    }
+
     // 如果是离线播放模式
     if (widget.localPath != null && widget.initialVideoDetail != null) {
       updateLoadingMessage('正在加载本地缓存...');
-      updateLoadingProgress(0.8);
+      updateLoadingProgress(0.9);
 
       currentDetail = widget.initialVideoDetail;
       allSources = [currentDetail!];
@@ -412,8 +433,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         });
       }
 
-      // 直接从第一集（唯一的本地路径）开始播放
-      startPlay(0, 0);
+      // 直接播放
+      startPlay(playEpisodeIndex, playTime);
       return;
     }
 
@@ -424,25 +445,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       showError('缺少必要参数');
       return;
     }
-
-    // 读取优选测速配置
-    final preferSpeedTest = await UserDataService.getPreferSpeedTest();
-
-    if (!preferSpeedTest ||
-        (widget.source != null &&
-            widget.id != null &&
-            (widget.prefer == null || widget.prefer != 'true'))) {
-      updateLoadingMessage('正在获取播放源详情...');
-      updateLoadingProgress(0.5);
-      updateLoadingEmoji('🔍');
-    } else {
-      updateLoadingMessage('正在搜索播放源...');
-      updateLoadingProgress(0.33);
-      updateLoadingEmoji('🔍');
-    }
-
-    // 初始化参数
-    initParam();
 
     // 执行查询
     allSources = await fetchSourcesData(
@@ -470,6 +472,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
+    // 读取优选测速配置
+    final preferSpeedTest = await UserDataService.getPreferSpeedTest();
+
     // 未指定源和 id/需要优选，且优选测速开关打开时，执行优选
     if ((currentSource.isEmpty || currentID.isEmpty || needPrefer) &&
         preferSpeedTest) {
@@ -482,22 +487,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 检查收藏状态
     _checkFavoriteStatus();
-
-    // 获取播放记录
-    int playEpisodeIndex = 0;
-    int playTime = 0;
-    if (mounted) {
-      final allPlayRecords = await PageCacheService().getPlayRecords(context);
-      // 查找是否有当前视频的播放记录
-      if (allPlayRecords.success && allPlayRecords.data != null) {
-        final matchingRecords = allPlayRecords.data!.where((record) =>
-            record.id == currentID && record.source == currentSource);
-        if (matchingRecords.isNotEmpty) {
-          playEpisodeIndex = matchingRecords.first.index - 1;
-          playTime = matchingRecords.first.playTime;
-        }
-      }
-    }
 
     // 设置进度为 100%
     updateLoadingProgress(1.0);
@@ -864,35 +853,38 @@ class _PlayerScreenState extends State<PlayerScreen>
     print("newUrl: $newUrl, startAt: $startAt");
     try {
       String finalUrl = newUrl;
+      final bool isLocal = !newUrl.startsWith('http');
 
-      // 1. 如果开启了去广告功能，且是 M3U8 链接
-      if (_adFilterEnabled &&
-          (newUrl.contains('.m3u8') || newUrl.contains('.M3U8'))) {
-        try {
-          final dio = Dio();
-          final response = await dio.get(newUrl);
-          if (response.statusCode == 200 && response.data is String) {
-            final filteredContent =
-                M3U8Service.filterAdsFromM3U8(response.data);
-            // 转换为 Data URI 格式，以便播放器直接读取内存内容
-            final bytes = utf8.encode(filteredContent);
-            final base64Content = base64.encode(bytes);
-            finalUrl =
-                'data:application/vnd.apple.mpegurl;base64,$base64Content';
-            print("M3U8 广告已过滤，使用 Data URI 播放");
+      // 1. 如果是网络请求，才执行去广告和代理逻辑
+      if (!isLocal) {
+        // 去广告功能
+        if (_adFilterEnabled &&
+            (newUrl.contains('.m3u8') || newUrl.contains('.M3U8'))) {
+          try {
+            final dio = Dio();
+            final response = await dio.get(newUrl);
+            if (response.statusCode == 200 && response.data is String) {
+              final filteredContent =
+                  M3U8Service.filterAdsFromM3U8(response.data);
+              final bytes = utf8.encode(filteredContent);
+              final base64Content = base64.encode(bytes);
+              finalUrl =
+                  'data:application/vnd.apple.mpegurl;base64,$base64Content';
+              print("M3U8 广告已过滤，使用 Data URI 播放");
+            }
+          } catch (e) {
+            debugPrint('去广告处理失败，降级使用原始链接: $e');
           }
-        } catch (e) {
-          debugPrint('去广告处理失败，降级使用原始链接: $e');
         }
-      }
 
-      // 2. 获取 M3U8 代理 URL (如果没经过去广告处理)
-      if (finalUrl == newUrl) {
-        final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
-        if (m3u8ProxyUrl.isNotEmpty) {
-          final encodedUrl = Uri.encodeComponent(newUrl);
-          finalUrl = '$m3u8ProxyUrl$encodedUrl';
-          print("使用 M3U8 代理: $finalUrl");
+        // 获取 M3U8 代理 URL
+        if (finalUrl == newUrl) {
+          final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
+          if (m3u8ProxyUrl.isNotEmpty) {
+            final encodedUrl = Uri.encodeComponent(newUrl);
+            finalUrl = '$m3u8ProxyUrl$encodedUrl';
+            print("使用 M3U8 代理: $finalUrl");
+          }
         }
       }
 
@@ -1364,6 +1356,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             totalEpisodes: totalEpisodes,
             episodesTitles: currentDetail?.episodesTitles,
             sourceName: currentDetail?.sourceName ?? currentSource,
+            isLocal: widget.localPath != null,
             onWebFullscreenChanged: (isWebFullscreen) {
               setState(() {
                 _isWebFullscreen = isWebFullscreen;
@@ -1604,26 +1597,31 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                   ),
                   const SizedBox(width: 12),
-                  // 下载按钮
-                  GestureDetector(
-                    onTap: _showDownloadPanel,
-                    child: Icon(
-                      LucideIcons.folderDown,
-                      color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                      size: 26,
+                  // 下载按钮 (本地播放时隐藏)
+                  if (widget.localPath == null)
+                    GestureDetector(
+                      onTap: _showDownloadPanel,
+                      child: Icon(
+                        LucideIcons.folderDown,
+                        color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                        size: 26,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  GestureDetector(
-                    onTap: _toggleFavorite,
-                    child: Icon(
-                      _isFavorite ? Icons.favorite : Icons.favorite_border,
-                      color: _isFavorite
-                          ? const Color(0xFFe74c3c)
-                          : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
-                      size: 28,
+                  if (widget.localPath == null) const SizedBox(width: 16),
+                  // 收藏按钮 (本地播放时隐藏)
+                  if (widget.localPath == null)
+                    GestureDetector(
+                      onTap: _toggleFavorite,
+                      child: Icon(
+                        _isFavorite ? Icons.favorite : Icons.favorite_border,
+                        color: _isFavorite
+                            ? const Color(0xFFe74c3c)
+                            : (isDarkMode
+                                ? Colors.grey[400]
+                                : Colors.grey[600]),
+                        size: 28,
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -1759,10 +1757,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
             const SizedBox(height: 16),
 
-            // 换源区域
-            _buildSourcesSection(theme),
+            // 换源区域 (本地播放时隐藏)
+            if (widget.localPath == null) _buildSourcesSection(theme),
 
-            const SizedBox(height: 16),
+            if (widget.localPath == null) const SizedBox(height: 16),
 
             // 相关推荐区域
             _buildRecommendsSection(theme),
@@ -2465,6 +2463,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 构建换源列表
   void _showSourcesPanel() {
+    // 如果是本地播放，不显示换源面板
+    if (widget.localPath != null) return;
+
     final theme = Theme.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;

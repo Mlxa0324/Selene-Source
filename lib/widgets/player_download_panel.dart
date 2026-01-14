@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../models/download_task.dart';
@@ -28,13 +29,58 @@ class PlayerDownloadPanel extends StatefulWidget {
   State<PlayerDownloadPanel> createState() => _PlayerDownloadPanelState();
 }
 
-class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
+class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
+    with SingleTickerProviderStateMixin {
   final Set<int> _selectedIndices = {};
   int _selectedGroupIndex = 0;
+  late AnimationController _animController;
 
   @override
   void initState() {
     super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildDownloadingAnimation() {
+    return AnimatedBuilder(
+      animation: _animController,
+      builder: (context, child) {
+        // 防御性检查：确保控制器已初始化
+        if (!mounted) return const SizedBox.shrink();
+
+        double animValue = 0;
+        try {
+          animValue = _animController.value;
+        } catch (_) {
+          return const Icon(
+            Icons.keyboard_double_arrow_down,
+            color: Colors.green,
+            size: 20,
+          );
+        }
+
+        return Transform.translate(
+          offset: Offset(0, 3 * animValue),
+          child: Opacity(
+            opacity: 1.0 - animValue,
+            child: const Icon(
+              Icons.keyboard_double_arrow_down,
+              color: Colors.green,
+              size: 20,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _toggleSelection(int index) {
@@ -196,10 +242,10 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
             child: GridView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: widget.isCompact ? 5 : 4,
+                crossAxisCount: widget.isCompact ? 4 : 3,
                 crossAxisSpacing: 8,
                 mainAxisSpacing: 8,
-                childAspectRatio: widget.isCompact ? 3.2 : 1.5,
+                childAspectRatio: widget.isCompact ? 3.2 : 2,
               ),
               itemCount: (widget.episodes.length > 50)
                   ? (((_selectedGroupIndex + 1) * 50)
@@ -211,7 +257,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
                     ? (_selectedGroupIndex * 50 + index)
                     : index;
 
+                final downloadService = context.watch<DownloadService>();
                 final isSelected = _selectedIndices.contains(actualIndex);
+
                 String title = '';
                 if (widget.episodesTitles.isNotEmpty &&
                     actualIndex < widget.episodesTitles.length) {
@@ -220,34 +268,170 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel> {
                   title = '第${actualIndex + 1}集';
                 }
 
+                // 判断状态
+
+                final taskId = "${widget.title}_$title".hashCode.toString();
+
+                final task = downloadService.tasks.firstWhere(
+                  (t) => t.id == taskId,
+                  orElse: () => DownloadTask(
+                    id: '',
+                    url: '',
+                    title: '',
+                    subtitle: '',
+                    episodeIndex: 0,
+                    cover: '',
+                    savePath: '',
+                    createdAt: DateTime.now(),
+                  ),
+                );
+
+                final isDownloaded = task.id.isNotEmpty &&
+                    task.status == DownloadStatus.completed;
+
+                final isDownloading = task.id.isNotEmpty &&
+                    task.status == DownloadStatus.downloading;
+
+                final bool isInQueue = task.id.isNotEmpty &&
+                    task.status != DownloadStatus.completed;
+
+                // 只要是正在下载、已下载或者用户当前勾选的，都显示选中样式
+
+                final bool isEffectivelySelected =
+                    isSelected || isDownloaded || isInQueue;
+
                 return GestureDetector(
-                  onTap: () => _toggleSelection(actualIndex),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.green.withOpacity(0.2)
-                          : (isDarkMode
-                              ? Colors.white10
-                              : Colors.black.withOpacity(0.05)),
-                      borderRadius: BorderRadius.circular(8),
-                      border: isSelected
-                          ? Border.all(color: Colors.green, width: 1.5)
-                          : null,
-                    ),
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            color: isSelected ? Colors.green : textColor,
-                            fontSize: 13,
+                  onTap: () {
+                    if (isDownloaded) {
+                      // 已经下载完成：弹出删除确认
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('删除缓存'),
+                          content: Text('确定要删除 "$title" 的本地缓存吗？'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedIndices.remove(actualIndex);
+                                });
+                                downloadService.deleteTask(taskId);
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text('删除',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else if (isInQueue) {
+                      // 正在下载或排队中：弹出取消下载确认
+                      final int progress = (task.progress * 100).toInt();
+
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('取消下载'),
+                          content: Text('该视频已下载 $progress%，是否取消下载？'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('继续下载'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedIndices.remove(actualIndex);
+                                });
+                                downloadService.deleteTask(taskId);
+                                Navigator.pop(ctx);
+                              },
+                              child: const Text('取消下载',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else {
+                      _toggleSelection(actualIndex);
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        height: double.infinity,
+                        decoration: BoxDecoration(
+                          color: isEffectivelySelected
+                              ? Colors.green.withOpacity(0.2)
+                              : (isDarkMode
+                                  ? Colors.white10
+                                  : Colors.black.withOpacity(0.05)),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isEffectivelySelected
+                                ? Colors.green
+                                : Colors.transparent,
+                            width: 1.5,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              title,
+                              style: TextStyle(
+                                color: isEffectivelySelected
+                                    ? Colors.green
+                                    : textColor,
+                                fontSize: 13,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      if (isDownloaded)
+                        const Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 16,
+                          ),
+                        ),
+                      if (isDownloading || (isInQueue && !isDownloaded))
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (isInQueue && !isDownloaded)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 1),
+                                  child: Text(
+                                    '${(task.progress * 100).toInt()}%',
+                                    style: const TextStyle(
+                                      color: Colors.green,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ),
+                              if (isDownloading) ...[
+                                _buildDownloadingAnimation(),
+                              ],
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                 );
               },

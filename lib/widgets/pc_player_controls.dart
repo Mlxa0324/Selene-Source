@@ -65,6 +65,7 @@ class PCPlayerControls extends StatefulWidget {
   final int? totalEpisodes;
   final List<String>? episodesTitles;
   final String? sourceName;
+  final bool isLocal;
   final Function(bool isFullscreen)? onDLNAButtonPressed;
   final Function(bool isWebFullscreen)? onWebFullscreenChanged;
   final Function(VoidCallback)? onExitWebFullscreenCallbackReady;
@@ -90,6 +91,7 @@ class PCPlayerControls extends StatefulWidget {
     this.totalEpisodes,
     this.episodesTitles,
     this.sourceName,
+    this.isLocal = false,
     this.onDLNAButtonPressed,
     this.onWebFullscreenChanged,
     this.onExitWebFullscreenCallbackReady,

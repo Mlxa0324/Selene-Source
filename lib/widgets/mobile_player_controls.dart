@@ -27,6 +27,7 @@ class MobilePlayerControls extends StatefulWidget {
   final int? totalEpisodes;
   final List<String>? episodesTitles;
   final String? sourceName;
+  final bool isLocal;
   final VoidCallback? onExitFullScreen;
   final bool live;
   final ValueNotifier<double> playbackSpeedListenable;
@@ -61,6 +62,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.totalEpisodes,
     this.episodesTitles,
     this.sourceName,
+    this.isLocal = false,
     this.onExitFullScreen,
     this.live = false,
     required this.playbackSpeedListenable,
@@ -1092,8 +1094,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
-                        // 换源按钮（仅在横屏时显示）
+                        // 换源按钮（仅在横屏且非本地播放时显示）
                         if (_isFullscreen &&
+                            !widget.isLocal &&
                             widget.onSourcesButtonPressed != null)
                           GestureDetector(
                             onTap: () {

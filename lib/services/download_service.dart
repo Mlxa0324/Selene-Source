@@ -200,17 +200,22 @@ class DownloadService extends ChangeNotifier {
       _tasks[index] = _tasks[index].copyWith(totalSegments: segmentUrls.length);
       notifyListeners();
 
-      // 3. 下载分片
+      // 3. 统计已下载进度和大小（支持断点续传）
       int downloaded = 0;
-      // 检查已下载的分片（断点续传）
+      int initialSize = 0;
       for (var i = 0; i < segmentUrls.length; i++) {
         final segmentFile = File("${task.savePath}/seg_$i.ts");
         if (await segmentFile.exists()) {
           downloaded++;
+          initialSize += await segmentFile.length();
         }
       }
       
-      _tasks[index] = _tasks[index].copyWith(downloadedSegments: downloaded, progress: downloaded / segmentUrls.length);
+      _tasks[index] = _tasks[index].copyWith(
+        downloadedSegments: downloaded, 
+        progress: downloaded / segmentUrls.length,
+        currentSize: initialSize,
+      );
       notifyListeners();
 
       // 并发下载，限制并发数为 3
@@ -229,7 +234,7 @@ class DownloadService extends ChangeNotifier {
       
       // 用于计算速度
       DateTime lastUpdateTime = DateTime.now();
-      int lastDownloadedSize = 0;
+      int lastDownloadedSize = initialSize; // 关键修复：从当前已下载的大小开始计算增量
 
       void downloadNext() async {
         if (pendingIndices.isEmpty) {

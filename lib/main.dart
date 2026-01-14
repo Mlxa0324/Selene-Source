@@ -41,6 +41,9 @@ void main() async {
   // 启动定期清理
   cacheService.startPeriodicCleanup();
 
+  // 清理过期的播放记录 (一周以上)
+  LocalModeStorageService.cleanupOldPlayRecords();
+
   runApp(const SeleneApp());
 
   // 初始化 Windows 窗口配置

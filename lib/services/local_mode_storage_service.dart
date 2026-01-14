@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/search_resource.dart';
 import '../models/live_source.dart';
@@ -41,8 +42,7 @@ class LocalModeStorageService {
   // ==================== 搜索源列表 ====================
 
   /// 保存搜索源列表
-  static Future<void> saveSearchSources(
-      List<SearchResource> resources) async {
+  static Future<void> saveSearchSources(List<SearchResource> resources) async {
     final prefs = await SharedPreferences.getInstance();
     final jsonList = resources.map((r) => r.toJson()).toList();
     final jsonString = jsonEncode(jsonList);
@@ -171,6 +171,28 @@ class LocalModeStorageService {
   static Future<void> clearPlayRecords() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_playRecordsKey);
+  }
+
+  /// 清理超过 7 天的播放记录
+  static Future<void> cleanupOldPlayRecords() async {
+    try {
+      final records = await getPlayRecords();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+
+      final initialCount = records.length;
+      records.removeWhere((record) {
+        // 如果保存时间超过 7 天，则删除
+        return (now - record.saveTime) > sevenDaysInMs;
+      });
+
+      if (records.length < initialCount) {
+        await savePlayRecords(records);
+        debugPrint('已自动清理 ${initialCount - records.length} 条过期的播放记录');
+      }
+    } catch (e) {
+      debugPrint('自动清理播放记录失败: $e');
+    }
   }
 
   // ==================== 收藏夹 ====================

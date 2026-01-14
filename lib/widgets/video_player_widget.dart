@@ -28,6 +28,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final int? totalEpisodes;
   final List<String>? episodesTitles;
   final String? sourceName;
+  final bool isLocal; // 是否是本地播放
   final Function(bool isWebFullscreen)? onWebFullscreenChanged;
   final VoidCallback? onExitFullScreen;
   final bool live;
@@ -62,6 +63,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.totalEpisodes,
     this.episodesTitles,
     this.sourceName,
+    this.isLocal = false,
     this.onWebFullscreenChanged,
     this.onExitFullScreen,
     this.live = false,
@@ -563,6 +565,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         totalEpisodes: widget.totalEpisodes,
                         episodesTitles: widget.episodesTitles,
                         sourceName: widget.sourceName,
+                        isLocal: widget.isLocal,
                         onWebFullscreenChanged: widget.onWebFullscreenChanged,
                         onExitWebFullscreenCallbackReady: (callback) {
                           _exitWebFullscreenCallback = callback;
@@ -590,6 +593,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         totalEpisodes: widget.totalEpisodes,
                         episodesTitles: widget.episodesTitles,
                         sourceName: widget.sourceName,
+                        isLocal: widget.isLocal,
                         onExitFullScreen: widget.onExitFullScreen,
                         live: widget.live,
                         playbackSpeedListenable: _playbackSpeed,
