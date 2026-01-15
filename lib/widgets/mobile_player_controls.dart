@@ -1499,19 +1499,18 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
 
                 setState(() {
                   _isDragging = false;
-                  _isSeeking = true; // 标记开始 seek
+                  _isSeeking = true;
                 });
 
-                await widget.player.seek(seekPosition);
-
-                // seek 完成后，延迟一小段时间再允许位置更新，确保播放器状态已同步
-                await Future.delayed(const Duration(milliseconds: 100));
-
-                if (mounted) {
-                  setState(() {
-                    _isSeeking = false; // 标记 seek 完成
-                  });
-                }
+                // 异步 Seek
+                widget.player.seek(seekPosition).then((_) async {
+                  await Future.delayed(const Duration(milliseconds: 100));
+                  if (mounted) {
+                    setState(() {
+                      _isSeeking = false;
+                    });
+                  }
+                });
 
                 widget.onDragEnd?.call();
               }
@@ -1529,16 +1528,15 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                 _isSeeking = true; // 标记开始 seek
               });
 
-              await widget.player.seek(seekPosition);
-
-              // seek 完成后，延迟一小段时间再允许位置更新，确保播放器状态已同步
-              await Future.delayed(const Duration(milliseconds: 100));
-
-              if (mounted) {
-                setState(() {
-                  _isSeeking = false; // 标记 seek 完成
-                });
-              }
+              // 异步执行 seek
+              widget.player.seek(seekPosition).then((_) async {
+                await Future.delayed(const Duration(milliseconds: 100));
+                if (mounted) {
+                  setState(() {
+                    _isSeeking = false; // 标记 seek 完成
+                  });
+                }
+              });
 
               widget.onDragEnd?.call();
             },
@@ -1613,15 +1611,23 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
   }
 
   void _updateDrag(double dx, BuildContext context) {
-    final box = context.findRenderObject() as RenderBox?;
+    // 获取组件宽度，用于计算进度比例
+    final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
+    
     final width = box.size.width;
+    if (width <= 0) return;
+    
     final value = (dx / width).clamp(0.0, 1.0);
+    
+    // 如果值没有显著变化，跳过 setState 以节省性能
+    if ((value - _dragValue).abs() < 0.001) return;
+    
     setState(() => _dragValue = value);
+    
     if (!widget.live) {
       final duration = widget.player.state.duration;
-      final position =
-          Duration(milliseconds: (value * duration.inMilliseconds).round());
+      final position = Duration(milliseconds: (value * duration.inMilliseconds).round());
       widget.onPositionUpdate?.call(position);
     }
   }

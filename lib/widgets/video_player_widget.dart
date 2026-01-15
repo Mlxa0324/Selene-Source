@@ -481,7 +481,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_playerDisposed) {
       return;
     }
-    
+
     // 1. 立即停止所有 Dart 侧的监听，防止回调进入
     _positionSubscription?.cancel();
     _playingSubscription?.cancel();
@@ -491,9 +491,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _playingSubscription = null;
     _completedSubscription = null;
     _durationSubscription = null;
-    
+
     _progressListeners.clear();
-    
+
     // 2. 标记已销毁，防止 setState 或后续操作
     _playerDisposed = true;
 
@@ -604,7 +604,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                         onSourcesButtonPressed: widget.onSourcesButtonPressed,
                         onSettingsButtonPressed: widget.onSettingsButtonPressed,
                         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-                        onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+                        onDanmakuMatchButtonPressed:
+                            widget.onDanmakuMatchButtonPressed,
                         longPressSpeed: widget.longPressSpeed,
                         progressMode: widget.progressMode,
                         showSystemTime: widget.showSystemTime,
@@ -612,7 +613,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
                 return Stack(
                   children: [
-                    if (widget.danmakuLayer != null) 
+                    if (widget.danmakuLayer != null)
                       RepaintBoundary(child: widget.danmakuLayer!),
                     controls,
                   ],
