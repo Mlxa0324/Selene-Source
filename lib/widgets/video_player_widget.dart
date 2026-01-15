@@ -200,7 +200,44 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_playerDisposed) {
       return;
     }
-    _player = Player();
+
+    // 创建播放器并配置 mpv 参数
+    _player = Player(
+      configuration: const PlayerConfiguration(
+        // 开启非精确寻求，大幅提升 M3U8 拖动速度
+        // 同时增加缓存和快速解码参数
+        bufferSize: 32 * 1024 * 1024, // 32MB 缓存
+        ready: null,
+      ),
+    );
+
+    // 设置高性能参数
+    if (_player?.platform is NativePlayer) {
+      final nativePlayer = _player?.platform as NativePlayer;
+      try {
+        // 优化 HLS 加载
+        nativePlayer.setProperty('demuxer-readahead-secs', '1');
+        // 限制缓冲区大小，加快 Seek 后的响应
+        nativePlayer.setProperty('demuxer-max-bytes', '32000000'); // 约30MB
+        // 开启硬件加速解码
+        nativePlayer.setProperty('hwdec', 'auto');
+        // 开启直接渲染
+        nativePlayer.setProperty('vd-lavc-dr', 'yes');
+        // 强制关闭精确寻求
+        nativePlayer.setProperty('hr-seek', 'no');
+        // 开启快速跳转
+        nativePlayer.setProperty('fast-seek', 'yes');
+        // 丢帧以维持同步
+        nativePlayer.setProperty('hr-seek-framedrop', 'yes');
+        nativePlayer.setProperty('vd-lavc-fast', 'yes');
+        nativePlayer.setProperty('cache-pause', 'no');
+        print(
+            '============== _player?.platform is NativePlayer ===========================================================');
+      } catch (e) {
+        debugPrint('Failed to set mpv properties: $e');
+      }
+    }
+
     _videoController = VideoController(_player!);
     _setupPlayerListeners();
     if (_currentUrl != null) {
