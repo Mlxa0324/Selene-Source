@@ -17,6 +17,7 @@ import '../models/search_result.dart';
 import '../models/douban_movie.dart';
 import '../models/play_record.dart';
 import '../services/page_cache_service.dart';
+import '../services/local_mode_storage_service.dart';
 import '../widgets/switch_loading_overlay.dart';
 import '../widgets/dlna_player.dart';
 import '../widgets/dlna_device_dialog.dart';
@@ -757,13 +758,23 @@ class _PlayerScreenState extends State<PlayerScreen>
         searchTitle: searchTitleSnapshot,
       );
 
-      // 异步保存播放记录（不等待结果）
-      PageCacheService().savePlayRecord(playRecord, context).then((_) {
-        debugPrint(
-            '保存播放进度 [场景: $scene]: source: $currentSourceSnapshot, id: $currentIDSnapshot, 第${currentEpisodeIndexSnapshot + 1}集, 时间: ${playTime}秒');
-      }).catchError((e) {
-        debugPrint('保存播放进度失败 [场景: $scene]: $e');
-      });
+      // 如果是本地播放，只保存到本地存储，不上传
+      if (widget.localPath != null) {
+        LocalModeStorageService.savePlayRecord(playRecord).then((_) {
+          debugPrint(
+              '保存本地播放进度 [场景: $scene]: source: $currentSourceSnapshot, id: $currentIDSnapshot, 第${currentEpisodeIndexSnapshot + 1}集, 时间: ${playTime}秒');
+        }).catchError((e) {
+          debugPrint('保存本地播放进度失败 [场景: $scene]: $e');
+        });
+      } else {
+        // 正常保存（根据模式决定是否上传）
+        PageCacheService().savePlayRecord(playRecord, context).then((_) {
+          debugPrint(
+              '保存播放进度 [场景: $scene]: source: $currentSourceSnapshot, id: $currentIDSnapshot, 第${currentEpisodeIndexSnapshot + 1}集, 时间: ${playTime}秒');
+        }).catchError((e) {
+          debugPrint('保存播放进度失败 [场景: $scene]: $e');
+        });
+      }
     } catch (e) {
       debugPrint('保存播放进度失败: $e');
     }
