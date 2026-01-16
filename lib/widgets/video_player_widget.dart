@@ -211,32 +211,48 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       ),
     );
 
-    // 设置高性能参数
-    if (_player?.platform is NativePlayer) {
-      final nativePlayer = _player?.platform as NativePlayer;
-      try {
-        // 优化 HLS 加载
-        nativePlayer.setProperty('demuxer-readahead-secs', '1');
-        // 限制缓冲区大小，加快 Seek 后的响应
-        nativePlayer.setProperty('demuxer-max-bytes', '32000000'); // 约30MB
-        // 开启硬件加速解码
-        nativePlayer.setProperty('hwdec', 'auto');
-        // 开启直接渲染
-        nativePlayer.setProperty('vd-lavc-dr', 'yes');
-        // 强制关闭精确寻求
-        nativePlayer.setProperty('hr-seek', 'no');
-        // 开启快速跳转
-        nativePlayer.setProperty('fast-seek', 'yes');
-        // 丢帧以维持同步
-        nativePlayer.setProperty('hr-seek-framedrop', 'yes');
-        nativePlayer.setProperty('vd-lavc-fast', 'yes');
-        nativePlayer.setProperty('cache-pause', 'no');
-        print(
-            '============== _player?.platform is NativePlayer ===========================================================');
-      } catch (e) {
-        debugPrint('Failed to set mpv properties: $e');
-      }
-    }
+    // // 设置高性能参数
+    // if (_player?.platform is NativePlayer) {
+    //   final nativePlayer = _player?.platform as NativePlayer;
+    //   try {
+    //     // 开启硬件加速解码
+    //     nativePlayer.setProperty('hwdec', 'auto');
+    //     // 开启直接渲染
+    //     nativePlayer.setProperty('vd-lavc-dr', 'yes');
+    //     // 丢帧以维持同步
+    //     nativePlayer.setProperty('hr-seek-framedrop', 'yes');
+    //     nativePlayer.setProperty('vd-lavc-fast', 'yes');
+    //     nativePlayer.setProperty('cache-pause', 'no');
+    //     // 限制 HLS 的切片尝试次数
+    //     await nativePlayer.setProperty(
+    //         'hls-bitrate', 'max'); // 固定最高码率，防止 Seek 时重新探测码率
+
+    //     // --- 1. 底层 FFmpeg 优化 (解决网络握手和探测慢) ---
+    //     await nativePlayer.setProperty('demuxer-lavf-o',
+    //         'probesize=32000,analyzeduration=0,http_persistent=1');
+
+    //     // --- 2. 寻道模式优化 ---
+    //     await nativePlayer.setProperty('hr-seek', 'no');
+    //     await nativePlayer.setProperty('fast-seek', 'yes');
+
+    //     // --- 3. 缓存激进优化 (模拟浏览器行为) ---
+    //     await nativePlayer.setProperty('cache', 'no');
+    //     await nativePlayer.setProperty(
+    //         'demuxer-max-bytes', '5120000'); // 5MB 足够了
+    //     await nativePlayer.setProperty('demuxer-readahead-secs', '1');
+
+    //     // --- 4. 画面渲染加速 ---
+    //     await nativePlayer.setProperty('vd-lavc-fast', 'yes');
+    //     await nativePlayer.setProperty('vd-lavc-threads', 'auto');
+
+    //     print(
+    //         '============== _player?.platform is NativePlayer ===========================================================');
+    //     debugPrint(
+    //         '============== _player?.platform is NativePlayer ===========================================================');
+    //   } catch (e) {
+    //     debugPrint('Failed to set mpv properties: $e');
+    //   }
+    // }
 
     _videoController = VideoController(_player!);
     _setupPlayerListeners();

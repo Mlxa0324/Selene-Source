@@ -527,7 +527,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
     Widget content = Stack(
       children: [
-        Positioned.fill(child: _buildGestureLayer()),
+        _buildGestureLayer(),
         _buildTopGradient(),
         _buildBottomGradient(),
         if (_isFullscreen) _buildCurrentTime(),
