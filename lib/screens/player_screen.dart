@@ -69,6 +69,29 @@ class PlayerScreen extends StatefulWidget {
 
 class _PlayerScreenState extends State<PlayerScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  // 记录活跃实例，防止声音重叠
+  static final List<_PlayerScreenState> _instances = [];
+
+  // 强制关闭旧实例
+  void _forceClose() {
+    if (mounted) {
+      debugPrint('检测到新播放器实例，正在释放旧实例资源防止声音重叠');
+      try {
+        // 销毁控制器释放资源，这是解决声音重叠的关键
+        _videoPlayerController?.dispose();
+        _videoPlayerController = null;
+        // 重置状态
+        if (mounted) {
+          setState(() {
+            _isCasting = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('释放旧实例资源失败: $e');
+      }
+    }
+  }
+
   late SystemUiOverlayStyle _originalStyle;
   bool _isInitialized = false;
   String? _errorMessage;
@@ -178,6 +201,17 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void initState() {
     super.initState();
+    
+    // 强制清理之前的播放器页面，解决声音重叠和内存占用
+    if (_instances.isNotEmpty) {
+      final oldInstances = List<_PlayerScreenState>.from(_instances);
+      _instances.clear();
+      for (var instance in oldInstances) {
+        instance._forceClose();
+      }
+    }
+    _instances.add(this);
+
     videoTitle = widget.title;
     currentEpisodeIndex = widget.initialEpisodeIndex;
     _refreshAnimationController = AnimationController(
@@ -3483,6 +3517,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    // 从活跃实例列表中移除
+    _instances.remove(this);
     // 保存进度
     _saveProgress(force: true, scene: '页面销毁');
     // 取消超时计时器

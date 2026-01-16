@@ -208,22 +208,41 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
-      // Use WebView-based HLS player on mobile for faster seek
+      // 本地播放使用原生适配器，在线播放使用 WebView 适配器
       if (_currentUrl != null) {
-        _adapter = WebViewPlayerAdapter(
-          url: _currentUrl!,
-          headers: _currentHeaders,
-          onReady: () {
-            debugPrint('VideoPlayerWidget: WebView ready (init)');
+        if (widget.isLocal) {
+          debugPrint('VideoPlayerWidget: 使用 VideoPlayerAdapter 播放本地文件');
+          final controller = vp.VideoPlayerController.file(
+            File(_currentUrl!),
+          );
+          _adapter = VideoPlayerAdapter(controller);
+          controller.initialize().then((_) {
             if (mounted) {
               setState(() {
                 _isLoadingVideo = false;
               });
               widget.onReady?.call();
+              _adapter!.play();
             }
-          },
-        );
+          });
+        } else {
+          debugPrint('VideoPlayerWidget: 使用 WebViewPlayerAdapter 播放网络流');
+          _adapter = WebViewPlayerAdapter(
+            url: _currentUrl!,
+            headers: _currentHeaders,
+            onReady: () {
+              debugPrint('VideoPlayerWidget: WebView ready (init)');
+              if (mounted) {
+                setState(() {
+                  _isLoadingVideo = false;
+                });
+                widget.onReady?.call();
+              }
+            },
+          );
+        }
         _setupPlayerListeners();
+        _adapter?.updateVideoFit(_getBoxFit());
       }
       setState(() {
         _isInitialized = true;
@@ -401,6 +420,30 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
           play: true,
         );
+      } else if (widget.isLocal) {
+        // 处理本地文件切换
+        final oldAdapter = _adapter;
+        final newController = vp.VideoPlayerController.file(
+          File(url),
+        );
+        await newController.initialize();
+        if (startAt != null) {
+          await newController.seekTo(startAt);
+        }
+
+        _adapter = VideoPlayerAdapter(newController);
+        _setupPlayerListeners();
+        await _adapter!.play();
+        
+        if (mounted) {
+          setState(() {
+            _isLoadingVideo = false;
+          });
+          widget.onReady?.call();
+        }
+
+        // 异步清理旧适配器
+        unawaited(oldAdapter?.dispose());
       } else if (_adapter is VideoPlayerAdapter) {
         final oldController = (_adapter as VideoPlayerAdapter).controller;
         await oldController.pause();
@@ -417,6 +460,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         final oldAdapter = _adapter;
         _adapter = VideoPlayerAdapter(newController);
         _setupPlayerListeners();
+        _adapter?.updateVideoFit(_getBoxFit());
         await _adapter!.play();
 
         // Clean up old one after switching to minimize gap
@@ -439,6 +483,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           },
         );
         _setupPlayerListeners();
+        _adapter?.updateVideoFit(_getBoxFit());
         unawaited(oldAdapter?.dispose());
       }
       
@@ -479,6 +524,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     setState(() {
       _currentFitType = fitType;
     });
+    _adapter?.updateVideoFit(_getBoxFit());
   }
 
   BoxFit _getBoxFit() {
@@ -486,7 +532,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       case VideoFitType.contain:
         return BoxFit.contain;
       case VideoFitType.aspectRatio16_9:
-        return BoxFit.contain;
+        return BoxFit.fill; // 强制填充以匹配 AspectRatio
       case VideoFitType.fill:
         return BoxFit.fill;
       case VideoFitType.fitWidth:
@@ -637,15 +683,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       child: _isInitialized && _adapter != null
           ? Stack(
               children: [
-                _adapter!.buildVideo(
-                  context,
-                  fit: _getBoxFit(),
-                  // 桌面端 MediaKit 需要 GlobalKey 来管理全屏状态
-                  // 移动端使用 ValueKey 确保换源时彻底重建，避免 WebView 状态复用
-                  key: _adapter is MediaKitAdapter
-                      ? _videoKey
-                      : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
-                ),
+                _buildVideoSurface(),
                 if (widget.danmakuLayer != null)
                   RepaintBoundary(child: widget.danmakuLayer!),
                 _buildControls(),
@@ -657,6 +695,29 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
               ),
             ),
     );
+  }
+
+  Widget _buildVideoSurface() {
+    Widget videoWidget = _adapter!.buildVideo(
+      context,
+      fit: _getBoxFit(),
+      // 桌面端 MediaKit 需要 GlobalKey 来管理全屏状态
+      // 移动端使用 ValueKey 确保换源时彻底重建，避免 WebView 状态复用
+      key: _adapter is MediaKitAdapter
+          ? _videoKey
+          : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
+    );
+
+    if (_currentFitType == VideoFitType.aspectRatio16_9) {
+      return Center(
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: videoWidget,
+        ),
+      );
+    }
+
+    return videoWidget;
   }
 
   Widget _buildControls() {

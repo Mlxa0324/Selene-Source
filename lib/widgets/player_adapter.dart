@@ -16,6 +16,7 @@ abstract class PlayerAdapter {
   Future<void> setRate(double rate);
   Future<void> setVolume(double volume);
   Future<void> dispose();
+  Future<void> updateVideoFit(BoxFit fit);
   
   Widget buildVideo(BuildContext context, {BoxFit fit, Key? key});
 }
@@ -64,6 +65,11 @@ class MediaKitAdapter implements PlayerAdapter {
   Future<void> setVolume(double volume) => player.setVolume(volume);
   @override
   Future<void> dispose() => player.dispose();
+
+  @override
+  Future<void> updateVideoFit(BoxFit fit) async {
+    // MediaKitVideo handles this via the fit property in buildVideo
+  }
 
   @override
   Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key}) {
@@ -171,6 +177,11 @@ class VideoPlayerAdapter implements PlayerAdapter {
   Future<void> setRate(double rate) => controller.setPlaybackSpeed(rate);
   @override
   Future<void> setVolume(double volume) => controller.setVolume(volume / 100);
+  
+  @override
+  Future<void> updateVideoFit(BoxFit fit) async {
+    // Handled in buildVideo via FittedBox
+  }
   
   @override
   Future<void> dispose() async {
@@ -350,6 +361,22 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   Future<void> setVolume(double volume) async {
     final normalized = volume / 100;
     await _controller?.evaluateJavascript(source: 'player.volume = $normalized;');
+  }
+
+  @override
+  Future<void> updateVideoFit(BoxFit fit) async {
+    String objectFit = 'contain';
+    if (fit == BoxFit.fill) {
+      objectFit = 'fill';
+    } else if (fit == BoxFit.fitWidth) {
+      objectFit = 'scale-down'; // In some contexts fitWidth maps differently, but fill/contain are key
+    } else if (fit == BoxFit.cover) {
+      objectFit = 'cover';
+    }
+    
+    await _controller?.evaluateJavascript(
+      source: "document.getElementById('player').style.objectFit = '$objectFit';"
+    );
   }
 
   @override
