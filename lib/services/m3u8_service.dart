@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import '../models/search_result.dart';
 
 /// M3U8 解析和测速服务
@@ -18,8 +19,8 @@ class M3U8Service {
     };
   }
 
-  /// 过滤 M3U8 内容中的广告标识
-  static String filterAdsFromM3U8(String content) {
+  /// 过滤 M3U8 内容中的广告标识，并将相对路径转换为绝对路径
+  static String filterAdsFromM3U8(String content, String baseUrl) {
     if (content.isEmpty) return '';
 
     // 按行分割内容
@@ -28,13 +29,64 @@ class M3U8Service {
 
     for (var line in lines) {
       final trimmedLine = line.trim();
+      if (trimmedLine.isEmpty) {
+        filteredLines.add(line);
+        continue;
+      }
+
       // 过滤 #EXT-X-DISCONTINUITY 标识
-      if (!trimmedLine.contains('#EXT-X-DISCONTINUITY')) {
+      if (trimmedLine.contains('#EXT-X-DISCONTINUITY')) {
+        continue;
+      }
+
+      // 处理分片 URL 或 Key URL
+      if (!trimmedLine.startsWith('#')) {
+        // 这是一行 URL（分片地址）
+        filteredLines.add(_resolveUrlStatic(trimmedLine, baseUrl));
+      } else if (trimmedLine.startsWith('#EXT-X-KEY')) {
+        // 处理加密密钥 URL
+        // 格式通常为: #EXT-X-KEY:METHOD=AES-128,URI="key.php",IV=0x...
+        final uriRegex = RegExp(r'URI=["\x27]([^"\x27]+)["\x27]');
+        final match = uriRegex.firstMatch(trimmedLine);
+        if (match != null) {
+          final relativeUri = match.group(1)!;
+          final absoluteUri = _resolveUrlStatic(relativeUri, baseUrl);
+          filteredLines.add(trimmedLine.replaceFirst(relativeUri, absoluteUri));
+        } else {
+          filteredLines.add(line);
+        }
+      } else if (trimmedLine.startsWith('#EXT-X-MAP')) {
+        // 处理 Media Initialization Section
+        // 格式: #EXT-X-MAP:URI="main.mp4",BYTERANGE="1000@0"
+        final uriRegex = RegExp(r'URI=["\x27]([^"\x27]+)["\x27]');
+        final match = uriRegex.firstMatch(trimmedLine);
+        if (match != null) {
+          final relativeUri = match.group(1)!;
+          final absoluteUri = _resolveUrlStatic(relativeUri, baseUrl);
+          filteredLines.add(trimmedLine.replaceFirst(relativeUri, absoluteUri));
+        } else {
+          filteredLines.add(line);
+        }
+      } else {
         filteredLines.add(line);
       }
     }
 
     return filteredLines.join('\n');
+  }
+
+  /// 静态版本的 URL 解析
+  static String _resolveUrlStatic(String url, String baseUrl) {
+    if (url.startsWith('http') || url.startsWith('data:')) {
+      return url;
+    }
+    
+    try {
+      final uri = Uri.parse(baseUrl);
+      return uri.resolve(url).toString();
+    } catch (e) {
+      return url;
+    }
   }
 
   /// 并发获取流的核心信息：分辨率、下载速度、延迟
@@ -98,6 +150,7 @@ class M3U8Service {
         if (source.episodes.isEmpty) return;
         
         final info = await getStreamInfo(source.episodes.first);
+        debugPrint('获取到的流信息: $info');
         final speed = info['downloadSpeed'] as double;
         final latency = info['latency'] as int;
         final res = info['resolution'] as Map<String, int>;

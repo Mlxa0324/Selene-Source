@@ -70,6 +70,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   // 网页全屏状态
   bool _isWebFullscreen = false;
 
+  // 真全屏状态
+  bool _isFullscreen = false;
+
   // 加载状态
   bool _isLoading = true;
   String _loadingMessage = '正在加载直播频道...';
@@ -175,11 +178,23 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   void dispose() {
     // 恢复原始的系统UI样式
     SystemChrome.setSystemUIOverlayStyle(_originalStyle);
+    // 恢复屏幕方向
+    _restoreOrientation();
     _programScrollController.dispose();
     _verticalProgramScrollController.dispose();
     _channelScrollController.dispose();
     _loadingAnimationController.dispose();
     super.dispose();
+  }
+
+  void _restoreOrientation() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   Future<void> _loadEpgData() async {
@@ -243,6 +258,26 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  void _onFullscreenChanged(bool isFullscreen) {
+    setState(() {
+      _isFullscreen = isFullscreen;
+    });
+    if (DeviceUtils.isPC()) return;
+
+    if (isFullscreen) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
   }
 
@@ -479,7 +514,8 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   Widget _buildPlayerLayer(ThemeData theme) {
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
-    final topOffset = statusBarHeight + macOSPadding;
+    // 如果是真全屏模式，不预留状态栏高度
+    final topOffset = _isFullscreen ? 0.0 : (statusBarHeight + macOSPadding);
 
     if (_isWebFullscreen) {
       // 网页全屏模式：播放器占据整个屏幕（保留顶部安全区域）
@@ -560,9 +596,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
           ),
         );
       } else {
-        // 手机模式：16:9 比例
+        // 手机模式
         final screenWidth = MediaQuery.of(context).size.width;
-        final playerHeight = screenWidth / (16 / 9);
+        final screenHeight = MediaQuery.of(context).size.height;
+        // 如果是全屏，高度占满屏幕，否则 16:9
+        final playerHeight = _isFullscreen ? screenHeight : screenWidth / (16 / 9);
 
         return Positioned(
           top: topOffset,
@@ -610,6 +648,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
           _isWebFullscreen = isWebFullscreen;
         });
       },
+      onFullscreenChanged: _onFullscreenChanged,
       onExitFullScreen: () {
         // 退出全屏后，重新滚动到当前节目
         _scrollToCurrentProgram();

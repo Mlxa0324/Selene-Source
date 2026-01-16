@@ -1,17 +1,18 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 import 'dlna_device_dialog.dart';
 import 'player_settings_panel.dart';
+import 'player_adapter.dart';
 
 class MobilePlayerControls extends StatefulWidget {
-  final Player player;
-  final VideoState state;
+  final PlayerAdapter player;
+  final VideoState?
+      state; // Now optional because we might not have media_kit VideoState
   final Function(bool) onControlsVisibilityChanged;
   final VoidCallback? onBackPressed;
   final Function(bool) onFullscreenChange;
@@ -46,7 +47,7 @@ class MobilePlayerControls extends StatefulWidget {
   const MobilePlayerControls({
     super.key,
     required this.player,
-    required this.state,
+    this.state,
     required this.onControlsVisibilityChanged,
     this.onBackPressed,
     required this.onFullscreenChange,
@@ -103,6 +104,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Timer? _brightnessHideTimer;
   Timer? _timeUpdateTimer;
   String _currentTime = '';
+  bool _isFullscreen = false;
 
   @override
   void initState() {
@@ -121,7 +123,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   @override
   void didUpdateWidget(covariant MobilePlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 当 PIP 模式停止时，显示控制栏
+    // 褰?PIP 妯″紡鍋滄鏃讹紝鏄剧ず鎺у埗鏍?
     if (oldWidget.isPipMode && !widget.isPipMode) {
       setState(() => _controlsVisible = true);
       widget.onControlsVisibilityChanged(true);
@@ -178,7 +180,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
     _subscriptions.clear();
 
-    // 移除系统监听
+    // 绉婚櫎绯荤粺鐩戝惉
     VolumeController.instance.removeListener();
 
     _hideTimer?.cancel();
@@ -189,7 +191,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     super.dispose();
   }
 
-  bool get _isFullscreen => widget.state.isFullscreen();
   bool get _isPlaying => widget.player.state.playing;
   Duration get _position => widget.player.state.position;
   Duration get _duration => widget.player.state.duration;
@@ -244,7 +245,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onLongPressStart(LongPressStartDetails details) {
-    if (widget.live || !_isPlaying) return; // 锁定状态下也允许长按倍速
+    if (widget.live || !_isPlaying) return; // 閿佸畾鐘舵€佷笅涔熷厑璁搁暱鎸夊€嶉€?
     setState(() {
       _isLongPressing = true;
       _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
@@ -253,7 +254,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
-    if (!_isLongPressing || widget.live) return; // 锁定状态下也允许
+    if (!_isLongPressing || widget.live) return; // 閿佸畾鐘舵€佷笅涔熷厑璁?
     widget.onSetSpeed(_originalPlaybackSpeed);
     setState(() => _isLongPressing = false);
   }
@@ -398,20 +399,26 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _enterFullscreen() {
-    widget.state.enterFullscreen();
+    if (widget.state != null) {
+      widget.state!.enterFullscreen();
+    }
     widget.onFullscreenChange(true);
+    setState(() => _isFullscreen = true);
     _onUserInteraction();
   }
 
   void _exitFullscreen() {
-    widget.state.exitFullscreen();
+    if (widget.state != null) {
+      widget.state!.exitFullscreen();
+    }
     widget.onFullscreenChange(false);
-    // 触发退出全屏回调
+    // 瑙﹀彂閫€鍑哄叏灞忓洖璋?
     widget.onExitFullScreen?.call();
-    // 确保控制栏可见并重新启动隐藏计时器
+    // 纭繚鎺у埗鏍忓彲瑙佸苟閲嶆柊鍚姩闅愯棌璁℃椂鍣?
     setState(() {
       _controlsVisible = true;
       _isLocked = false;
+      _isFullscreen = false;
     });
     widget.onControlsVisibilityChanged(true);
     _startHideTimer();
@@ -487,11 +494,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Future<void> _enterPipMode() async {
     debugPrint('_enterPipMode');
-    // 隐藏控制栏
+    // 闅愯棌鎺у埗鏍?
     setState(() => _controlsVisible = false);
     widget.onControlsVisibilityChanged(false);
     _hideTimer?.cancel();
-    // 调用父层的 PIP 逻辑
+    // 璋冪敤鐖跺眰鐨?PIP 閫昏緫
     await widget.onEnterPipMode();
   }
 
@@ -517,7 +524,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             children: [
               CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
               SizedBox(height: 16),
-              Text('加载中...',
+              Text('鍔犺浇涓?..',
                   style: TextStyle(color: Colors.white, fontSize: 14)),
             ],
           ),
@@ -538,7 +545,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildCenterPlayPause(),
         _buildProgressBar(),
         _buildBottomControls(),
-        if (_isLongPressing) _buildLongPressIndicator(), // 锁定状态下也显示倍速指示器
+        if (_isLongPressing)
+          _buildLongPressIndicator(), // 閿佸畾鐘舵€佷笅涔熸樉绀哄€嶉€熸寚绀哄櫒
         if (_isFullscreen && _showBrightnessIndicator && !_isLocked)
           _buildBrightnessIndicator(),
         if (_isFullscreen) _buildRightOverlay(),
@@ -778,7 +786,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return Positioned(
       top: _isFullscreen ? 8 : 4,
       left: _isFullscreen ? 16.0 : 8.0,
-      right: _isFullscreen ? 64.0 : null, // 核心修复：全屏时始终限制右侧空间
+      right: _isFullscreen ? 64.0 : null, // 鏍稿績淇锛氬叏灞忔椂濮嬬粓闄愬埗鍙充晶绌洪棿
       child: AnimatedOpacity(
         opacity: (_controlsVisible && !_isLocked) ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 200),
@@ -824,7 +832,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Widget _buildVideoInfo() {
     final title = widget.videoTitle ?? '';
     
-    // 获取集数显示文本：优先使用标题列表中的名称，如果没有则使用"第X集"
+    // 鑾峰彇闆嗘暟鏄剧ず鏂囨湰锛氫紭鍏堜娇鐢ㄦ爣棰樺垪琛ㄤ腑鐨勫悕绉帮紝濡傛灉娌℃湁鍒欎娇鐢?绗琗闆?
     String episodeText = '';
     if (widget.currentEpisodeIndex != null &&
         widget.totalEpisodes != null &&
@@ -1038,7 +1046,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                             ),
                           ),
                         if (widget.live) const Spacer(),
-                        // 手动匹配弹幕按钮（仅在横屏时显示）
+                        // 鎵嬪姩鍖归厤寮瑰箷鎸夐挳锛堜粎鍦ㄦí灞忔椂鏄剧ず锛?
                         if (_isFullscreen &&
                             widget.onDanmakuMatchButtonPressed != null)
                           GestureDetector(
@@ -1056,7 +1064,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
-                        // 弹幕设置按钮（仅在横屏时显示）
+                        // 寮瑰箷璁剧疆鎸夐挳锛堜粎鍦ㄦí灞忔椂鏄剧ず锛?
                         if (_isFullscreen &&
                             widget.onDanmakuButtonPressed != null)
                           GestureDetector(
@@ -1074,7 +1082,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
-                        // 选集按钮（仅在横屏且集数大于1时显示）
+                        // 閫夐泦鎸夐挳锛堜粎鍦ㄦí灞忎笖闆嗘暟澶т簬1鏃舵樉绀猴級
                         if (_isFullscreen &&
                             widget.totalEpisodes != null &&
                             widget.totalEpisodes! > 1 &&
@@ -1094,7 +1102,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
-                        // 换源按钮（仅在横屏且非本地播放时显示）
+                        // 鎹㈡簮鎸夐挳锛堜粎鍦ㄦí灞忎笖闈炴湰鍦版挱鏀炬椂鏄剧ず锛?
                         if (_isFullscreen &&
                             !widget.isLocal &&
                             widget.onSourcesButtonPressed != null)
@@ -1113,7 +1121,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
-                        // 设置按钮（仅在横屏时显示）
+                        // 璁剧疆鎸夐挳锛堜粎鍦ㄦí灞忔椂鏄剧ず锛?
                         if (_isFullscreen &&
                             widget.onSettingsButtonPressed != null)
                           GestureDetector(
@@ -1203,19 +1211,19 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       left: 0,
       right: 0,
       child: Center(
-        // 添加 Center 使整个指示器居中
+        // 娣诲姞 Center 浣挎暣涓寚绀哄櫒灞呬腑
         child: IntrinsicWidth(
           child: Container(
             padding: const EdgeInsets.symmetric(
-                horizontal: 8, vertical: 4), // 添加垂直 padding
+                horizontal: 8, vertical: 4), // 娣诲姞鍨傜洿 padding
             decoration: BoxDecoration(
               color: widget.progressMode == ProgressDisplayMode.none
                   ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.7), // 修正为 withOpacity
+                  : Colors.black.withOpacity(0.7), // 淇涓?withOpacity
               borderRadius: BorderRadius.circular(5),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min, // 确保 Row 只占用所需空间
+              mainAxisSize: MainAxisSize.min, // 纭繚 Row 鍙崰鐢ㄦ墍闇€绌洪棿
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
@@ -1407,7 +1415,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 }
 
 class _MobileVideoProgressBar extends StatefulWidget {
-  final Player player;
+  final PlayerAdapter player;
   final VoidCallback? onDragStart;
   final VoidCallback? onDragEnd;
   final VoidCallback? onDragUpdate;
@@ -1435,7 +1443,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
 class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
   bool _isDragging = false;
   double _dragValue = 0.0;
-  bool _isSeeking = false; // 新增：标记是否正在 seek
+  bool _isSeeking = false; // 鏂板锛氭爣璁版槸鍚︽鍦?seek
   StreamSubscription<Duration>? _positionSubscription;
 
   @override
@@ -1502,7 +1510,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                   _isSeeking = true;
                 });
 
-                // 异步 Seek
+                // 寮傛 Seek
                 widget.player.seek(seekPosition).then((_) async {
                   await Future.delayed(const Duration(milliseconds: 100));
                   if (mounted) {
@@ -1525,15 +1533,15 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
               );
 
               setState(() {
-                _isSeeking = true; // 标记开始 seek
+                _isSeeking = true; // 鏍囪寮€濮?seek
               });
 
-              // 异步执行 seek
+              // 寮傛鎵ц seek
               widget.player.seek(seekPosition).then((_) async {
                 await Future.delayed(const Duration(milliseconds: 100));
                 if (mounted) {
                   setState(() {
-                    _isSeeking = false; // 标记 seek 完成
+                    _isSeeking = false; // 鏍囪 seek 瀹屾垚
                   });
                 }
               });
@@ -1611,7 +1619,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
   }
 
   void _updateDrag(double dx, BuildContext context) {
-    // 获取组件宽度，用于计算进度比例
+    // 鑾峰彇缁勪欢瀹藉害锛岀敤浜庤绠楄繘搴︽瘮渚?
     final RenderBox? box = context.findRenderObject() as RenderBox?;
     if (box == null) return;
     
@@ -1620,7 +1628,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
     
     final value = (dx / width).clamp(0.0, 1.0);
     
-    // 如果值没有显著变化，跳过 setState 以节省性能
+    // 濡傛灉鍊兼病鏈夋樉钁楀彉鍖栵紝璺宠繃 setState 浠ヨ妭鐪佹€ц兘
     if ((value - _dragValue).abs() < 0.001) return;
     
     setState(() => _dragValue = value);

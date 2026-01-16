@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -115,6 +117,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 切换播放源/集数时的加载蒙版状态
   bool _showSwitchLoadingOverlay = false;
   String _switchLoadingMessage = '切换播放源...';
+  Timer? _loadingTimeoutTimer;
   late AnimationController _switchLoadingAnimationController;
 
   // 投屏状态
@@ -144,6 +147,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // 网页全屏状态
   bool _isWebFullscreen = false;
+  // 真全屏状态
+  bool _isFullscreen = false;
 
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
@@ -375,6 +380,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   void initParam() {
@@ -861,7 +867,22 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 动态更新视频数据源
   Future<void> updateVideoUrl(String newUrl, {Duration? startAt}) async {
-    print("newUrl: $newUrl, startAt: $startAt");
+    debugPrint("updateVideoUrl start: $newUrl, startAt: $startAt");
+    
+    // 取消之前的计时器
+    _loadingTimeoutTimer?.cancel();
+    
+    // 设置一个新的超时计时器
+    _loadingTimeoutTimer = Timer(const Duration(seconds: 15), () {
+      if (mounted && _showSwitchLoadingOverlay) {
+        debugPrint("播放器准备超时，强制关闭加载蒙版");
+        setState(() {
+          _showSwitchLoadingOverlay = false;
+        });
+        showError('播放请求超时，请尝试换源或稍后重试');
+      }
+    });
+
     try {
       String finalUrl = newUrl;
       final bool isLocal = !newUrl.startsWith('http');
@@ -872,36 +893,42 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (_adFilterEnabled &&
             (newUrl.contains('.m3u8') || newUrl.contains('.M3U8'))) {
           try {
+            debugPrint("正在尝试过滤 M3U8 广告: $newUrl");
             final dio = Dio();
+            // 设置较短的超时，避免长时间卡住
+            dio.options.connectTimeout = const Duration(seconds: 5);
+            dio.options.receiveTimeout = const Duration(seconds: 10);
+            
             final response = await dio.get(newUrl);
             if (response.statusCode == 200 && response.data is String) {
-              final filteredContent =
-                  M3U8Service.filterAdsFromM3U8(response.data);
-              final bytes = utf8.encode(filteredContent);
-              final base64Content = base64.encode(bytes);
-              finalUrl =
-                  'data:application/vnd.apple.mpegurl;base64,$base64Content';
-              print("M3U8 广告已过滤，使用 Data URI 播放");
+              // 使用 compute 将耗时的字符串处理和 Base64 编码移出 UI 线程
+              final base64Content = await compute(_filterAndEncodeM3u8, {
+                'content': response.data as String,
+                'baseUrl': newUrl,
+              });
+              finalUrl = 'data:application/vnd.apple.mpegurl;base64,$base64Content';
+              debugPrint("M3U8 广告已过滤并编码，使用 Data URI 播放");
             }
           } catch (e) {
             debugPrint('去广告处理失败，降级使用原始链接: $e');
           }
         }
 
-        // 获取 M3U8 代理 URL
+        // 获取 M3U8 代理 URL (如果没被 Data URI 替换)
         if (finalUrl == newUrl) {
           final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
           if (m3u8ProxyUrl.isNotEmpty) {
             final encodedUrl = Uri.encodeComponent(newUrl);
             finalUrl = '$m3u8ProxyUrl$encodedUrl';
-            print("使用 M3U8 代理: $finalUrl");
+            debugPrint("使用 M3U8 代理: $finalUrl");
           }
         }
       }
 
+      debugPrint("最终播放 URL: $finalUrl");
+
       if (_isCasting) {
-        // 构建标题：{title} - {第 x 集} - {sourceName}
-        // 如果总集数为 1，则不显示集数
+        // ... (投屏逻辑保持不变)
         final sourceName = currentDetail?.sourceName ?? currentSource;
         String formattedTitle;
         if (totalEpisodes > 1) {
@@ -910,17 +937,38 @@ class _PlayerScreenState extends State<PlayerScreen>
         } else {
           formattedTitle = '$videoTitle - $sourceName';
         }
-        // 投屏状态：调用 DLNA 播放器的 updateVideoUrl
         _dlnaPlayerController?.updateVideoUrl(finalUrl, formattedTitle,
             startAt: startAt);
+        
+        // 投屏模式下可能不会触发 _onVideoPlayerReady，所以这里手动关闭加载
+        if (mounted) {
+          setState(() {
+            _showSwitchLoadingOverlay = false;
+          });
+        }
       } else {
-        // 本地播放：根据设备类型调用对应播放器的 updateDataSource
+        // 本地播放
+        debugPrint("调用播放器 updateDataSource");
         await _videoPlayerController?.updateDataSource(finalUrl,
             startAt: startAt);
       }
     } catch (e) {
-      // 静默处理错误
+      debugPrint('updateVideoUrl 发生异常: $e');
+      if (mounted) {
+        setState(() {
+          _showSwitchLoadingOverlay = false;
+        });
+      }
+      showError('播放失败: $e');
     }
+  }
+
+  /// 静态辅助方法，供 compute 使用，避免闭包捕获 context 或 state
+  static String _filterAndEncodeM3u8(Map<String, String> params) {
+    final content = params['content']!;
+    final baseUrl = params['baseUrl']!;
+    final filtered = M3U8Service.filterAdsFromM3U8(content, baseUrl);
+    return base64.encode(utf8.encode(filtered));
   }
 
   /// 跳转到指定进度
@@ -951,11 +999,18 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onVideoPlayerReady() {
     // 视频播放器准备就绪时的处理逻辑
     debugPrint('Video player is ready!');
+    
+    // 取消超时计时器
+    _loadingTimeoutTimer?.cancel();
+    _loadingTimeoutTimer = null;
 
-    setState(() {
-      // 隐藏切换加载蒙版
-      _showSwitchLoadingOverlay = false;
-    });
+    if (mounted) {
+      setState(() {
+        // 隐藏切换加载蒙版
+        _showSwitchLoadingOverlay = false;
+        _isLoading = false; // 确保主加载也重置
+      });
+    }
 
     // 重置最后保存时间，允许立即保存
     _lastSaveTime = null;
@@ -975,6 +1030,26 @@ class _PlayerScreenState extends State<PlayerScreen>
           seekToProgress(tmpStartAt);
         }
       });
+    }
+  }
+
+  void _onFullscreenChanged(bool isFullscreen) {
+    setState(() {
+      _isFullscreen = isFullscreen;
+    });
+    if (DeviceUtils.isPC()) return;
+
+    if (isFullscreen) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
   }
 
@@ -1373,6 +1448,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 _isWebFullscreen = isWebFullscreen;
               });
             },
+            onFullscreenChanged: _onFullscreenChanged,
             onEpisodesButtonPressed: (fullscreenContext) {
               // 在全屏模式下，使用传入的 context 显示选集面板
               _showEpisodesPanelInFullscreen(fullscreenContext);
@@ -3409,6 +3485,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   void dispose() {
     // 保存进度
     _saveProgress(force: true, scene: '页面销毁');
+    // 取消超时计时器
+    _loadingTimeoutTimer?.cancel();
     // 移除视频进度监听器
     _removeVideoProgressListener();
     // 移除应用生命周期监听器
@@ -3564,7 +3642,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _buildPlayerLayer(ThemeData theme) {
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
-    final topOffset = statusBarHeight + macOSPadding;
+    // 如果是真全屏模式，不预留状态栏高度
+    final topOffset = (_isFullscreen) ? 0.0 : (statusBarHeight + macOSPadding);
 
     if (_isWebFullscreen) {
       // 网页全屏模式：播放器占据整个屏幕（保留顶部安全区域）
@@ -3627,9 +3706,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         );
       } else {
-        // 手机模式：16:9 比例
+        // 手机模式
         final screenWidth = MediaQuery.of(context).size.width;
-        final playerHeight = screenWidth / (16 / 9);
+        final screenHeight = MediaQuery.of(context).size.height;
+        // 如果是全屏，高度占满屏幕，否则 16:9
+        final playerHeight = _isFullscreen ? screenHeight : screenWidth / (16 / 9);
 
         return Positioned(
           top: topOffset,

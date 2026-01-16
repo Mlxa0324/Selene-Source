@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:media_kit/media_kit.dart' as mk;
+import 'package:media_kit_video/media_kit_video.dart' as mkv;
+import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
 import 'video_player_surface.dart';
 import 'player_settings_panel.dart';
+import 'player_adapter.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
@@ -27,9 +29,11 @@ class VideoPlayerWidget extends StatefulWidget {
   final int? currentEpisodeIndex;
   final int? totalEpisodes;
   final List<String>? episodesTitles;
+  final String? subtitleUrl;
   final String? sourceName;
   final bool isLocal; // 是否是本地播放
   final Function(bool isWebFullscreen)? onWebFullscreenChanged;
+  final Function(bool isFullscreen)? onFullscreenChanged;
   final VoidCallback? onExitFullScreen;
   final bool live;
   final Function(bool isPipMode)? onPipModeChanged;
@@ -62,9 +66,11 @@ class VideoPlayerWidget extends StatefulWidget {
     this.currentEpisodeIndex,
     this.totalEpisodes,
     this.episodesTitles,
+    this.subtitleUrl,
     this.sourceName,
     this.isLocal = false,
     this.onWebFullscreenChanged,
+    this.onFullscreenChanged,
     this.onExitFullScreen,
     this.live = false,
     this.onPipModeChanged,
@@ -100,21 +106,21 @@ class VideoPlayerWidgetController {
   }
 
   Future<void> seekTo(Duration position) async {
-    await _state._player?.seek(position);
+    await _state._adapter?.seek(position);
   }
 
-  Duration? get currentPosition => _state._player?.state.position;
+  Duration? get currentPosition => _state._adapter?.state.position;
 
-  Duration? get duration => _state._player?.state.duration;
+  Duration? get duration => _state._adapter?.state.duration;
 
-  bool get isPlaying => _state._player?.state.playing ?? false;
+  bool get isPlaying => _state._adapter?.state.playing ?? false;
 
   Future<void> pause() async {
-    await _state._player?.pause();
+    await _state._adapter?.pause();
   }
 
   Future<void> play() async {
-    await _state._player?.play();
+    await _state._adapter?.play();
   }
 
   void addProgressListener(VoidCallback listener) {
@@ -132,10 +138,10 @@ class VideoPlayerWidgetController {
   double get playbackSpeed => _state._playbackSpeed.value;
 
   Future<void> setVolume(double volume) async {
-    await _state._player?.setVolume(volume);
+    await _state._adapter?.setVolume(volume);
   }
 
-  double? get volume => _state._player?.state.volume;
+  double? get volume => _state._adapter?.state.volume;
 
   void exitWebFullscreen() {
     _state._exitWebFullscreen();
@@ -154,24 +160,24 @@ class VideoPlayerWidgetController {
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     with WidgetsBindingObserver {
-  Player? _player;
-  VideoController? _videoController;
+  PlayerAdapter? _adapter;
   bool _isInitialized = false;
   bool _hasCompleted = false;
   bool _isLoadingVideo = false;
   String? _currentUrl;
   Map<String, String>? _currentHeaders;
   final List<VoidCallback> _progressListeners = [];
-  StreamSubscription<Duration>? _positionSubscription;
-  StreamSubscription<bool>? _playingSubscription;
-  StreamSubscription<bool>? _completedSubscription;
-  StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription? _positionSubscription;
+  StreamSubscription? _playingSubscription;
+  StreamSubscription? _completedSubscription;
+  StreamSubscription? _durationSubscription;
   final ValueNotifier<double> _playbackSpeed = ValueNotifier<double>(1.0);
   bool _playerDisposed = false;
   VoidCallback? _exitWebFullscreenCallback;
   final Pip _pip = Pip();
   bool _isPipMode = false;
   VideoFitType _currentFitType = VideoFitType.contain;
+  final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
 
   @override
   void initState() {
@@ -201,91 +207,72 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
 
-    // 创建播放器并配置 mpv 参数
-    _player = Player(
-      configuration: const PlayerConfiguration(
-        // 开启非精确寻求，大幅提升 M3U8 拖动速度
-        // 同时增加缓存和快速解码参数
-        bufferSize: 32 * 1024 * 1024, // 32MB 缓存
-        ready: null,
-      ),
-    );
-
-    // // 设置高性能参数
-    // if (_player?.platform is NativePlayer) {
-    //   final nativePlayer = _player?.platform as NativePlayer;
-    //   try {
-    //     // 开启硬件加速解码
-    //     nativePlayer.setProperty('hwdec', 'auto');
-    //     // 开启直接渲染
-    //     nativePlayer.setProperty('vd-lavc-dr', 'yes');
-    //     // 丢帧以维持同步
-    //     nativePlayer.setProperty('hr-seek-framedrop', 'yes');
-    //     nativePlayer.setProperty('vd-lavc-fast', 'yes');
-    //     nativePlayer.setProperty('cache-pause', 'no');
-    //     // 限制 HLS 的切片尝试次数
-    //     await nativePlayer.setProperty(
-    //         'hls-bitrate', 'max'); // 固定最高码率，防止 Seek 时重新探测码率
-
-    //     // --- 1. 底层 FFmpeg 优化 (解决网络握手和探测慢) ---
-    //     await nativePlayer.setProperty('demuxer-lavf-o',
-    //         'probesize=32000,analyzeduration=0,http_persistent=1');
-
-    //     // --- 2. 寻道模式优化 ---
-    //     await nativePlayer.setProperty('hr-seek', 'no');
-    //     await nativePlayer.setProperty('fast-seek', 'yes');
-
-    //     // --- 3. 缓存激进优化 (模拟浏览器行为) ---
-    //     await nativePlayer.setProperty('cache', 'no');
-    //     await nativePlayer.setProperty(
-    //         'demuxer-max-bytes', '5120000'); // 5MB 足够了
-    //     await nativePlayer.setProperty('demuxer-readahead-secs', '1');
-
-    //     // --- 4. 画面渲染加速 ---
-    //     await nativePlayer.setProperty('vd-lavc-fast', 'yes');
-    //     await nativePlayer.setProperty('vd-lavc-threads', 'auto');
-
-    //     print(
-    //         '============== _player?.platform is NativePlayer ===========================================================');
-    //     debugPrint(
-    //         '============== _player?.platform is NativePlayer ===========================================================');
-    //   } catch (e) {
-    //     debugPrint('Failed to set mpv properties: $e');
-    //   }
-    // }
-
-    _videoController = VideoController(_player!);
-    _setupPlayerListeners();
-    if (_currentUrl != null) {
-      await _openCurrentMedia();
+    if (Platform.isAndroid || Platform.isIOS) {
+      // Use WebView-based HLS player on mobile for faster seek
+      if (_currentUrl != null) {
+        _adapter = WebViewPlayerAdapter(
+          url: _currentUrl!,
+          headers: _currentHeaders,
+          onReady: () {
+            debugPrint('VideoPlayerWidget: WebView ready (init)');
+            if (mounted) {
+              setState(() {
+                _isLoadingVideo = false;
+              });
+              widget.onReady?.call();
+            }
+          },
+        );
+        _setupPlayerListeners();
+      }
+      setState(() {
+        _isInitialized = true;
+      });
+    } else {
+      // Use media_kit on desktop
+      final player = mk.Player(
+        configuration: const mk.PlayerConfiguration(
+          bufferSize: 32 * 1024 * 1024,
+          ready: null,
+        ),
+      );
+      _adapter = MediaKitAdapter(player);
+      _setupPlayerListeners();
+      if (_currentUrl != null) {
+        await _openCurrentMedia();
+      }
+      setState(() {
+        _isInitialized = true;
+      });
     }
-    setState(() {
-      _isInitialized = true;
-    });
   }
 
   Future<void> _openCurrentMedia({Duration? startAt}) async {
-    if (_playerDisposed || _player == null || _currentUrl == null) {
+    if (_playerDisposed || _adapter == null || _currentUrl == null) {
       return;
     }
     setState(() {
       _isLoadingVideo = true;
     });
     try {
-      await _player!.open(
-        Media(
-          _currentUrl!,
-          start: startAt,
-          httpHeaders: _currentHeaders ?? const <String, String>{},
-        ),
-        play: true,
-      );
-      await _player!.setRate(_playbackSpeed.value);
+      if (_adapter is MediaKitAdapter) {
+        final player = (_adapter as MediaKitAdapter).player;
+        await player.open(
+          mk.Media(
+            _currentUrl!,
+            start: startAt,
+            httpHeaders: _currentHeaders ?? const <String, String>{},
+          ),
+          play: true,
+        );
+      } else if (_adapter is VideoPlayerAdapter) {
+        // Handled in initialization or _updateDataSource for mobile
+      }
+      
+      await _adapter!.setRate(_playbackSpeed.value);
       setState(() {
         _hasCompleted = false;
-        // _isLoadingVideo = false;
       });
-      // widget.onReady?.call();
     } catch (error) {
       debugPrint('VideoPlayerWidget: failed to open media $error');
       if (mounted) {
@@ -297,7 +284,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   void _setupPlayerListeners() {
-    if (_player == null) {
+    if (_adapter == null) {
       return;
     }
     _positionSubscription?.cancel();
@@ -305,7 +292,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
 
-    _positionSubscription = _player!.stream.position.listen((_) {
+    _positionSubscription = _adapter!.stream.position.listen((_) {
       for (final listener in List<VoidCallback>.from(_progressListeners)) {
         try {
           listener();
@@ -315,7 +302,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       }
     });
 
-    _playingSubscription = _player!.stream.playing.listen((playing) {
+    _playingSubscription = _adapter!.stream.playing.listen((playing) {
       if (!mounted) return;
       if (!playing) {
         widget.onPause?.call();
@@ -344,7 +331,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     });
 
     if (!widget.live) {
-      _completedSubscription = _player!.stream.completed.listen((completed) {
+      _completedSubscription = _adapter!.stream.completed.listen((completed) {
         if (!mounted) return;
         if (completed && !_hasCompleted) {
           _hasCompleted = true;
@@ -353,9 +340,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       });
     }
 
-    _durationSubscription = _player!.stream.duration.listen((duration) {
+    _durationSubscription = _adapter!.stream.duration.listen((duration) {
       if (!mounted) return;
       if (duration != Duration.zero) {
+        debugPrint('VideoPlayerWidget: duration changed to $duration');
         if (_isLoadingVideo) {
           setState(() {
             _isLoadingVideo = false;
@@ -364,6 +352,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         widget.onReady?.call();
       }
     });
+
+    // 立即检查一次当前状态，防止错过已经准备好的状态
+    final currentDuration = _adapter!.state.duration;
+    if (currentDuration != Duration.zero) {
+      debugPrint('VideoPlayerWidget: proactive ready check - duration is $currentDuration');
+      if (_isLoadingVideo) {
+        setState(() {
+          _isLoadingVideo = false;
+        });
+      }
+      widget.onReady?.call();
+    }
   }
 
   Future<void> _updateDataSource(
@@ -379,7 +379,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       _currentHeaders = headers;
     }
 
-    if (_player == null) {
+    if (_adapter == null) {
       await _initializePlayer();
       return;
     }
@@ -389,24 +389,67 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     });
 
     try {
-      final currentSpeed = _player!.state.rate;
-      await _player!.open(
-        Media(
-          url,
-          start: startAt,
-          httpHeaders: _currentHeaders ?? const <String, String>{},
-        ),
-        play: true,
-      );
+      final currentSpeed = _adapter!.state.rate;
+      
+      if (_adapter is MediaKitAdapter) {
+        final player = (_adapter as MediaKitAdapter).player;
+        await player.open(
+          mk.Media(
+            url,
+            start: startAt,
+            httpHeaders: _currentHeaders ?? const <String, String>{},
+          ),
+          play: true,
+        );
+      } else if (_adapter is VideoPlayerAdapter) {
+        final oldController = (_adapter as VideoPlayerAdapter).controller;
+        await oldController.pause();
+
+        final newController = vp.VideoPlayerController.networkUrl(
+          Uri.parse(url),
+          httpHeaders: _currentHeaders ?? const {},
+        );
+        await newController.initialize();
+        if (startAt != null) {
+          await newController.seekTo(startAt);
+        }
+
+        final oldAdapter = _adapter;
+        _adapter = VideoPlayerAdapter(newController);
+        _setupPlayerListeners();
+        await _adapter!.play();
+
+        // Clean up old one after switching to minimize gap
+        unawaited(oldAdapter?.dispose());
+      } else if (_adapter is WebViewPlayerAdapter) {
+        // For WebView player, recreate with new URL
+        final oldAdapter = _adapter;
+        _adapter = WebViewPlayerAdapter(
+          url: url,
+          headers: _currentHeaders,
+          startAt: startAt,
+          onReady: () {
+            debugPrint('VideoPlayerWidget: WebView ready (update)');
+            if (mounted) {
+              setState(() {
+                _isLoadingVideo = false;
+              });
+              widget.onReady?.call();
+            }
+          },
+        );
+        _setupPlayerListeners();
+        unawaited(oldAdapter?.dispose());
+      }
+      
       _playbackSpeed.value = currentSpeed;
-      await _player!.setRate(currentSpeed);
+      await _adapter!.setRate(currentSpeed);
+      
       if (mounted) {
         setState(() {
           _hasCompleted = false;
-          // _isLoadingVideo = false;
         });
       }
-      // widget.onReady?.call();
     } catch (error) {
       debugPrint('VideoPlayerWidget: error while changing source $error');
       if (mounted) {
@@ -429,7 +472,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   Future<void> _setPlaybackSpeed(double speed) async {
     _playbackSpeed.value = speed;
-    await _player?.setRate(speed);
+    await _adapter?.setRate(speed);
   }
 
   void _setVideoFit(VideoFitType fitType) {
@@ -515,7 +558,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         debugPrint('Device does not support PiP!');
         return;
       }
-      await _player?.play();
+      await _adapter?.play();
       await _pip.start();
     } catch (e) {
       debugPrint('Failed to enter PiP mode: $e');
@@ -535,7 +578,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
 
-    // 1. 立即停止所有 Dart 侧的监听，防止回调进入
     _positionSubscription?.cancel();
     _playingSubscription?.cancel();
     _completedSubscription?.cancel();
@@ -546,26 +588,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _durationSubscription = null;
 
     _progressListeners.clear();
-
-    // 2. 标记已销毁，防止 setState 或后续操作
     _playerDisposed = true;
 
     try {
-      // 3. 停止播放并销毁原生资源
-      await _player?.pause();
-      await _player?.dispose();
+      await _adapter?.pause();
+      await _adapter?.dispose();
     } catch (e) {
       debugPrint('VideoPlayerWidget: Error during player dispose: $e');
     } finally {
-      _player = null;
-      _videoController = null;
+      _adapter = null;
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (_player == null) {
+    if (_adapter == null) {
       return;
     }
     switch (state) {
@@ -596,82 +634,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Widget build(BuildContext context) {
     return Container(
       color: Colors.black,
-      child: _isInitialized && _videoController != null
-          ? Video(
-              controller: _videoController!,
-              fit: _getBoxFit(),
-              controls: (state) {
-                final controls = widget.surface == VideoPlayerSurface.desktop
-                    ? PCPlayerControls(
-                        state: state,
-                        player: _player!,
-                        onBackPressed: widget.onBackPressed,
-                        onNextEpisode: widget.onNextEpisode,
-                        onPause: widget.onPause,
-                        videoUrl: _currentUrl ?? '',
-                        isLastEpisode: widget.isLastEpisode,
-                        isLoadingVideo: _isLoadingVideo,
-                        onCastStarted: widget.onCastStarted,
-                        videoTitle: widget.videoTitle,
-                        videoYear: widget.videoYear,
-                        currentEpisodeIndex: widget.currentEpisodeIndex,
-                        totalEpisodes: widget.totalEpisodes,
-                        episodesTitles: widget.episodesTitles,
-                        sourceName: widget.sourceName,
-                        isLocal: widget.isLocal,
-                        onWebFullscreenChanged: widget.onWebFullscreenChanged,
-                        onExitWebFullscreenCallbackReady: (callback) {
-                          _exitWebFullscreenCallback = callback;
-                        },
-                        onExitFullScreen: widget.onExitFullScreen,
-                        live: widget.live,
-                        playbackSpeedListenable: _playbackSpeed,
-                        onSetSpeed: _setPlaybackSpeed,
-                      )
-                    : MobilePlayerControls(
-                        player: _player!,
-                        state: state,
-                        onControlsVisibilityChanged: (_) {},
-                        onBackPressed: widget.onBackPressed,
-                        onFullscreenChange: (_) {},
-                        onNextEpisode: widget.onNextEpisode,
-                        onPause: widget.onPause,
-                        videoUrl: _currentUrl ?? '',
-                        isLastEpisode: widget.isLastEpisode,
-                        isLoadingVideo: _isLoadingVideo,
-                        onCastStarted: widget.onCastStarted,
-                        videoTitle: widget.videoTitle,
-                        videoYear: widget.videoYear,
-                        currentEpisodeIndex: widget.currentEpisodeIndex,
-                        totalEpisodes: widget.totalEpisodes,
-                        episodesTitles: widget.episodesTitles,
-                        sourceName: widget.sourceName,
-                        isLocal: widget.isLocal,
-                        onExitFullScreen: widget.onExitFullScreen,
-                        live: widget.live,
-                        playbackSpeedListenable: _playbackSpeed,
-                        onSetSpeed: _setPlaybackSpeed,
-                        onEnterPipMode: _enterPipMode,
-                        isPipMode: _isPipMode,
-                        onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
-                        onSourcesButtonPressed: widget.onSourcesButtonPressed,
-                        onSettingsButtonPressed: widget.onSettingsButtonPressed,
-                        onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-                        onDanmakuMatchButtonPressed:
-                            widget.onDanmakuMatchButtonPressed,
-                        longPressSpeed: widget.longPressSpeed,
-                        progressMode: widget.progressMode,
-                        showSystemTime: widget.showSystemTime,
-                      );
-
-                return Stack(
-                  children: [
-                    if (widget.danmakuLayer != null)
-                      RepaintBoundary(child: widget.danmakuLayer!),
-                    controls,
-                  ],
-                );
-              },
+      child: _isInitialized && _adapter != null
+          ? Stack(
+              children: [
+                _adapter!.buildVideo(
+                  context,
+                  fit: _getBoxFit(),
+                  // 桌面端 MediaKit 需要 GlobalKey 来管理全屏状态
+                  // 移动端使用 ValueKey 确保换源时彻底重建，避免 WebView 状态复用
+                  key: _adapter is MediaKitAdapter
+                      ? _videoKey
+                      : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
+                ),
+                if (widget.danmakuLayer != null)
+                  RepaintBoundary(child: widget.danmakuLayer!),
+                _buildControls(),
+              ],
             )
           : const Center(
               child: CircularProgressIndicator(
@@ -679,5 +657,79 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
               ),
             ),
     );
+  }
+
+  Widget _buildControls() {
+    if (_adapter == null) return const SizedBox.shrink();
+
+    if (widget.surface == VideoPlayerSurface.desktop) {
+      if (_adapter is! MediaKitAdapter) return const SizedBox.shrink();
+      
+      final mkAdapter = _adapter as MediaKitAdapter;
+      return PCPlayerControls(
+        state: _videoKey.currentState!,
+        player: mkAdapter.player,
+        onBackPressed: widget.onBackPressed,
+        onNextEpisode: widget.onNextEpisode,
+            onPause: widget.onPause,
+            videoUrl: _currentUrl ?? '',
+            isLastEpisode: widget.isLastEpisode,
+            isLoadingVideo: _isLoadingVideo,
+            onCastStarted: widget.onCastStarted,
+            videoTitle: widget.videoTitle,
+            videoYear: widget.videoYear,
+            currentEpisodeIndex: widget.currentEpisodeIndex,
+            totalEpisodes: widget.totalEpisodes,
+            episodesTitles: widget.episodesTitles,
+            sourceName: widget.sourceName,
+            isLocal: widget.isLocal,
+            onWebFullscreenChanged: widget.onWebFullscreenChanged,
+            onExitWebFullscreenCallbackReady: (callback) {
+              _exitWebFullscreenCallback = callback;
+            },
+            onExitFullScreen: widget.onExitFullScreen,
+            live: widget.live,
+            playbackSpeedListenable: _playbackSpeed,
+            onSetSpeed: _setPlaybackSpeed,
+          );
+    } else {
+      return MobilePlayerControls(
+        player: _adapter!,
+        state: _videoKey.currentState,
+        onControlsVisibilityChanged: (_) {},
+        onBackPressed: widget.onBackPressed,
+        onFullscreenChange: (isFullscreen) {
+          widget.onFullscreenChanged?.call(isFullscreen);
+        },
+        onNextEpisode: widget.onNextEpisode,
+        onPause: widget.onPause,
+        videoUrl: _currentUrl ?? '',
+        isLastEpisode: widget.isLastEpisode,
+        isLoadingVideo: _isLoadingVideo,
+        onCastStarted: widget.onCastStarted,
+        videoTitle: widget.videoTitle,
+        videoYear: widget.videoYear,
+        currentEpisodeIndex: widget.currentEpisodeIndex,
+        totalEpisodes: widget.totalEpisodes,
+        episodesTitles: widget.episodesTitles,
+        sourceName: widget.sourceName,
+        isLocal: widget.isLocal,
+        onExitFullScreen: widget.onExitFullScreen,
+        live: widget.live,
+        playbackSpeedListenable: _playbackSpeed,
+        onSetSpeed: _setPlaybackSpeed,
+        onEnterPipMode: _enterPipMode,
+        isPipMode: _isPipMode,
+        onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
+        onSourcesButtonPressed: widget.onSourcesButtonPressed,
+        onSettingsButtonPressed: widget.onSettingsButtonPressed,
+        onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+        onDanmakuMatchButtonPressed:
+            widget.onDanmakuMatchButtonPressed,
+        longPressSpeed: widget.longPressSpeed,
+        progressMode: widget.progressMode,
+        showSystemTime: widget.showSystemTime,
+      );
+    }
   }
 }

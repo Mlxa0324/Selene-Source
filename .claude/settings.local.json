@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter pub:*)"
+      "Bash(flutter pub:*)",
+      "mcp__augment-context-engine__codebase-retrieval"
     ]
   }
 }
