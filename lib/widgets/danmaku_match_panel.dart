@@ -69,7 +69,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     int animeIndex = -1;
     int episodeIndex = -1;
 
-    // 查找当前 ID 所在的索引
+    // 1. 查找当前 ID 所在的动画索引和集数索引
     for (int i = 0; i < _searchResults.length; i++) {
       final episodes = _searchResults[i].episodes;
       for (int j = 0; j < episodes.length; j++) {
@@ -83,21 +83,32 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
 
     if (animeIndex != -1) {
+      // 2. 确保目标动画条目处于展开状态
       setState(() {
-        // 强制展开该条目
         _expansionStates[_searchResults[animeIndex].animeId] = true;
       });
 
-      // 延迟滚动，等待展开动画或布局完成
-      Future.delayed(const Duration(milliseconds: 100), () {
+      // 3. 执行精确滚动
+      // 这里的计算逻辑：
+      // - 动画卡片折叠时高度约为 68
+      // - 每集条目高度约为 48 (12+12 padding + 13 font + border)
+      // - ExpansionTile 展开后会有一些额外的内边距
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_scrollController.hasClients) return;
+
+        double animeHeaderHeight = 68.0;
+        double episodeItemHeight = 48.5;
         
-        // 估算滚动位置 (Anime卡片高度约为 60)
-        double offset = animeIndex * 68.0; 
+        // 计算偏移量：之前的动画项总高度 + 当前动画项内的集数偏移
+        double offset = (animeIndex * animeHeaderHeight) + (episodeIndex * episodeItemHeight);
+        
+        // 适当向上偏移一点，避免贴顶
+        double finalOffset = (offset - 100).clamp(0.0, _scrollController.position.maxScrollExtent);
+
         _scrollController.animateTo(
-          offset,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
+          finalOffset,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.fastOutSlowIn,
         );
       });
     }
@@ -287,8 +298,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
 
   Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
       Color textColor, Color subTextColor) {
-    // 检查此条目中是否有当前选中的 ID
-    bool hasSelected = anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
+    bool hasSelected =
+        anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
 
     return Container(
       key: PageStorageKey('anime_${anime.animeId}'),
@@ -296,32 +307,38 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       decoration: BoxDecoration(
         color: textColor.withOpacity(0.03),
         borderRadius: BorderRadius.circular(8),
-        border: hasSelected ? Border.all(color: Colors.green.withOpacity(0.5), width: 1) : null,
+        border: hasSelected
+            ? Border.all(color: Colors.green.withOpacity(0.5), width: 1)
+            : null,
       ),
-      child: ExpansionTile(
-        key: ValueKey('tile_${anime.animeId}'),
-        initiallyExpanded: _expansionStates[anime.animeId] ?? false,
-        onExpansionChanged: (expanded) {
-          _expansionStates[anime.animeId] = expanded;
-        },
-        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        title: Text(
-          anime.animeTitle,
-          style: TextStyle(
-              color: hasSelected ? Colors.green : textColor, 
-              fontSize: 14, 
-              fontWeight: FontWeight.w600),
+      child: Theme(
+        data: widget.theme.copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: ValueKey('tile_${anime.animeId}'),
+          initiallyExpanded: _expansionStates[anime.animeId] ?? false,
+          onExpansionChanged: (expanded) {
+            _expansionStates[anime.animeId] = expanded;
+          },
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          title: Text(
+            anime.animeTitle,
+            style: TextStyle(
+                color: hasSelected ? Colors.green : textColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            '${anime.typeDescription} • ${anime.episodes.length}个结果',
+            style: TextStyle(color: subTextColor, fontSize: 11),
+          ),
+          iconColor: textColor.withOpacity(0.5),
+          collapsedIconColor: textColor.withOpacity(0.5),
+          childrenPadding: EdgeInsets.zero, // 移除默认边距
+          children: [
+            // 针对大量集数的情况，虽然这里不能直接用 ListView，但我们可以预先处理数据
+            ...anime.episodes.map((ep) => _buildEpisodeItem(ep, textColor)),
+          ],
         ),
-        subtitle: Text(
-          '${anime.typeDescription} • ${anime.episodes.length}个结果',
-          style: TextStyle(color: subTextColor, fontSize: 11),
-        ),
-        iconColor: textColor.withOpacity(0.5),
-        collapsedIconColor: textColor.withOpacity(0.5),
-        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        children: anime.episodes
-            .map((ep) => _buildEpisodeItem(ep, textColor))
-            .toList(),
       ),
     );
   }
