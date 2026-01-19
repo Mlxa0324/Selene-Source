@@ -2,16 +2,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:selene/services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/user_data_service.dart';
 import '../screens/login_screen.dart';
 import '../services/douban_cache_service.dart';
 import '../services/page_cache_service.dart';
 import '../services/live_service.dart';
-import '../services/local_search_cache_service.dart';
 import '../services/version_service.dart';
 import '../services/danmaku_service.dart';
-import '../services/download_service.dart';
 import '../screens/download_screen.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
@@ -136,8 +135,8 @@ class _UserMenuState extends State<UserMenu> {
   Future<void> _handleLogout() async {
     // 清空所有缓存
     LiveService.clearAllCache();
-    LocalSearchCacheService().clearCache();
     PageCacheService().clearAllCache();
+    ApiService.clearSourcesDataCache();
 
     // 只清除密码和cookies，保留服务器地址和用户名
     await UserDataService.clearPasswordAndCookies();

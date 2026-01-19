@@ -47,6 +47,15 @@ class ApiResponse<T> {
 class ApiService {
   static const Duration _timeout = Duration(seconds: 30);
 
+  // fetchSourcesData 缓存
+  static final Map<String, (List<SearchResult>, DateTime)> _sourcesDataCache = {};
+  static const Duration _sourcesDataCacheTtl = Duration(seconds: 7200);
+
+  /// 清除 fetchSourcesData 缓存
+  static void clearSourcesDataCache() {
+    _sourcesDataCache.clear();
+  }
+
   /// 获取基础URL
   static Future<String?> _getBaseUrl() async {
     return await UserDataService.getServerUrl();
@@ -639,23 +648,40 @@ class ApiService {
 
   /// 搜索视频源数据
   static Future<List<SearchResult>> fetchSourcesData(String query) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return [];
+
+    // 检查缓存
+    if (_sourcesDataCache.containsKey(cleanQuery)) {
+      final (results, timestamp) = _sourcesDataCache[cleanQuery]!;
+      if (DateTime.now().difference(timestamp) < _sourcesDataCacheTtl) {
+        return results;
+      } else {
+        _sourcesDataCache.remove(cleanQuery);
+      }
+    }
+
     try {
       final response = await get<Map<String, dynamic>>(
         '/api/search',
         queryParameters: {
-          'q': query.trim(),
+          'q': cleanQuery,
         },
         fromJson: (data) => data as Map<String, dynamic>,
       );
 
       if (response.success && response.data != null) {
         final data = response.data!;
-        final results = data['results'] as List<dynamic>? ?? [];
+        final resultsData = data['results'] as List<dynamic>? ?? [];
 
-        // 直接返回所有搜索结果，不进行过滤
-        return results
+        final results = resultsData
             .map((item) => SearchResult.fromJson(item as Map<String, dynamic>))
             .toList();
+
+        // 存入缓存
+        _sourcesDataCache[cleanQuery] = (results, DateTime.now());
+
+        return results;
       } else {
         print('搜索失败: ${response.message}');
         return [];
