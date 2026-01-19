@@ -293,18 +293,36 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() => _isDanmakuLoading = true);
 
     try {
-      // 构建匹配文件名
-      final fileName = DanmakuService.buildFileName(
-        videoTitle,
-        currentEpisodeIndex,
-        currentDetail?.sourceName ?? currentSource,
-      );
+      int? episodeId;
 
-      // 匹配弹幕源
-      final matchResult = await DanmakuService().matchDanmaku(fileName);
-      if (matchResult == null ||
-          !matchResult.isMatched ||
-          matchResult.matches.isEmpty) {
+      // 1. 优先尝试获取手动匹配的 ID
+      if (currentSource.isNotEmpty && currentID.isNotEmpty) {
+        episodeId = await DanmakuService().getManualMatch(
+          currentSource,
+          currentID,
+          currentEpisodeIndex,
+        );
+      }
+
+      // 2. 如果没有手动匹配，则进行自动匹配
+      if (episodeId == null) {
+        // 构建匹配文件名
+        final fileName = DanmakuService.buildFileName(
+          videoTitle,
+          currentEpisodeIndex,
+          currentDetail?.sourceName ?? currentSource,
+        );
+
+        // 匹配弹幕源
+        final matchResult = await DanmakuService().matchDanmaku(fileName);
+        if (matchResult != null &&
+            matchResult.isMatched &&
+            matchResult.matches.isNotEmpty) {
+          episodeId = matchResult.matches.first.episodeId;
+        }
+      }
+
+      if (episodeId == null) {
         debugPrint('弹幕匹配失败或无匹配结果');
         if (mounted && _danmakuSettings.enabled) {
           _showToast('自动匹配弹幕失败，可尝试手动匹配');
@@ -312,8 +330,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         setState(() => _isDanmakuLoading = false);
         return;
       }
-
-      final episodeId = matchResult.matches.first.episodeId;
 
       // 如果是同一个 episodeId，不重复加载
       if (_currentDanmakuEpisodeId == episodeId && _danmakuList.isNotEmpty) {
@@ -2783,6 +2799,17 @@ class _PlayerScreenState extends State<PlayerScreen>
           _isDanmakuLoading = false;
         });
         _danmakuController?.clear();
+
+        // 保存手动匹配关系
+        if (currentSource.isNotEmpty && currentID.isNotEmpty) {
+          await DanmakuService().saveManualMatch(
+            currentSource,
+            currentID,
+            currentEpisodeIndex,
+            episodeId,
+          );
+        }
+
         if (comments.isEmpty) {
           _showToast('手动匹配成功，但该剧集暂无弹幕');
         } else {
@@ -2832,6 +2859,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 child: DanmakuMatchPanel(
                   theme: theme,
                   initialQuery: videoTitle,
+                  currentEpisodeId: _currentDanmakuEpisodeId,
                   onEpisodeSelected: (episodeId) {
                     Navigator.pop(dialogContext);
                     _loadDanmakuById(episodeId);

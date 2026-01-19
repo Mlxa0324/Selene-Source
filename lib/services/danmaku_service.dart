@@ -9,6 +9,16 @@ import '../models/danmaku_model.dart';
 class DanmakuService {
   static const String _baseApiKey = 'danmaku_base_api';
   static const String _settingsKey = 'danmaku_settings';
+  static const String _manualMatchKey = 'danmaku_manual_matches';
+
+  // 搜索缓存
+  static final Map<String, (DanmakuSearchResult, DateTime)> _searchCache = {};
+  static const Duration _searchCacheTtl = Duration(seconds: 3600);
+
+  /// 清除弹幕搜索缓存
+  void clearSearchCache() {
+    _searchCache.clear();
+  }
 
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
@@ -19,6 +29,38 @@ class DanmakuService {
   static final DanmakuService _instance = DanmakuService._internal();
   factory DanmakuService() => _instance;
   DanmakuService._internal();
+
+  /// 获取手动匹配的剧集ID
+  Future<int?> getManualMatch(String source, String id, int episodeIndex) async {
+    final prefs = await SharedPreferences.getInstance();
+    final matchesJson = prefs.getString(_manualMatchKey);
+    if (matchesJson == null) return null;
+
+    final Map<String, dynamic> matches = jsonDecode(matchesJson);
+    final key = '${source}_${id}_$episodeIndex';
+    return matches[key] as int?;
+  }
+
+  /// 保存手动匹配的剧集ID
+  Future<void> saveManualMatch(String source, String id, int episodeIndex, int episodeId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final matchesJson = prefs.getString(_manualMatchKey);
+    Map<String, dynamic> matches = {};
+    
+    if (matchesJson != null) {
+      matches = jsonDecode(matchesJson);
+    }
+
+    final key = '${source}_${id}_$episodeIndex';
+    matches[key] = episodeId;
+    await prefs.setString(_manualMatchKey, jsonEncode(matches));
+  }
+
+  /// 清除所有手动匹配记录
+  Future<void> clearAllManualMatches() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_manualMatchKey);
+  }
 
   /// 获取 baseApi
   Future<String?> getBaseApi() async {
@@ -80,17 +122,37 @@ class DanmakuService {
 
   /// 搜索弹幕剧集
   Future<DanmakuSearchResult?> searchEpisodes(String animeName) async {
+    final cleanName = animeName.trim();
+    if (cleanName.isEmpty) return null;
+
+    // 检查缓存
+    if (_searchCache.containsKey(cleanName)) {
+      final (result, timestamp) = _searchCache[cleanName]!;
+      if (DateTime.now().difference(timestamp) < _searchCacheTtl) {
+        return result;
+      } else {
+        _searchCache.remove(cleanName);
+      }
+    }
+
     final baseApi = await getBaseApi();
     if (baseApi == null || baseApi.isEmpty) return null;
 
     try {
       final response = await _dio.get(
         '${baseApi}api/v2/search/episodes',
-        queryParameters: {'anime': animeName},
+        queryParameters: {'anime': cleanName},
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        return DanmakuSearchResult.fromJson(response.data);
+        final result = DanmakuSearchResult.fromJson(response.data);
+        
+        // 存入缓存
+        if (result.success) {
+          _searchCache[cleanName] = (result, DateTime.now());
+        }
+        
+        return result;
       }
     } catch (e) {
       debugPrint('搜索弹幕失败: $e');

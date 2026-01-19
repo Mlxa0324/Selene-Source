@@ -28,6 +28,7 @@ abstract class PlayerAdapterStream {
   Stream<bool> get completed;
   Stream<double> get volume;
   Stream<double> get rate;
+  Stream<bool> get buffering;
 }
 
 abstract class PlayerAdapterState {
@@ -36,6 +37,7 @@ abstract class PlayerAdapterState {
   Duration get duration;
   double get volume;
   double get rate;
+  bool get buffering;
 }
 
 /// media_kit implementation
@@ -93,6 +95,8 @@ class _MediaKitStream implements PlayerAdapterStream {
   Stream<double> get volume => player.stream.volume;
   @override
   Stream<double> get rate => player.stream.rate;
+  @override
+  Stream<bool> get buffering => player.stream.buffering;
 }
 
 class _MediaKitState implements PlayerAdapterState {
@@ -109,6 +113,8 @@ class _MediaKitState implements PlayerAdapterState {
   double get volume => player.state.volume;
   @override
   double get rate => player.state.rate;
+  @override
+  bool get buffering => player.state.buffering;
 }
 
 /// video_player implementation (for mobile)
@@ -120,6 +126,7 @@ class VideoPlayerAdapter implements PlayerAdapter {
   final StreamController<bool> _completedController = StreamController<bool>.broadcast();
   final StreamController<double> _volumeController = StreamController<double>.broadcast();
   final StreamController<double> _rateController = StreamController<double>.broadcast();
+  final StreamController<bool> _bufferingController = StreamController<bool>.broadcast();
 
   @override
   late final PlayerAdapterStream stream;
@@ -138,6 +145,7 @@ class VideoPlayerAdapter implements PlayerAdapter {
   Duration _lastDuration = Duration.zero;
   double _lastVolume = 1.0;
   double _lastRate = 1.0;
+  bool _lastBuffering = false;
 
   void _onControllerChanged() {
     if (controller.value.isPlaying != _lastPlaying) {
@@ -164,6 +172,10 @@ class VideoPlayerAdapter implements PlayerAdapter {
     if (controller.value.playbackSpeed != _lastRate) {
       _lastRate = controller.value.playbackSpeed;
       _rateController.add(_lastRate);
+    }
+    if (controller.value.isBuffering != _lastBuffering) {
+      _lastBuffering = controller.value.isBuffering;
+      _bufferingController.add(_lastBuffering);
     }
   }
 
@@ -192,6 +204,7 @@ class VideoPlayerAdapter implements PlayerAdapter {
     await _completedController.close();
     await _volumeController.close();
     await _rateController.close();
+    await _bufferingController.close();
     await controller.dispose();
   }
 
@@ -227,6 +240,8 @@ class _VideoPlayerStream implements PlayerAdapterStream {
   Stream<double> get volume => adapter._volumeController.stream;
   @override
   Stream<double> get rate => adapter._rateController.stream;
+  @override
+  Stream<bool> get buffering => adapter._bufferingController.stream;
 }
 
 class _VideoPlayerState implements PlayerAdapterState {
@@ -243,6 +258,8 @@ class _VideoPlayerState implements PlayerAdapterState {
   double get volume => adapter.controller.value.volume * 100;
   @override
   double get rate => adapter.controller.value.playbackSpeed;
+  @override
+  bool get buffering => adapter.controller.value.isBuffering;
 }
 
 /// WebView-based HLS player adapter for mobile (faster seek experience)
@@ -258,12 +275,14 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final StreamController<bool> _completedController = StreamController<bool>.broadcast();
   final StreamController<double> _volumeController = StreamController<double>.broadcast();
   final StreamController<double> _rateController = StreamController<double>.broadcast();
+  final StreamController<bool> _bufferingController = StreamController<bool>.broadcast();
 
   bool _playing = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   double _volume = 100;
   double _rate = 1.0;
+  bool _buffering = false;
   bool _isDisposed = false;
 
   @override
@@ -332,6 +351,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         _rate = (event['rate'] as num?)?.toDouble() ?? 1.0;
         if (!_rateController.isClosed) _rateController.add(_rate);
         break;
+      case 'buffering':
+        _buffering = event['value'] as bool? ?? false;
+        if (!_bufferingController.isClosed) _bufferingController.add(_buffering);
+        break;
     }
   }
 
@@ -388,6 +411,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     await _completedController.close();
     await _volumeController.close();
     await _rateController.close();
+    await _bufferingController.close();
   }
 
   @override
@@ -435,6 +459,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       player.addEventListener('ratechange', function() { sendEvent('ratechange', { rate: player.playbackRate }); });
       player.addEventListener('timeupdate', function() { sendEvent('timeupdate', { currentTime: player.currentTime }); });
       player.addEventListener('durationchange', function() { sendEvent('durationchange', { duration: player.duration }); });
+      
+      // Buffering events
+      player.addEventListener('waiting', function() { sendEvent('buffering', { value: true }); });
+      player.addEventListener('canplay', function() { sendEvent('buffering', { value: false }); });
+      player.addEventListener('playing', function() { sendEvent('buffering', { value: false }); });
+
       player.addEventListener('loadedmetadata', function() {
         if (startTime > 0) player.currentTime = startTime;
         sendEvent('ready');
@@ -524,6 +554,8 @@ class _WebViewPlayerStream implements PlayerAdapterStream {
   Stream<double> get volume => adapter._volumeController.stream;
   @override
   Stream<double> get rate => adapter._rateController.stream;
+  @override
+  Stream<bool> get buffering => adapter._bufferingController.stream;
 }
 
 class _WebViewPlayerState implements PlayerAdapterState {
@@ -540,5 +572,6 @@ class _WebViewPlayerState implements PlayerAdapterState {
   double get volume => adapter._volume;
   @override
   double get rate => adapter._rate;
+  @override
+  bool get buffering => adapter._buffering;
 }
-

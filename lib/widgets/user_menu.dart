@@ -137,6 +137,8 @@ class _UserMenuState extends State<UserMenu> {
     LiveService.clearAllCache();
     PageCacheService().clearAllCache();
     ApiService.clearSourcesDataCache();
+    await DanmakuService().clearAllManualMatches();
+    DanmakuService().clearSearchCache();
 
     // 只清除密码和cookies，保留服务器地址和用户名
     await UserDataService.clearPasswordAndCookies();

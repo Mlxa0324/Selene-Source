@@ -171,8 +171,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   StreamSubscription? _playingSubscription;
   StreamSubscription? _completedSubscription;
   StreamSubscription? _durationSubscription;
+  StreamSubscription? _bufferingSubscription;
   final ValueNotifier<double> _playbackSpeed = ValueNotifier<double>(1.0);
   bool _playerDisposed = false;
+  bool _isBuffering = false;
   VoidCallback? _exitWebFullscreenCallback;
   final Pip _pip = Pip();
   bool _isPipMode = false;
@@ -310,6 +312,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _playingSubscription?.cancel();
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
+    _bufferingSubscription?.cancel();
 
     _positionSubscription = _adapter!.stream.position.listen((_) {
       for (final listener in List<VoidCallback>.from(_progressListeners)) {
@@ -361,18 +364,25 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     _durationSubscription = _adapter!.stream.duration.listen((duration) {
       if (!mounted) return;
-      if (duration != Duration.zero) {
-        debugPrint('VideoPlayerWidget: duration changed to $duration');
-        if (_isLoadingVideo) {
-          setState(() {
-            _isLoadingVideo = false;
+            if (duration != Duration.zero) {
+              debugPrint('VideoPlayerWidget: duration changed to $duration');
+              if (_isLoadingVideo) {
+                setState(() {
+                  _isLoadingVideo = false;
+                });
+              }
+              widget.onReady?.call();
+            }
           });
-        }
-        widget.onReady?.call();
-      }
-    });
-
-    // 立即检查一次当前状态，防止错过已经准备好的状态
+      
+          _bufferingSubscription = _adapter!.stream.buffering.listen((buffering) {
+            if (!mounted) return;
+            setState(() {
+              _isBuffering = buffering;
+            });
+          });
+      
+          // 立即检查一次当前状态 ，防止错过已经准备好的状态
     final currentDuration = _adapter!.state.duration;
     if (currentDuration != Duration.zero) {
       debugPrint('VideoPlayerWidget: proactive ready check - duration is $currentDuration');
@@ -628,6 +638,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _playingSubscription?.cancel();
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
+    _bufferingSubscription?.cancel();
     _positionSubscription = null;
     _playingSubscription = null;
     _completedSubscription = null;
@@ -686,6 +697,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                 _buildVideoSurface(),
                 if (widget.danmakuLayer != null)
                   RepaintBoundary(child: widget.danmakuLayer!),
+                if (_isBuffering || _isLoadingVideo)
+                  const Center(
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                    ),
+                  ),
                 _buildControls(),
               ],
             )
@@ -701,23 +718,21 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     Widget videoWidget = _adapter!.buildVideo(
       context,
       fit: _getBoxFit(),
-      // 桌面端 MediaKit 需要 GlobalKey 来管理全屏状态
-      // 移动端使用 ValueKey 确保换源时彻底重建，避免 WebView 状态复用
       key: _adapter is MediaKitAdapter
           ? _videoKey
           : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
     );
 
-    if (_currentFitType == VideoFitType.aspectRatio16_9) {
-      return Center(
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: videoWidget,
-        ),
-      );
-    }
-
-    return videoWidget;
+    // 始终包裹 Center 层级，并在内部按需包裹 AspectRatio
+    // 这样做是为了保持 videoWidget 在 Widget 树中的深度一致
+    return Center(
+      child: _currentFitType == VideoFitType.aspectRatio16_9
+          ? AspectRatio(
+              aspectRatio: 16 / 9,
+              child: videoWidget,
+            )
+          : videoWidget,
+    );
   }
 
   Widget _buildControls() {
