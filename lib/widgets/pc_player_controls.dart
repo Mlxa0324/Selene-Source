@@ -73,6 +73,7 @@ class PCPlayerControls extends StatefulWidget {
   final bool live;
   final ValueNotifier<double> playbackSpeedListenable;
   final Future<void> Function(double speed) onSetSpeed;
+  final Function(bool)? onControlsVisibilityChanged;
 
   const PCPlayerControls({
     super.key,
@@ -99,6 +100,7 @@ class PCPlayerControls extends StatefulWidget {
     this.live = false,
     required this.playbackSpeedListenable,
     required this.onSetSpeed,
+    this.onControlsVisibilityChanged,
   });
 
   @override
@@ -158,6 +160,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
           setState(() {
             _controlsVisible = true;
           });
+          widget.onControlsVisibilityChanged?.call(true);
         }
       }
     });
@@ -224,6 +227,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
           setState(() {
             _controlsVisible = false;
           });
+          widget.onControlsVisibilityChanged?.call(false);
         }
       });
     }
@@ -236,6 +240,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
         setState(() {
           _controlsVisible = false;
         });
+        widget.onControlsVisibilityChanged?.call(false);
       }
     });
   }
@@ -244,6 +249,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     setState(() {
       _controlsVisible = true;
     });
+    widget.onControlsVisibilityChanged?.call(true);
     _startHideTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -563,6 +569,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
             setState(() {
               _controlsVisible = true;
             });
+            widget.onControlsVisibilityChanged?.call(true);
           }
           _startHideTimer();
         },
@@ -572,6 +579,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
             setState(() {
               _controlsVisible = true;
             });
+            widget.onControlsVisibilityChanged?.call(true);
           }
           _startHideTimer();
         },
@@ -588,6 +596,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
             setState(() {
               _controlsVisible = false;
             });
+            widget.onControlsVisibilityChanged?.call(false);
           }
         },
         child: Stack(

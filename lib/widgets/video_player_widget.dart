@@ -179,6 +179,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   final Pip _pip = Pip();
   bool _isPipMode = false;
   VideoFitType _currentFitType = VideoFitType.contain;
+  bool _controlsVisible = true;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
 
   @override
@@ -695,7 +696,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                 _buildVideoSurface(),
                 if (widget.danmakuLayer != null)
                   RepaintBoundary(child: widget.danmakuLayer!),
-                if (_isBuffering || _isLoadingVideo)
+                if ((_isBuffering || _isLoadingVideo) && !_controlsVisible)
                   const Center(
                     child: CircularProgressIndicator(
                       color: Colors.white,
@@ -759,12 +760,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             live: widget.live,
             playbackSpeedListenable: _playbackSpeed,
             onSetSpeed: _setPlaybackSpeed,
+            onControlsVisibilityChanged: (visible) {
+              setState(() => _controlsVisible = visible);
+            },
           );
     } else {
       return MobilePlayerControls(
         player: _adapter!,
         state: _videoKey.currentState,
-        onControlsVisibilityChanged: (_) {},
+        onControlsVisibilityChanged: (visible) {
+          setState(() => _controlsVisible = visible);
+        },
         onBackPressed: widget.onBackPressed,
         onFullscreenChange: (isFullscreen) {
           widget.onFullscreenChanged?.call(isFullscreen);
