@@ -348,7 +348,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           _isDanmakuLoading = false;
         });
         if (comments.isEmpty && _danmakuSettings.enabled) {
-          _showToast('匹配成功，但该剧集暂无弹幕');
+          // _showToast('匹配成功，但该剧集暂无弹幕');
         }
         debugPrint('弹幕加载成功: ${comments.length} 条');
       }

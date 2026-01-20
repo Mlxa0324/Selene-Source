@@ -61,36 +61,36 @@ class SwitchLoadingOverlay extends StatelessWidget {
                       RotationTransition(
                         turns: animationController,
                         child: Container(
-                          width: 100,
-                          height: 100,
+                          width: 78,
+                          height: 78,
                           decoration: BoxDecoration(
                             color: const Color(0xFF2ecc71).withOpacity(0.3),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                         ),
                       ),
                       // 中间的图标容器
                       Container(
-                        width: 80,
-                        height: 80,
+                        width: 62,
+                        height: 62,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                             colors: [Color(0xFF2ecc71), Color(0xFF27ae60)],
                           ),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: BorderRadius.circular(13),
                         ),
                         child: const Center(
                           child: Text(
                             '🎬',
-                            style: TextStyle(fontSize: 24),
+                            style: TextStyle(fontSize: 20),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
                   // 加载文案
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -99,7 +99,7 @@ class SwitchLoadingOverlay extends StatelessWidget {
                         message,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
+                          fontSize: 14.5,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
