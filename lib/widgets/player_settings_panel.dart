@@ -7,7 +7,6 @@ enum VideoFitType {
   fill, // 填充
   fitWidth, // 宽度
   fitHeight, // 高度
-  aspectRatio16_9, // 16:9
 }
 
 /// 播放进度显示模式
@@ -269,7 +268,6 @@ class PlayerSettingsPanel extends StatelessWidget {
       (VideoFitType.fill, '填充'),
       (VideoFitType.fitWidth, '宽度'),
       (VideoFitType.fitHeight, '高度'),
-      (VideoFitType.aspectRatio16_9, '16:9'),
     ];
 
     return Wrap(

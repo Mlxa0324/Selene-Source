@@ -541,8 +541,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     switch (_currentFitType) {
       case VideoFitType.contain:
         return BoxFit.contain;
-      case VideoFitType.aspectRatio16_9:
-        return BoxFit.fill; // 强制填充以匹配 AspectRatio
       case VideoFitType.fill:
         return BoxFit.fill;
       case VideoFitType.fitWidth:
@@ -723,15 +721,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
     );
 
-    // 始终包裹 Center 层级，并在内部按需包裹 AspectRatio
-    // 这样做是为了保持 videoWidget 在 Widget 树中的深度一致
+    // 始终包裹 Center 层级
     return Center(
-      child: _currentFitType == VideoFitType.aspectRatio16_9
-          ? AspectRatio(
-              aspectRatio: 16 / 9,
-              child: videoWidget,
-            )
-          : videoWidget,
+      child: videoWidget,
     );
   }
 
