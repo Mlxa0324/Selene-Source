@@ -739,14 +739,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         duration: const Duration(milliseconds: 200),
         child: IgnorePointer(
           child: Container(
-            height: 2,
+            height: 3,
             width: double.infinity,
             alignment: Alignment.centerLeft,
             color: Colors.white12,
             child: FractionallySizedBox(
               widthFactor: value.clamp(0.0, 1.0),
               child: Container(
-                color: Colors.green,
+                color: Colors.green.withValues(alpha: 0.6),
               ),
             ),
           ),

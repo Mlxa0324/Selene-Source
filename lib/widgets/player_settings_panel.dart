@@ -118,9 +118,9 @@ class PlayerSettingsPanel extends StatelessWidget {
                   // 自动跳过
                   _buildSectionHeader('自动跳过', subTextColor),
                   const SizedBox(height: 10),
-                  _buildSkipSlider('跳过片头', skipIntro, 120, onSkipIntroChanged,
+                  _buildSkipSlider('跳过片头', skipIntro, 180, onSkipIntroChanged,
                       textColor, subTextColor),
-                  _buildSkipSlider('跳过片尾', skipOutro, 120, onSkipOutroChanged,
+                  _buildSkipSlider('跳过片尾', skipOutro, 180, onSkipOutroChanged,
                       textColor, subTextColor),
 
                   const SizedBox(height: 20),
