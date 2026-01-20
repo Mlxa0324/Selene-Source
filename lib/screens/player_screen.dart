@@ -186,6 +186,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _adFilterEnabled = false; // 是否开启自动去广告
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
+  bool _isSeeking = false; // 是否正在执行跳转操作
 
   // 弹幕相关状态
   DanmakuController? _danmakuController;
@@ -343,9 +344,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted) {
         setState(() {
           _danmakuList = comments;
-          _danmakuIndex = 0;
           _currentDanmakuEpisodeId = episodeId;
           _isDanmakuLoading = false;
+
+          // 根据当前位置或待跳转位置初始化索引，防止从0秒开始喷发弹幕
+          final pos = _resumeStartAt ?? currentPosition ?? Duration.zero;
+          _resetDanmakuIndex(pos);
         });
         if (comments.isEmpty && _danmakuSettings.enabled) {
           // _showToast('匹配成功，但该剧集暂无弹幕');
@@ -366,7 +370,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _sendDanmakuByPosition(Duration position) {
     if (_danmakuController == null ||
         _danmakuList.isEmpty ||
-        !_danmakuSettings.enabled) return;
+        !_danmakuSettings.enabled ||
+        _isSeeking) return;
 
     final currentTime = position.inMilliseconds / 1000.0;
 
@@ -1032,9 +1037,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 跳转到指定进度
   Future<void> seekToProgress(Duration position) async {
     try {
+      _isSeeking = true;
+      // 跳转时立即重置弹幕索引，防止大量弹幕重叠喷发
+      _resetDanmakuIndex(position);
       await _videoPlayerController?.seekTo(position);
+      // 给播放器一点缓冲时间
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) _isSeeking = false;
+      });
     } catch (e) {
-      // 静默处理错误
+      _isSeeking = false;
     }
   }
 
@@ -1076,10 +1088,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 添加视频播放状态监听器来触发保存检查
     _addVideoProgressListener();
 
+    // 如果有待跳转的位置，立即进入锁定状态，防止在跳转完成前弹出 0s 开始的弹幕
+    if (_resumeStartAt != null) {
+      _isSeeking = true;
+    }
+
     // 加载弹幕
     _loadDanmaku();
 
-    // 延时三秒 seek 到 _resumeStartAt
+    // 延时 seek 到 _resumeStartAt
     if (_resumeStartAt != null) {
       final tmpStartAt = _resumeStartAt;
       _resumeStartAt = null;
