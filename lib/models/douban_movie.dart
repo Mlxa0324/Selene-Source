@@ -185,9 +185,9 @@ class DoubanMovieDetails {
     // 处理总集数
     int? totalEpisodes;
     if (json['episodes_count'] != null) {
-      totalEpisodes = json['episodes_count'] as int?;
+      totalEpisodes = (json['episodes_count'] as num?)?.toInt();
     } else if (json['total_episodes'] != null) {
-      totalEpisodes = json['total_episodes'] as int?;
+      totalEpisodes = (json['total_episodes'] as num?)?.toInt();
     }
     
     return DoubanMovieDetails(

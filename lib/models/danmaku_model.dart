@@ -52,13 +52,13 @@ class DanmakuMatchItem {
 
   factory DanmakuMatchItem.fromJson(Map<String, dynamic> json) {
     return DanmakuMatchItem(
-      episodeId: json['episodeId'] ?? 0,
-      animeId: json['animeId'] ?? 0,
+      episodeId: (json['episodeId'] as num?)?.toInt() ?? 0,
+      animeId: (json['animeId'] as num?)?.toInt() ?? 0,
       animeTitle: json['animeTitle'] ?? '',
       episodeTitle: json['episodeTitle'] ?? '',
       type: json['type'] ?? '',
       typeDescription: json['typeDescription'] ?? '',
-      shift: json['shift'] ?? 0,
+      shift: (json['shift'] as num?)?.toInt() ?? 0,
       imageUrl: json['imageUrl'],
     );
   }
@@ -85,7 +85,7 @@ class DanmakuSearchAnime {
   factory DanmakuSearchAnime.fromJson(Map<String, dynamic> json) {
     final title = json['animeTitle'] ?? '';
     // 尝试从标题中提取年份，如 "作品名(2024)"
-    int extractedYear = json['year'] ?? 0;
+    int extractedYear = (json['year'] as num?)?.toInt() ?? 0;
     if (extractedYear == 0 && title.isNotEmpty) {
       final regExp = RegExp(r'\((\d{4})\)');
       final match = regExp.firstMatch(title);
@@ -95,7 +95,7 @@ class DanmakuSearchAnime {
     }
 
     return DanmakuSearchAnime(
-      animeId: json['animeId'] ?? 0,
+      animeId: (json['animeId'] as num?)?.toInt() ?? 0,
       animeTitle: title,
       type: json['type'] ?? '',
       typeDescription: json['typeDescription'] ?? '',
@@ -120,7 +120,7 @@ class DanmakuSearchEpisode {
 
   factory DanmakuSearchEpisode.fromJson(Map<String, dynamic> json) {
     return DanmakuSearchEpisode(
-      episodeId: json['episodeId'] ?? 0,
+      episodeId: (json['episodeId'] as num?)?.toInt() ?? 0,
       episodeTitle: json['episodeTitle'] ?? '',
     );
   }
@@ -142,7 +142,7 @@ class DanmakuSearchResult {
 
   factory DanmakuSearchResult.fromJson(Map<String, dynamic> json) {
     return DanmakuSearchResult(
-      errorCode: json['errorCode'] ?? 0,
+      errorCode: (json['errorCode'] as num?)?.toInt() ?? 0,
       success: json['success'] ?? false,
       errorMessage: json['errorMessage'] ?? '',
       animes: (json['animes'] as List<dynamic>?)
@@ -165,7 +165,7 @@ class DanmakuListResult {
 
   factory DanmakuListResult.fromJson(Map<String, dynamic> json) {
     return DanmakuListResult(
-      count: json['count'] ?? 0,
+      count: (json['count'] as num?)?.toInt() ?? 0,
       comments: (json['comments'] as List<dynamic>?)
               ?.map((e) => DanmakuComment.fromJson(e))
               .toList() ??
@@ -204,10 +204,10 @@ class DanmakuComment {
 
   factory DanmakuComment.fromJson(Map<String, dynamic> json) {
     return DanmakuComment(
-      cid: json['cid'] ?? 0,
+      cid: (json['cid'] as num?)?.toInt() ?? 0,
       p: json['p'] ?? '0,1,16777215',
       m: json['m'] ?? '',
-      t: json['t'] ?? 0,
+      t: (json['t'] as num?)?.toInt() ?? 0,
     );
   }
 }
