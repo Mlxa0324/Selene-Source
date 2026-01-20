@@ -1361,12 +1361,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 切换视频源
+  /// 切换视频源
   void _switchSource(SearchResult newSource) async {
-    // 显示切换加载蒙版
-    setState(() {
-      _showSwitchLoadingOverlay = true;
-      _switchLoadingMessage = '切换播放源...';
-    });
+    // 如果是同一个源，则不重复处理
+    if (currentSource == newSource.source && currentID == newSource.id) {
+      return;
+    }
 
     // 保存当前播放进度
     final currentProgress = currentPosition?.inSeconds ?? 0;
@@ -1377,36 +1377,62 @@ class _PlayerScreenState extends State<PlayerScreen>
     final oldID = currentID;
 
     setState(() {
+      _showSwitchLoadingOverlay = true;
+      _switchLoadingMessage = '切换播放源...';
+      
       currentDetail = newSource;
       currentSource = newSource.source;
       currentID = newSource.id;
       currentEpisodeIndex = currentEpisode; // 保持当前集数
       totalEpisodes = newSource.episodes.length;
       _isEpisodesReversed = false;
+
+      // 同步更新视频信息，避免在 unawaited 期间 UI 显示旧数据
+      videoTitle = newSource.title;
+      videoDesc = newSource.desc ?? '';
+      videoYear = newSource.year;
+      videoCover = newSource.poster;
     });
 
-    // 删除之前的播放记录（如果源发生了变化）
+    // 异步删除之前的播放记录，不阻塞 UI 渲染
     if (oldSource.isNotEmpty &&
         oldID.isNotEmpty &&
         (oldSource != newSource.source || oldID != newSource.id)) {
-      try {
-        await PageCacheService().deletePlayRecord(oldSource, oldID, context);
-        debugPrint('删除旧源播放记录: $oldSource+$oldID');
-      } catch (e) {
+      unawaited(PageCacheService().deletePlayRecord(oldSource, oldID, context).catchError((e) {
         debugPrint('删除旧源播放记录失败: $e');
-      }
+      }));
     }
 
-    // 更新视频信息
-    setInfosByDetail(newSource);
+    // 处理豆瓣 ID 变化逻辑
+    int oldVideoDoubanID = videoDoubanID;
+    if (newSource.doubanId != null && newSource.doubanId! > 0) {
+      videoDoubanID = newSource.doubanId!;
+    } else {
+      Map<int, int> doubanIDCount = {};
+      for (var result in allSources) {
+        int? tmpDoubanID = result.doubanId;
+        if (tmpDoubanID != null && tmpDoubanID != 0) {
+          doubanIDCount[tmpDoubanID] = (doubanIDCount[tmpDoubanID] ?? 0) + 1;
+        }
+      }
+      videoDoubanID = doubanIDCount.entries.isEmpty
+          ? 0
+          : doubanIDCount.entries
+              .reduce((a, b) => a.value > b.value ? a : b)
+              .key;
+    }
 
-    // 重新检查收藏状态（因为源和ID可能已改变）
+    if (videoDoubanID != oldVideoDoubanID && videoDoubanID > 0) {
+      _fetchDoubanDetails();
+    }
+
+    // 重新检查收藏状态
     _checkFavoriteStatus();
 
-    // 开始播放新源，使用当前播放器的进度
+    // 开始播放新源
     startPlay(currentEpisode, currentProgress);
 
-    // 延迟滚动到当前源，等待UI更新完成
+    // 延迟滚动到当前源
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrentSource();
     });
