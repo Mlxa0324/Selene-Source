@@ -945,9 +945,17 @@ class _PlayerScreenState extends State<PlayerScreen>
           try {
             debugPrint("正在尝试过滤 M3U8 广告: $newUrl");
             final dio = Dio();
-            // 设置较短的超时，避免长时间卡住
-            dio.options.connectTimeout = const Duration(seconds: 5);
-            dio.options.receiveTimeout = const Duration(seconds: 10);
+            // 模拟浏览器头部，防止被服务器拒绝或限速
+            dio.options.headers = {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Accept-Language': 'zh-CN,zh;q=0.9',
+              'Referer': Uri.parse(newUrl).origin,
+            };
+            // 适当延长超时时间
+            dio.options.connectTimeout = const Duration(seconds: 10);
+            dio.options.receiveTimeout = const Duration(seconds: 20);
             
             final response = await dio.get(newUrl);
             if (response.statusCode == 200 && response.data is String) {
