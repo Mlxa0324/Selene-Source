@@ -293,7 +293,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() => _isDanmakuLoading = true);
 
     try {
-      int? episodeId;
+       int? episodeId;
 
       // 1. 优先尝试获取手动匹配的 ID
       if (currentSource.isNotEmpty && currentID.isNotEmpty) {
@@ -306,15 +306,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // 2. 如果没有手动匹配，则进行自动匹配
       if (episodeId == null) {
-        // 构建匹配文件名
-        final fileName = DanmakuService.buildFileName(
-          videoTitle,
-          currentEpisodeIndex,
-          currentDetail?.sourceName ?? currentSource,
-        );
+      // 构建匹配文件名
+      final fileName = DanmakuService.buildFileName(
+        videoTitle,
+        currentEpisodeIndex,
+        currentDetail?.sourceName ?? currentSource,
+      );
 
-        // 匹配弹幕源
-        final matchResult = await DanmakuService().matchDanmaku(fileName);
+      // 匹配弹幕源
+      final matchResult = await DanmakuService().matchDanmaku(fileName);
         if (matchResult != null &&
             matchResult.isMatched &&
             matchResult.matches.isNotEmpty) {
@@ -3243,28 +3243,29 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _buildErrorOverlay(ThemeData theme) {
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    return Positioned.fill(
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: isDarkMode
-              ? null
-              : const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFe6f3fb),
-                    Color(0xFFeaf3f7),
-                    Color(0xFFf7f7f3),
-                    Color(0xFFe9ecef),
-                    Color(0xFFdbe3ea),
-                    Color(0xFFd3dde6),
-                  ],
-                  stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
-                ),
-          color: isDarkMode ? Colors.black : null,
-        ),
-        child: Stack(
-          children: [
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: isDarkMode
+            ? null
+            : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFe6f3fb),
+                  Color(0xFFeaf3f7),
+                  Color(0xFFf7f7f3),
+                  Color(0xFFe9ecef),
+                  Color(0xFFdbe3ea),
+                  Color(0xFFd3dde6),
+                ],
+                stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+              ),
+        color: isDarkMode ? Colors.black : null,
+      ),
+      child: Stack(
+        children: [
           // 装饰性圆点
           Positioned(
             top: 100,
@@ -3457,7 +3458,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         ],
       ),
-      )
     );
   }
 
@@ -3514,11 +3514,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 更新设备类型和方向状态，确保横竖屏切换时布局计算正确
-    _isTablet = DeviceUtils.isTablet(context);
-    _isPortraitTablet = DeviceUtils.isPortraitTablet(context);
-
     if (!_isInitialized) {
+      // 缓存设备类型，避免分辨率变化时改变布局
+      _isTablet = DeviceUtils.isTablet(context);
+      _isPortraitTablet = DeviceUtils.isPortraitTablet(context);
 
       // 设置屏幕方向（平板除外）
       // 如果是平板，不强制竖屏
@@ -3896,28 +3895,29 @@ class _PlayerScreenState extends State<PlayerScreen>
         ? MediaQuery.of(context).padding.top + 32
         : MediaQuery.of(context).padding.top + 8;
 
-    return Positioned.fill(
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: isDarkMode
-              ? null
-              : const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFe6f3fb),
-                    Color(0xFFeaf3f7),
-                    Color(0xFFf7f7f3),
-                    Color(0xFFe9ecef),
-                    Color(0xFFdbe3ea),
-                    Color(0xFFd3dde6),
-                  ],
-                  stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
-                ),
-          color: isDarkMode ? Colors.black : null,
-        ),
-        child: Stack(
-          children: [
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      decoration: BoxDecoration(
+        gradient: isDarkMode
+            ? null
+            : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFe6f3fb),
+                  Color(0xFFeaf3f7),
+                  Color(0xFFf7f7f3),
+                  Color(0xFFe9ecef),
+                  Color(0xFFdbe3ea),
+                  Color(0xFFd3dde6),
+                ],
+                stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+              ),
+        color: isDarkMode ? Colors.black : null,
+      ),
+      child: Stack(
+        children: [
           // PC 端左上角返回按钮
           if (DeviceUtils.isPC())
             Positioned(
@@ -4014,7 +4014,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         ],
       ),
-    ),);
+    );
   }
 }
 
