@@ -47,13 +47,9 @@ class ApiResponse<T> {
 class ApiService {
   static const Duration _timeout = Duration(seconds: 30);
 
-  // fetchSourcesData 缓存
-  static final Map<String, (List<SearchResult>, DateTime)> _sourcesDataCache = {};
-  static const Duration _sourcesDataCacheTtl = Duration(seconds: 7200);
-
   /// 清除 fetchSourcesData 缓存
   static void clearSourcesDataCache() {
-    _sourcesDataCache.clear();
+    UserDataService.clearSearchCache();
   }
 
   /// 获取基础URL
@@ -635,6 +631,8 @@ class ApiService {
       );
 
       if (response.success && response.data != null) {
+        // 点击进入播放页时，尝试续约对应的搜索缓存时间
+        UserDataService.renewSearchCache(response.data!.title);
         return [response.data!];
       } else {
         print('获取视频详情失败: ${response.message}');
@@ -652,13 +650,9 @@ class ApiService {
     if (cleanQuery.isEmpty) return [];
 
     // 检查缓存
-    if (_sourcesDataCache.containsKey(cleanQuery)) {
-      final (results, timestamp) = _sourcesDataCache[cleanQuery]!;
-      if (DateTime.now().difference(timestamp) < _sourcesDataCacheTtl) {
-        return results;
-      } else {
-        _sourcesDataCache.remove(cleanQuery);
-      }
+    final cachedResults = await UserDataService.getSearchCache(cleanQuery);
+    if (cachedResults != null) {
+      return cachedResults;
     }
 
     try {
@@ -678,8 +672,8 @@ class ApiService {
             .map((item) => SearchResult.fromJson(item as Map<String, dynamic>))
             .toList();
 
-        // 存入缓存
-        _sourcesDataCache[cleanQuery] = (results, DateTime.now());
+        // 存入缓存并持久化
+        await UserDataService.saveSearchCache(cleanQuery, results);
 
         return results;
       } else {

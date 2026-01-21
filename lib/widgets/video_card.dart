@@ -16,7 +16,7 @@ import '../utils/font_utils.dart';
 class VideoCard extends StatefulWidget {
   final VideoInfo videoInfo;
   final VoidCallback? onTap;
-  final String from; // 场景值：'favorite', 'playrecord', 'search', 'agg'
+  final String from; // 场景值：'favorite', 'playrecord', 'search', 'agg', 'douban'
   final double? cardWidth; // 卡片宽度，用于响应式布局
   final Function(VideoMenuAction)? onGlobalMenuAction; // 视频菜单操作回调
   final bool isFavorited; // 是否已收藏
@@ -55,7 +55,7 @@ class _VideoCardState extends State<VideoCard> {
       builder: (context, themeService, child) {
         // 使用传入的宽度或默认宽度
         final double width = widget.cardWidth ?? 120.0;
-        final double height = width * 1.5; // 2:3 比例
+        final double height = width * 1.5 - 2; // 2:3 比例
 
         // 缓存计算结果
         final bool shouldShowEpisodeInfo = _shouldShowEpisodeInfo();
@@ -534,7 +534,7 @@ class _VideoCardState extends State<VideoCard> {
                                     : const Color(0xFF2c3e50)),
                           ),
                           textAlign: TextAlign.center,
-                          maxLines: widget.from == 'douban'
+                          maxLines: widget.from != 'playrecord'
                               ? 2
                               : 1, // 豆瓣模式允许两行，其他模式一行
                           overflow: TextOverflow.ellipsis,

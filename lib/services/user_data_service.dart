@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/search_result.dart';
 
 class UserDataService {
   static const String _serverUrlKey = 'server_url';
@@ -19,6 +23,110 @@ class UserDataService {
   static const String _showSystemTimeKey = 'show_system_time';
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
   
+  // 搜索数据缓存相关
+  static const String _sourcesCacheStorageKey = 'sources_data_cache_persistent';
+  static Map<String, (List<SearchResult>, DateTime)> _sourcesDataCache = {};
+  static const Duration _sourcesDataCacheTtl = Duration(seconds: 7200);
+  static bool _isCacheLoaded = false;
+
+  /// 加载搜索缓存
+  static Future<void> _ensureSearchCacheLoaded() async {
+    if (_isCacheLoaded) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? jsonStr = prefs.getString(_sourcesCacheStorageKey);
+      if (jsonStr != null) {
+        final Map<String, dynamic> decoded = json.decode(jsonStr);
+        final now = DateTime.now();
+        final Map<String, (List<SearchResult>, DateTime)> loadedCache = {};
+        
+        decoded.forEach((key, value) {
+          final time = DateTime.fromMillisecondsSinceEpoch(value['time']);
+          if (now.difference(time) < _sourcesDataCacheTtl) {
+            final results = (value['results'] as List)
+                .map((item) => SearchResult.fromJson(item))
+                .toList();
+            loadedCache[key] = (results, time);
+          }
+        });
+        _sourcesDataCache = loadedCache;
+      }
+    } catch (e) {
+      debugPrint('加载搜索源持久化缓存失败: $e');
+    }
+    _isCacheLoaded = true;
+  }
+
+  /// 同步搜索缓存至磁盘
+  static Future<void> _syncSearchCacheToStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now();
+      
+      _sourcesDataCache.removeWhere((key, value) => 
+          now.difference(value.$2) >= _sourcesDataCacheTtl);
+
+      final Map<String, dynamic> toEncode = {};
+      _sourcesDataCache.forEach((key, value) {
+        toEncode[key] = {
+          'time': value.$2.millisecondsSinceEpoch,
+          'results': value.$1.map((r) => r.toJson()).toList(),
+        };
+      });
+      
+      await prefs.setString(_sourcesCacheStorageKey, json.encode(toEncode));
+    } catch (e) {
+      debugPrint('保存搜索源持久化缓存失败: $e');
+    }
+  }
+
+  /// 获取搜索结果缓存
+  static Future<List<SearchResult>?> getSearchCache(String query) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return null;
+
+    await _ensureSearchCacheLoaded();
+
+    if (_sourcesDataCache.containsKey(cleanQuery)) {
+      final (results, timestamp) = _sourcesDataCache[cleanQuery]!;
+      if (DateTime.now().difference(timestamp) < _sourcesDataCacheTtl) {
+        // 自动续约
+        renewSearchCache(cleanQuery);
+        return results;
+      } else {
+        _sourcesDataCache.remove(cleanQuery);
+        unawaited(_syncSearchCacheToStorage());
+      }
+    }
+    return null;
+  }
+
+  /// 保存搜索结果缓存
+  static Future<void> saveSearchCache(String query, List<SearchResult> results) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return;
+
+    await _ensureSearchCacheLoaded();
+    _sourcesDataCache[cleanQuery] = (results, DateTime.now());
+    await _syncSearchCacheToStorage();
+  }
+
+  /// 续约搜索缓存（延长到期时间）
+  static void renewSearchCache(String query) {
+    final cleanQuery = query.trim();
+    if (_sourcesDataCache.containsKey(cleanQuery)) {
+      _sourcesDataCache[cleanQuery] = (_sourcesDataCache[cleanQuery]!.$1, DateTime.now());
+      _syncSearchCacheToStorage();
+    }
+  }
+
+  /// 清除所有搜索缓存
+  static Future<void> clearSearchCache() async {
+    _sourcesDataCache.clear();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_sourcesCacheStorageKey);
+  }
+
   // 内存缓存
   static bool? _isLocalModeCache;
 
