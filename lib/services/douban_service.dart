@@ -6,6 +6,7 @@ import '../models/douban_movie.dart';
 import 'api_service.dart';
 import 'douban_cache_service.dart';
 import 'user_data_service.dart';
+import 'douban_verify_service.dart';
 
 /// 豆瓣推荐数据请求参数
 class DoubanRecommendsParams {
@@ -799,10 +800,11 @@ class DoubanService {
         headers['Origin'] = _getUniqueOrigin();
       }
       
-      final response = await http.get(
-        Uri.parse(apiUrl),
+      // 使用外部验证服务代理请求，处理可能的 PoW 验证
+      final response = await DoubanVerifyService().fetchWithVerify(
+        apiUrl,
         headers: headers,
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 40));
 
       if (response.statusCode == 200) {
         try {
