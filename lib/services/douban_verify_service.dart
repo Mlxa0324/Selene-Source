@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:crypto/crypto.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:http/http.dart' as http;
 
 class DoubanVerifyService {
