@@ -185,13 +185,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
-    // 如果当前正在构建过程中，则推迟到下一帧执行
-    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(fn);
-      });
-    } else {
+    // // 如果当前正在构建过程中，则推迟到下一帧执行
+    // if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    //   SchedulerBinding.instance.addPostFrameCallback((_) {
+    //     if (mounted) setState(fn);
+    //   });
+    // } else {
+    //   setState(fn);
+    // }
+    try {
       setState(fn);
+    }catch(e) {
+      debugPrint('_safeSetState：$e');
     }
   }
 
