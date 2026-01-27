@@ -927,14 +927,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 取消之前的计时器
     _loadingTimeoutTimer?.cancel();
     
-    // 设置一个新的超时计时器
-    _loadingTimeoutTimer = Timer(const Duration(seconds: 15), () {
+    // 设置一个新的超时计时器，如果 20 秒后还没 Ready，强制关闭
+    _loadingTimeoutTimer = Timer(const Duration(seconds: 20), () {
       if (mounted && _showSwitchLoadingOverlay) {
         debugPrint("播放器准备超时，强制关闭加载蒙版");
         setState(() {
           _showSwitchLoadingOverlay = false;
         });
-        showError('播放请求超时，请尝试换源或稍后重试');
+        _showToast('加载超时，请尝试换源或重新播放');
       }
     });
 
@@ -950,7 +950,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           try {
             debugPrint("正在尝试过滤 M3U8 广告: $newUrl");
             final dio = Dio();
-            // 模拟浏览器头部，防止被服务器拒绝或限速
             dio.options.headers = {
               'User-Agent':
                   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -958,19 +957,17 @@ class _PlayerScreenState extends State<PlayerScreen>
               'Accept-Language': 'zh-CN,zh;q=0.9',
               'Referer': Uri.parse(newUrl).origin,
             };
-            // 适当延长超时时间
-            dio.options.connectTimeout = const Duration(seconds: 10);
-            dio.options.receiveTimeout = const Duration(seconds: 20);
+            dio.options.connectTimeout = const Duration(seconds: 8);
+            dio.options.receiveTimeout = const Duration(seconds: 15);
             
             final response = await dio.get(newUrl);
             if (response.statusCode == 200 && response.data is String) {
-              // 使用 compute 将耗时的字符串处理和 Base64 编码移出 UI 线程
               final base64Content = await compute(_filterAndEncodeM3u8, {
                 'content': response.data as String,
                 'baseUrl': newUrl,
               });
               finalUrl = 'data:application/vnd.apple.mpegurl;base64,$base64Content';
-              debugPrint("M3U8 广告已过滤并编码，使用 Data URI 播放");
+              debugPrint("M3U8 广告已过滤并编码");
             }
           } catch (e) {
             debugPrint('去广告处理失败，降级使用原始链接: $e');
@@ -991,7 +988,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       debugPrint("最终播放 URL: $finalUrl");
 
       if (_isCasting) {
-        // ... (投屏逻辑保持不变)
         final sourceName = currentDetail?.sourceName ?? currentSource;
         String formattedTitle;
         if (totalEpisodes > 1) {
@@ -1003,17 +999,20 @@ class _PlayerScreenState extends State<PlayerScreen>
         _dlnaPlayerController?.updateVideoUrl(finalUrl, formattedTitle,
             startAt: startAt);
         
-        // 投屏模式下可能不会触发 _onVideoPlayerReady，所以这里手动关闭加载
         if (mounted) {
           setState(() {
             _showSwitchLoadingOverlay = false;
           });
+          _loadingTimeoutTimer?.cancel();
         }
       } else {
         // 本地播放
         debugPrint("调用播放器 updateDataSource");
+        // 增加超时保护，防止 updateDataSource 内部卡死
         await _videoPlayerController?.updateDataSource(finalUrl,
-            startAt: startAt);
+            startAt: startAt).timeout(const Duration(seconds: 15), onTimeout: () {
+              debugPrint("updateDataSource 调用超时");
+            });
       }
     } catch (e) {
       debugPrint('updateVideoUrl 发生异常: $e');
@@ -1021,8 +1020,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         setState(() {
           _showSwitchLoadingOverlay = false;
         });
+        _loadingTimeoutTimer?.cancel();
       }
-      showError('播放失败: $e');
+      _showToast('播放失败: 链接解析出错');
     }
   }
 
@@ -1389,10 +1389,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     final currentProgress = currentPosition?.inSeconds ?? 0;
     final currentEpisode = currentEpisodeIndex;
 
-    // 记录旧的源信息，用于删除播放记录
-    final oldSource = currentSource;
-    final oldID = currentID;
-
     setState(() {
       _showSwitchLoadingOverlay = true;
       _switchLoadingMessage = '切换播放源...';
@@ -1404,21 +1400,12 @@ class _PlayerScreenState extends State<PlayerScreen>
       totalEpisodes = newSource.episodes.length;
       _isEpisodesReversed = false;
 
-      // 同步更新视频信息，避免在 unawaited 期间 UI 显示旧数据
+      // 同步更新视频信息，避免 UI 显示旧数据
       videoTitle = newSource.title;
       videoDesc = newSource.desc ?? '';
       videoYear = newSource.year;
       videoCover = newSource.poster;
     });
-
-    // 异步删除之前的播放记录，不阻塞 UI 渲染
-    if (oldSource.isNotEmpty &&
-        oldID.isNotEmpty &&
-        (oldSource != newSource.source || oldID != newSource.id)) {
-      unawaited(PageCacheService().deletePlayRecord(oldSource, oldID, context).catchError((e) {
-        debugPrint('删除旧源播放记录失败: $e');
-      }));
-    }
 
     // 处理豆瓣 ID 变化逻辑
     int oldVideoDoubanID = videoDoubanID;

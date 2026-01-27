@@ -97,7 +97,7 @@ class M3U8Service {
       
       if (segments.isEmpty) {
         return {
-          'resolution': '未知',
+          'resolution': {"width": 0, "height": 0},
           'downloadSpeed': 0.0,
           'latency': 0,
           'success': false,

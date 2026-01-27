@@ -95,10 +95,10 @@ class VideoPlayerWidgetController {
   final _VideoPlayerWidgetState _state;
 
   Future<void> updateDataSource(
-    String url, {
-    Duration? startAt,
-    Map<String, String>? headers,
-  }) async {
+      String url, {
+        Duration? startAt,
+        Map<String, String>? headers,
+      }) async {
     await _state._updateDataSource(
       url,
       startAt: startAt,
@@ -185,6 +185,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
+    // 如果当前正在构建过程中，则推迟到下一帧执行
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
       SchedulerBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(fn);
@@ -302,7 +303,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       } else if (_adapter is VideoPlayerAdapter) {
         // Handled in initialization or _updateDataSource for mobile
       }
-      
+
       await _adapter!.setRate(_playbackSpeed.value);
       _safeSetState(() {
         _hasCompleted = false;
@@ -369,9 +370,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       _completedSubscription = _adapter!.stream.completed.listen((completed) {
         if (!mounted) return;
         if (completed && !_hasCompleted) {
-          _safeSetState(() {
-            _hasCompleted = true;
-          });
+          _hasCompleted = true;
           widget.onVideoCompleted?.call();
         }
       });
@@ -411,10 +410,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   Future<void> _updateDataSource(
-    String url, {
-    Duration? startAt,
-    Map<String, String>? headers,
-  }) async {
+      String url, {
+        Duration? startAt,
+        Map<String, String>? headers,
+      }) async {
     if (_playerDisposed) {
       return;
     }
@@ -434,7 +433,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     try {
       final currentSpeed = _adapter!.state.rate;
-      
+
       if (_adapter is MediaKitAdapter) {
         final player = (_adapter as MediaKitAdapter).player;
         await player.open(
@@ -459,7 +458,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _adapter = VideoPlayerAdapter(newController);
         _setupPlayerListeners();
         await _adapter!.play();
-        
+
         if (mounted) {
           _safeSetState(() {
             _isLoadingVideo = false;
@@ -511,10 +510,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _adapter?.updateVideoFit(_getBoxFit());
         unawaited(oldAdapter?.dispose());
       }
-      
+
       _playbackSpeed.value = currentSpeed;
       await _adapter!.setRate(currentSpeed);
-      
+
       if (mounted) {
         _safeSetState(() {
           _hasCompleted = false;
@@ -593,20 +592,26 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         switch (state) {
           case PipState.pipStateStarted:
             debugPrint('PiP started successfully');
-            _safeSetState(() => _isPipMode = true);
-            widget.onPipModeChanged?.call(true);
+            if (mounted) {
+              _safeSetState(() => _isPipMode = true);
+              widget.onPipModeChanged?.call(true);
+            }
             break;
           case PipState.pipStateStopped:
             debugPrint('PiP stopped');
-            _safeSetState(() {
-              _isPipMode = false;
-            });
-            widget.onPipModeChanged?.call(false);
+            if (mounted) {
+              _safeSetState(() {
+                _isPipMode = false;
+              });
+              widget.onPipModeChanged?.call(false);
+            }
             break;
           case PipState.pipStateFailed:
             debugPrint('PiP failed: $error');
-            _safeSetState(() => _isPipMode = false);
-            widget.onPipModeChanged?.call(false);
+            if (mounted) {
+              _safeSetState(() => _isPipMode = false);
+              widget.onPipModeChanged?.call(false);
+            }
             break;
         }
       },
@@ -700,24 +705,24 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       color: Colors.black,
       child: _isInitialized && _adapter != null
           ? Stack(
-              children: [
-                _buildVideoSurface(),
-                if (widget.danmakuLayer != null)
-                  RepaintBoundary(child: widget.danmakuLayer!),
-                if ((_isBuffering || _isLoadingVideo) && !_controlsVisible)
-                  const Center(
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                    ),
-                  ),
-                _buildControls(),
-              ],
-            )
-          : const Center(
+        children: [
+          _buildVideoSurface(),
+          if (widget.danmakuLayer != null)
+            RepaintBoundary(child: widget.danmakuLayer!),
+          if ((_isBuffering || _isLoadingVideo) && !_controlsVisible)
+            const Center(
               child: CircularProgressIndicator(
                 color: Colors.white,
               ),
             ),
+          _buildControls(),
+        ],
+      )
+          : const Center(
+        child: CircularProgressIndicator(
+          color: Colors.white,
+        ),
+      ),
     );
   }
 
@@ -741,37 +746,37 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     if (widget.surface == VideoPlayerSurface.desktop) {
       if (_adapter is! MediaKitAdapter) return const SizedBox.shrink();
-      
+
       final mkAdapter = _adapter as MediaKitAdapter;
       return PCPlayerControls(
         state: _videoKey.currentState!,
         player: mkAdapter.player,
         onBackPressed: widget.onBackPressed,
         onNextEpisode: widget.onNextEpisode,
-            onPause: widget.onPause,
-            videoUrl: _currentUrl ?? '',
-            isLastEpisode: widget.isLastEpisode,
-            isLoadingVideo: _isLoadingVideo,
-            onCastStarted: widget.onCastStarted,
-            videoTitle: widget.videoTitle,
-            videoYear: widget.videoYear,
-            currentEpisodeIndex: widget.currentEpisodeIndex,
-            totalEpisodes: widget.totalEpisodes,
-            episodesTitles: widget.episodesTitles,
-            sourceName: widget.sourceName,
-            isLocal: widget.isLocal,
-            onWebFullscreenChanged: widget.onWebFullscreenChanged,
-            onExitWebFullscreenCallbackReady: (callback) {
-              _exitWebFullscreenCallback = callback;
-            },
-            onExitFullScreen: widget.onExitFullScreen,
-            live: widget.live,
-            playbackSpeedListenable: _playbackSpeed,
-            onSetSpeed: _setPlaybackSpeed,
-            onControlsVisibilityChanged: (visible) {
-              _safeSetState(() => _controlsVisible = visible);
-            },
-          );
+        onPause: widget.onPause,
+        videoUrl: _currentUrl ?? '',
+        isLastEpisode: widget.isLastEpisode,
+        isLoadingVideo: _isLoadingVideo,
+        onCastStarted: widget.onCastStarted,
+        videoTitle: widget.videoTitle,
+        videoYear: widget.videoYear,
+        currentEpisodeIndex: widget.currentEpisodeIndex,
+        totalEpisodes: widget.totalEpisodes,
+        episodesTitles: widget.episodesTitles,
+        sourceName: widget.sourceName,
+        isLocal: widget.isLocal,
+        onWebFullscreenChanged: widget.onWebFullscreenChanged,
+        onExitWebFullscreenCallbackReady: (callback) {
+          _exitWebFullscreenCallback = callback;
+        },
+        onExitFullScreen: widget.onExitFullScreen,
+        live: widget.live,
+        playbackSpeedListenable: _playbackSpeed,
+        onSetSpeed: _setPlaybackSpeed,
+        onControlsVisibilityChanged: (visible) {
+          _safeSetState(() => _controlsVisible = visible);
+        },
+      );
     } else {
       return MobilePlayerControls(
         player: _adapter!,
@@ -807,7 +812,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onSettingsButtonPressed: widget.onSettingsButtonPressed,
         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
         onDanmakuMatchButtonPressed:
-            widget.onDanmakuMatchButtonPressed,
+        widget.onDanmakuMatchButtonPressed,
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,
