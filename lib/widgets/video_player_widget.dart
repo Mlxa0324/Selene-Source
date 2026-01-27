@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:video_player/video_player.dart' as vp;
@@ -182,6 +183,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _controlsVisible = true;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
 
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(fn);
+      });
+    } else {
+      setState(fn);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -221,7 +233,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _adapter = VideoPlayerAdapter(controller);
           controller.initialize().then((_) {
             if (mounted) {
-              setState(() {
+              _safeSetState(() {
                 _isLoadingVideo = false;
               });
               widget.onReady?.call();
@@ -236,7 +248,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             onReady: () {
               debugPrint('VideoPlayerWidget: WebView ready (init)');
               if (mounted) {
-                setState(() {
+                _safeSetState(() {
                   _isLoadingVideo = false;
                 });
                 widget.onReady?.call();
@@ -247,7 +259,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _setupPlayerListeners();
         _adapter?.updateVideoFit(_getBoxFit());
       }
-      setState(() {
+      _safeSetState(() {
         _isInitialized = true;
       });
     } else {
@@ -263,7 +275,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       if (_currentUrl != null) {
         await _openCurrentMedia();
       }
-      setState(() {
+      _safeSetState(() {
         _isInitialized = true;
       });
     }
@@ -273,7 +285,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_playerDisposed || _adapter == null || _currentUrl == null) {
       return;
     }
-    setState(() {
+    _safeSetState(() {
       _isLoadingVideo = true;
     });
     try {
@@ -292,13 +304,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       }
       
       await _adapter!.setRate(_playbackSpeed.value);
-      setState(() {
+      _safeSetState(() {
         _hasCompleted = false;
       });
     } catch (error) {
       debugPrint('VideoPlayerWidget: failed to open media $error');
       if (mounted) {
-        setState(() {
+        _safeSetState(() {
           _isLoadingVideo = false;
         });
       }
@@ -329,7 +341,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       if (!mounted) return;
       if (!playing) {
         widget.onPause?.call();
-        setState(() {
+        _safeSetState(() {
           _hasCompleted = false;
         });
         _pip.setup(const PipOptions(
@@ -357,7 +369,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       _completedSubscription = _adapter!.stream.completed.listen((completed) {
         if (!mounted) return;
         if (completed && !_hasCompleted) {
-          _hasCompleted = true;
+          _safeSetState(() {
+            _hasCompleted = true;
+          });
           widget.onVideoCompleted?.call();
         }
       });
@@ -365,30 +379,30 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     _durationSubscription = _adapter!.stream.duration.listen((duration) {
       if (!mounted) return;
-            if (duration != Duration.zero) {
-              debugPrint('VideoPlayerWidget: duration changed to $duration');
-              if (_isLoadingVideo) {
-                setState(() {
-                  _isLoadingVideo = false;
-                });
-              }
-              widget.onReady?.call();
-            }
+      if (duration != Duration.zero) {
+        debugPrint('VideoPlayerWidget: duration changed to $duration');
+        if (_isLoadingVideo) {
+          _safeSetState(() {
+            _isLoadingVideo = false;
           });
-      
-          _bufferingSubscription = _adapter!.stream.buffering.listen((buffering) {
-            if (!mounted) return;
-            setState(() {
-              _isBuffering = buffering;
-            });
-          });
-      
-          // 立即检查一次当前状态 ，防止错过已经准备好的状态
+        }
+        widget.onReady?.call();
+      }
+    });
+
+    _bufferingSubscription = _adapter!.stream.buffering.listen((buffering) {
+      if (!mounted) return;
+      _safeSetState(() {
+        _isBuffering = buffering;
+      });
+    });
+
+    // 立即检查一次当前状态 ，防止错过已经准备好的状态
     final currentDuration = _adapter!.state.duration;
     if (currentDuration != Duration.zero) {
       debugPrint('VideoPlayerWidget: proactive ready check - duration is $currentDuration');
       if (_isLoadingVideo) {
-        setState(() {
+        _safeSetState(() {
           _isLoadingVideo = false;
         });
       }
@@ -414,7 +428,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
 
-    setState(() {
+    _safeSetState(() {
       _isLoadingVideo = true;
     });
 
@@ -447,7 +461,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         await _adapter!.play();
         
         if (mounted) {
-          setState(() {
+          _safeSetState(() {
             _isLoadingVideo = false;
           });
           widget.onReady?.call();
@@ -486,7 +500,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           onReady: () {
             debugPrint('VideoPlayerWidget: WebView ready (update)');
             if (mounted) {
-              setState(() {
+              _safeSetState(() {
                 _isLoadingVideo = false;
               });
               widget.onReady?.call();
@@ -502,14 +516,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       await _adapter!.setRate(currentSpeed);
       
       if (mounted) {
-        setState(() {
+        _safeSetState(() {
           _hasCompleted = false;
         });
       }
     } catch (error) {
       debugPrint('VideoPlayerWidget: error while changing source $error');
       if (mounted) {
-        setState(() {
+        _safeSetState(() {
           _isLoadingVideo = false;
         });
       }
@@ -532,7 +546,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   void _setVideoFit(VideoFitType fitType) {
-    setState(() {
+    _safeSetState(() {
       _currentFitType = fitType;
     });
     _adapter?.updateVideoFit(_getBoxFit());
@@ -579,26 +593,20 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         switch (state) {
           case PipState.pipStateStarted:
             debugPrint('PiP started successfully');
-            if (mounted) {
-              setState(() => _isPipMode = true);
-              widget.onPipModeChanged?.call(true);
-            }
+            _safeSetState(() => _isPipMode = true);
+            widget.onPipModeChanged?.call(true);
             break;
           case PipState.pipStateStopped:
             debugPrint('PiP stopped');
-            if (mounted) {
-              setState(() {
-                _isPipMode = false;
-              });
-              widget.onPipModeChanged?.call(false);
-            }
+            _safeSetState(() {
+              _isPipMode = false;
+            });
+            widget.onPipModeChanged?.call(false);
             break;
           case PipState.pipStateFailed:
             debugPrint('PiP failed: $error');
-            if (mounted) {
-              setState(() => _isPipMode = false);
-              widget.onPipModeChanged?.call(false);
-            }
+            _safeSetState(() => _isPipMode = false);
+            widget.onPipModeChanged?.call(false);
             break;
         }
       },
@@ -761,7 +769,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             playbackSpeedListenable: _playbackSpeed,
             onSetSpeed: _setPlaybackSpeed,
             onControlsVisibilityChanged: (visible) {
-              setState(() => _controlsVisible = visible);
+              _safeSetState(() => _controlsVisible = visible);
             },
           );
     } else {
@@ -769,7 +777,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         player: _adapter!,
         state: _videoKey.currentState,
         onControlsVisibilityChanged: (visible) {
-          setState(() => _controlsVisible = visible);
+          _safeSetState(() => _controlsVisible = visible);
         },
         onBackPressed: widget.onBackPressed,
         onFullscreenChange: (isFullscreen) {

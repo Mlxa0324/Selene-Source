@@ -55,7 +55,7 @@ class _VideoCardState extends State<VideoCard> {
       builder: (context, themeService, child) {
         // 使用传入的宽度或默认宽度
         final double width = widget.cardWidth ?? 120.0;
-        final double height = width * 1.5 - 2; // 2:3 比例
+        final double height = width * 1.5 - 1.5; // 2:3 比例
 
         // 缓存计算结果
         final bool shouldShowEpisodeInfo = _shouldShowEpisodeInfo();
