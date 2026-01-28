@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -655,6 +656,19 @@ class ApiService {
       return cachedResults;
     }
 
+    // 尝试流式搜索
+    try {
+      final results = await _fetchSourcesDataStreaming(cleanQuery);
+      if (results != null && results.isNotEmpty) {
+        // 存入缓存并持久化
+        await UserDataService.saveSearchCache(cleanQuery, results);
+        return results;
+      }
+    } catch (e) {
+      print('流式搜索异常，尝试普通搜索: $e');
+    }
+
+    // 回退到普通搜索
     try {
       final response = await get<Map<String, dynamic>>(
         '/api/search',
@@ -683,6 +697,96 @@ class ApiService {
     } catch (e) {
       print('搜索失败: $e');
       return [];
+    }
+  }
+
+  /// 私有流式搜索实现
+  static Future<List<SearchResult>?> _fetchSourcesDataStreaming(
+      String query) async {
+    final baseUrl = await _getBaseUrl();
+    final cookies = await _getCookies();
+    if (baseUrl == null) return null;
+
+    final client = http.Client();
+    final results = <SearchResult>[];
+    final completer = Completer<List<SearchResult>?>();
+
+    try {
+      final baseUri = Uri.parse(baseUrl);
+      final sseUri = baseUri.replace(
+        path: '/api/search',
+        queryParameters: {
+          'q': query,
+          'stream': '1',
+        },
+      );
+
+      final request = http.Request('GET', sseUri);
+      final headers = await _buildHeaders();
+      request.headers.addAll(headers);
+      request.headers['Accept'] = 'text/event-stream';
+      request.headers['Cache-Control'] = 'no-cache';
+
+      final streamedResponse = await client.send(request).timeout(_timeout);
+      
+      if (streamedResponse.statusCode != 200) {
+        client.close();
+        return null;
+      }
+
+      String buffer = '';
+      const utf8Decoder = Utf8Decoder(allowMalformed: true);
+
+      streamedResponse.stream.transform(utf8Decoder).listen(
+        (chunk) {
+          buffer += chunk;
+          final lines = buffer.split('\n');
+          
+          if (lines.isNotEmpty) {
+            buffer = lines.last;
+            lines.removeLast();
+          }
+
+          for (final line in lines) {
+            if (line.trim().isEmpty) continue;
+            if (line.startsWith('data: ')) {
+              final jsonStr = line.substring(6);
+              try {
+                final data = json.decode(jsonStr);
+                final event = SearchEvent.fromJson(data as Map<String, dynamic>);
+                
+                if (event is SearchSourceResultEvent) {
+                  results.addAll(event.results);
+                } else if (event is SearchCompleteEvent) {
+                  if (!completer.isCompleted) {
+                    completer.complete(results);
+                  }
+                }
+              } catch (e) {
+                print('SSE数据解析失败: $e');
+              }
+            }
+          }
+        },
+        onError: (error) {
+          if (!completer.isCompleted) {
+            completer.completeError(error);
+          }
+        },
+        onDone: () {
+          if (!completer.isCompleted) {
+            completer.complete(results);
+          }
+          client.close();
+        },
+        cancelOnError: true,
+      );
+
+      // 设置流式搜索总超时
+      return await completer.future.timeout(const Duration(seconds: 45));
+    } catch (e) {
+      client.close();
+      rethrow;
     }
   }
 
