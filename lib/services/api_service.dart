@@ -737,11 +737,12 @@ class ApiService {
       String buffer = '';
       const utf8Decoder = Utf8Decoder(allowMalformed: true);
 
-      streamedResponse.stream.transform(utf8Decoder).listen(
+      StreamSubscription<String>? subscription;
+      subscription = streamedResponse.stream.transform(utf8Decoder).listen(
         (chunk) {
           buffer += chunk;
           final lines = buffer.split('\n');
-          
+
           if (lines.isNotEmpty) {
             buffer = lines.last;
             lines.removeLast();
@@ -753,10 +754,26 @@ class ApiService {
               final jsonStr = line.substring(6);
               try {
                 final data = json.decode(jsonStr);
-                final event = SearchEvent.fromJson(data as Map<String, dynamic>);
-                
+                final event =
+                    SearchEvent.fromJson(data as Map<String, dynamic>);
+
                 if (event is SearchSourceResultEvent) {
                   results.addAll(event.results);
+
+                  // 💡 优化：如果发现标题完全一致的精准匹配结果，提前返回，不再等待后续 100+ 个源
+                  // 这样可以极大地缩短进入播放页的时间
+                  final hasExactMatch = event.results.any((r) {
+                    final t = r.title.trim().toLowerCase();
+                    final q = query.trim().toLowerCase();
+                    return t == q;
+                  });
+
+                  if (hasExactMatch && !completer.isCompleted) {
+                    debugPrint('检测到精准匹配结果: $query，提前结束流式搜索');
+                    completer.complete(results);
+                    subscription?.cancel();
+                    client.close();
+                  }
                 } else if (event is SearchCompleteEvent) {
                   if (!completer.isCompleted) {
                     completer.complete(results);
@@ -783,7 +800,9 @@ class ApiService {
       );
 
       // 设置流式搜索总超时
-      return await completer.future.timeout(const Duration(seconds: 45));
+      final finalResults =
+          await completer.future.timeout(const Duration(seconds: 45));
+      return finalResults;
     } catch (e) {
       client.close();
       rethrow;
