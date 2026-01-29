@@ -827,6 +827,11 @@ class ApiService {
           if (!completer.isCompleted) {
             completer.complete(results);
           }
+          // 💡 关键优化：流执行完毕后，将搜集到的全量结果写入持久化缓存
+          // 这样即使之前因为精准匹配提前返回了部分结果，缓存里最终存的也是全量数据
+          if (results.isNotEmpty) {
+            UserDataService.saveSearchCache(query, results);
+          }
           client.close();
         },
         cancelOnError: true,
