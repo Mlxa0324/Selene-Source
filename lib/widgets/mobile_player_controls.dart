@@ -92,6 +92,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   double _originalPlaybackSpeed = 1.0;
   Duration? _dragPosition;
   bool _isSeekingViaSwipe = false;
+  bool _isDraggingProgressBar = false; // 是否正在通过进度条拖动
   double _swipeStartX = 0;
   Duration _swipeStartPosition = Duration.zero;
   Size? _screenSize;
@@ -160,8 +161,19 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       }
     }));
 
-    _subscriptions.add(widget.player.stream.position.listen((_) {
+    _subscriptions.add(widget.player.stream.position.listen((pos) {
       if (!mounted) return;
+
+      // 💡 核心修复：拖动/滑动结束后，等待播放器进度同步后再清除 _dragPosition
+      // 这样可以实现“固定跳转点，加载完后继续走”的效果
+      if (!_isSeekingViaSwipe && !_isDraggingProgressBar && _dragPosition != null) {
+        final diff = (pos.inMilliseconds - _dragPosition!.inMilliseconds).abs();
+        // 如果实际进度跟跳转点的差距缩小到 1.2 秒内（留一点容错），说明跳转成功且视频已开始在该点播放
+        if (diff < 1200) {
+          setState(() => _dragPosition = null);
+        }
+      }
+
       if (_controlsVisible && !_isSeekingViaSwipe) {
         setState(() {});
       }
@@ -300,8 +312,19 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
     setState(() {
       _isSeekingViaSwipe = false;
-      // 💡 优化：这里不再立即设为 null
+      // 💡 优化：这里不再立即设为 null，由进度监听器同步后清除，或 2秒后强制清除
     });
+
+    // 保险机制：2秒后强制清除，防止因为进度同步失败导致进度条一直卡住
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted &&
+          _dragPosition != null &&
+          !_isSeekingViaSwipe &&
+          !_isDraggingProgressBar) {
+        setState(() => _dragPosition = null);
+      }
+    });
+
     // 同步状态给父组件
     widget.onControlsVisibilityChanged(_controlsVisible);
     _startHideTimer();
@@ -950,11 +973,28 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               player: widget.player,
               live: widget.live,
               onDragStart: () {
-                setState(() => _controlsVisible = true);
+                setState(() {
+                  _controlsVisible = true;
+                  _isDraggingProgressBar = true;
+                });
                 _hideTimer?.cancel();
               },
               onDragEnd: () {
-                // 💡 优化：不再立即清空 _dragPosition，由子组件内部锁定
+                setState(() {
+                  _isDraggingProgressBar = false;
+                  // 💡 优化：这里不再立即设为 null，由进度监听器同步后清除
+                });
+
+                // 保险机制：2秒后强制清除
+                Future.delayed(const Duration(seconds: 5), () {
+                  if (mounted &&
+                      _dragPosition != null &&
+                      !_isSeekingViaSwipe &&
+                      !_isDraggingProgressBar) {
+                    setState(() => _dragPosition = null);
+                  }
+                });
+
                 _startHideTimer();
               },
               onDragUpdate: () {
