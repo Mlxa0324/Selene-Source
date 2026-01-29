@@ -184,7 +184,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
 
   void _safeSetState(VoidCallback fn) {
-    if (!mounted) return;
+    // if (!mounted) return;
     // // 如果当前正在构建过程中，则推迟到下一帧执行
     // if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
     //   SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -714,10 +714,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _buildVideoSurface(),
           if (widget.danmakuLayer != null)
             RepaintBoundary(child: widget.danmakuLayer!),
+          // 💡 优化：只有在控制按钮彻底隐藏的情况下，才在这一层显示居中加载圈
+          // 这样可以避免与 MobilePlayerControls 内部的加载逻辑产生重叠或冲突
           if ((_isBuffering || _isLoadingVideo) && !_controlsVisible)
             const Center(
               child: CircularProgressIndicator(
                 color: Colors.white,
+                strokeWidth: 3,
               ),
             ),
           _buildControls(),

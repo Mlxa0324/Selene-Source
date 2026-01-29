@@ -102,7 +102,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   late bool _isPortraitTablet;
 
   // 加载状态
-  bool _isLoading = true;
+  bool _isLoading = false;
   String _loadingMessage = '正在搜索播放源...';
   String _loadingEmoji = '🔍'; // 加载图标 emoji
   double _loadingProgress = 0.0; // 加载进度百分比 (0.0 - 1.0)
@@ -212,6 +212,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
     _instances.add(this);
+
+    // 💡 优化：只有当 source 和 id 都为空且没有初始详情时（即需要进行全局搜索时），才显示全屏加载搜源动画。
+    // 换源、选集或本地播放场景下，默认不显示搜源动画，避免闪烁。
+    _isLoading = widget.source == null && 
+                 widget.id == null && 
+                 widget.initialVideoDetail == null && 
+                 widget.localPath == null;
 
     videoTitle = widget.title;
     currentEpisodeIndex = widget.initialEpisodeIndex;
@@ -461,6 +468,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 初始化参数
     initParam();
 
+    // 💡 优化：如果是换源、选集或离线播放（已有明确目标），则不显示大加载搜源页，直接进入播放逻辑
+    if (currentSource.isNotEmpty && currentID.isNotEmpty || widget.localPath != null) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+
     // 统一获取播放记录（离线在线都需要）
     int playEpisodeIndex = widget.initialEpisodeIndex;
     int playTime = 0;
@@ -555,6 +571,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     setInfosByDetail(currentDetail!);
 
+    // 💡 优化：设置完详情后，立即关闭全局加载状态，避免闪烁
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _showSwitchLoadingOverlay = true;
+        _switchLoadingMessage = '视频加载中...';
+      });
+    }
+
     // 检查收藏状态
     _checkFavoriteStatus();
 
@@ -562,22 +587,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     updateLoadingProgress(1.0);
     updateLoadingMessage('准备就绪，即将开始播放...');
     updateLoadingEmoji('✨');
-
-    if (mounted) {
-      setState(() {
-        _showSwitchLoadingOverlay = true;
-        _switchLoadingMessage = '视频加载中...';
-      });
-    }
-
-    // 延时 1 秒后隐藏加载界面
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    });
 
     // 设置播放
     startPlay(playEpisodeIndex, playTime);
@@ -651,6 +660,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _fetchDoubanDetails() async {
     if (videoDoubanID <= 0) {
       doubanDetails = null;
+      return;
+    }
+
+    // 💡 优化：如果已经成功加载过豆瓣详情（包含推荐），则不再重复加载
+    // 这保证了在换源和切集时，相关推荐区域保持稳定，不闪烁
+    if (doubanDetails != null && doubanDetails!.recommends.isNotEmpty) {
+      debugPrint('豆瓣详情已存在，跳过重复加载');
       return;
     }
 

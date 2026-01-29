@@ -269,6 +269,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _dragPosition = null;
       _controlsVisible = true;
     });
+    // 💡 关键修复：滑动开始时立即通知父组件，隐藏外层圆圈
+    widget.onControlsVisibilityChanged(true);
     _hideTimer?.cancel();
   }
 
@@ -298,8 +300,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
     setState(() {
       _isSeekingViaSwipe = false;
-      _dragPosition = null;
+      // 💡 优化：这里不再立即设为 null
     });
+    // 同步状态给父组件
+    widget.onControlsVisibilityChanged(_controlsVisible);
     _startHideTimer();
   }
 
@@ -308,6 +312,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     _volumeHideTimer?.cancel();
     _hideTimer?.cancel();
     setState(() => _controlsVisible = true);
+    // 💡 同步状态
+    widget.onControlsVisibilityChanged(true);
   }
 
   void _onVolumeSwipeUpdate(DragUpdateDetails details) {
@@ -342,6 +348,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     _brightnessHideTimer?.cancel();
     _hideTimer?.cancel();
     setState(() => _controlsVisible = true);
+    // 💡 同步状态
+    widget.onControlsVisibilityChanged(true);
   }
 
   void _onBrightnessSwipeUpdate(DragUpdateDetails details) {
@@ -515,7 +523,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isLoadingVideo) {
+    // 💡 优化：只有在加载中，且当前没有在滑动调整进度时，才显示黑色遮罩加载层
+    // 这样可以避免滑动屏幕调进度时突然跳出黑屏挡住进度提示
+    if (widget.isLoadingVideo && !_isSeekingViaSwipe) {
       return Container(
         color: Colors.black.withValues(alpha: 0.7),
         child: const Center(
@@ -523,9 +533,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
-              // SizedBox(height: 16),
-              // Text('加载中..',
-              //     style: TextStyle(color: Colors.white, fontSize: 14)),
             ],
           ),
         ),
@@ -947,7 +954,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 _hideTimer?.cancel();
               },
               onDragEnd: () {
-                setState(() => _dragPosition = null);
+                // 💡 优化：不再立即清空 _dragPosition，由子组件内部锁定
                 _startHideTimer();
               },
               onDragUpdate: () {
@@ -1476,7 +1483,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
       }
     }
 
-    if (_isDragging && !widget.live) {
+    if ((_isDragging || _isSeeking) && !widget.live) {
       value = _dragValue;
     }
 
@@ -1510,9 +1517,9 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                   _isSeeking = true;
                 });
 
-                // 寮傛 Seek
+                // 💡 优化：跳转后锁定 800ms
                 widget.player.seek(seekPosition).then((_) async {
-                  await Future.delayed(const Duration(milliseconds: 100));
+                  await Future.delayed(const Duration(milliseconds: 800));
                   if (mounted) {
                     setState(() {
                       _isSeeking = false;
@@ -1536,9 +1543,9 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                 _isSeeking = true; // 鏍囪寮€濮?seek
               });
 
-              // 寮傛鎵ц seek
+              // 💡 优化：跳转后锁定 800ms
               widget.player.seek(seekPosition).then((_) async {
-                await Future.delayed(const Duration(milliseconds: 100));
+                await Future.delayed(const Duration(milliseconds: 800));
                 if (mounted) {
                   setState(() {
                     _isSeeking = false; // 鏍囪 seek 瀹屾垚
