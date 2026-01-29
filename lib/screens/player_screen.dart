@@ -510,7 +510,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 执行查询
     allSources = await fetchSourcesData(
-        (searchTitle.isNotEmpty) ? searchTitle : videoTitle);
+      (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
+      onIncrementalResults: (newResults) {
+        if (mounted) {
+          setState(() {
+            allSources = newResults;
+          });
+        }
+      },
+    );
     if (currentSource.isNotEmpty &&
         currentID.isNotEmpty &&
         !allSources.any((source) =>
@@ -3511,7 +3519,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 搜索视频源数据（带过滤）
-  Future<List<SearchResult>> fetchSourcesData(String query) async {
+  Future<List<SearchResult>> fetchSourcesData(String query,
+      {void Function(List<SearchResult>)? onIncrementalResults}) async {
     // 检查是否启用本地搜索
     final isLocalSearch = await UserDataService.getLocalSearch();
     final isLocalMode = await UserDataService.getIsLocalMode();
@@ -3522,18 +3531,30 @@ class _PlayerScreenState extends State<PlayerScreen>
       results = await SearchService.searchSync(query);
     } else {
       // 使用服务器搜索
-      results = await ApiService.fetchSourcesData(query);
+      results = await ApiService.fetchSourcesData(query,
+          onIncrementalResults: (incrementalResults) {
+        if (onIncrementalResults != null) {
+          final filtered = _filterSearchResults(incrementalResults);
+          onIncrementalResults(filtered);
+        }
+      });
     }
 
-    // 直接在这里展开过滤逻辑
+    // 返回最终过滤后的全量结果
+    return _filterSearchResults(results);
+  }
+
+  /// 提取的统一过滤逻辑
+  List<SearchResult> _filterSearchResults(List<SearchResult> results) {
     return results.where((result) {
       // 标题匹配检查
       final titleMatch = result.title.replaceAll(' ', '').toLowerCase() ==
-          (widget.title.replaceAll(' ', '').toLowerCase());
+          (videoTitle.replaceAll(' ', '').toLowerCase());
 
       // 年份匹配检查
-      final yearMatch = widget.year == null ||
-          result.year.toLowerCase() == widget.year!.toLowerCase();
+      final yearMatch = videoYear.isEmpty ||
+          videoYear == 'unknown' ||
+          result.year.toLowerCase() == videoYear.toLowerCase();
 
       // 类型匹配检查
       bool typeMatch = true;

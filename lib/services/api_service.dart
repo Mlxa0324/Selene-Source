@@ -646,7 +646,8 @@ class ApiService {
   }
 
   /// 搜索视频源数据
-  static Future<List<SearchResult>> fetchSourcesData(String query) async {
+  static Future<List<SearchResult>> fetchSourcesData(String query,
+      {void Function(List<SearchResult>)? onIncrementalResults}) async {
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return [];
 
@@ -658,7 +659,8 @@ class ApiService {
 
     // 尝试流式搜索
     try {
-      final results = await _fetchSourcesDataStreaming(cleanQuery);
+      final results = await _fetchSourcesDataStreaming(cleanQuery,
+          onIncrementalResults: onIncrementalResults);
       if (results != null && results.isNotEmpty) {
         // 存入缓存并持久化
         await UserDataService.saveSearchCache(cleanQuery, results);
@@ -701,8 +703,8 @@ class ApiService {
   }
 
   /// 私有流式搜索实现
-  static Future<List<SearchResult>?> _fetchSourcesDataStreaming(
-      String query) async {
+  static Future<List<SearchResult>?> _fetchSourcesDataStreaming(String query,
+      {void Function(List<SearchResult>)? onIncrementalResults}) async {
     final baseUrl = await _getBaseUrl();
     final cookies = await _getCookies();
     if (baseUrl == null) return null;
@@ -728,7 +730,7 @@ class ApiService {
       request.headers['Cache-Control'] = 'no-cache';
 
       final streamedResponse = await client.send(request).timeout(_timeout);
-      
+
       if (streamedResponse.statusCode != 200) {
         client.close();
         return null;
@@ -750,38 +752,69 @@ class ApiService {
 
           for (final line in lines) {
             if (line.trim().isEmpty) continue;
-            if (line.startsWith('data: ')) {
-              final jsonStr = line.substring(6);
-              try {
-                final data = json.decode(jsonStr);
-                final event =
-                    SearchEvent.fromJson(data as Map<String, dynamic>);
+            final jsonStr = line.startsWith('data: ')
+                ? line.substring(6)
+                : line;
+            try {
+              final data = json.decode(jsonStr);
+              List<SearchResult> currentResults = [];
 
-                if (event is SearchSourceResultEvent) {
-                  results.addAll(event.results);
-
-                  // 💡 优化：如果发现标题完全一致的精准匹配结果，提前返回，不再等待后续 100+ 个源
-                  // 这样可以极大地缩短进入播放页的时间
-                  final hasExactMatch = event.results.any((r) {
-                    final t = r.title.trim().toLowerCase();
-                    final q = query.trim().toLowerCase();
-                    return t == q;
-                  });
-
-                  if (hasExactMatch && !completer.isCompleted) {
-                    debugPrint('检测到精准匹配结果: $query，提前结束流式搜索');
-                    completer.complete(results);
-                    subscription?.cancel();
-                    client.close();
-                  }
-                } else if (event is SearchCompleteEvent) {
-                  if (!completer.isCompleted) {
-                    completer.complete(results);
-                  }
-                }
-              } catch (e) {
-                print('SSE数据解析失败: $e');
+              // 1. 优先尝试直接匹配需求中的 JSON 结构 (pageResults)
+              if (data['pageResults'] != null) {
+                final pageResultsList = data['pageResults'] as List<dynamic>;
+                currentResults = pageResultsList
+                    .map((item) =>
+                        SearchResult.fromJson(item as Map<String, dynamic>))
+                    .toList();
               }
+              // 2. 检查失败源
+              else if (data['failedSources'] != null) {
+                debugPrint('SSE检测到失败源: ${data['failedSources']}');
+                continue;
+              }
+              // 3. 如果都不匹配，再尝试作为标准 SearchEvent 解析 (兼容原有逻辑)
+              else {
+                try {
+                  final event =
+                      SearchEvent.fromJson(data as Map<String, dynamic>);
+                  if (event is SearchSourceResultEvent) {
+                    currentResults = event.results;
+                  } else if (event is SearchCompleteEvent) {
+                    if (!completer.isCompleted) {
+                      completer.complete(results);
+                    }
+                    continue;
+                  } else {
+                    // start 事件或其他，继续监听
+                    continue;
+                  }
+                } catch (e) {
+                  // 既不是 pageResults 也不是标准事件，跳过
+                  continue;
+                }
+              }
+
+              // 处理获取到的结果 (无论来自 pageResults 还是 SearchSourceResultEvent)
+              if (currentResults.isNotEmpty) {
+                results.addAll(currentResults);
+
+                // 💡 实时回调，让 UI 能够更新后续搜到的源
+                onIncrementalResults?.call(List.from(results));
+
+                // 💡 优化：如果发现标题完全一致的精准匹配结果，提前完成 Future 启动播放器
+                final hasExactMatch = currentResults.any((r) {
+                  final t = r.title.trim().toLowerCase();
+                  final q = query.trim().toLowerCase();
+                  return t == q;
+                });
+
+                if (hasExactMatch && !completer.isCompleted) {
+                  debugPrint('检测到精准匹配结果: $query，提前返回 Future 以启动播放');
+                  completer.complete(List.from(results));
+                }
+              }
+            } catch (e) {
+              print('SSE数据解析失败: $e');
             }
           }
         },
