@@ -445,9 +445,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
-  void initParam() {
-    currentSource = widget.source ?? '';
-    currentID = widget.id ?? '';
+  void initParam({bool? isInit}) {
+    // 如果继续观看里的节点，失效了，需要重新获取数据。
+    if(isInit == true) {
+      currentSource = '';
+      currentID = '';
+    } else {
+      currentSource = widget.source ?? '';
+      currentID = widget.id ?? '';
+    }
     videoTitle = widget.title;
     videoYear = widget.year ?? '';
     needPrefer = widget.prefer != null && widget.prefer == 'true';
@@ -464,9 +470,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     print('prefer: ${widget.prefer}');
   }
 
-  void initVideoData() async {
+  void initVideoData({bool? isInit}) async {
     // 初始化参数
-    initParam();
+    initParam(isInit: isInit);
 
     // 💡 优化：如果是换源、选集或离线播放（已有明确目标），则不显示大加载搜源页，直接进入播放逻辑
     if (currentSource.isNotEmpty && currentID.isNotEmpty || widget.localPath != null) {
@@ -3486,7 +3492,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                         width: double.infinity,
                         height: 48,
                         child: ElevatedButton(
-                          onPressed: hideError,
+                          onPressed: () {
+                            hideError();
+                            initVideoData(isInit: true);
+                          },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: isDarkMode
                                 ? const Color(0xFF2D3748)
