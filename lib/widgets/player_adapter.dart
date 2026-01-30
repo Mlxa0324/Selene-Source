@@ -388,17 +388,20 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> updateVideoFit(BoxFit fit) async {
-    String objectFit = 'contain';
+    String styleChanges = "v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = '100%';";
+    
     if (fit == BoxFit.fill) {
-      objectFit = 'fill';
+      styleChanges = "v.style.objectFit = 'fill'; v.style.width = '100%'; v.style.height = '100%';";
     } else if (fit == BoxFit.fitWidth) {
-      objectFit = 'scale-down'; // In some contexts fitWidth maps differently, but fill/contain are key
+      styleChanges = "v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = 'auto';";
+    } else if (fit == BoxFit.fitHeight) {
+      styleChanges = "v.style.objectFit = 'contain'; v.style.width = 'auto'; v.style.height = '100%';";
     } else if (fit == BoxFit.cover) {
-      objectFit = 'cover';
+      styleChanges = "v.style.objectFit = 'cover'; v.style.width = '100%'; v.style.height = '100%';";
     }
     
     await _controller?.evaluateJavascript(
-      source: "document.getElementById('player').style.objectFit = '$objectFit';"
+      source: "var v = document.getElementById('player'); if(v) { $styleChanges }"
     );
   }
 
@@ -432,7 +435,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>

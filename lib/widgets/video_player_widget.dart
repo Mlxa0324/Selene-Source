@@ -47,6 +47,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
   final Widget? danmakuLayer;
+  final VideoFitType initialFitType;
 
   const VideoPlayerWidget({
     super.key,
@@ -84,6 +85,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
     this.danmakuLayer,
+    this.initialFitType = VideoFitType.contain,
   });
 
   @override
@@ -179,7 +181,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   VoidCallback? _exitWebFullscreenCallback;
   final Pip _pip = Pip();
   bool _isPipMode = false;
-  VideoFitType _currentFitType = VideoFitType.contain;
+  late VideoFitType _currentFitType;
   bool _controlsVisible = true;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
 
@@ -203,6 +205,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   @override
   void initState() {
     super.initState();
+    _currentFitType = widget.initialFitType;
     WidgetsBinding.instance.addObserver(this);
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
@@ -215,6 +218,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   @override
   void didUpdateWidget(covariant VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.initialFitType != oldWidget.initialFitType) {
+      _currentFitType = widget.initialFitType;
+    }
     if (widget.headers != oldWidget.headers && widget.headers != null) {
       _currentHeaders = widget.headers;
     }
@@ -743,9 +749,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
     );
 
-    // 始终包裹 Center 层级
-    return Center(
-      child: videoWidget,
+    // 始终包裹 Center 层级，并使用 ClipRect 允许超出部分被裁剪（针对宽度/高度拉伸模式）
+    return SizedBox.expand(
+      child: ClipRect(
+        child: Center(
+          child: videoWidget,
+        ),
+      ),
     );
   }
 

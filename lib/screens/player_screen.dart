@@ -1536,6 +1536,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             surface:
                 isPC ? VideoPlayerSurface.desktop : VideoPlayerSurface.mobile,
             url: null,
+            initialFitType: _currentFitType,
             onBackPressed: _onBackPressed,
             onControllerCreated: (controller) {
               _videoPlayerController = controller;
