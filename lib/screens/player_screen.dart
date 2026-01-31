@@ -1493,45 +1493,52 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _performScrollToCurrentEpisode() {
     if (currentDetail == null || !_episodesScrollController.hasClients) return;
 
-    // 动态计算按钮宽度
-    // 在平板横屏模式下，需要考虑左侧区域只占65%的宽度
-    final screenWidth = MediaQuery.of(context).size.width;
-    final effectiveWidth = (_isTablet && !_isPortraitTablet)
-        ? screenWidth * 0.65 // 平板横屏：只使用左侧65%的宽度
-        : screenWidth; // 其他情况：使用全屏宽度
+    // 💡 推翻重做：彻底解决定位失效问题
+    // 增加一个小延时，确保在方向旋转或重建 ListView 后，控制器已经重新 Attach 并获取到新的 Viewport 尺寸
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_episodesScrollController.hasClients) return;
 
-    const listViewPadding = 16.0; // ListView的左右padding
-    const itemMargin = 6.0; // 每个item的右边距
-    final availableWidth =
-        effectiveWidth - (listViewPadding * 2); // 减去左右padding
-    final cardsPerView = _isTablet ? 6.2 : 3.2;
-    final buttonWidth = (availableWidth / cardsPerView) - itemMargin; // 减去右边距
+      // 1. 获取最真实的数据
+      final viewportWidth = _episodesScrollController.position.viewportDimension;
+      if (viewportWidth <= 0) return;
 
-    final targetIndex = _isEpisodesReversed
-        ? currentDetail!.episodes.length - 1 - currentEpisodeIndex
-        : currentEpisodeIndex;
+      // 2. 这里的计算必须和 UI 构建层的逻辑 100% 对齐
+      // 在 _buildEpisodesSection 中：availableWidth = screenWidth - 32.0;
+      // 而 viewportWidth 实际上就是 screenWidth - 32.0 (因为 Padding 是在外层的)
+      final availableWidth = viewportWidth;
+      final cardsPerView = _isTablet ? 6.2 : 3.2;
+      const itemMargin = 6.0;
 
-    // 计算选中项在可视区域中央的偏移量
-    // 可视区域中心 = (有效宽度 - ListView左右padding) / 2
-    // 选中项应该位于这个中心位置
-    final visibleAreaWidth = effectiveWidth - (listViewPadding * 2);
-    final visibleCenter = visibleAreaWidth / 2;
-    final itemCenter = buttonWidth / 2;
+      // 核心公式：
+      // 单项占据的总空间 (包含右侧 margin) = (可用宽度 / 每屏显示个数)
+      final itemTotalWidth = availableWidth / cardsPerView;
+      // 实际卡片宽度 = itemTotalWidth - itemMargin
+      final buttonWidth = itemTotalWidth - itemMargin;
 
-    // 计算需要滚动的距离，使选中项的中心对准可视区域的中心
-    // 注意：要减去第一个item的左边距（因为ListView有左padding）
-    final targetOffset = (targetIndex * (buttonWidth + itemMargin)) -
-        (visibleCenter - itemCenter - listViewPadding);
+      // 3. 计算物理索引
+      final targetIndex = _isEpisodesReversed
+          ? currentDetail!.episodes.length - 1 - currentEpisodeIndex
+          : currentEpisodeIndex;
 
-    // 确保不滚动到负值或超出范围
-    final maxScrollExtent = _episodesScrollController.position.maxScrollExtent;
-    final clampedOffset = targetOffset.clamp(0.0, maxScrollExtent);
+      // 4. 计算居中 Offset
+      // 项目中心点 = (index * itemTotalWidth) + (buttonWidth / 2)
+      // 视口中心点 = viewportWidth / 2
+      final itemCenter = (targetIndex * itemTotalWidth) + (buttonWidth / 2.0);
+      final viewportCenter = viewportWidth / 2.0;
+      final targetOffset = itemCenter - viewportCenter;
 
-    _episodesScrollController.animateTo(
-      clampedOffset,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+      // 5. 限制范围并执行
+      final maxScroll = _episodesScrollController.position.maxScrollExtent;
+      final finalOffset = targetOffset.clamp(0.0, maxScroll);
+
+      if (_episodesScrollController.hasClients) {
+        _episodesScrollController.animateTo(
+          finalOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   /// 构建播放器组件
@@ -2241,6 +2248,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: ListView.builder(
+                  // 💡 关键：使用 Key 强制在方向或顺序变化时重建列表，解决位置错乱问题
+                  key: ValueKey('episodes_list_${MediaQuery.of(context).orientation}_$_isEpisodesReversed'),
                   controller: _episodesScrollController,
                   scrollDirection: Axis.horizontal,
                   itemCount: currentDetail!.episodes.length,
@@ -2363,9 +2372,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                           startPlay(index, 0);
                         },
                         onToggleOrder: () {
-                          setState(() {
+                          this.setState(() {
                             _isEpisodesReversed = !_isEpisodesReversed;
                           });
+                          setState(() {}); // 同步弹窗内部状态
                         },
                       );
                     },
@@ -2416,9 +2426,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                   startPlay(index, 0);
                 },
                 onToggleOrder: () {
-                  setState(() {
+                  this.setState(() {
                     _isEpisodesReversed = !_isEpisodesReversed;
                   });
+                  setState(() {}); // 同步弹窗内部状态
                 },
               ),
             );
@@ -3248,9 +3259,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                         startPlay(index, 0);
                       },
                       onToggleOrder: () {
-                        dialogSetState(() {
+                        this.setState(() {
                           _isEpisodesReversed = !_isEpisodesReversed;
                         });
+                        dialogSetState(() {}); // 同步弹窗内部状态
                       },
                     );
                   },
@@ -3608,10 +3620,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    
+    // 💡 关键修复：每次依赖变化时都更新平板竖屏状态，确保计算滚动位置时使用的是正确的布局参数
+    _isPortraitTablet = DeviceUtils.isPortraitTablet(context);
+
     if (!_isInitialized) {
       // 缓存设备类型，避免分辨率变化时改变布局
       _isTablet = DeviceUtils.isTablet(context);
-      _isPortraitTablet = DeviceUtils.isPortraitTablet(context);
+      // _isPortraitTablet = DeviceUtils.isPortraitTablet(context); // 移到外面
 
       // 设置屏幕方向（平板除外）
       // 如果是平板，不强制竖屏
