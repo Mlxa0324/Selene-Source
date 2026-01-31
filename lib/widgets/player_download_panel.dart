@@ -13,6 +13,7 @@ class PlayerDownloadPanel extends StatefulWidget {
   final String cover;
   final List<String> episodes;
   final List<String> episodesTitles;
+  final int? currentEpisodeIndex; // 💡 新增：当前播放集数索引
   final bool isCompact;
 
   const PlayerDownloadPanel({
@@ -22,6 +23,7 @@ class PlayerDownloadPanel extends StatefulWidget {
     required this.cover,
     required this.episodes,
     required this.episodesTitles,
+    this.currentEpisodeIndex,
     this.isCompact = true,
   });
 
@@ -34,6 +36,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   final Set<int> _selectedIndices = {};
   int _selectedGroupIndex = 0;
   late AnimationController _animController;
+  final ScrollController _scrollController = ScrollController(); // 💡 新增：滚动控制器
+  final GlobalKey _gridKey = GlobalKey(); // 💡 新增：用于获取尺寸
 
   @override
   void initState() {
@@ -42,12 +46,60 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat();
+
+    // 💡 初始化选中分组：如果当前播放集在 50 集以后，自动切换分组
+    if (widget.currentEpisodeIndex != null && widget.episodes.length > 50) {
+      _selectedGroupIndex = (widget.currentEpisodeIndex! / 50).floor();
+    }
+
+    // 💡 自动滚动到当前集
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _scrollToCurrent();
+      }
+    });
   }
 
   @override
   void dispose() {
     _animController.dispose();
+    _scrollController.dispose(); // 💡 释放控制器
     super.dispose();
+  }
+
+  // 💡 新增：滚动到当前播放集逻辑
+  void _scrollToCurrent() {
+    if (widget.currentEpisodeIndex == null || 
+        _gridKey.currentContext == null || 
+        !_scrollController.hasClients) return;
+
+    // 检查当前播放集是否在当前显示的分组内
+    final startOfGroup = _selectedGroupIndex * 50;
+    final endOfGroup = ((_selectedGroupIndex + 1) * 50).clamp(0, widget.episodes.length);
+    
+    if (widget.currentEpisodeIndex! < startOfGroup || widget.currentEpisodeIndex! >= endOfGroup) {
+      return;
+    }
+
+    final physicalIndexInGrid = widget.currentEpisodeIndex! - startOfGroup;
+
+    final RenderBox gridBox = _gridKey.currentContext!.findRenderObject() as RenderBox;
+    final crossAxisCount = widget.isCompact ? 4 : 3;
+    final mainAxisSpacing = 8.0;
+    final childAspectRatio = widget.isCompact ? 3.2 : 2.0;
+
+    // 计算宽度和高度（需要减去横向 padding 24，因为左右各 12）
+    final itemWidth = (gridBox.size.width - 24.0 - (crossAxisCount - 1) * 8.0) / crossAxisCount;
+    final itemHeight = itemWidth / childAspectRatio;
+
+    final row = (physicalIndexInGrid / crossAxisCount).floor();
+    final offset = row * (itemHeight + mainAxisSpacing);
+
+    _scrollController.animateTo(
+      offset.clamp(0.0, _scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   Widget _buildDownloadingAnimation() {
@@ -240,6 +292,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
           // 集数选择列表
           Expanded(
             child: GridView.builder(
+              key: _gridKey,
+              controller: _scrollController,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: widget.isCompact ? 4 : 3,
@@ -259,6 +313,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
                 final downloadService = context.watch<DownloadService>();
                 final isSelected = _selectedIndices.contains(actualIndex);
+                // 💡 新增：是否是当前播放集
+                final isCurrentPlaying = actualIndex == widget.currentEpisodeIndex;
 
                 String title = '';
                 if (widget.episodesTitles.isNotEmpty &&
@@ -366,14 +422,14 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                         width: double.infinity,
                         height: double.infinity,
                         decoration: BoxDecoration(
-                          color: isEffectivelySelected
+                          color: (isEffectivelySelected || isCurrentPlaying)
                               ? Colors.green.withOpacity(0.2)
                               : (isDarkMode
                                   ? Colors.white10
                                   : Colors.black.withOpacity(0.05)),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: isEffectivelySelected
+                            color: (isEffectivelySelected || isCurrentPlaying)
                                 ? Colors.green
                                 : Colors.transparent,
                             width: 1.5,
@@ -385,10 +441,11 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                             child: Text(
                               title,
                               style: TextStyle(
-                                color: isEffectivelySelected
+                                color: (isEffectivelySelected || isCurrentPlaying)
                                     ? Colors.green
                                     : textColor,
                                 fontSize: 13,
+                                fontWeight: isCurrentPlaying ? FontWeight.bold : FontWeight.normal,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,

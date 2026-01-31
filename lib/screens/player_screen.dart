@@ -3013,6 +3013,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     cover: videoCover,
                     episodes: currentDetail!.episodes,
                     episodesTitles: currentDetail!.episodesTitles,
+                    currentEpisodeIndex: currentEpisodeIndex, // 💡 传给面板
                     isCompact: true,
                   ),
                 ),
@@ -3042,6 +3043,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               cover: videoCover,
               episodes: currentDetail!.episodes,
               episodesTitles: currentDetail!.episodesTitles,
+              currentEpisodeIndex: currentEpisodeIndex, // 💡 传给面板
               isCompact: false,
             ),
           );
