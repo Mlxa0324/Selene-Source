@@ -201,6 +201,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // 播放器的 GlobalKey，用于保持播放器状态
   final GlobalKey _playerKey = GlobalKey();
+  // 💡 关键：为 VideoPlayerWidget 增加专门的全局 Key，确保其在层级移动时不会销毁重建
+  final GlobalKey _videoPlayerWidgetKey = GlobalKey();
 
   @override
   void initState() {
@@ -1549,6 +1551,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         if (!_isCasting)
           VideoPlayerWidget(
+            key: _videoPlayerWidgetKey,
             surface:
                 isPC ? VideoPlayerSurface.desktop : VideoPlayerSurface.mobile,
             url: null,
@@ -3844,7 +3847,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             // 播放器
             Expanded(
               child: Container(
-                key: _playerKey,
                 color: Colors.black,
                 child: _buildPlayerWidget(),
               ),
@@ -3866,7 +3868,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           width: leftWidth,
           height: playerHeight,
           child: Container(
-            key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
@@ -3882,7 +3883,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           right: 0,
           height: playerHeight,
           child: Container(
-            key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
@@ -3900,7 +3900,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           right: 0,
           height: playerHeight,
           child: Container(
-            key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
