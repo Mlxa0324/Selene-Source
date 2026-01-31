@@ -1153,6 +1153,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() {
       _isFullscreen = isFullscreen;
     });
+
+    // 💡 关键修复：全屏状态切换后，自动校准选集列表位置
+    _scrollToCurrentEpisode();
+
     if (DeviceUtils.isPC()) return;
 
     if (isFullscreen) {
@@ -3656,6 +3660,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       // 初始化视频数据
       initVideoData();
     }
+
+    // 💡 关键修复：当物理旋转屏幕导致布局变化时，自动定位当前集
+    _scrollToCurrentEpisode();
   }
 
   @override
