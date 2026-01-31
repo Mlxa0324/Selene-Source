@@ -1007,7 +1007,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   Widget _buildSpeedMenu() {
-    final speeds = [0.5, 0.75, 1.0, 1.5, 2.0];
+    final speeds = [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
     final currentSpeed = widget.player.state.rate;
 
     // 获取速度按钮的位置

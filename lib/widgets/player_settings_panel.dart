@@ -127,8 +127,8 @@ class PlayerSettingsPanel extends StatelessWidget {
 
                   // 功能增强
                   _buildSectionHeader('功能增强', subTextColor),
-                  const SizedBox(height: 10),
-                  _buildSystemTimeSwitch(isDarkMode, textColor, subTextColor),
+                  // const SizedBox(height: 10),
+                  // _buildSystemTimeSwitch(isDarkMode, textColor, subTextColor),
                   const SizedBox(height: 10),
                   _buildAdFilterSwitch(isDarkMode, textColor, subTextColor),
 
@@ -167,7 +167,7 @@ class PlayerSettingsPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                '过滤 M3U8 中的插播广告标识',
+                '过滤 M3U8 中的插播广告标识（实验性）',
                 style: TextStyle(
                   fontSize: 11,
                   color: subTextColor,

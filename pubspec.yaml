@@ -71,6 +71,7 @@ dependencies:
   vimeo_video_player: ^1.0.3
   video_player: ^2.8.2
   crypto: ^3.0.7
+  battery_plus: ^7.0.0
 
 dev_dependencies:
   flutter_test:
