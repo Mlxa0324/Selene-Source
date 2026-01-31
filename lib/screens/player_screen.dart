@@ -158,6 +158,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 换源相关状态
   final ScrollController _sourcesScrollController = ScrollController();
 
+  // 是否正在关闭页面（用于立即隐藏播放器）
+  bool _isClosing = false;
+
   // 刷新相关状态
   bool _isRefreshing = false;
   late AnimationController _refreshAnimationController;
@@ -494,7 +497,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (matchingRecords.isNotEmpty) {
           // 如果没有通过 widget 强制指定集数，则使用历史进度
           if (widget.initialEpisodeIndex == 0) {
-            playEpisodeIndex = matchingRecords.first.index - 1;
+            playEpisodeIndex = matchingRecords.first.index - 1;mkmjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
           }
           playTime = matchingRecords.first.playTime;
         }
@@ -720,6 +723,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // 处理返回按钮点击
   void _onBackPressed() async {
+    // 1. 立即停止播放并标记关闭，提升视觉响应速度，减少声音残留感
+    _videoPlayerController?.pause();
+    setState(() {
+      _isClosing = true;
+    });
+
     // 如果正在投屏，停止投屏
     if (_isCasting && _dlnaDevice != null) {
       try {
@@ -3662,7 +3671,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.black,
         statusBarIconBrightness: Brightness.light,
@@ -3783,12 +3798,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             ],
           ),
         ),
-      ),
-    );
+      ),),
+   );
   }
 
   /// 构建播放器层（使用 Positioned 控制位置和大小）
   Widget _buildPlayerLayer(ThemeData theme) {
+    if (_isClosing) return const SizedBox.shrink();
+    
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
     // 如果是真全屏模式，不预留状态栏高度

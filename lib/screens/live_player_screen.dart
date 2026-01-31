@@ -78,6 +78,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   String _loadingMessage = '正在加载直播频道...';
   late AnimationController _loadingAnimationController;
 
+  // 是否正在关闭页面
+  bool _isClosing = false;
+
   @override
   void initState() {
     super.initState();
@@ -427,13 +430,28 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     }
   }
 
+  /// 处理返回按钮点击
+  void _onBackPressed() {
+    _videoPlayerController?.pause();
+    setState(() {
+      _isClosing = true;
+    });
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     final themeService = context.watch<ThemeService>();
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _onBackPressed();
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.black,
         statusBarIconBrightness: Brightness.light,
@@ -507,11 +525,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
           ),
         ),
       ),
-    );
+    ),
+   );
   }
 
   /// 构建播放器层
   Widget _buildPlayerLayer(ThemeData theme) {
+    if (_isClosing) return const SizedBox.shrink();
+
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
     // 如果是真全屏模式，不预留状态栏高度
@@ -639,7 +660,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       },
       videoTitle: _currentChannel.name,
       onBackPressed:
-          _isWebFullscreen ? _exitWebFullscreen : () => Navigator.pop(context),
+          _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
       onControllerCreated: (controller) {
         _videoPlayerController = controller;
       },
