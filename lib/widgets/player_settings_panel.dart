@@ -26,6 +26,8 @@ class PlayerSettingsPanel extends StatelessWidget {
   final bool adFilterEnabled;
   final int skipIntro;
   final int skipOutro;
+  final int videoPosition; // 当前播放位置（秒）
+  final int videoDuration; // 总时长（秒）
   final Function(VideoFitType) onFitTypeChanged;
   final Function(double) onLongPressSpeedChanged;
   final Function(ProgressDisplayMode) onProgressModeChanged;
@@ -44,6 +46,8 @@ class PlayerSettingsPanel extends StatelessWidget {
     required this.adFilterEnabled,
     required this.skipIntro,
     required this.skipOutro,
+    required this.videoPosition,
+    required this.videoDuration,
     required this.onFitTypeChanged,
     required this.onLongPressSpeedChanged,
     required this.onProgressModeChanged,
@@ -118,10 +122,10 @@ class PlayerSettingsPanel extends StatelessWidget {
                   // 自动跳过
                   _buildSectionHeader('自动跳过', subTextColor),
                   const SizedBox(height: 10),
-                  _buildSkipSlider('跳过片头', skipIntro, 180, onSkipIntroChanged,
-                      textColor, subTextColor),
-                  _buildSkipSlider('跳过片尾', skipOutro, 180, onSkipOutroChanged,
-                      textColor, subTextColor),
+                  _buildSkipSlider('跳过片头', skipIntro, 300, onSkipIntroChanged,
+                      textColor, subTextColor, isIntro: true),
+                  _buildSkipSlider('跳过片尾', skipOutro, 300, onSkipOutroChanged,
+                      textColor, subTextColor, isIntro: false),
 
                   const SizedBox(height: 20),
 
@@ -216,48 +220,140 @@ class PlayerSettingsPanel extends StatelessWidget {
     double max,
     Function(int) onChanged,
     Color textColor,
-    Color subTextColor,
-  ) {
+    Color subTextColor, {
+    required bool isIntro,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      child: Column(
         children: [
-          SizedBox(
-            width: 65,
-            child: Text(
-              label,
-              style: TextStyle(color: textColor, fontSize: 14),
-            ),
-          ),
-          Expanded(
-            child: SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                activeTrackColor: Colors.green,
-                inactiveTrackColor: textColor.withOpacity(0.1),
-                thumbColor: Colors.green,
-                overlayColor: Colors.green.withOpacity(0.2),
+          Row(
+            children: [
+              SizedBox(
+                width: 65,
+                child: Text(
+                  label,
+                  style: TextStyle(color: textColor, fontSize: 14),
+                ),
               ),
-              child: Slider(
-                value: value.toDouble().clamp(0.0, max),
-                min: 0,
-                max: max,
-                divisions: max.toInt(),
-                onChanged: (v) => onChanged(v.round()),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 2,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    activeTrackColor: Colors.green,
+                    inactiveTrackColor: textColor.withOpacity(0.1),
+                    thumbColor: Colors.green,
+                    overlayColor: Colors.green.withOpacity(0.2),
+                  ),
+                  child: Slider(
+                    value: value.toDouble().clamp(0.0, max),
+                    min: 0,
+                    max: max,
+                    divisions: max.toInt(),
+                    onChanged: (v) => onChanged(v.round()),
+                  ),
+                ),
               ),
+              SizedBox(
+                width: 50,
+                child: Text(
+                  _formatSeconds(value),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(color: subTextColor, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 65),
+            child: Row(
+              children: [
+                _buildCompactButton(
+                  icon: Icons.remove,
+                  onTap: () => onChanged((value - 5).clamp(0, max.toInt())),
+                  color: subTextColor,
+                ),
+                const SizedBox(width: 8),
+                _buildCompactButton(
+                  icon: Icons.add,
+                  onTap: () => onChanged((value + 5).clamp(0, max.toInt())),
+                  color: subTextColor,
+                ),
+                const Spacer(),
+                _buildTextButton(
+                  '拾取',
+                  onTap: () {
+                    if (isIntro) {
+                      onChanged(videoPosition.clamp(0, max.toInt()));
+                    } else {
+                      if (videoDuration > 0) {
+                        onChanged((videoDuration - videoPosition)
+                            .clamp(0, max.toInt()));
+                      }
+                    }
+                  },
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 12),
+                _buildTextButton(
+                  '清除',
+                  onTap: () => onChanged(0),
+                  color: subTextColor,
+                ),
+              ],
             ),
           ),
-          SizedBox(
-            width: 50, // 增加一点宽度以容纳 XmYs
-            child: Text(
-              _formatSeconds(value),
-              textAlign: TextAlign.right,
-              style: TextStyle(color: subTextColor, fontSize: 13),
-            ),
-          ),
+          const SizedBox(height: 4),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompactButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Icon(icon, size: 14, color: color),
+      ),
+    );
+  }
+
+  Widget _buildTextButton(
+    String label, {
+    required VoidCallback onTap,
+    required Color color,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ),
     );
   }

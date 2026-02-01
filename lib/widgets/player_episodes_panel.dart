@@ -40,17 +40,40 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-    
+
     // 初始化选中的分组
-    if (widget.episodes.length > 50) {
-      _selectedGroupIndex = (widget.currentEpisodeIndex / 50).floor();
-    }
-    
+    _updateSelectedGroup();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _scrollToCurrent();
+        // 给一点点延迟确保布局完成
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _scrollToCurrent();
+        });
       }
     });
+  }
+
+  void _updateSelectedGroup() {
+    int actualIndex = widget.isReversed
+        ? widget.episodes.length - 1 - widget.currentEpisodeIndex
+        : widget.currentEpisodeIndex;
+
+    if (widget.episodes.length > 50) {
+      _selectedGroupIndex = (actualIndex / 50).floor();
+    }
+  }
+
+  @override
+  void didUpdateWidget(PlayerEpisodesPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentEpisodeIndex != widget.currentEpisodeIndex ||
+        oldWidget.isReversed != widget.isReversed) {
+      _updateSelectedGroup();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToCurrent();
+      });
+    }
   }
 
   @override
@@ -60,32 +83,46 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   }
 
   void _scrollToCurrent() {
-    if (_gridKey.currentContext == null) return;
+    if (_gridKey.currentContext == null || !_scrollController.hasClients) return;
 
     final gridBox = _gridKey.currentContext!.findRenderObject() as RenderBox;
 
-    final targetIndex = widget.isReversed
+    int actualIndex = widget.isReversed
         ? widget.episodes.length - 1 - widget.currentEpisodeIndex
         : widget.currentEpisodeIndex;
 
+    // 计算在当前分组内的索引
+    final targetIndexInGroup = (widget.episodes.length > 50)
+        ? actualIndex - (_selectedGroupIndex * 50)
+        : actualIndex;
+
+    // 如果当前集数不在当前选中的分组内，则不执行滚动
+    if (targetIndexInGroup < 0 ||
+        (widget.episodes.length > 50 && targetIndexInGroup >= 50)) {
+      return;
+    }
+
     final crossAxisCount = widget.crossAxisCount;
     final mainAxisSpacing = widget.isCompact ? 8.0 : 12.0;
-    final childAspectRatio = widget.crossAxisCount == 4 
-        ? 2.2 
+    final childAspectRatio = widget.crossAxisCount == 4
+        ? 2.2
         : (widget.crossAxisCount == 3 ? 2.0 : (widget.isCompact ? 3.0 : 2.5));
 
     final itemWidth =
-        (gridBox.size.width - (crossAxisCount - 1) * mainAxisSpacing) / crossAxisCount;
+        (gridBox.size.width - (crossAxisCount - 1) * mainAxisSpacing) /
+            crossAxisCount;
     final itemHeight = itemWidth / childAspectRatio;
 
-    final row = (targetIndex / crossAxisCount).floor();
+    final row = (targetIndexInGroup / crossAxisCount).floor();
     final offset = row * (itemHeight + mainAxisSpacing);
 
-    _scrollController.animateTo(
-      offset.clamp(0.0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        offset.clamp(0.0, _scrollController.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   @override

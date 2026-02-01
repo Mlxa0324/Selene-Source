@@ -1106,6 +1106,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  /// 获取视频总时长
+  Duration? get duration {
+    if (_isCasting) {
+      return _dlnaCurrentDuration;
+    } else {
+      return _videoPlayerController?.duration;
+    }
+  }
+
   /// 处理视频播放器 ready 事件
   void _onVideoPlayerReady() {
     // 视频播放器准备就绪时的处理逻辑
@@ -1271,12 +1280,21 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 显示Toast消息
   void _showToast(String message) {
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(
+          message,
+          style: const TextStyle(fontSize: 14, color: Colors.white),
+          textAlign: TextAlign.center,
+        ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
+        width: 240, // 固定宽度，不再是全屏
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        backgroundColor: Colors.green,
       ),
     );
   }
@@ -3098,6 +3116,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       adFilterEnabled: _adFilterEnabled,
                       skipIntro: _skipIntroDuration,
                       skipOutro: _skipOutroDuration,
+                      videoPosition: currentPosition?.inSeconds ?? 0,
+                      videoDuration: duration?.inSeconds ?? 0,
                       onFitTypeChanged: (type) {
                         setState(() => _currentFitType = type);
                         dialogSetState(() {});

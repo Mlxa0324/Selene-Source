@@ -1051,12 +1051,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               borderRadius: BorderRadius.circular(0.5),
             ),
           ),
-          // 💡 绿色进度条
+          // 💡 电池进度条
           FractionallySizedBox(
             widthFactor: _batteryLevel / 100.0,
             child: Container(
               decoration: BoxDecoration(
-                color: _batteryLevel <= 20 ? Colors.red : Colors.green,
+                color: _batteryState == BatteryState.charging
+                    ? Colors.green
+                    : (_batteryLevel <= 20 ? Colors.red : Colors.white),
                 borderRadius: BorderRadius.circular(0.5),
               ),
             ),
@@ -1592,37 +1594,38 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildLongPressIndicator() {
     return Positioned(
-      top: 10,
+      top: 20, // 往下移动一点，避免挡住刘海或状态栏
       left: 0,
       right: 0,
       child: Center(
-        // 娣诲姞 Center 浣挎暣涓寚绀哄櫒灞呬腑
-        child: IntrinsicWidth(
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 8, vertical: 4), // 娣诲姞鍨傜洿 padding
-            decoration: BoxDecoration(
-              color: widget.progressMode == ProgressDisplayMode.none
-                  ? Colors.black.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.7), // 淇涓?withOpacity
-              borderRadius: BorderRadius.circular(5),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(20), // 圆角药丸形状
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 0.5,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min, // 纭繚 Row 鍙崰鐢ㄦ墍闇€绌洪棿
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '${widget.longPressSpeed}x',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.normal,
-                  ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.fast_forward_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${widget.longPressSpeed}x 播放中',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
-                const SizedBox(width: 6),
-                const Icon(Icons.fast_forward, color: Colors.white, size: 26),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
