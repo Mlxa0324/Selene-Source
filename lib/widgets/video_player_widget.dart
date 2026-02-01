@@ -48,6 +48,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool showSystemTime;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
+  final bool adFilterEnabled;
 
   const VideoPlayerWidget({
     super.key,
@@ -86,6 +87,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.showSystemTime = false,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
+    this.adFilterEnabled = false,
   });
 
   @override
@@ -257,6 +259,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _adapter = WebViewPlayerAdapter(
             url: _currentUrl!,
             headers: _currentHeaders,
+            adFilterEnabled: widget.adFilterEnabled,
             onReady: () {
               debugPrint('VideoPlayerWidget: WebView ready (init)');
               if (mounted) {
@@ -507,6 +510,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           url: url,
           headers: _currentHeaders,
           startAt: startAt,
+          adFilterEnabled: widget.adFilterEnabled,
           onReady: () {
             debugPrint('VideoPlayerWidget: WebView ready (update)');
             if (mounted) {

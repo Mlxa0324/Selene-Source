@@ -268,8 +268,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final String url;
   final Map<String, String>? headers;
   final Duration? startAt;
+  final bool adFilterEnabled;
 
-  final StreamController<bool> _playingController = StreamController<bool>.broadcast();
+  final StreamController<bool> _playingController =
+      StreamController<bool>.broadcast();
   final StreamController<Duration> _positionController = StreamController<Duration>.broadcast();
   final StreamController<Duration> _durationController = StreamController<Duration>.broadcast();
   final StreamController<bool> _completedController = StreamController<bool>.broadcast();
@@ -297,6 +299,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     this.headers,
     this.startAt,
     this.onReady,
+    this.adFilterEnabled = false,
   }) {
     stream = _WebViewPlayerStream(this);
     state = _WebViewPlayerState(this);
@@ -371,13 +374,15 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   @override
   Future<void> seek(Duration position) async {
     final seconds = position.inMilliseconds / 1000;
-    await _controller?.evaluateJavascript(source: 'player.currentTime = $seconds;');
+    await _controller?.evaluateJavascript(
+        source: 'player.currentTime = $seconds;');
   }
 
   @override
   Future<void> setRate(double rate) async {
     _rate = rate;
-    await _controller?.evaluateJavascript(source: 'player.playbackRate = $rate;');
+    await _controller?.evaluateJavascript(
+        source: 'player.playbackRate = $rate;');
   }
 
   @override
@@ -388,21 +393,26 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> updateVideoFit(BoxFit fit) async {
-    String styleChanges = "v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = '100%';";
-    
+    String styleChanges =
+        "v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = '100%';";
+
     if (fit == BoxFit.fill) {
-      styleChanges = "v.style.objectFit = 'fill'; v.style.width = '100%'; v.style.height = '100%';";
+      styleChanges =
+          "v.style.objectFit = 'fill'; v.style.width = '100%'; v.style.height = '100%';";
     } else if (fit == BoxFit.fitWidth) {
-      styleChanges = "v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = 'auto';";
+      styleChanges =
+          "v.style.objectFit = 'contain'; v.style.width = '100%'; v.style.height = 'auto';";
     } else if (fit == BoxFit.fitHeight) {
-      styleChanges = "v.style.objectFit = 'contain'; v.style.width = 'auto'; v.style.height = '100%';";
+      styleChanges =
+          "v.style.objectFit = 'contain'; v.style.width = 'auto'; v.style.height = '100%';";
     } else if (fit == BoxFit.cover) {
-      styleChanges = "v.style.objectFit = 'cover'; v.style.width = '100%'; v.style.height = '100%';";
+      styleChanges =
+          "v.style.objectFit = 'cover'; v.style.width = '100%'; v.style.height = '100%';";
     }
-    
+
     await _controller?.evaluateJavascript(
-      source: "var v = document.getElementById('player'); if(v) { $styleChanges }"
-    );
+        source:
+            "var v = document.getElementById('player'); if(v) { $styleChanges }");
   }
 
   @override
@@ -418,7 +428,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key}) {
+  Widget buildVideo(BuildContext context,
+      {BoxFit fit = BoxFit.contain, Key? key}) {
     return _WebViewPlayer(
       key: key,
       adapter: this,
@@ -428,6 +439,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   String _buildHtmlContent() {
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
+    final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
+
     return '''
 <!DOCTYPE html>
 <html>
@@ -446,6 +459,20 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var player = document.getElementById('player');
     var videoUrl = '$url';
     var startTime = $startSeconds;
+    var adFilterEnabled = $adFilterEnabledJs;
+
+    function filterAdsFromM3U8(m3u8Content) {
+      if (!m3u8Content) return '';
+      var lines = m3u8Content.split('\\n');
+      var filteredLines = [];
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (!line.includes('#EXT-X-DISCONTINUITY')) {
+          filteredLines.push(line);
+        }
+      }
+      return filteredLines.join('\\n');
+    }
 
     function sendEvent(type, data) {
       var event = Object.assign({ type: type }, data || {});
@@ -478,7 +505,31 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
     if (isM3u8) {
       if (Hls.isSupported()) {
-        var hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+        var config = { enableWorker: true, lowLatencyMode: true };
+        
+        if (adFilterEnabled) {
+          class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+            constructor(config) {
+              super(config);
+              var load = this.load.bind(this);
+              this.load = function (context, config, callbacks) {
+                if (context.type === 'manifest' || context.type === 'level') {
+                  var onSuccess = callbacks.onSuccess;
+                  callbacks.onSuccess = function (response, stats, context) {
+                    if (response.data && typeof response.data === 'string') {
+                      response.data = filterAdsFromM3U8(response.data);
+                    }
+                    return onSuccess(response, stats, context, null);
+                  };
+                }
+                load(context, config, callbacks);
+              };
+            }
+          }
+          config.loader = CustomHlsJsLoader;
+        }
+
+        var hls = new Hls(config);
         hls.loadSource(videoUrl);
         if (player) {
           hls.attachMedia(player);

@@ -276,8 +276,23 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 加载跳过设置
   Future<void> _loadSkipSettings() async {
-    final intro = await UserDataService.getSkipIntroDuration();
-    final outro = await UserDataService.getSkipOutroDuration();
+    // 1. 优先尝试加载针对当前视频标题和年份的特定设置
+    final videoSettings =
+        await UserDataService.getVideoSkipSettings(videoTitle, videoYear);
+
+    int intro;
+    int outro;
+
+    if (videoSettings != null) {
+      intro = videoSettings['intro']!;
+      outro = videoSettings['outro']!;
+      debugPrint('已加载视频特定跳过设置: $videoTitle ($videoYear) -> $intro/$outro');
+    } else {
+      // 2. 如果没有特定设置，则加载全局默认设置
+      intro = await UserDataService.getSkipIntroDuration();
+      outro = await UserDataService.getSkipOutroDuration();
+    }
+
     if (mounted) {
       setState(() {
         _skipIntroDuration = intro;
@@ -1649,6 +1664,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             longPressSpeed: _longPressSpeed,
             progressMode: _progressMode,
             showSystemTime: _showSystemTime,
+            adFilterEnabled: _adFilterEnabled,
             danmakuLayer: _danmakuSettings.enabled
                 ? IgnorePointer(
                     child: LayoutBuilder(builder: (context, constraints) {
@@ -1706,12 +1722,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
           ),
         // 切换播放源/集数时的加载蒙版（只遮挡播放器）
-        // SwitchLoadingOverlay(
-        //   isVisible: _showSwitchLoadingOverlay,
-        //   message: _switchLoadingMessage,
-        //   animationController: _switchLoadingAnimationController,
-        //   onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
-        // ),
+        SwitchLoadingOverlay(
+          isVisible: _showSwitchLoadingOverlay,
+          message: _switchLoadingMessage,
+          animationController: _switchLoadingAnimationController,
+          onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
+        ),
       ],
     );
   }
@@ -3164,12 +3180,18 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onSkipIntroChanged: (v) {
                         setState(() => _skipIntroDuration = v);
                         dialogSetState(() {});
+                        // 同时保存全局设置和针对当前视频的特定设置
                         UserDataService.saveSkipIntroDuration(v);
+                        UserDataService.saveVideoSkipSettings(
+                            videoTitle, videoYear, v, _skipOutroDuration);
                       },
                       onSkipOutroChanged: (v) {
                         setState(() => _skipOutroDuration = v);
                         dialogSetState(() {});
+                        // 同时保存全局设置和针对当前视频的特定设置
                         UserDataService.saveSkipOutroDuration(v);
+                        UserDataService.saveVideoSkipSettings(
+                            videoTitle, videoYear, _skipIntroDuration, v);
                       },
                     );
                   },
@@ -3856,7 +3878,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     if (_showError && _errorMessage != null)
                       _buildErrorOverlay(theme),
                     // 加载覆盖层
-                    // if (_isLoading) _buildLoadingOverlay(theme),
+                    if (_isLoading) _buildLoadingOverlay(theme),
                   ],
                 ),
               ),

@@ -22,7 +22,44 @@ class UserDataService {
   static const String _progressDisplayModeKey = 'progress_display_mode';
   static const String _showSystemTimeKey = 'show_system_time';
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
-  
+  static const String _videoSkipSettingsPrefix = 'video_skip_v2_';
+
+  /// 获取特定视频的跳过设置 Key
+  static String _getVideoSkipKey(String title, String? year) {
+    // 移除文件名/标题中可能影响存储的特殊字符，并结合年份
+    final cleanTitle = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    return '$_videoSkipSettingsPrefix${cleanTitle}_${year ?? 'unknown'}';
+  }
+
+  /// 保存特定视频的跳过设置
+  static Future<void> saveVideoSkipSettings(
+      String title, String? year, int intro, int outro) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _getVideoSkipKey(title, year);
+    await prefs.setString(
+        key, json.encode({'intro': intro, 'outro': outro, 'time': DateTime.now().millisecondsSinceEpoch}));
+  }
+
+  /// 获取特定视频的跳过设置
+  static Future<Map<String, int>?> getVideoSkipSettings(
+      String title, String? year) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = _getVideoSkipKey(title, year);
+      final String? data = prefs.getString(key);
+      if (data != null) {
+        final Map<String, dynamic> decoded = json.decode(data);
+        return {
+          'intro': decoded['intro'] as int,
+          'outro': decoded['outro'] as int
+        };
+      }
+    } catch (e) {
+      debugPrint('获取视频特定跳过设置失败: $e');
+    }
+    return null;
+  }
+
   // 搜索数据缓存相关
   static const String _sourcesCacheStorageKey = 'sources_data_cache_persistent';
   static Map<String, (List<SearchResult>, DateTime)> _sourcesDataCache = {};
