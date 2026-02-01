@@ -1652,7 +1652,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildLongPressIndicator() {
     return Positioned(
-      top: 20, // 往下移动一点，避免挡住刘海或状态栏
+      top: 10, // 往下移动一点，避免挡住刘海或状态栏
       left: 0,
       right: 0,
       child: Center(
