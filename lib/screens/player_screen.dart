@@ -1280,21 +1280,38 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 显示Toast消息
   void _showToast(String message) {
+    if (!mounted) return;
+    
+    // 获取屏幕宽度用于精确居中计算
+    final screenWidth = MediaQuery.of(context).size.width;
+    const toastWidth = 260.0;
+    final horizontalMargin = (screenWidth - toastWidth) / 2;
+
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           message,
-          style: const TextStyle(fontSize: 14, color: Colors.white),
+          style: const TextStyle(
+            fontSize: 14,
+            color: Colors.white,
+            fontWeight: FontWeight.w500,
+          ),
           textAlign: TextAlign.center,
         ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
-        width: 240, // 固定宽度，不再是全屏
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+        // 使用 margin 代替 width 可以更精确地控制左右间距，确保在各种异形屏下视觉居中
+        margin: EdgeInsets.only(
+          bottom: _isFullscreen ? 40 : 20,
+          left: horizontalMargin,
+          right: horizontalMargin,
         ),
-        backgroundColor: Colors.green,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(25),
+        ),
+        backgroundColor: Colors.black.withOpacity(0.6),
+        elevation: 0,
       ),
     );
   }

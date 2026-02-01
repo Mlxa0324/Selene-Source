@@ -34,12 +34,14 @@ class PlayerEpisodesPanel extends StatefulWidget {
 class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   final GlobalKey _gridKey = GlobalKey();
   late final ScrollController _scrollController;
+  late final ScrollController _groupScrollController;
   int _selectedGroupIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
+    _groupScrollController = ScrollController();
 
     // 初始化选中的分组
     _updateSelectedGroup();
@@ -48,7 +50,10 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
       if (mounted) {
         // 给一点点延迟确保布局完成
         Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted) _scrollToCurrent();
+          if (mounted) {
+            _scrollToCurrent();
+            _scrollToCurrentGroup();
+          }
         });
       }
     });
@@ -71,7 +76,10 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
         oldWidget.isReversed != widget.isReversed) {
       _updateSelectedGroup();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _scrollToCurrent();
+        if (mounted) {
+          _scrollToCurrent();
+          _scrollToCurrentGroup();
+        }
       });
     }
   }
@@ -79,7 +87,25 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _groupScrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToCurrentGroup() {
+    if (!_groupScrollController.hasClients || widget.episodes.length <= 50) {
+      return;
+    }
+
+    // 每个分组按钮宽度大约 80-90 (含 spacing)
+    const double approxItemWidth = 85.0;
+    final double offset = _selectedGroupIndex * approxItemWidth;
+
+    // 居中滚动或至少确保可见
+    _groupScrollController.animateTo(
+      offset.clamp(0.0, _groupScrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _scrollToCurrent() {
@@ -172,6 +198,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
               height: 40,
               margin: const EdgeInsets.only(bottom: 8),
               child: ListView.builder(
+                controller: _groupScrollController,
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: (widget.episodes.length / 50).ceil(),

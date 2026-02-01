@@ -1034,37 +1034,81 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildBatteryBox() {
-    return Container(
-      width: 26,
-      height: 13,
-      padding: const EdgeInsets.all(1.5),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: Stack(
-        children: [
-          // 背景微弱填充
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(0.5),
-            ),
+    final isCharging = _batteryState == BatteryState.charging ||
+        _batteryState == BatteryState.full;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 27, // 稍微增加宽度以更好地容纳百分比数字
+          height: 12,
+          padding: const EdgeInsets.all(1.0),
+          decoration: BoxDecoration(
+            border: Border.all(
+                color: isCharging
+                    ? Colors.green.withOpacity(0.7)
+                    : Colors.white.withOpacity(0.4),
+                width: 0.8),
+            borderRadius: BorderRadius.circular(2),
           ),
-          // 💡 电池进度条
-          FractionallySizedBox(
-            widthFactor: _batteryLevel / 100.0,
-            child: Container(
-              decoration: BoxDecoration(
-                color: _batteryState == BatteryState.charging
-                    ? Colors.green
-                    : (_batteryLevel <= 20 ? Colors.red : Colors.white),
-                borderRadius: BorderRadius.circular(0.5),
+          child: Stack(
+            children: [
+              // 背景微弱填充
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(0.5),
+                ),
               ),
+              // 💡 电池进度条
+              FractionallySizedBox(
+                widthFactor: _batteryLevel / 100.0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: isCharging
+                        ? Colors.green
+                        : (_batteryLevel <= 20 ? Colors.red : Colors.white),
+                    borderRadius: BorderRadius.circular(0.5),
+                  ),
+                ),
+              ),
+              // 充电标识 或 电量百分比
+              Center(
+                child: isCharging
+                    ? const Icon(
+                        Icons.bolt,
+                        color: Colors.white,
+                        size: 10,
+                      )
+                    : Text(
+                        '$_batteryLevel',
+                        style: TextStyle(
+                          color: _batteryLevel > 50 ? Colors.black : Colors.white,
+                          fontSize: 7,
+                          fontWeight: FontWeight.bold,
+                          height: 1.0,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+        // 电池正极头
+        Container(
+          width: 1.2,
+          height: 4,
+          decoration: BoxDecoration(
+            color: isCharging
+                ? Colors.green.withOpacity(0.7)
+                : Colors.white.withOpacity(0.4),
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(1),
+              bottomRight: Radius.circular(1),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
