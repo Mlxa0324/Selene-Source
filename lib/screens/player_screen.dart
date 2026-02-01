@@ -1706,12 +1706,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
           ),
         // 切换播放源/集数时的加载蒙版（只遮挡播放器）
-        SwitchLoadingOverlay(
-          isVisible: _showSwitchLoadingOverlay,
-          message: _switchLoadingMessage,
-          animationController: _switchLoadingAnimationController,
-          onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
-        ),
+        // SwitchLoadingOverlay(
+        //   isVisible: _showSwitchLoadingOverlay,
+        //   message: _switchLoadingMessage,
+        //   animationController: _switchLoadingAnimationController,
+        //   onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
+        // ),
       ],
     );
   }
@@ -3856,7 +3856,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     if (_showError && _errorMessage != null)
                       _buildErrorOverlay(theme),
                     // 加载覆盖层
-                    if (_isLoading) _buildLoadingOverlay(theme),
+                    // if (_isLoading) _buildLoadingOverlay(theme),
                   ],
                 ),
               ),

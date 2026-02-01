@@ -382,10 +382,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onVolumeSwipeStart(DragStartDetails details) {
     if (!_isEffectiveFullscreen || _isLocked) return;
     _volumeHideTimer?.cancel();
-    _hideTimer?.cancel();
-    setState(() => _controlsVisible = true);
-    // 💡 同步状态
-    widget.onControlsVisibilityChanged(true);
+    // 仅当按钮组已显示时，才取消自动隐藏定时器（防止滑动时突然消失）
+    if (_controlsVisible) {
+      _hideTimer?.cancel();
+    }
   }
 
   void _onVolumeSwipeUpdate(DragUpdateDetails details) {
@@ -403,7 +403,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onVolumeSwipeEnd(DragEndDetails details) {
     if (!_isEffectiveFullscreen || _isLocked) return;
     _startVolumeHideTimer();
-    _startHideTimer();
+    // 仅当按钮组已显示时，才重新开始自动隐藏计时
+    if (_controlsVisible) {
+      _startHideTimer();
+    }
   }
 
   void _startVolumeHideTimer() {
@@ -418,10 +421,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onBrightnessSwipeStart(DragStartDetails details) {
     if (!_isEffectiveFullscreen || _isLocked) return;
     _brightnessHideTimer?.cancel();
-    _hideTimer?.cancel();
-    setState(() => _controlsVisible = true);
-    // 💡 同步状态
-    widget.onControlsVisibilityChanged(true);
+    // 仅当按钮组已显示时，才取消自动隐藏定时器
+    if (_controlsVisible) {
+      _hideTimer?.cancel();
+    }
   }
 
   void _onBrightnessSwipeUpdate(DragUpdateDetails details) {
@@ -440,7 +443,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onBrightnessSwipeEnd(DragEndDetails details) {
     if (!_isEffectiveFullscreen || _isLocked) return;
     _startBrightnessHideTimer();
-    _startHideTimer();
+    // 仅当按钮组已显示时，才重新开始自动隐藏计时
+    if (_controlsVisible) {
+      _startHideTimer();
+    }
   }
 
   void _startBrightnessHideTimer() {
@@ -473,8 +479,16 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     if (_isPlaying) {
       await widget.player.pause();
       widget.onPause?.call();
+      // 双击暂停时显示按钮组
+      setState(() => _controlsVisible = true);
+      widget.onControlsVisibilityChanged(true);
+      _hideTimer?.cancel(); // 暂停状态不自动隐藏
     } else {
       await widget.player.play();
+      // 双击播放时自动隐藏按钮组
+      setState(() => _controlsVisible = false);
+      widget.onControlsVisibilityChanged(false);
+      _hideTimer?.cancel();
     }
   }
 
