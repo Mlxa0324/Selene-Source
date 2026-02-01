@@ -1325,7 +1325,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(25),
         ),
-        backgroundColor: Colors.black.withOpacity(0.6),
+        backgroundColor: Colors.black.withOpacity(0.8),
         elevation: 0,
       ),
     );
