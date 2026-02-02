@@ -1,9 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
-import 'dart:convert';
-import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -33,7 +30,6 @@ import '../widgets/danmaku_match_panel.dart';
 import '../widgets/player_download_panel.dart';
 import '../widgets/windows_title_bar.dart';
 import '../services/danmaku_service.dart';
-import '../services/download_service.dart';
 import '../models/danmaku_model.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 
@@ -102,7 +98,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   late bool _isPortraitTablet;
 
   // 加载状态
-  bool _isLoading = false;
+  bool _isLoading = true;
   String _loadingMessage = '正在搜索播放源...';
   String _loadingEmoji = '🔍'; // 加载图标 emoji
   double _loadingProgress = 0.0; // 加载进度百分比 (0.0 - 1.0)
@@ -200,7 +196,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _isDanmakuLoading = false;
 
   // 播放器的 GlobalKey，用于保持播放器状态
-  final GlobalKey _playerKey = GlobalKey();
+  // final GlobalKey _playerKey = GlobalKey();
+
   // 💡 关键：为 VideoPlayerWidget 增加专门的全局 Key，确保其在层级移动时不会销毁重建
   final GlobalKey _videoPlayerWidgetKey = GlobalKey();
 
@@ -220,10 +217,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 💡 优化：只有当 source 和 id 都为空且没有初始详情时（即需要进行全局搜索时），才显示全屏加载搜源动画。
     // 换源、选集或本地播放场景下，默认不显示搜源动画，避免闪烁。
-    _isLoading = widget.source == null && 
-                 widget.id == null && 
-                 widget.initialVideoDetail == null && 
-                 widget.localPath == null;
+    // _isLoading = widget.source == null &&
+    //              widget.id == null &&
+    //              widget.initialVideoDetail == null &&
+    //              widget.localPath == null;
 
     videoTitle = widget.title;
     currentEpisodeIndex = widget.initialEpisodeIndex;
@@ -280,17 +277,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     final videoSettings =
         await UserDataService.getVideoSkipSettings(videoTitle, videoYear);
 
-    int intro;
-    int outro;
+    int intro = 0;
+    int outro = 0;
 
     if (videoSettings != null) {
       intro = videoSettings['intro']!;
       outro = videoSettings['outro']!;
       debugPrint('已加载视频特定跳过设置: $videoTitle ($videoYear) -> $intro/$outro');
-    } else {
-      // 2. 如果没有特定设置，则加载全局默认设置
-      intro = await UserDataService.getSkipIntroDuration();
-      outro = await UserDataService.getSkipOutroDuration();
     }
 
     if (mounted) {
@@ -398,7 +391,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_danmakuController == null ||
         _danmakuList.isEmpty ||
         !_danmakuSettings.enabled ||
-        _isSeeking) return;
+        _isSeeking) {
+      return;
+    }
 
     final currentTime = position.inMilliseconds / 1000.0;
 
@@ -495,13 +490,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     initParam(isInit: isInit);
 
     // 💡 优化：如果是换源、选集或离线播放（已有明确目标），则不显示大加载搜源页，直接进入播放逻辑
-    if (currentSource.isNotEmpty && currentID.isNotEmpty || widget.localPath != null) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
+    // if (currentSource.isNotEmpty && currentID.isNotEmpty || widget.localPath != null) {
+    //   if (mounted) {
+    //     setState(() {
+    //       _isLoading = false;
+    //     });
+    //   }
+    // }
 
     // 统一获取播放记录（离线在线都需要）
     int playEpisodeIndex = widget.initialEpisodeIndex;
@@ -998,7 +993,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _loadingTimeoutTimer?.cancel();
     
     // 设置一个新的超时计时器，如果 20 秒后还没 Ready，强制关闭
-    _loadingTimeoutTimer = Timer(const Duration(seconds: 20), () {
+    _loadingTimeoutTimer = Timer(const Duration(seconds: 15), () {
       if (mounted && _showSwitchLoadingOverlay) {
         debugPrint("播放器准备超时，强制关闭加载蒙版");
         setState(() {
@@ -1014,44 +1009,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // 1. 如果是网络请求，才执行去广告和代理逻辑
       if (!isLocal) {
-        // 去广告功能
-        if (_adFilterEnabled &&
-            (newUrl.contains('.m3u8') || newUrl.contains('.M3U8'))) {
-          try {
-            debugPrint("正在尝试过滤 M3U8 广告: $newUrl");
-            final dio = Dio();
-            dio.options.headers = {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': '*/*',
-              'Accept-Language': 'zh-CN,zh;q=0.9',
-              'Referer': Uri.parse(newUrl).origin,
-            };
-            dio.options.connectTimeout = const Duration(seconds: 8);
-            dio.options.receiveTimeout = const Duration(seconds: 15);
-            
-            final response = await dio.get(newUrl);
-            if (response.statusCode == 200 && response.data is String) {
-              final base64Content = await compute(_filterAndEncodeM3u8, {
-                'content': response.data as String,
-                'baseUrl': newUrl,
-              });
-              finalUrl = 'data:application/vnd.apple.mpegurl;base64,$base64Content';
-              debugPrint("M3U8 广告已过滤并编码");
-            }
-          } catch (e) {
-            debugPrint('去广告处理失败，降级使用原始链接: $e');
-          }
-        }
-
         // 获取 M3U8 代理 URL (如果没被 Data URI 替换)
-        if (finalUrl == newUrl) {
-          final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
-          if (m3u8ProxyUrl.isNotEmpty) {
-            final encodedUrl = Uri.encodeComponent(newUrl);
-            finalUrl = '$m3u8ProxyUrl$encodedUrl';
-            debugPrint("使用 M3U8 代理: $finalUrl");
-          }
+        final m3u8ProxyUrl = await UserDataService.getM3u8ProxyUrl();
+        if (m3u8ProxyUrl.isNotEmpty) {
+          final encodedUrl = Uri.encodeComponent(newUrl);
+          finalUrl = '$m3u8ProxyUrl$encodedUrl';
+          debugPrint("使用 M3U8 代理: $finalUrl");
         }
       }
 
@@ -1094,14 +1057,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _showToast('播放失败: 链接解析出错');
     }
-  }
-
-  /// 静态辅助方法，供 compute 使用，避免闭包捕获 context 或 state
-  static String _filterAndEncodeM3u8(Map<String, String> params) {
-    final content = params['content']!;
-    final baseUrl = params['baseUrl']!;
-    final filtered = M3U8Service.filterAdsFromM3U8(content, baseUrl);
-    return base64.encode(utf8.encode(filtered));
   }
 
   /// 跳转到指定进度
@@ -2444,10 +2399,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                           startPlay(index, 0);
                         },
                         onToggleOrder: () {
-                          this.setState(() {
+                          setState(() {
                             _isEpisodesReversed = !_isEpisodesReversed;
                           });
-                          setState(() {}); // 同步弹窗内部状态
+                          // this.setState(() {
+                          //   _isEpisodesReversed = !_isEpisodesReversed;
+                          // });
+                          // setState(() {}); // 同步弹窗内部状态
                         },
                       );
                     },
@@ -2498,10 +2456,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                   startPlay(index, 0);
                 },
                 onToggleOrder: () {
-                  this.setState(() {
+                  setState(() {
                     _isEpisodesReversed = !_isEpisodesReversed;
                   });
-                  setState(() {}); // 同步弹窗内部状态
+                  // this.setState(() {
+                  //   _isEpisodesReversed = !_isEpisodesReversed;
+                  // });
+                  // setState(() {}); // 同步弹窗内部状态
                 },
               ),
             );
@@ -3333,10 +3294,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                         startPlay(index, 0);
                       },
                       onToggleOrder: () {
-                        this.setState(() {
+                        dialogSetState(() {
                           _isEpisodesReversed = !_isEpisodesReversed;
                         });
-                        dialogSetState(() {}); // 同步弹窗内部状态
+                        // this.setState(() {
+                        //   _isEpisodesReversed = !_isEpisodesReversed;
+                        // });
+                        // dialogSetState(() {}); // 同步弹窗内部状态
                       },
                     );
                   },
@@ -3921,6 +3885,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             // 播放器
             Expanded(
               child: Container(
+                // key: _playerKey,
                 color: Colors.black,
                 child: _buildPlayerWidget(),
               ),
@@ -3942,6 +3907,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           width: leftWidth,
           height: playerHeight,
           child: Container(
+            // key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
@@ -3957,6 +3923,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           right: 0,
           height: playerHeight,
           child: Container(
+            // key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
@@ -3974,6 +3941,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           right: 0,
           height: playerHeight,
           child: Container(
+            // key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
