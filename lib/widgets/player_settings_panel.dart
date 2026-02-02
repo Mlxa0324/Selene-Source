@@ -23,7 +23,6 @@ class PlayerSettingsPanel extends StatelessWidget {
   final double currentLongPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
-  final bool adFilterEnabled;
   final int skipIntro;
   final int skipOutro;
   final int videoPosition; // 当前播放位置（秒）
@@ -32,7 +31,6 @@ class PlayerSettingsPanel extends StatelessWidget {
   final Function(double) onLongPressSpeedChanged;
   final Function(ProgressDisplayMode) onProgressModeChanged;
   final Function(bool) onShowSystemTimeChanged;
-  final Function(bool) onAdFilterChanged;
   final Function(int) onSkipIntroChanged;
   final Function(int) onSkipOutroChanged;
 
@@ -43,7 +41,6 @@ class PlayerSettingsPanel extends StatelessWidget {
     required this.currentLongPressSpeed,
     required this.progressMode,
     required this.showSystemTime,
-    required this.adFilterEnabled,
     required this.skipIntro,
     required this.skipOutro,
     required this.videoPosition,
@@ -52,7 +49,6 @@ class PlayerSettingsPanel extends StatelessWidget {
     required this.onLongPressSpeedChanged,
     required this.onProgressModeChanged,
     required this.onShowSystemTimeChanged,
-    required this.onAdFilterChanged,
     required this.onSkipIntroChanged,
     required this.onSkipOutroChanged,
   });
@@ -133,8 +129,6 @@ class PlayerSettingsPanel extends StatelessWidget {
                   _buildSectionHeader('功能增强', subTextColor),
                   // const SizedBox(height: 10),
                   // _buildSystemTimeSwitch(isDarkMode, textColor, subTextColor),
-                  const SizedBox(height: 10),
-                  _buildAdFilterSwitch(isDarkMode, textColor, subTextColor),
 
                   const SizedBox(height: 20),
 
@@ -150,49 +144,6 @@ class PlayerSettingsPanel extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildAdFilterSwitch(
-      bool isDarkMode, Color textColor, Color subTextColor) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '自动去广告',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: textColor,
-                ),
-              ),
-              Text(
-                '过滤 M3U8 中的插播广告标识（实验性）',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: subTextColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 30,
-          child: Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: adFilterEnabled,
-              onChanged: onAdFilterChanged,
-              activeColor: Colors.green,
-              activeTrackColor: Colors.green.withOpacity(0.3),
-            ),
-          ),
-        )
-      ],
     );
   }
 

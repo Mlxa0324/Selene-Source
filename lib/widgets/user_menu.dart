@@ -41,6 +41,8 @@ class _UserMenuState extends State<UserMenu> {
   bool _preferSpeedTest = true;
   bool _localSearch = false;
   bool _isLocalMode = false;
+  bool _adFilterEnabled = false;
+  bool _showSettings = false;
 
   @override
   void initState() {
@@ -70,6 +72,7 @@ class _UserMenuState extends State<UserMenu> {
     final danmakuBaseApi = await DanmakuService().getBaseApi();
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
+    final adFilterEnabled = await UserDataService.getAdFilterEnabled();
 
     if (mounted) {
       setState(() {
@@ -82,6 +85,7 @@ class _UserMenuState extends State<UserMenu> {
         _danmakuBaseApi = danmakuBaseApi ?? '';
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
+        _adFilterEnabled = adFilterEnabled;
       });
     }
   }
@@ -947,6 +951,25 @@ class _UserMenuState extends State<UserMenu> {
                         });
                       },
                       icon: LucideIcons.zap,
+                    ),
+                    // 分割线
+                    Container(
+                      height: 1,
+                      color: widget.isDarkMode
+                          ? const Color(0xFF374151)
+                          : const Color(0xFFe5e7eb),
+                    ),
+                    // 自动去广告选项
+                    _buildToggleOption(
+                      title: '自动去广告',
+                      value: _adFilterEnabled,
+                      onChanged: (value) async {
+                        await UserDataService.saveAdFilterEnabled(value);
+                        setState(() {
+                          _adFilterEnabled = value;
+                        });
+                      },
+                      icon: LucideIcons.shieldCheck,
                     ),
                     // 分割线
                     Container(

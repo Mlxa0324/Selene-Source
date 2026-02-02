@@ -3153,7 +3153,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                       currentLongPressSpeed: _longPressSpeed,
                       progressMode: _progressMode,
                       showSystemTime: _showSystemTime,
-                      adFilterEnabled: _adFilterEnabled,
                       skipIntro: _skipIntroDuration,
                       skipOutro: _skipOutroDuration,
                       videoPosition: currentPosition?.inSeconds ?? 0,
@@ -3178,11 +3177,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                         setState(() => _showSystemTime = show);
                         dialogSetState(() {});
                         UserDataService.saveShowSystemTime(show);
-                      },
-                      onAdFilterChanged: (enabled) {
-                        setState(() => _adFilterEnabled = enabled);
-                        dialogSetState(() {});
-                        UserDataService.saveAdFilterEnabled(enabled);
                       },
                       onSkipIntroChanged: (v) {
                         setState(() => _skipIntroDuration = v);

@@ -1055,7 +1055,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 27, // 稍微增加宽度以更好地容纳百分比数字
+          width: 27,
           height: 12,
           padding: const EdgeInsets.all(1.0),
           decoration: BoxDecoration(
@@ -1087,24 +1087,15 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                   ),
                 ),
               ),
-              // 充电标识 或 电量百分比
-              Center(
-                child: isCharging
-                    ? const Icon(
-                        Icons.bolt,
-                        color: Colors.white,
-                        size: 10,
-                      )
-                    : Text(
-                        '$_batteryLevel',
-                        style: TextStyle(
-                          color: _batteryLevel > 50 ? Colors.black : Colors.white,
-                          fontSize: 7,
-                          fontWeight: FontWeight.bold,
-                          height: 1.0,
-                        ),
-                      ),
-              ),
+              // 仅在充电时显示充电标识（bolt）
+              if (isCharging)
+                const Center(
+                  child: Icon(
+                    Icons.bolt,
+                    color: Colors.white,
+                    size: 10,
+                  ),
+                ),
             ],
           ),
         ),
