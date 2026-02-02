@@ -580,22 +580,29 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     // 指定源和id且无需优选
+    // if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
+    //   final target = allSources.where(
+    //       (source) => source.source == currentSource && source.id == currentID);
+    //   currentDetail = target.isNotEmpty ? target.first : null;
+    // }
+
+    // 指定源和id且无需优选
     currentDetail = allSources.first;
     if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
       final target = allSources.where(
-          (source) => source.source == currentSource && source.id == currentID);
+              (source) => source.source == currentSource && source.id == currentID);
       currentDetail = target.isNotEmpty ? target.first : currentDetail;
     }
-    if (currentDetail == null) {
-      showError('未找到匹配结果');
-      return;
-    }
+    // if (currentDetail == null) {
+    //   showError('未找到匹配结果');
+    //   return;
+    // }
 
     // 读取优选测速配置
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
 
     // 未指定源和 id/需要优选，且优选测速开关打开时，执行优选
-    if ((currentSource.isEmpty || currentID.isEmpty || needPrefer) &&
+    if ((currentDetail == null || currentSource.isEmpty || currentID.isEmpty || needPrefer) &&
         preferSpeedTest) {
       updateLoadingMessage('正在优选最佳播放源...');
       updateLoadingProgress(0.66);
@@ -3181,16 +3188,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                       onSkipIntroChanged: (v) {
                         setState(() => _skipIntroDuration = v);
                         dialogSetState(() {});
-                        // 同时保存全局设置和针对当前视频的特定设置
-                        UserDataService.saveSkipIntroDuration(v);
+                        // 仅保存针对当前视频的特定设置，不修改全局默认设置
                         UserDataService.saveVideoSkipSettings(
                             videoTitle, videoYear, v, _skipOutroDuration);
                       },
                       onSkipOutroChanged: (v) {
                         setState(() => _skipOutroDuration = v);
                         dialogSetState(() {});
-                        // 同时保存全局设置和针对当前视频的特定设置
-                        UserDataService.saveSkipOutroDuration(v);
+                        // 仅保存针对当前视频的特定设置，不修改全局默认设置
                         UserDataService.saveVideoSkipSettings(
                             videoTitle, videoYear, _skipIntroDuration, v);
                       },

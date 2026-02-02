@@ -181,6 +181,36 @@ class _UserMenuState extends State<UserMenu> {
     }
   }
 
+  Future<void> _handleClearAllCache() async {
+    try {
+      // 1. 清理业务缓存 (参考 _handleLogout 逻辑)
+      LiveService.clearAllCache();
+      PageCacheService().clearAllCache();
+      ApiService.clearSourcesDataCache();
+      await DanmakuService().clearAllManualMatches();
+      DanmakuService().clearSearchCache();
+
+      // 2. 清理豆瓣相关缓存
+      await DoubanCacheService().clearAll();
+
+      // 注意：这里不调用 UserDataService.clearPasswordAndCookies() 以保留登录状态
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已清空所有缓存（已保留登录状态）')),
+        );
+        widget.onClose?.call();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('清空所有缓存失败')),
+        );
+        widget.onClose?.call();
+      }
+    }
+  }
+
   Future<void> _handleCheckUpdate() async {
     try {
       // 显示加载提示
@@ -971,6 +1001,39 @@ class _UserMenuState extends State<UserMenu> {
                   const SizedBox(width: 12),
                   Text(
                     '清除豆瓣缓存',
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      color: widget.isDarkMode
+                          ? const Color(0xFFffffff)
+                          : const Color(0xFF1f2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 清空所有缓存
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _handleClearAllCache,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.eraser,
+                      size: 20, color: Color(0xFFef4444)),
+                  const SizedBox(width: 12),
+                  Text(
+                    '清空所有缓存',
                     style: FontUtils.poppins(
                       fontSize: 16,
                       color: widget.isDarkMode
