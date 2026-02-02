@@ -784,7 +784,8 @@ class _UserMenuState extends State<UserMenu> {
           child: Center(
             child: GestureDetector(
               onTap: () {}, // 阻止点击菜单内容时关闭
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: 280,
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
@@ -800,409 +801,405 @@ class _UserMenuState extends State<UserMenu> {
                     ),
                   ],
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // 用户信息区域
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          // 本地模式下不显示"当前模式"标签
-                          if (!_isLocalMode)
-                            Text(
-                              '当前用户',
-                              style: FontUtils.poppins(
-                                fontSize: 12,
-                                color: widget.isDarkMode
-                                    ? const Color(0xFF9ca3af)
-                                    : const Color(0xFF6b7280),
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          if (!_isLocalMode) const SizedBox(height: 8),
-                          // 用户名或本地模式
-                          if (_isLocalMode)
-                            Text(
-                              '本地模式',
-                              style: FontUtils.poppins(
-                                fontSize: 18,
-                                color: widget.isDarkMode
-                                    ? const Color(0xFFffffff)
-                                    : const Color(0xFF1f2937),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            )
-                          else
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  _username ?? '未知用户',
-                                  style: FontUtils.poppins(
-                                    fontSize: 18,
-                                    color: widget.isDarkMode
-                                        ? const Color(0xFFffffff)
-                                        : const Color(0xFF1f2937),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                // 角色标签
-                                _buildRoleTag(),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 豆瓣数据源选项
-                    _buildOptionSelector(
-                      title: '豆瓣数据源',
-                      currentValue: _doubanDataSource,
-                      options: const [
-                        '直连',
-                        'Cors Proxy By Zwei',
-                        '豆瓣 CDN By CMLiussss（腾讯云）',
-                        '豆瓣 CDN By CMLiussss（阿里云）',
-                      ],
-                      onChanged: (value) async {
-                        await UserDataService.saveDoubanDataSource(value);
-                        setState(() {
-                          _doubanDataSource = value;
-                        });
-                      },
-                      icon: LucideIcons.database,
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 豆瓣图片源选项
-                    _buildOptionSelector(
-                      title: '豆瓣图片源',
-                      currentValue: _doubanImageSource,
-                      options: const [
-                        '直连',
-                        '豆瓣官方精品 CDN',
-                        '豆瓣 CDN By CMLiussss（腾讯云）',
-                        '豆瓣 CDN By CMLiussss（阿里云）',
-                      ],
-                      onChanged: (value) async {
-                        await UserDataService.saveDoubanImageSource(value);
-                        setState(() {
-                          _doubanImageSource = value;
-                        });
-                      },
-                      icon: LucideIcons.image,
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // M3U8 代理 URL 选项
-                    _buildInputOption(
-                      title: 'M3U8 代理 URL',
-                      currentValue: _m3u8ProxyUrl,
-                      onTap: _showM3u8ProxyUrlDialog,
-                      icon: LucideIcons.link,
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 弹幕服务器地址选项
-                    _buildInputOption(
-                      title: '弹幕服务器',
-                      currentValue: _danmakuBaseApi,
-                      onTap: _showDanmakuBaseApiDialog,
-                      icon: LucideIcons.messageSquare,
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 优选测速选项
-                    _buildToggleOption(
-                      title: '优选测速',
-                      value: _preferSpeedTest,
-                      onChanged: (value) async {
-                        await UserDataService.savePreferSpeedTest(value);
-                        setState(() {
-                          _preferSpeedTest = value;
-                        });
-                      },
-                      icon: LucideIcons.zap,
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 自动去广告选项
-                    _buildToggleOption(
-                      title: '自动去广告',
-                      value: _adFilterEnabled,
-                      onChanged: (value) async {
-                        await UserDataService.saveAdFilterEnabled(value);
-                        setState(() {
-                          _adFilterEnabled = value;
-                        });
-                      },
-                      icon: LucideIcons.shieldCheck,
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 下载管理按钮
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          widget.onClose?.call();
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => const DownloadScreen()),
-                          );
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.cloud_download_outlined,
-                                size: 20,
-                                color: const Color(0xFF10b981),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '下载管理',
-                                style: FontUtils.poppins(
-                                  fontSize: 16,
-                                  color: widget.isDarkMode
-                                      ? const Color(0xFFffffff)
-                                      : const Color(0xFF1f2937),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // 本地搜索选项（本地模式下不显示）
-                    if (!_isLocalMode) ...[
-                      // 分割线
-                      Container(
-                        height: 1,
-                        color: widget.isDarkMode
-                            ? const Color(0xFF374151)
-                            : const Color(0xFFe5e7eb),
-                      ),
-                      _buildToggleOption(
-                        title: '本地搜索',
-                        value: _localSearch,
-                        onChanged: (value) async {
-                          await UserDataService.saveLocalSearch(value);
-                          setState(() {
-                            _localSearch = value;
-                          });
-                        },
-                        icon: LucideIcons.search,
-                      ),
-                    ],
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 清除豆瓣缓存按钮
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _handleClearDoubanCache,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                LucideIcons.trash2,
-                                size: 20,
-                                color: const Color(0xFFf59e0b),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '清除豆瓣缓存',
-                                style: FontUtils.poppins(
-                                  fontSize: 16,
-                                  color: widget.isDarkMode
-                                      ? const Color(0xFFffffff)
-                                      : const Color(0xFF1f2937),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 检查更新按钮
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _handleCheckUpdate,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                LucideIcons.download,
-                                size: 20,
-                                color: const Color(0xFF3b82f6),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '检查更新',
-                                style: FontUtils.poppins(
-                                  fontSize: 16,
-                                  color: widget.isDarkMode
-                                      ? const Color(0xFFffffff)
-                                      : const Color(0xFF1f2937),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 登出按钮
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: _handleLogout,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                LucideIcons.logOut,
-                                size: 20,
-                                color: Color(0xFFef4444),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                '登出',
-                                style: FontUtils.poppins(
-                                  fontSize: 16,
-                                  color: const Color(0xFFef4444),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // 分割线
-                    Container(
-                      height: 1,
-                      color: widget.isDarkMode
-                          ? const Color(0xFF374151)
-                          : const Color(0xFFe5e7eb),
-                    ),
-                    // 版本号
-                    MouseRegion(
-                      cursor: DeviceUtils.isPC()
-                          ? SystemMouseCursors.click
-                          : MouseCursor.defer,
-                      child: GestureDetector(
-                        onTap: () async {
-                          final url = Uri.parse(
-                              'https://github.com/MoonTechLab/Selene');
-                          if (await canLaunchUrl(url)) {
-                            await launchUrl(url,
-                                mode: LaunchMode.externalApplication);
-                          }
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          child: Center(
-                            child: Text(
-                              _version.isEmpty ? 'v1.4.3' : 'v$_version',
-                              style: FontUtils.poppins(
-                                fontSize: 14,
-                                color: widget.isDarkMode
-                                    ? const Color(0xFF9ca3af)
-                                    : const Color(0xFF6b7280),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                child: _showSettings ? _buildSettingsPage() : _buildMainPage(),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMainPage() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 用户信息区域
+        Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              if (!_isLocalMode)
+                Text(
+                  '当前用户',
+                  style: FontUtils.poppins(
+                    fontSize: 12,
+                    color: widget.isDarkMode
+                        ? const Color(0xFF9ca3af)
+                        : const Color(0xFF6b7280),
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              if (!_isLocalMode) const SizedBox(height: 8),
+              if (_isLocalMode)
+                Text(
+                  '本地模式',
+                  style: FontUtils.poppins(
+                    fontSize: 18,
+                    color: widget.isDarkMode
+                        ? const Color(0xFFffffff)
+                        : const Color(0xFF1f2937),
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _username ?? '未知用户',
+                      style: FontUtils.poppins(
+                        fontSize: 18,
+                        color: widget.isDarkMode
+                            ? const Color(0xFFffffff)
+                            : const Color(0xFF1f2937),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildRoleTag(),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 设置入口
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => _showSettings = true),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    LucideIcons.settings,
+                    size: 20,
+                    color: widget.isDarkMode
+                        ? const Color(0xFF9ca3af)
+                        : const Color(0xFF6b7280),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '应用设置',
+                      style: FontUtils.poppins(
+                        fontSize: 16,
+                        color: widget.isDarkMode
+                            ? const Color(0xFFffffff)
+                            : const Color(0xFF1f2937),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    LucideIcons.chevronRight,
+                    size: 16,
+                    color: widget.isDarkMode
+                        ? const Color(0xFF9ca3af)
+                        : const Color(0xFF6b7280),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 下载管理
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              widget.onClose?.call();
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const DownloadScreen()),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.cloud_download_outlined,
+                    size: 20,
+                    color: Color(0xFF10b981),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '下载管理',
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      color: widget.isDarkMode
+                          ? const Color(0xFFffffff)
+                          : const Color(0xFF1f2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 清除缓存
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _handleClearDoubanCache,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.trash2,
+                      size: 20, color: Color(0xFFf59e0b)),
+                  const SizedBox(width: 12),
+                  Text(
+                    '清除豆瓣缓存',
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      color: widget.isDarkMode
+                          ? const Color(0xFFffffff)
+                          : const Color(0xFF1f2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 检查更新
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _handleCheckUpdate,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.download,
+                      size: 20, color: Color(0xFF3b82f6)),
+                  const SizedBox(width: 12),
+                  Text(
+                    '检查更新',
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      color: widget.isDarkMode
+                          ? const Color(0xFFffffff)
+                          : const Color(0xFF1f2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 登出按钮
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _handleLogout,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  const Icon(LucideIcons.logOut,
+                      size: 20, color: Color(0xFFef4444)),
+                  const SizedBox(width: 12),
+                  Text(
+                    '登出账户',
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      color: const Color(0xFFef4444),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        // 版本号
+        MouseRegion(
+          cursor:
+              DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
+          child: GestureDetector(
+            onTap: () async {
+              final url = Uri.parse('https://github.com/MoonTechLab/Selene');
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Center(
+                child: Text(
+                  _version.isEmpty ? 'v1.4.3' : 'v$_version',
+                  style: FontUtils.poppins(
+                    fontSize: 14,
+                    color: widget.isDarkMode
+                        ? const Color(0xFF9ca3af)
+                        : const Color(0xFF6b7280),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsPage() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 标题栏
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  LucideIcons.chevronLeft,
+                  color: widget.isDarkMode ? Colors.white : Colors.black87,
+                ),
+                onPressed: () => setState(() => _showSettings = false),
+              ),
+              Text(
+                '应用设置',
+                style: FontUtils.poppins(
+                  fontSize: 18,
+                  color: widget.isDarkMode ? Colors.white : Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          height: 1,
+          color: widget.isDarkMode
+              ? const Color(0xFF374151)
+              : const Color(0xFFe5e7eb),
+        ),
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildOptionSelector(
+                  title: '豆瓣数据源',
+                  currentValue: _doubanDataSource,
+                  options: const [
+                    '直连',
+                    'Cors Proxy By Zwei',
+                    '豆瓣 CDN By CMLiussss（腾讯云）',
+                    '豆瓣 CDN By CMLiussss（阿里云）',
+                  ],
+                  onChanged: (value) async {
+                    await UserDataService.saveDoubanDataSource(value);
+                    setState(() => _doubanDataSource = value);
+                  },
+                  icon: LucideIcons.database,
+                ),
+                _buildOptionSelector(
+                  title: '豆瓣图片源',
+                  currentValue: _doubanImageSource,
+                  options: const [
+                    '直连',
+                    '豆瓣官方精品 CDN',
+                    '豆瓣 CDN By CMLiussss（腾讯云）',
+                    '豆瓣 CDN By CMLiussss（阿里云）',
+                  ],
+                  onChanged: (value) async {
+                    await UserDataService.saveDoubanImageSource(value);
+                    setState(() => _doubanImageSource = value);
+                  },
+                  icon: LucideIcons.image,
+                ),
+                _buildInputOption(
+                  title: 'M3U8 代理 URL',
+                  currentValue: _m3u8ProxyUrl,
+                  onTap: _showM3u8ProxyUrlDialog,
+                  icon: LucideIcons.link,
+                ),
+                _buildInputOption(
+                  title: '弹幕服务器',
+                  currentValue: _danmakuBaseApi,
+                  onTap: _showDanmakuBaseApiDialog,
+                  icon: LucideIcons.messageSquare,
+                ),
+                _buildToggleOption(
+                  title: '优选测速',
+                  value: _preferSpeedTest,
+                  onChanged: (value) async {
+                    await UserDataService.savePreferSpeedTest(value);
+                    setState(() => _preferSpeedTest = value);
+                  },
+                  icon: LucideIcons.zap,
+                ),
+                _buildToggleOption(
+                  title: '自动去广告',
+                  value: _adFilterEnabled,
+                  onChanged: (value) async {
+                    await UserDataService.saveAdFilterEnabled(value);
+                    setState(() => _adFilterEnabled = value);
+                  },
+                  icon: LucideIcons.shieldCheck,
+                ),
+                if (!_isLocalMode)
+                  _buildToggleOption(
+                    title: '本地搜索',
+                    value: _localSearch,
+                    onChanged: (value) async {
+                      await UserDataService.saveLocalSearch(value);
+                      setState(() => _localSearch = value);
+                    },
+                    icon: LucideIcons.search,
+                  ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
