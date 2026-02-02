@@ -565,7 +565,14 @@ class _PlayerScreenState extends State<PlayerScreen>
         currentID.isNotEmpty &&
         !allSources.any((source) =>
             source.source == currentSource && source.id == currentID)) {
-      allSources = await fetchSourceDetail(currentSource, currentID);
+      try {
+        List<SearchResult> allSourcesTemp = await fetchSourceDetail(currentSource, currentID);
+        if(allSourcesTemp.isNotEmpty) {
+          allSources = allSourcesTemp;
+        }
+      }catch(e) {
+        debugPrint('调用fetchSourceDetail异常：$e');
+      }
     }
     if (allSources.isEmpty) {
       showError('未找到匹配结果');
@@ -577,7 +584,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
       final target = allSources.where(
           (source) => source.source == currentSource && source.id == currentID);
-      currentDetail = target.isNotEmpty ? target.first : null;
+      currentDetail = target.isNotEmpty ? target.first : currentDetail;
     }
     if (currentDetail == null) {
       showError('未找到匹配结果');
