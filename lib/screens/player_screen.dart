@@ -591,7 +591,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
       final target = allSources.where(
               (source) => source.source == currentSource && source.id == currentID);
-      currentDetail = target.isNotEmpty ? target.first : currentDetail;
+      currentDetail = target.isNotEmpty ? target.first : null;
     }
     // if (currentDetail == null) {
     //   showError('未找到匹配结果');
