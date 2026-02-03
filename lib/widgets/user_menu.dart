@@ -193,6 +193,9 @@ class _UserMenuState extends State<UserMenu> {
       // 2. 清理豆瓣相关缓存
       await DoubanCacheService().clearAll();
 
+      // 3. 清理播放器 HLS 脚本缓存
+      await UserDataService.clearHlsJsCache();
+
       // 注意：这里不调用 UserDataService.clearPasswordAndCookies() 以保留登录状态
 
       if (mounted) {

@@ -5,24 +5,68 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/search_result.dart';
 
 class UserDataService {
+  // --- 登录与身份验证相关 ---
+  /// 服务器地址 Key
   static const String _serverUrlKey = 'server_url';
+  /// 用户名 Key
   static const String _usernameKey = 'username';
+  /// 密码 Key
   static const String _passwordKey = 'password';
+  /// 登录 Cookies Key
   static const String _cookiesKey = 'cookies';
+
+  // --- 应用全局配置相关 ---
+  /// 豆瓣数据源设置 Key
   static const String _doubanDataSourceKey = 'douban_data_source';
+  /// 豆瓣图片源设置 Key
   static const String _doubanImageSourceKey = 'douban_image_source';
+  /// M3U8 代理 URL Key
   static const String _m3u8ProxyUrlKey = 'm3u8_proxy_url';
+  /// 是否开启优选测速 Key
   static const String _preferSpeedTestKey = 'prefer_speed_test';
+  /// 是否开启本地搜索 Key
   static const String _localSearchKey = 'local_search';
+  /// 是否处于离线/本地模式 Key
   static const String _isLocalModeKey = 'is_local_mode';
+
+  // --- 播放器偏好设置相关 ---
+  /// 全局跳过片头时长 Key
   static const String _skipIntroKey = 'skip_intro_duration';
+  /// 全局跳过片尾时长 Key
   static const String _skipOutroKey = 'skip_outro_duration';
+  /// 播放器长按倍速设置 Key
   static const String _longPressSpeedKey = 'long_press_speed';
+  /// 视频画面比例设置 Key
   static const String _videoFitTypeKey = 'video_fit_type';
+  /// 隐藏控制栏时的进度显示模式 Key
   static const String _progressDisplayModeKey = 'progress_display_mode';
+  /// 是否显示系统时间 Key
   static const String _showSystemTimeKey = 'show_system_time';
+  /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
+  /// WebView 播放器 hls.js 脚本源码缓存 Key
+  static const String _hlsJsCacheKey = 'hls_js_cache_v1';
+  /// 视频特定跳过设置的 Key 前缀
   static const String _videoSkipSettingsPrefix = 'video_skip_v2_';
+
+  /// 保存 hls.js 缓存
+  static Future<void> saveHlsJsCache(String content) async {
+    if (content.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_hlsJsCacheKey, content);
+  }
+
+  /// 获取 hls.js 缓存
+  static Future<String?> getHlsJsCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_hlsJsCacheKey);
+  }
+
+  /// 清除 hls.js 缓存
+  static Future<void> clearHlsJsCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_hlsJsCacheKey);
+  }
 
   /// 获取特定视频的跳过设置 Key
   static String _getVideoSkipKey(String title, String? year) {
@@ -60,10 +104,14 @@ class UserDataService {
     return null;
   }
 
-  // 搜索数据缓存相关
+  // --- 搜索与业务数据缓存 ---
+  /// 搜索源数据持久化缓存 Key
   static const String _sourcesCacheStorageKey = 'sources_data_cache_persistent';
+  /// 搜索结果内存缓存 Map (Query -> (Results, DateTime))
   static Map<String, (List<SearchResult>, DateTime)> _sourcesDataCache = {};
+  /// 搜索缓存有效期 (2小时)
   static const Duration _sourcesDataCacheTtl = Duration(seconds: 7200);
+  /// 搜索缓存是否已从磁盘加载标识
   static bool _isCacheLoaded = false;
 
   /// 加载搜索缓存
@@ -164,7 +212,8 @@ class UserDataService {
     await prefs.remove(_sourcesCacheStorageKey);
   }
 
-  // 内存缓存
+  // --- 运行时内存缓存 ---
+  /// 本地模式状态的内存缓存，用于同步读取
   static bool? _isLocalModeCache;
 
   // 保存去广告开关
