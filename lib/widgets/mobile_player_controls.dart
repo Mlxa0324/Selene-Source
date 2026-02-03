@@ -332,10 +332,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _swipeStartX = details.globalPosition.dx;
       _swipeStartPosition = _position;
       _dragPosition = null;
-      _controlsVisible = true;
+      // 💡 优化：不再强制显示整个控制栏按钮组
     });
-    // 💡 关键修复：滑动开始时立即通知父组件，隐藏外层圆圈
-    widget.onControlsVisibilityChanged(true);
+    // 同步给父组件但不立即开启 timer，由 _onSwipeEnd 处理
+    widget.onControlsVisibilityChanged(_controlsVisible);
     _hideTimer?.cancel();
   }
 
@@ -645,6 +645,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildProgressBar(),
         _buildBottomControls(),
         if (_isLongPressing) _buildLongPressIndicator(), // 锁定状态下也显示倍速指示器
+        if (_isSeekingViaSwipe || _isDraggingProgressBar)
+          _buildProgressIndicator(), // 💡 新增：拖动进度时显示中心提示
         if (_isEffectiveFullscreen && _showBrightnessIndicator && !_isLocked)
           _buildBrightnessIndicator(),
         if (_isEffectiveFullscreen) _buildRightOverlay(),
@@ -668,6 +670,45 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
 
     return content;
+  }
+
+  // 💡 新增：构建拖动进度时的中心提示框
+  Widget _buildProgressIndicator() {
+    return Positioned.fill(
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.2),
+              width: 0.5,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.fast_forward_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                currentPlayTime(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildGestureLayer() {
@@ -1177,7 +1218,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               live: widget.live,
               onDragStart: () {
                 setState(() {
-                  _controlsVisible = true;
                   _isDraggingProgressBar = true;
                 });
                 _hideTimer?.cancel();
@@ -1201,9 +1241,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 _startHideTimer();
               },
               onDragUpdate: () {
-                if (!_controlsVisible) {
-                  setState(() => _controlsVisible = true);
-                }
                 _hideTimer?.cancel();
               },
               onPositionUpdate: (duration) {
@@ -1741,21 +1778,21 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: widget.live
-          ? null
-          : (details) {
-              _isDragging = true;
-              widget.onDragStart?.call();
-              _updateDrag(details.localPosition.dx, context);
-            },
-      onHorizontalDragUpdate: widget.live
-          ? null
-          : (details) {
-              if (_isDragging) {
-                widget.onDragUpdate?.call();
-                _updateDrag(details.localPosition.dx, context);
-              }
-            },
+            onHorizontalDragStart: widget.live
+                ? null
+                : (details) {
+                    _isDragging = true;
+                    widget.onDragStart?.call();
+                    _updateDrag(details.localPosition.dx, context);
+                  },
+            onHorizontalDragUpdate: widget.live
+                ? null
+                : (details) {
+                    if (_isDragging) {
+                      widget.onDragUpdate?.call();
+                      _updateDrag(details.localPosition.dx, context);
+                    }
+                  },
       onHorizontalDragEnd: widget.live
           ? null
           : (details) async {
