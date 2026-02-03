@@ -4,6 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:video_player/video_player.dart' as vp;
+import '../services/user_data_service.dart';
 
 /// A bridge to provide a common interface between media_kit and video_player
 abstract class PlayerAdapter {
@@ -286,6 +287,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _rate = 1.0;
   bool _buffering = false;
   bool _isDisposed = false;
+  String? _hlsJsContent; // 缓存的 hls.js 源码内容
 
   @override
   late final PlayerAdapterStream stream;
@@ -313,6 +315,19 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         if (args.isEmpty) return;
         final event = args[0] as Map<String, dynamic>;
         _handlePlayerEvent(event);
+      },
+    );
+    // 新增：处理 JS 回传的 hls.js 源码并持久化
+    _controller!.addJavaScriptHandler(
+      handlerName: 'saveHlsJs',
+      callback: (args) {
+        if (args.isNotEmpty && args[0] is String) {
+          final content = args[0] as String;
+          if (content.length > 1000) { // 简单校验
+             _hlsJsContent = content;
+             UserDataService.saveHlsJsCache(content);
+          }
+        }
       },
     );
   }
@@ -441,6 +456,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
 
+    // 如果有缓存内容，则注入内联脚本；否则使用 CDN 链接
+    final hlsJsTag = (_hlsJsContent != null && _hlsJsContent!.isNotEmpty)
+        ? '<script id="hls-script">$_hlsJsContent</script>'
+        : '<script id="hls-script" src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>';
+
     return '''
 <!DOCTYPE html>
 <html>
@@ -451,7 +471,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
     video { width: 100%; height: 100%; object-fit: contain; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  $hlsJsTag
 </head>
 <body>
   <video id="player" playsinline></video>
@@ -461,6 +481,19 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var startTime = $startSeconds;
     var adFilterEnabled = $adFilterEnabledJs;
 
+    // 如果是通过 CDN 加载的，尝试获取源码并回传给 Flutter 缓存
+    var hlsScript = document.getElementById('hls-script');
+    if (hlsScript && hlsScript.src && window.Hls) {
+       fetch(hlsScript.src)
+         .then(response => response.text())
+         .then(code => {
+            if (window.flutter_inappwebview) {
+              window.flutter_inappwebview.callHandler('saveHlsJs', code);
+            }
+         }).catch(e => console.error('Cache HLS.js failed', e));
+    }
+
+    // 原始广告过滤逻辑（仅过滤不连续标记）
     function filterAdsFromM3U8(m3u8Content) {
       if (!m3u8Content) return '';
       var lines = m3u8Content.split('\\n');
@@ -468,6 +501,40 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
         if (!line.includes('#EXT-X-DISCONTINUITY')) {
+          filteredLines.push(line);
+        }
+      }
+      return filteredLines.join('\\n');
+    }
+
+    // 增强型广告过滤逻辑（过滤多种已知广告标签）
+    function filterAdsEnhanced(m3u8Content) {
+      if (!m3u8Content) return '';
+      var lines = m3u8Content.split('\\n');
+      var filteredLines = [];
+      var adPatterns = [
+        '#EXT-X-DISCONTINUITY',
+        '#EXT-X-CUE-OUT',
+        '#EXT-X-CUE-IN',
+        '#EXT-X-CUE-OUT-CONT',
+        '#EXT-X-CUE',
+        '#EXT-X-PLACEMENT-OPPORTUNITY',
+        '#EXT-OATCLS-SCTE35',
+        '#EXT-X-SCTE35',
+        '#EXT-X-VERSION:AD',
+        '#EXT-X-AD-STREAMING'
+      ];
+
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var isAdLine = false;
+        for (var j = 0; j < adPatterns.length; j++) {
+          if (line.indexOf(adPatterns[j]) !== -1) {
+            isAdLine = true;
+            break;
+          }
+        }
+        if (!isAdLine) {
           filteredLines.push(line);
         }
       }
@@ -504,7 +571,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var isM3u8 = videoUrl.includes('.m3u8') || videoUrl.includes('.M3U8') || videoUrl.startsWith('data:application/vnd.apple.mpegurl') || videoUrl.startsWith('data:application/x-mpegURL');
 
     if (isM3u8) {
-      if (Hls.isSupported()) {
+      if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         var config = { enableWorker: true, lowLatencyMode: true };
         
         if (adFilterEnabled) {
@@ -517,7 +584,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
                   var onSuccess = callbacks.onSuccess;
                   callbacks.onSuccess = function (response, stats, context) {
                     if (response.data && typeof response.data === 'string') {
-                      response.data = filterAdsFromM3U8(response.data);
+                      // 使用增强型过滤逻辑
+                      response.data = filterAdsEnhanced(response.data);
                     }
                     return onSuccess(response, stats, context, null);
                   };
@@ -561,6 +629,24 @@ class _WebViewPlayer extends StatefulWidget {
 }
 
 class _WebViewPlayerState2 extends State<_WebViewPlayer> {
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initHlsCache();
+  }
+
+  Future<void> _initHlsCache() async {
+    final cached = await UserDataService.getHlsJsCache();
+    if (mounted) {
+      setState(() {
+        widget.adapter._hlsJsContent = cached;
+        _initialized = true;
+      });
+    }
+  }
+
   @override
   void didUpdateWidget(covariant _WebViewPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -574,6 +660,10 @@ class _WebViewPlayerState2 extends State<_WebViewPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_initialized) {
+      return Container(color: Colors.black);
+    }
+
     return InAppWebView(
       initialSettings: InAppWebViewSettings(
         mediaPlaybackRequiresUserGesture: false,
