@@ -134,13 +134,17 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
         ? 2.2
         : (widget.crossAxisCount == 3 ? 2.0 : (widget.isCompact ? 3.0 : 2.5));
 
+    // 💡 修复：需要减去左右内边距 (16 * 2 = 32)
     final itemWidth =
-        (gridBox.size.width - (crossAxisCount - 1) * mainAxisSpacing) /
+        (gridBox.size.width - 32.0 - (crossAxisCount - 1) * mainAxisSpacing) /
             crossAxisCount;
     final itemHeight = itemWidth / childAspectRatio;
 
     final row = (targetIndexInGroup / crossAxisCount).floor();
-    final offset = row * (itemHeight + mainAxisSpacing);
+    
+    // 💡 优化：滚动偏移量加上顶部内边距，并确保当前集显示在顶部
+    const gridTopPadding = 12.0;
+    final offset = gridTopPadding + row * (itemHeight + mainAxisSpacing);
 
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -251,7 +255,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
               key: _gridKey,
               controller: _scrollController,
               padding:
-                  EdgeInsets.fromLTRB(16, 4, 16, widget.isCompact ? 16 : 24),
+                  EdgeInsets.fromLTRB(16, 12, 16, widget.isCompact ? 16 : 24),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: widget.crossAxisCount,
                 crossAxisSpacing: widget.isCompact ? 8 : 12,
