@@ -215,15 +215,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     _instances.add(this);
 
-    // 💡 优化：只有当 source 和 id 都为空且没有初始详情时（即需要进行全局搜索时），才显示全屏加载搜源动画。
-    // 换源、选集或本地播放场景下，默认不显示搜源动画，避免闪烁。
-    // _isLoading = widget.source == null &&
-    //              widget.id == null &&
-    //              widget.initialVideoDetail == null &&
-    //              widget.localPath == null;
-
     videoTitle = widget.title;
     currentEpisodeIndex = widget.initialEpisodeIndex;
+    // 这是我手动加的，暂时不知道有啥影响
+    videoYear = widget.year!;
+
     _refreshAnimationController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
@@ -3167,15 +3163,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                         setState(() => _skipIntroDuration = v);
                         dialogSetState(() {});
                         // 仅保存针对当前视频的特定设置，不修改全局默认设置
-                        UserDataService.saveVideoSkipSettings(
-                            videoTitle, videoYear, v, _skipOutroDuration);
+                        UserDataService.saveVideoSkipSettings(videoTitle, videoYear, v, _skipOutroDuration);
                       },
                       onSkipOutroChanged: (v) {
                         setState(() => _skipOutroDuration = v);
                         dialogSetState(() {});
                         // 仅保存针对当前视频的特定设置，不修改全局默认设置
-                        UserDataService.saveVideoSkipSettings(
-                            videoTitle, videoYear, _skipIntroDuration, v);
+                        UserDataService.saveVideoSkipSettings(videoTitle, videoYear, _skipIntroDuration, v);
                       },
                     );
                   },
@@ -4291,18 +4285,19 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
         child: Container(
           decoration: BoxDecoration(
             color: widget.isCurrentEpisode
-                ? Colors.green.withOpacity(0.2)
-                : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode
-                        ? const Color(0xFF1A3D2E) // 深色模式下的浅绿色
-                        : const Color(0xFFE8F5E9)) // 浅色模式下的浅绿色
-                    : (widget.isDarkMode
-                        ? Colors.grey[700]
-                        : Colors.grey[300])),
-            borderRadius: BorderRadius.circular(8),
-            border: widget.isCurrentEpisode
-                ? Border.all(color: Colors.green, width: 2)
-                : null,
+                ? Colors.green.withOpacity(0.1)
+                : (widget.isDarkMode
+                    ? (_isHovering ? Colors.white.withOpacity(0.15) : Colors.white.withOpacity(0.08))
+                    : Colors.white.withOpacity(0.7)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: widget.isCurrentEpisode
+                  ? Colors.green
+                  : (widget.isDarkMode
+                      ? Colors.white.withOpacity(0.15)
+                      : const Color(0xFFE5E7EB)),
+              width: widget.isCurrentEpisode ? 1.5 : 1.0,
+            ),
           ),
           child: Stack(
             children: [
@@ -4315,7 +4310,7 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                   style: TextStyle(
                     color: widget.isCurrentEpisode
                         ? Colors.green
-                        : (widget.isDarkMode ? Colors.white : Colors.black),
+                        : (widget.isDarkMode ? Colors.white70 : Colors.black45),
                     fontSize: 10,
                     fontWeight: FontWeight.w400,
                   ),
@@ -4330,9 +4325,9 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                     style: TextStyle(
                       color: widget.isCurrentEpisode
                           ? Colors.green
-                          : (widget.isDarkMode ? Colors.white : Colors.black),
+                          : (widget.isDarkMode ? Colors.white : Colors.black87),
                       fontSize: 14,
-                      fontWeight: FontWeight.w400,
+                      fontWeight: widget.isCurrentEpisode ? FontWeight.w600 : FontWeight.w400,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 2,
@@ -4392,18 +4387,19 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
         child: Container(
           decoration: BoxDecoration(
             color: widget.isCurrentSource
-                ? Colors.green.withOpacity(0.2)
-                : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode
-                        ? const Color(0xFF1A3D2E) // 深色模式下的浅绿色
-                        : const Color(0xFFE8F5E9)) // 浅色模式下的浅绿色
-                    : (widget.isDarkMode
-                        ? Colors.grey[700]
-                        : Colors.grey[300])),
-            borderRadius: BorderRadius.circular(8),
-            border: widget.isCurrentSource
-                ? Border.all(color: Colors.green, width: 2)
-                : null,
+                ? Colors.green.withOpacity(0.1)
+                : (widget.isDarkMode
+                    ? (_isHovering ? Colors.white.withOpacity(0.15) : Colors.white.withOpacity(0.08))
+                    : Colors.white.withOpacity(0.7)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: widget.isCurrentSource
+                  ? Colors.green
+                  : (widget.isDarkMode
+                      ? Colors.white.withOpacity(0.15)
+                      : const Color(0xFFE5E7EB)),
+              width: widget.isCurrentSource ? 1.5 : 1.0,
+            ),
           ),
           child: Stack(
             children: [
@@ -4419,7 +4415,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                           ? Colors.green
                           : (widget.isDarkMode
                               ? Colors.grey[400]
-                              : Colors.grey[600]),
+                              : Colors.grey[500]),
                       fontSize: 10,
                       fontWeight: FontWeight.w400,
                     ),
@@ -4435,9 +4431,9 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                     style: TextStyle(
                       color: widget.isCurrentSource
                           ? Colors.green
-                          : (widget.isDarkMode ? Colors.white : Colors.black),
+                          : (widget.isDarkMode ? Colors.white : Colors.black87),
                       fontSize: 13,
-                      fontWeight: FontWeight.w400,
+                      fontWeight: widget.isCurrentSource ? FontWeight.w600 : FontWeight.w400,
                     ),
                     textAlign: TextAlign.center,
                     maxLines: 2,
@@ -4459,7 +4455,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                           ? Colors.green
                           : (widget.isDarkMode
                               ? Colors.grey[400]
-                              : Colors.grey[600]),
+                              : Colors.grey[500]),
                       fontSize: 10,
                       fontWeight: FontWeight.w400,
                     ),
@@ -4480,7 +4476,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                           ? Colors.green
                           : (widget.isDarkMode
                               ? Colors.grey[400]
-                              : Colors.grey[600]),
+                              : Colors.grey[500]),
                       fontSize: 10,
                       fontWeight: FontWeight.w400,
                     ),

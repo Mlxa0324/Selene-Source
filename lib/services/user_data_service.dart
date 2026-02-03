@@ -80,8 +80,10 @@ class UserDataService {
       String title, String? year, int intro, int outro) async {
     final prefs = await SharedPreferences.getInstance();
     final key = _getVideoSkipKey(title, year);
+    final millisecondsSinceEpoch = DateTime.now().millisecondsSinceEpoch;
     await prefs.setString(
-        key, json.encode({'intro': intro, 'outro': outro, 'time': DateTime.now().millisecondsSinceEpoch}));
+        key, json.encode({'intro': intro, 'outro': outro, 'time': millisecondsSinceEpoch}));
+    debugPrint("缓存片头片尾，片名：$key, 年份：$year, 数据：{'intro': $intro, 'outro': $outro, 'time': $millisecondsSinceEpoch}");
   }
 
   /// 获取特定视频的跳过设置
