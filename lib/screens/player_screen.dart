@@ -1166,10 +1166,39 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (DeviceUtils.isPC()) return;
 
     if (isFullscreen) {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      // 💡 优化：智能全屏方向判断
+      bool isVerticalVideo = false;
+
+      // 1. 优先通过播放器获取视频原始宽高比例
+      final videoSize = _videoPlayerController?.videoSize;
+      if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+        if (videoSize.height > videoSize.width) {
+          isVerticalVideo = true;
+          debugPrint('检测到竖屏视频 (比例判断): ${videoSize.width}x${videoSize.height}');
+        }
+      }
+
+      // 2. 辅助判断：检查分类名称（如“短剧”）
+      if (!isVerticalVideo && currentDetail != null) {
+        final category = (currentDetail!.class_ ?? '') + (currentDetail!.typeName ?? '');
+        if (category.contains('短剧')) {
+          isVerticalVideo = true;
+          debugPrint('检测到竖屏视频 (分类判断): $category');
+        }
+      }
+
+      if (isVerticalVideo) {
+        // 竖屏视频：保持竖屏全屏
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+        ]);
+      } else {
+        // 横屏视频：切换到横屏全屏
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      }
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
       SystemChrome.setPreferredOrientations([

@@ -148,6 +148,15 @@ class VideoPlayerWidgetController {
 
   double? get volume => _state._adapter?.state.volume;
 
+  Size? get videoSize {
+    final w = _state._adapter?.state.width;
+    final h = _state._adapter?.state.height;
+    if (w != null && h != null && w > 0 && h > 0) {
+      return Size(w, h);
+    }
+    return null;
+  }
+
   void exitWebFullscreen() {
     _state._exitWebFullscreen();
   }

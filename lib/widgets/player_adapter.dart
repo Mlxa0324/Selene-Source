@@ -39,6 +39,8 @@ abstract class PlayerAdapterState {
   double get volume;
   double get rate;
   bool get buffering;
+  double get width;  // 💡 新增：视频原始宽度
+  double get height; // 💡 新增：视频原始高度
 }
 
 /// media_kit implementation
@@ -116,6 +118,10 @@ class _MediaKitState implements PlayerAdapterState {
   double get rate => player.state.rate;
   @override
   bool get buffering => player.state.buffering;
+  @override
+  double get width => player.state.width?.toDouble() ?? 0;
+  @override
+  double get height => player.state.height?.toDouble() ?? 0;
 }
 
 /// video_player implementation (for mobile)
@@ -261,6 +267,10 @@ class _VideoPlayerState implements PlayerAdapterState {
   double get rate => adapter.controller.value.playbackSpeed;
   @override
   bool get buffering => adapter.controller.value.isBuffering;
+  @override
+  double get width => adapter.controller.value.size.width;
+  @override
+  double get height => adapter.controller.value.size.height;
 }
 
 /// WebView-based HLS player adapter for mobile (faster seek experience)
@@ -286,6 +296,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _volume = 100;
   double _rate = 1.0;
   bool _buffering = false;
+  double _videoWidth = 0;  // 💡 新增
+  double _videoHeight = 0; // 💡 新增
   bool _isDisposed = false;
   String? _hlsJsContent; // 缓存的 hls.js 源码内容
 
@@ -372,6 +384,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       case 'buffering':
         _buffering = event['value'] as bool? ?? false;
         if (!_bufferingController.isClosed) _bufferingController.add(_buffering);
+        break;
+      // 💡 新增：处理视频尺寸变化
+      case 'sizechange':
+        _videoWidth = (event['width'] as num?)?.toDouble() ?? 0;
+        _videoHeight = (event['height'] as num?)?.toDouble() ?? 0;
         break;
     }
   }
@@ -557,6 +574,17 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       player.addEventListener('timeupdate', function() { sendEvent('timeupdate', { currentTime: player.currentTime }); });
       player.addEventListener('durationchange', function() { sendEvent('durationchange', { duration: player.duration }); });
       
+      // 💡 新增：监听视频尺寸
+      player.addEventListener('loadedmetadata', function() {
+        if (startTime > 0) player.currentTime = startTime;
+        sendEvent('ready');
+        sendEvent('sizechange', { width: player.videoWidth, height: player.videoHeight });
+      });
+
+      player.addEventListener('resize', function() {
+        sendEvent('sizechange', { width: player.videoWidth, height: player.videoHeight });
+      });
+
       // Buffering events
       player.addEventListener('waiting', function() { sendEvent('buffering', { value: true }); });
       player.addEventListener('canplay', function() { sendEvent('buffering', { value: false }); });
@@ -718,4 +746,8 @@ class _WebViewPlayerState implements PlayerAdapterState {
   double get rate => adapter._rate;
   @override
   bool get buffering => adapter._buffering;
+  @override
+  double get width => adapter._videoWidth;
+  @override
+  double get height => adapter._videoHeight;
 }
