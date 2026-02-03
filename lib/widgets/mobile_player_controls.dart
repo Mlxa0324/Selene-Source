@@ -497,18 +497,20 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _enterFullscreen() {
-    if (widget.state != null) {
-      widget.state!.enterFullscreen();
-    }
+    // 💡 优化：移除 media_kit 内部的全屏逻辑，避免与 PlayerScreen 的自定义旋转逻辑竞争导致跳变
+    // if (widget.state != null) {
+    //   widget.state!.enterFullscreen();
+    // }
     widget.onFullscreenChange(true);
     setState(() => _isFullscreen = true);
     _onUserInteraction();
   }
 
   void _exitFullscreen() {
-    if (widget.state != null) {
-      widget.state!.exitFullscreen();
-    }
+    // 💡 优化：同上
+    // if (widget.state != null) {
+    //   widget.state!.exitFullscreen();
+    // }
     widget.onFullscreenChange(false);
     // 触发退出全屏回调
     widget.onExitFullScreen?.call();
