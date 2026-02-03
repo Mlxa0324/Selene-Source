@@ -26,6 +26,8 @@ class UserDataService {
   static const String _preferSpeedTestKey = 'prefer_speed_test';
   /// 是否开启本地搜索 Key
   static const String _localSearchKey = 'local_search';
+  /// 是否显示直播入口 Key
+  static const String _showLiveKey = 'show_live_v1';
   /// 是否处于离线/本地模式 Key
   static const String _isLocalModeKey = 'is_local_mode';
 
@@ -523,6 +525,18 @@ class UserDataService {
   static Future<bool> getLocalSearch() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_localSearchKey) ?? false;
+  }
+
+  // 保存直播显示设置
+  static Future<void> saveShowLive(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showLiveKey, enabled);
+  }
+
+  // 获取直播显示设置（默认为 false）
+  static Future<bool> getShowLive() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_showLiveKey) ?? false;
   }
 
   // 保存本地模式设置

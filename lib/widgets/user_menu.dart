@@ -42,6 +42,7 @@ class _UserMenuState extends State<UserMenu> {
   bool _localSearch = false;
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
+  bool _showLive = false;
   bool _showSettings = false;
 
   @override
@@ -73,6 +74,7 @@ class _UserMenuState extends State<UserMenu> {
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final showLive = await UserDataService.getShowLive();
 
     if (mounted) {
       setState(() {
@@ -86,6 +88,7 @@ class _UserMenuState extends State<UserMenu> {
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
+        _showLive = showLive;
       });
     }
   }
@@ -1249,6 +1252,15 @@ class _UserMenuState extends State<UserMenu> {
                     setState(() => _adFilterEnabled = value);
                   },
                   icon: LucideIcons.shieldCheck,
+                ),
+                _buildToggleOption(
+                  title: '显示直播入口',
+                  value: _showLive,
+                  onChanged: (value) async {
+                    await UserDataService.saveShowLive(value);
+                    setState(() => _showLive = value);
+                  },
+                  icon: LucideIcons.tv,
                 ),
                 if (!_isLocalMode)
                   _buildToggleOption(

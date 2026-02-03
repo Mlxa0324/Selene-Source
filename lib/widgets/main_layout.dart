@@ -55,9 +55,25 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   bool _isSearchButtonPressed = false;
   bool _showUserMenu = false;
+  bool _showLive = false;
 
   // 用于跟踪底部导航栏按钮的 hover 状态
   int? _hoveredNavIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadShowLive();
+  }
+
+  Future<void> _loadShowLive() async {
+    final showLive = await UserDataService.getShowLive();
+    if (mounted) {
+      setState(() {
+        _showLive = showLive;
+      });
+    }
+  }
 
   // 用于跟踪搜索按钮的 hover 状态
   bool _isSearchButtonHovered = false;
@@ -335,16 +351,17 @@ class _MainLayoutState extends State<MainLayout> {
                   ],
                 ),
                 // 用户菜单覆盖层 - 现在会覆盖整个屏幕包括navbar
-                if (_showUserMenu)
-                  UserMenu(
-                    isDarkMode: themeService.isDarkMode,
-                    onClose: () {
-                      setState(() {
-                        _showUserMenu = false;
-                      });
-                    },
-                  ),
-              ],
+                        if (_showUserMenu)
+                          UserMenu(
+                            isDarkMode: themeService.isDarkMode,
+                            onClose: () {
+                              setState(() {
+                                _showUserMenu = false;
+                              });
+                              // 关闭菜单时重新加载直播显示状态
+                              _loadShowLive();
+                            },
+                          ),              ],
             ),
           ),
         );
@@ -888,8 +905,12 @@ class _MainLayoutState extends State<MainLayout> {
       {'icon': LucideIcons.tv, 'label': '剧集'},
       {'icon': LucideIcons.cat, 'label': '动漫'},
       {'icon': LucideIcons.clover, 'label': '综艺'},
-      {'icon': LucideIcons.radio, 'label': '直播'},
     ];
+
+    // 如果开启了显示直播，则添加直播项
+    if (_showLive) {
+      navItems.add({'icon': LucideIcons.radio, 'label': '直播'});
+    }
 
     final isTablet = DeviceUtils.isTablet(context);
 
