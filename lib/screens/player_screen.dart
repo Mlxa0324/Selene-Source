@@ -3930,10 +3930,19 @@ class _PlayerScreenState extends State<PlayerScreen>
         );
       } else {
         // 手机模式
+        // 💡 优化：全屏时直接 fill，避免依赖 MediaQuery 的高度计算延迟导致跳变
+        if (_isFullscreen) {
+          return Positioned.fill(
+            top: 0,
+            child: Container(
+              color: Colors.black,
+              child: _buildPlayerWidget(),
+            ),
+          );
+        }
+
         final screenWidth = MediaQuery.of(context).size.width;
-        final screenHeight = MediaQuery.of(context).size.height;
-        // 如果是全屏，高度占满屏幕，否则 16:9
-        final playerHeight = _isFullscreen ? screenHeight : screenWidth / (16 / 9);
+        final playerHeight = screenWidth / (16 / 9);
 
         return Positioned(
           top: topOffset,
@@ -3941,7 +3950,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           right: 0,
           height: playerHeight,
           child: Container(
-            // key: _playerKey,
             color: Colors.black,
             child: _buildPlayerWidget(),
           ),
