@@ -36,8 +36,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   final Set<int> _selectedIndices = {};
   int _selectedGroupIndex = 0;
   late AnimationController _animController;
-  final ScrollController _scrollController = ScrollController(); // 💡 新增：滚动控制器
-  final GlobalKey _gridKey = GlobalKey(); // 💡 新增：用于获取尺寸
+  final ScrollController _scrollController = ScrollController(); // 集数网格滚动
+  final ScrollController _groupScrollController = ScrollController(); // 💡 分组列表滚动
+  final GlobalKey _gridKey = GlobalKey(); 
 
   @override
   void initState() {
@@ -56,6 +57,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _scrollToCurrent();
+        _scrollToActiveGroup(); // 💡 同时定位分组列表
       }
     });
   }
@@ -63,11 +65,27 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   @override
   void dispose() {
     _animController.dispose();
-    _scrollController.dispose(); // 💡 释放控制器
+    _scrollController.dispose();
+    _groupScrollController.dispose(); // 💡 释放分组控制器
     super.dispose();
   }
 
-  // 💡 新增：滚动到当前播放集逻辑
+  // 💡 定位到当前激活的分组
+  void _scrollToActiveGroup() {
+    if (!_groupScrollController.hasClients || widget.episodes.length <= 50) return;
+    
+    // 估算每个 ChoiceChip 的平均宽度（Label + Padding）约 85px
+    const double approxItemWidth = 85.0;
+    final double offset = _selectedGroupIndex * approxItemWidth;
+    
+    _groupScrollController.animateTo(
+      offset.clamp(0.0, _groupScrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // 💡 滚动到当前播放集逻辑
   void _scrollToCurrent() {
     if (widget.currentEpisodeIndex == null || 
         _gridKey.currentContext == null || 
@@ -243,6 +261,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
               height: 40,
               margin: const EdgeInsets.only(bottom: 8),
               child: ListView.builder(
+                controller: _groupScrollController,
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: (widget.episodes.length / 50).ceil(),
