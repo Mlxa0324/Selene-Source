@@ -662,8 +662,6 @@ class ApiService {
       final results = await _fetchSourcesDataStreaming(cleanQuery,
           onIncrementalResults: onIncrementalResults);
       if (results != null && results.isNotEmpty) {
-        // 存入缓存并持久化
-        await UserDataService.saveSearchCache(cleanQuery, results);
         return results;
       }
     } catch (e) {

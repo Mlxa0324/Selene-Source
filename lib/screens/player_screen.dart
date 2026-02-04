@@ -548,59 +548,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       onIncrementalResults: (newResults) {
         if (mounted) {
           setState(() {
+            // 累计值
             allSources = newResults;
           });
         }
       },
     );
-    if (currentSource.isNotEmpty &&
-        currentID.isNotEmpty &&
-        !allSources.any((source) =>
-            source.source == currentSource && source.id == currentID)) {
-      try {
-        List<SearchResult> allSourcesTemp = await fetchSourceDetail(currentSource, currentID);
-        if(allSourcesTemp.isNotEmpty) {
-          allSources = allSourcesTemp;
-          
-          // 💡 优化：如果此时列表中只有一个源（通常是从继续观看进入且缓存已过期）
-          // 后台触发一次静默搜索来填充换源列表，不阻塞播放
-          if (allSources.length == 1) {
-            fetchSourcesData(
-              (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
-            ).then((results) {
-              if (mounted && results.isNotEmpty) {
-                setState(() {
-                  // 将新搜到的源合并进来，并排除掉当前已经存在的源
-                  final existingKeys = allSources.map((s) => '${s.source}${s.id}').toSet();
-                  final newUniqueSources = results.where((s) => !existingKeys.contains('${s.source}${s.id}')).toList();
-                  allSources.addAll(newUniqueSources);
-                });
-              }
-            });
-          }
-        }
-      }catch(e) {
-        debugPrint('调用fetchSourceDetail异常：$e');
-      }
-    }
     if (allSources.isEmpty) {
       showError('未找到匹配结果');
       return;
     }
 
     // 指定源和id且无需优选
-    // if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
-    //   final target = allSources.where(
-    //       (source) => source.source == currentSource && source.id == currentID);
-    //   currentDetail = target.isNotEmpty ? target.first : null;
-    // }
-
-    // 指定源和id且无需优选
-    currentDetail = allSources.first;
     if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
       final target = allSources.where(
               (source) => source.source == currentSource && source.id == currentID);
-      currentDetail = target.isNotEmpty ? target.first : currentDetail;
+      currentDetail = target.isNotEmpty ? target.first : null;
     }
     // if (currentDetail == null) {
     //   showError('未找到匹配结果');
@@ -611,7 +574,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
 
     // 未指定源和 id/需要优选，且优选测速开关打开时，执行优选
-    if ((currentDetail == null || currentSource.isEmpty || currentID.isEmpty || needPrefer) &&
+    if ((currentSource.isEmpty || currentID.isEmpty || needPrefer) &&
         preferSpeedTest) {
       updateLoadingMessage('正在优选最佳播放源...');
       updateLoadingProgress(0.66);
@@ -3821,7 +3784,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
       }
 
-      return titleMatch && yearMatch && typeMatch;
+      return titleMatch && typeMatch && yearMatch;
     }).toList();
   }
 
