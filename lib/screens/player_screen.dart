@@ -219,7 +219,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     videoTitle = widget.title;
     currentEpisodeIndex = widget.initialEpisodeIndex;
     // 这是我手动加的，暂时不知道有啥影响
-    videoYear = widget.year!;
+    videoYear = widget.year ?? '';
 
     _refreshAnimationController = AnimationController(
       duration: const Duration(milliseconds: 1000),
@@ -2224,8 +2224,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       _videoPlayerController?.pause();
     }
 
-    // 跳转到新的播放页，只传递title参数
-    Navigator.push(
+    // 💡 优化：使用 pushReplacement 代替 push
+    // 这样点击推荐视频时，会销毁当前播放页，返回时直接跳过这一页回到之前的列表页
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => PlayerScreen(
