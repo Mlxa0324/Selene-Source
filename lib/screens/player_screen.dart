@@ -175,6 +175,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
   bool _isSourcesPanelVisible = false;
+  bool _isShortDrama = false; // 💡 新增：是否为短剧模式
 
   // 播放设置状态
   VideoFitType _currentFitType = VideoFitType.contain;
@@ -667,6 +668,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     currentSource = detail.source;
     currentID = detail.id;
     totalEpisodes = detail.episodes.length;
+
+    // 💡 优化：智能判断是否为短剧
+    final category = (detail.class_ ?? '') + (detail.typeName ?? '');
+    if (mounted) {
+      setState(() {
+        _isShortDrama = category.contains('短剧');
+      });
+    }
 
     // 保存旧的豆瓣ID用于比较
     int oldVideoDoubanID = videoDoubanID;
@@ -1304,6 +1313,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     startPlay(nextIndex, 0);
   }
 
+  /// 处理上一集按钮点击
+  void _onPreviousEpisode() {
+    if (currentDetail == null || currentEpisodeIndex <= 0) return;
+
+    setState(() {
+      _showSwitchLoadingOverlay = true;
+      _switchLoadingMessage = '切换上一集...';
+    });
+
+    _saveProgress(force: true, scene: '上一集按钮');
+
+    final prevIndex = currentEpisodeIndex - 1;
+    startPlay(prevIndex, 0);
+  }
+
   /// 显示Toast消息
   void _showToast(String message) {
     if (!mounted) return;
@@ -1627,6 +1651,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
             onReady: _onVideoPlayerReady,
             onNextEpisode: _onNextEpisode,
+            onPreviousEpisode: _onPreviousEpisode, 
+            onEpisodeChanged: (index) {
+              startPlay(index, 0);
+            },
             onVideoCompleted: _onVideoCompleted,
             onPlay: () {
               _danmakuController?.resume();
@@ -1641,6 +1669,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             onCastStarted: _onCastStarted,
             videoTitle: videoTitle,
             videoYear: videoYear,
+            videoCover: videoCover, // 💡 新增
             currentEpisodeIndex: currentEpisodeIndex,
             totalEpisodes: totalEpisodes,
             episodesTitles: currentDetail?.episodesTitles,
@@ -3824,7 +3853,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       else if (_isPortraitTablet)
                         // 平板竖屏模式：上下布局，播放器占50%高度
                         _buildPortraitTabletLayout(theme)
-                      else
+                      else if (!_isShortDrama) // 💡 优化：短剧模式下不渲染普通手机布局
                         // 手机模式：保持原有布局
                         _buildPhoneLayout(theme),
                     // 播放器层（使用 Positioned 控制位置和大小）

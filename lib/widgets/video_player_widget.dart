@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
+import 'short_drama_controls.dart'; // 💡 新增
 import 'video_player_surface.dart';
 import 'player_settings_panel.dart';
 import 'player_adapter.dart';
@@ -20,6 +21,8 @@ class VideoPlayerWidget extends StatefulWidget {
   final Function(VideoPlayerWidgetController)? onControllerCreated;
   final VoidCallback? onReady;
   final VoidCallback? onNextEpisode;
+  final VoidCallback? onPreviousEpisode; // 💡 新增
+  final Function(int)? onEpisodeChanged; // 💡 新增
   final VoidCallback? onVideoCompleted;
   final VoidCallback? onPlay;
   final VoidCallback? onPause;
@@ -48,6 +51,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool showSystemTime;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
+  final String? videoCover;
   final bool adFilterEnabled;
 
   const VideoPlayerWidget({
@@ -59,6 +63,8 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onControllerCreated,
     this.onReady,
     this.onNextEpisode,
+    this.onPreviousEpisode, // 💡 新增
+    this.onEpisodeChanged, // 💡 新增
     this.onVideoCompleted,
     this.onPlay,
     this.onPause,
@@ -66,6 +72,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onCastStarted,
     this.videoTitle,
     this.videoYear,
+    this.videoCover,
     this.currentEpisodeIndex,
     this.totalEpisodes,
     this.episodesTitles,
@@ -194,7 +201,23 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _isPipMode = false;
   late VideoFitType _currentFitType;
   bool _controlsVisible = true;
+  late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
+
+  bool get _isShortDrama {
+    // 1. 物理尺寸判断（高 > 宽）
+    final size = _adapter?.state;
+    if (size != null && size.width > 0 && size.height > 0) {
+      if (size.height > size.width) return true;
+    }
+    // 2. 关键词辅助判断
+    if (widget.videoTitle != null) {
+      if (widget.videoTitle!.contains('短剧') || (widget.sourceName ?? '').contains('短剧')) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   void _safeSetState(VoidCallback fn) {
     // if (!mounted) return;
@@ -217,6 +240,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   void initState() {
     super.initState();
     _currentFitType = widget.initialFitType;
+    _shortDramaPageController = PageController(initialPage: widget.currentEpisodeIndex ?? 0);
     WidgetsBinding.instance.addObserver(this);
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
@@ -237,6 +261,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
     if (widget.url != oldWidget.url && widget.url != null) {
       unawaited(_updateDataSource(widget.url!));
+    }
+
+    // 💡 优化：当集数从外部改变时（如点击选集），同步 PageView
+    if (widget.currentEpisodeIndex != oldWidget.currentEpisodeIndex &&
+        widget.currentEpisodeIndex != null &&
+        _shortDramaPageController.hasClients) {
+      final currentPage = _shortDramaPageController.page?.round() ?? -1;
+      if (currentPage != widget.currentEpisodeIndex) {
+        _shortDramaPageController.jumpToPage(widget.currentEpisodeIndex!);
+      }
     }
   }
 
@@ -596,12 +630,26 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (!Platform.isAndroid && !Platform.isIOS) {
       return;
     }
-    _pip.setup(const PipOptions(
+
+    // 💡 优化：智能检测视频比例
+    double aspectX = 16;
+    double aspectY = 9;
+    
+    final size = _adapter?.state;
+    if (size != null && size.width > 0 && size.height > 0) {
+      if (size.height > size.width) {
+        // 竖屏视频比例适配
+        aspectX = 9;
+        aspectY = 16;
+      }
+    }
+
+    _pip.setup(PipOptions(
       autoEnterEnabled: true,
-      aspectRatioX: 16,
-      aspectRatioY: 9,
-      preferredContentWidth: 480,
-      preferredContentHeight: 270,
+      aspectRatioX: aspectX.toInt(),
+      aspectRatioY: aspectY.toInt(),
+      preferredContentWidth: aspectX == 9 ? 270 : 480,
+      preferredContentHeight: aspectY == 16 ? 480 : 270,
       controlStyle: 2,
     ));
   }
@@ -650,6 +698,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         debugPrint('Device does not support PiP!');
         return;
       }
+      // 💡 进入前根据当前视频比例重新设置一次，确保小窗形状正确
+      _setupPip();
       await _adapter?.play();
       await _pip.start();
     } catch (e) {
@@ -718,6 +768,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       _pip.unregisterStateChangedObserver();
       _pip.dispose();
     }
+    _shortDramaPageController.dispose();
     _disposePlayer();
     _playbackSpeed.dispose();
     super.dispose();
@@ -725,10 +776,70 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   @override
   Widget build(BuildContext context) {
+    if (!_isInitialized || _adapter == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    if (_isShortDrama && (Platform.isAndroid || Platform.isIOS)) {
+      return Container(
+        color: Colors.black,
+        child: PageView.builder(
+          scrollDirection: Axis.vertical,
+          controller: _shortDramaPageController,
+          itemCount: widget.totalEpisodes ?? 1,
+          onPageChanged: (index) {
+            // 💡 核心优化：基于索引位移触发回调
+            final currentIndex = widget.currentEpisodeIndex ?? 0;
+            if (index == currentIndex + 1) {
+              widget.onNextEpisode?.call();
+            } else if (index == currentIndex - 1) {
+              widget.onPreviousEpisode?.call();
+            } else if (index != currentIndex) {
+              // 跨页滑动或手动点击跳转
+              widget.onEpisodeChanged?.call(index);
+            }
+          },
+          itemBuilder: (context, index) {
+            final bool isCurrentPage = index == widget.currentEpisodeIndex;
+            
+            return Stack(
+              children: [
+                // 封面图背景
+                if (widget.videoCover != null)
+                  Positioned.fill(
+                    child: Image.network(
+                      widget.videoCover!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                
+                // 视频画面 (仅在当前激活页显示)
+                if (isCurrentPage) _buildVideoSurface(),
+
+                // 缓冲加载圈
+                if (isCurrentPage && (_isBuffering || _isLoadingVideo))
+                  const Center(
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+                  ),
+
+                // 控制层
+                if (isCurrentPage) _buildControls(),
+              ],
+            );
+          },
+        ),
+      );
+    }
+
     return Container(
       color: Colors.black,
-      child: _isInitialized && _adapter != null
-          ? Stack(
+      child: Stack(
         children: [
           _buildVideoSurface(),
           if (widget.danmakuLayer != null)
@@ -744,11 +855,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             ),
           _buildControls(),
         ],
-      )
-          : const Center(
-        child: CircularProgressIndicator(
-          color: Colors.white,
-        ),
       ),
     );
   }
@@ -809,6 +915,48 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         },
       );
     } else {
+      // 💡 核心：短剧/竖屏视频判断逻辑
+      bool isShortDrama = false;
+      
+      // 1. 物理尺寸判断（高 > 宽）
+      final size = _adapter?.state;
+      if (size != null && size.width > 0 && size.height > 0) {
+        if (size.height > size.width) {
+          isShortDrama = true;
+        }
+      }
+      
+      // 2. 关键词辅助判断
+      if (!isShortDrama && widget.videoTitle != null) {
+        if (widget.videoTitle!.contains('短剧') || (widget.sourceName ?? '').contains('短剧')) {
+          isShortDrama = true;
+        }
+      }
+
+      if (isShortDrama) {
+        return ShortDramaControls(
+          player: _adapter!,
+          onControlsVisibilityChanged: (visible) {
+            _safeSetState(() => _controlsVisible = visible);
+          },
+          onBackPressed: widget.onBackPressed,
+          onFullscreenChange: (isFullscreen) {
+            widget.onFullscreenChanged?.call(isFullscreen);
+          },
+          onNextEpisode: widget.onNextEpisode,
+          onPause: widget.onPause,
+          videoUrl: _currentUrl ?? '',
+          videoTitle: widget.videoTitle,
+          currentEpisodeIndex: widget.currentEpisodeIndex,
+          totalEpisodes: widget.totalEpisodes,
+          episodesTitles: widget.episodesTitles,
+          live: widget.live,
+          playbackSpeedListenable: _playbackSpeed,
+          onSetSpeed: _setPlaybackSpeed,
+          onDanmakuButtonPressed: widget.onDanmakuButtonPressed, videoCover: '',
+        );
+      }
+
       return MobilePlayerControls(
         player: _adapter!,
         state: _videoKey.currentState,
