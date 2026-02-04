@@ -542,80 +542,66 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
-    // 💡 核心逻辑重构：区分“继续观看”和“直接搜索”两种入场方式
-    if (currentSource.isNotEmpty && currentID.isNotEmpty) {
-      // 模式 A: 继续观看 - 追求极速开播
-      updateLoadingMessage('正在极速加载播放源...');
-      updateLoadingProgress(0.5);
-
-      // 1. 优先获取当前指定的源详情，由于是定向抓取，速度极快
-      allSources = await fetchSourceDetail(currentSource, currentID);
-      
-      // 2. 后台静默执行全网搜索，补全换源列表
-      fetchSourcesData(
-        (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
-        onIncrementalResults: (newResults) {
-          if (mounted) {
-            setState(() {
-              // 💡 动态合并：不覆盖当前已有的播放详情，仅添加新搜到的源并去重
-              final existingKeys = allSources.map((s) => '${s.source}${s.id}').toSet();
-              final uniqueNew = newResults.where((s) => !existingKeys.contains('${s.source}${s.id}')).toList();
-              allSources.addAll(uniqueNew);
-            });
-          }
-        },
-      );
-    } else {
-      // 模式 B: 直接搜索 - 追求源的多样性
-      updateLoadingMessage('正在为您搜索最佳播放源...');
-      updateLoadingProgress(0.3);
-
-      // 1. 启动搜索任务
-      final searchJob = fetchSourcesData(
-        (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
-        onIncrementalResults: (newResults) {
-          if (mounted) setState(() => allSources = newResults);
-        },
-      );
-
-      // 2. 💡 关键：强制等待 2 秒搜源窗口，或者搜索全部提前完成
-      // 解决 await 提前结束导致源太少的问题
-      await Future.any([
-        searchJob,
-        Future.delayed(const Duration(seconds: 2)),
-      ]);
-
-      // 获取当前时刻已搜到的全量结果
-      allSources = await searchJob;
+    if (widget.source == null &&
+        widget.id == null &&
+        widget.title.isEmpty &&
+        widget.stitle == null) {
+      showError('缺少必要参数');
+      return;
     }
+
+    // 1. 启动全网搜源任务
+    updateLoadingMessage('正在为您搜索最佳播放源...');
+    updateLoadingProgress(0.3);
+
+    final searchJob = fetchSourcesData(
+      (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
+      onIncrementalResults: (newResults) {
+        if (mounted) setState(() => allSources = newResults);
+      },
+    );
+
+    // 2. 💡 强制等待 2 秒搜源窗口，确保获取足够多的候选源
+    await Future.any([
+      searchJob,
+      Future.delayed(const Duration(seconds: 2)),
+    ]);
+
+    // 获取当前已搜到的所有结果
+    allSources = await searchJob;
 
     if (allSources.isEmpty) {
       showError('未找到匹配结果');
       return;
     }
 
-    // 指定源和id且无需优选
-    if (currentSource.isNotEmpty && currentID.isNotEmpty && !needPrefer) {
+    // 3. 💡 核心筛选逻辑
+    // 优先尝试匹配继续观看的特定源
+    if (currentSource.isNotEmpty && currentID.isNotEmpty) {
       final target = allSources.where(
               (source) => source.source == currentSource && source.id == currentID);
-      currentDetail = target.isNotEmpty ? target.first : null;
+      if (target.isNotEmpty) {
+        currentDetail = target.first;
+        debugPrint('成功匹配到历史播放源: ${currentDetail!.sourceName}');
+      }
     }
-    // if (currentDetail == null) {
-    //   showError('未找到匹配结果');
-    //   return;
-    // }
 
-    // 读取优选测速配置
+    // 4. 💡 兜底与优选逻辑
+    // 如果没有找到历史源，或者当前是直接搜索进入，或者需要强制优选
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
-
-    // 未指定源和 id/需要优选，且优选测速开关打开时，执行优选
-    if ((currentSource.isEmpty || currentID.isEmpty || needPrefer) &&
-        preferSpeedTest) {
-      updateLoadingMessage('正在优选最佳播放源...');
-      updateLoadingProgress(0.66);
-      updateLoadingEmoji('⚡');
-      currentDetail = await preferBestSource();
+    
+    if (currentDetail == null || needPrefer) {
+      if (preferSpeedTest) {
+        updateLoadingMessage('正在优选最佳播放源...');
+        updateLoadingProgress(0.66);
+        updateLoadingEmoji('⚡');
+        currentDetail = await preferBestSource();
+      } else {
+        // 如果没开启优选，默认选第一个
+        currentDetail = allSources.first;
+      }
     }
+
     setInfosByDetail(currentDetail!);
 
     // 💡 优化：设置完详情后，立即关闭全局加载状态，避免闪烁
