@@ -542,18 +542,53 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
-    // 执行查询
-    allSources = await fetchSourcesData(
-      (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
-      onIncrementalResults: (newResults) {
-        if (mounted) {
-          setState(() {
-            // 累计值
-            allSources = newResults;
-          });
-        }
-      },
-    );
+    // 💡 核心逻辑重构：区分“继续观看”和“直接搜索”两种入场方式
+    if (currentSource.isNotEmpty && currentID.isNotEmpty) {
+      // 模式 A: 继续观看 - 追求极速开播
+      updateLoadingMessage('正在极速加载播放源...');
+      updateLoadingProgress(0.5);
+
+      // 1. 优先获取当前指定的源详情，由于是定向抓取，速度极快
+      allSources = await fetchSourceDetail(currentSource, currentID);
+      
+      // 2. 后台静默执行全网搜索，补全换源列表
+      fetchSourcesData(
+        (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
+        onIncrementalResults: (newResults) {
+          if (mounted) {
+            setState(() {
+              // 💡 动态合并：不覆盖当前已有的播放详情，仅添加新搜到的源并去重
+              final existingKeys = allSources.map((s) => '${s.source}${s.id}').toSet();
+              final uniqueNew = newResults.where((s) => !existingKeys.contains('${s.source}${s.id}')).toList();
+              allSources.addAll(uniqueNew);
+            });
+          }
+        },
+      );
+    } else {
+      // 模式 B: 直接搜索 - 追求源的多样性
+      updateLoadingMessage('正在为您搜索最佳播放源...');
+      updateLoadingProgress(0.3);
+
+      // 1. 启动搜索任务
+      final searchJob = fetchSourcesData(
+        (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
+        onIncrementalResults: (newResults) {
+          if (mounted) setState(() => allSources = newResults);
+        },
+      );
+
+      // 2. 💡 关键：强制等待 2 秒搜源窗口，或者搜索全部提前完成
+      // 解决 await 提前结束导致源太少的问题
+      await Future.any([
+        searchJob,
+        Future.delayed(const Duration(seconds: 2)),
+      ]);
+
+      // 获取当前时刻已搜到的全量结果
+      allSources = await searchJob;
+    }
+
     if (allSources.isEmpty) {
       showError('未找到匹配结果');
       return;
