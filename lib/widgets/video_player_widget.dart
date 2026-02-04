@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
+import 'package:selene/widgets/player_sources_panel.dart';
 import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
+import '../models/search_result.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
 import 'short_drama_controls.dart'; // 💡 新增
@@ -35,17 +37,24 @@ class VideoPlayerWidget extends StatefulWidget {
   final List<String>? episodesTitles;
   final String? subtitleUrl;
   final String? sourceName;
+  final String? currentSource;
+  final String? currentId;
+  final List<SearchResult>? allSources;
+  final Map<String, SourceSpeed>? allSourcesSpeed;
   final bool isLocal; // 是否是本地播放
   final Function(bool isWebFullscreen)? onWebFullscreenChanged;
   final Function(bool isFullscreen)? onFullscreenChanged;
   final VoidCallback? onExitFullScreen;
   final bool live;
+  final bool isShortDrama; // 💡 新增：外部传入的短剧判断
   final Function(bool isPipMode)? onPipModeChanged;
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
   final void Function(BuildContext context)? onSettingsButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
+  final VoidCallback? onCastButtonPressed; // 💡 新增：投屏按钮点击回调
+  final Function(SearchResult)? onSourceChanged; // 💡 新增：源切换回调
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
@@ -53,6 +62,8 @@ class VideoPlayerWidget extends StatefulWidget {
   final VideoFitType initialFitType;
   final String? videoCover;
   final bool adFilterEnabled;
+  final bool? isFavorite; // 💡 新增
+  final VoidCallback? onFavoriteToggle; // 💡 新增
 
   const VideoPlayerWidget({
     super.key,
@@ -95,6 +106,15 @@ class VideoPlayerWidget extends StatefulWidget {
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
     this.adFilterEnabled = false,
+    this.allSourcesSpeed,
+    this.allSources,
+    this.currentId,
+    this.currentSource,
+    this.onSourceChanged,
+    required this.isShortDrama, 
+    this.onCastButtonPressed,
+    this.isFavorite,
+    this.onFavoriteToggle,
   });
 
   @override
@@ -201,37 +221,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _isPipMode = false;
   late VideoFitType _currentFitType;
   bool _controlsVisible = true;
+  bool _isFullscreen = false; // 💡 新增：记录内部全屏状态
   late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
-
-  bool get _isShortDrama {
-    // 1. 物理尺寸判断（高 > 宽）
-    final size = _adapter?.state;
-    if (size != null && size.width > 0 && size.height > 0) {
-      if (size.height > size.width) return true;
-    }
-    // 2. 关键词辅助判断
-    if (widget.videoTitle != null) {
-      if (widget.videoTitle!.contains('短剧') || (widget.sourceName ?? '').contains('短剧')) {
-        return true;
-      }
-    }
-    return false;
-  }
+  final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey = GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
 
   void _safeSetState(VoidCallback fn) {
-    // if (!mounted) return;
-    // // 如果当前正在构建过程中，则推迟到下一帧执行
-    // if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
-    //   SchedulerBinding.instance.addPostFrameCallback((_) {
-    //     if (mounted) setState(fn);
-    //   });
-    // } else {
-    //   setState(fn);
-    // }
     try {
       setState(fn);
-    }catch(e) {
+    } catch (e) {
       debugPrint('_safeSetState：$e');
     }
   }
@@ -240,7 +238,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   void initState() {
     super.initState();
     _currentFitType = widget.initialFitType;
-    _shortDramaPageController = PageController(initialPage: widget.currentEpisodeIndex ?? 0);
+    _shortDramaPageController =
+        PageController(initialPage: widget.currentEpisodeIndex ?? 0);
     WidgetsBinding.instance.addObserver(this);
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
@@ -456,7 +455,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     // 立即检查一次当前状态 ，防止错过已经准备好的状态
     final currentDuration = _adapter!.state.duration;
     if (currentDuration != Duration.zero) {
-      debugPrint('VideoPlayerWidget: proactive ready check - duration is $currentDuration');
+      debugPrint(
+          'VideoPlayerWidget: proactive ready check - duration is $currentDuration');
       if (_isLoadingVideo) {
         _safeSetState(() {
           _isLoadingVideo = false;
@@ -467,10 +467,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   Future<void> _updateDataSource(
-      String url, {
-        Duration? startAt,
-        Map<String, String>? headers,
-      }) async {
+    String url, {
+    Duration? startAt,
+    Map<String, String>? headers,
+  }) async {
     if (_playerDisposed) {
       return;
     }
@@ -634,7 +634,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     // 💡 优化：智能检测视频比例
     double aspectX = 16;
     double aspectY = 9;
-    
+
     final size = _adapter?.state;
     if (size != null && size.width > 0 && size.height > 0) {
       if (size.height > size.width) {
@@ -785,67 +785,83 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       );
     }
 
-    if (_isShortDrama && (Platform.isAndroid || Platform.isIOS)) {
-      return Container(
-        color: Colors.black,
-        child: PageView.builder(
-          scrollDirection: Axis.vertical,
-          controller: _shortDramaPageController,
-          itemCount: widget.totalEpisodes ?? 1,
-          onPageChanged: (index) {
-            // 💡 核心优化：基于索引位移触发回调
-            final currentIndex = widget.currentEpisodeIndex ?? 0;
-            if (index == currentIndex + 1) {
-              widget.onNextEpisode?.call();
-            } else if (index == currentIndex - 1) {
-              widget.onPreviousEpisode?.call();
-            } else if (index != currentIndex) {
-              // 跨页滑动或手动点击跳转
-              widget.onEpisodeChanged?.call(index);
-            }
-          },
-          itemBuilder: (context, index) {
-            final bool isCurrentPage = index == widget.currentEpisodeIndex;
-            
-            return Stack(
-              children: [
-                // 封面图背景
-                if (widget.videoCover != null)
-                  Positioned.fill(
-                    child: Image.network(
-                      widget.videoCover!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                
-                // 视频画面 (仅在当前激活页显示)
-                if (isCurrentPage) _buildVideoSurface(),
+    // 提前构建视频表面
+    final Widget videoSurface = _buildVideoSurface();
 
-                // 缓冲加载圈
-                if (isCurrentPage && (_isBuffering || _isLoadingVideo))
-                  const Center(
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
-                  ),
-
-                // 控制层
-                if (isCurrentPage) _buildControls(),
-              ],
-            );
-          },
-        ),
-      );
-    }
-
+    // 💡 结构优化：视频表面永远保持在同一个 Transform 结构下，防止 Widget 树跳变导致黑屏
     return Container(
       color: Colors.black,
       child: Stack(
         children: [
-          _buildVideoSurface(),
+          // 1. 视频画面渲染层 (常驻，仅在短剧全屏且滚动时应用位移)
+          AnimatedBuilder(
+            animation: _shortDramaPageController,
+            builder: (context, child) {
+              double offset = 0;
+              // 只有在短剧、全屏、且 PageController 已就绪时才计算位移
+              if (widget.isShortDrama && _isFullscreen && (Platform.isAndroid || Platform.isIOS)) {
+                double page = widget.currentEpisodeIndex?.toDouble() ?? 0;
+                if (_shortDramaPageController.hasClients) {
+                  page = _shortDramaPageController.page ?? page;
+                }
+                final double screenHeight = MediaQuery.of(context).size.height;
+                offset = (widget.currentEpisodeIndex! - page) * screenHeight * 0.6;
+              }
+              
+              return Transform.translate(
+                offset: Offset(0, offset),
+                child: child,
+              );
+            },
+            child: videoSurface,
+          ),
+
+          // 2. 弹幕层
           if (widget.danmakuLayer != null)
             RepaintBoundary(child: widget.danmakuLayer!),
-          // 💡 优化：只有在控制按钮彻底隐藏的情况下，才在这一层显示居中加载圈
-          // 这样可以避免与 MobilePlayerControls 内部的加载逻辑产生重叠或冲突
+
+          // 3. 交互与控制层
+          if (widget.isShortDrama && _isFullscreen && (Platform.isAndroid || Platform.isIOS))
+            NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                // 💡 优化：捕获滑动到顶部或底部的“撞墙”行为
+                if (notification is OverscrollNotification) {
+                  if (notification.overscroll < -5 && widget.currentEpisodeIndex == 0) {
+                    _shortDramaControlsKey.currentState?.showToast('已经是第一集了');
+                  } else if (notification.overscroll > 5 &&
+                      widget.currentEpisodeIndex == (widget.totalEpisodes ?? 1) - 1) {
+                    _shortDramaControlsKey.currentState?.showToast('已经是最后一集了');
+                  }
+                }
+                return false;
+              },
+              child: PageView.builder(
+                scrollDirection: Axis.vertical,
+                controller: _shortDramaPageController,
+                itemCount: widget.totalEpisodes ?? 1,
+                onPageChanged: (index) {
+                  final currentIndex = widget.currentEpisodeIndex ?? 0;
+                  if (index == currentIndex + 1) {
+                    widget.onNextEpisode?.call();
+                  } else if (index == currentIndex - 1) {
+                    widget.onPreviousEpisode?.call();
+                  } else if (index != currentIndex) {
+                    widget.onEpisodeChanged?.call(index);
+                  }
+                },
+                itemBuilder: (context, index) {
+                  // 控制 UI 只在当前页显示
+                  if (index == widget.currentEpisodeIndex) {
+                    return _buildControls();
+                  }
+                  return Container(color: Colors.transparent);
+                },
+              ),
+            )
+          else
+            _buildControls(),
+
+          // 4. 加载遮罩
           if ((_isBuffering || _isLoadingVideo) && !_controlsVisible)
             const Center(
               child: CircularProgressIndicator(
@@ -853,7 +869,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                 strokeWidth: 3,
               ),
             ),
-          _buildControls(),
         ],
       ),
     );
@@ -915,32 +930,25 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         },
       );
     } else {
-      // 💡 核心：短剧/竖屏视频判断逻辑
-      bool isShortDrama = false;
-      
-      // 1. 物理尺寸判断（高 > 宽）
-      final size = _adapter?.state;
-      if (size != null && size.width > 0 && size.height > 0) {
-        if (size.height > size.width) {
-          isShortDrama = true;
-        }
-      }
-      
-      // 2. 关键词辅助判断
-      if (!isShortDrama && widget.videoTitle != null) {
-        if (widget.videoTitle!.contains('短剧') || (widget.sourceName ?? '').contains('短剧')) {
-          isShortDrama = true;
-        }
-      }
-
-      if (isShortDrama) {
+      // 💡 优化：不再通过视频尺寸实时探测，直接信任外部传入的 isShortDrama 标记
+      // 这样在滑动切换视频、视频未加载完成时，UI 状态依然保持稳定，不会产生闪烁
+      if (widget.isShortDrama && _isFullscreen) {
         return ShortDramaControls(
+          key: _shortDramaControlsKey, // 💡 绑定 Key 以便触发 showToast
           player: _adapter!,
           onControlsVisibilityChanged: (visible) {
             _safeSetState(() => _controlsVisible = visible);
           },
           onBackPressed: widget.onBackPressed,
           onFullscreenChange: (isFullscreen) {
+            if (isFullscreen && widget.isShortDrama) {
+              // 💡 关键修复：进入全屏前，确保 PageController 索引同步
+              if (_shortDramaPageController.initialPage != widget.currentEpisodeIndex) {
+                _shortDramaPageController.dispose();
+                _shortDramaPageController = PageController(initialPage: widget.currentEpisodeIndex ?? 0);
+              }
+            }
+            _safeSetState(() => _isFullscreen = isFullscreen);
             widget.onFullscreenChanged?.call(isFullscreen);
           },
           onNextEpisode: widget.onNextEpisode,
@@ -953,7 +961,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           live: widget.live,
           playbackSpeedListenable: _playbackSpeed,
           onSetSpeed: _setPlaybackSpeed,
-          onDanmakuButtonPressed: widget.onDanmakuButtonPressed, videoCover: '',
+          onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+          videoCover: widget.videoCover ?? '',
+          currentSource: widget.currentSource,
+          currentId: widget.currentId,
+          allSources: widget.allSources,
+          allSourcesSpeed: widget.allSourcesSpeed,
+          isFavorite: widget.isFavorite,
+          onFavoriteToggle: widget.onFavoriteToggle,
+          onCastPressed: widget.onCastButtonPressed,
+          onPipPressed: _enterPipMode,
+          onEpisodeTap: (index) {
+            widget.onEpisodeChanged?.call(index);
+          },
+          onSourceTap: (source) {
+            widget.onSourceChanged?.call(source);
+          }
         );
       }
 
@@ -965,6 +988,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         },
         onBackPressed: widget.onBackPressed,
         onFullscreenChange: (isFullscreen) {
+          if (isFullscreen && widget.isShortDrama) {
+            // 💡 关键修复：从普通模式进入全屏前，同步索引
+            if (_shortDramaPageController.initialPage != widget.currentEpisodeIndex) {
+              _shortDramaPageController.dispose();
+              _shortDramaPageController = PageController(initialPage: widget.currentEpisodeIndex ?? 0);
+            }
+          }
+          _safeSetState(() => _isFullscreen = isFullscreen);
           widget.onFullscreenChanged?.call(isFullscreen);
         },
         onNextEpisode: widget.onNextEpisode,

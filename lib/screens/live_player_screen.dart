@@ -692,6 +692,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       },
       onReady: _onVideoPlayerReady,
       live: true,
+      isShortDrama: false,
     );
   }
 

@@ -226,10 +226,12 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
     return Container(
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          bottomLeft: Radius.circular(16),
-        ),
+        borderRadius: widget.isCompact
+            ? const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                bottomLeft: Radius.circular(16),
+              )
+            : const BorderRadius.vertical(top: Radius.circular(24)), // 💡 竖屏底部弹窗显示完整的顶部圆角
       ),
       child: Column(
         children: [

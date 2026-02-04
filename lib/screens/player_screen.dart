@@ -669,14 +669,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     currentID = detail.id;
     totalEpisodes = detail.episodes.length;
 
-    // 💡 优化：智能判断是否为短剧
-    final category = (detail.class_ ?? '') + (detail.typeName ?? '');
-    if (mounted) {
-      setState(() {
-        _isShortDrama = category.contains('短剧');
-      });
-    }
-
     // 保存旧的豆瓣ID用于比较
     int oldVideoDoubanID = videoDoubanID;
 
@@ -1125,7 +1117,21 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _onVideoPlayerReady() {
     // 视频播放器准备就绪时的处理逻辑
     debugPrint('Video player is ready!');
-    
+
+    // 💡 新增：通过视频尺寸动态判断是否为短剧（竖屏视频）
+    final videoSize = _videoPlayerController?.videoSize;
+    if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+      final bool isVertical = videoSize.height > videoSize.width;
+      if (isVertical != _isShortDrama) {
+        debugPrint('检测到视频尺寸变化，更新短剧模式: $isVertical (${videoSize.width}x${videoSize.height})');
+        if (mounted) {
+          setState(() {
+            _isShortDrama = isVertical;
+          });
+        }
+      }
+    }
+
     // 取消超时计时器
     _loadingTimeoutTimer?.cancel();
     _loadingTimeoutTimer = null;
@@ -1175,40 +1181,23 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (DeviceUtils.isPC()) return;
 
     if (isFullscreen) {
-      // 💡 优化：智能全屏方向判断
-      bool isVerticalVideo = false;
-
-      // 1. 优先通过播放器获取视频原始宽高比例
-      final videoSize = _videoPlayerController?.videoSize;
-      if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
-        if (videoSize.height > videoSize.width) {
-          isVerticalVideo = true;
-          debugPrint('检测到竖屏视频 (比例判断): ${videoSize.width}x${videoSize.height}');
-        }
-      }
-
-      // 2. 辅助判断：检查分类名称（如“短剧”）
-      if (!isVerticalVideo && currentDetail != null) {
-        final category = (currentDetail!.class_ ?? '') + (currentDetail!.typeName ?? '');
-        if (category.contains('短剧')) {
-          isVerticalVideo = true;
-          debugPrint('检测到竖屏视频 (分类判断): $category');
-        }
-      }
-
-      if (isVerticalVideo) {
-        // 竖屏视频：保持竖屏全屏
+      // 💡 优化：根据进场时或准备就绪时判断的 _isShortDrama 决定全屏方向
+      if (_isShortDrama) {
+        // 竖屏视频/短剧：保持竖屏全屏，并保留状态栏
         SystemChrome.setPreferredOrientations([
           DeviceOrientation.portraitUp,
         ]);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        debugPrint('全屏模式：短剧/竖屏 (保持竖屏，保留状态栏)');
       } else {
-        // 横屏视频：切换到横屏全屏
+        // 横屏视频：切换到横屏全屏，使用沉浸模式
         SystemChrome.setPreferredOrientations([
           DeviceOrientation.landscapeLeft,
           DeviceOrientation.landscapeRight,
         ]);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        debugPrint('全屏模式：普通剧/横屏 (切换横屏，沉浸模式)');
       }
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
@@ -1674,6 +1663,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             totalEpisodes: totalEpisodes,
             episodesTitles: currentDetail?.episodesTitles,
             sourceName: currentDetail?.sourceName ?? currentSource,
+            currentSource: currentSource,
+            currentId: currentID,
+            allSources: allSources,
+            allSourcesSpeed: allSourcesSpeed,
+            isShortDrama: _isShortDrama,
             isLocal: widget.localPath != null,
             onWebFullscreenChanged: (isWebFullscreen) {
               setState(() {
@@ -1700,6 +1694,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             onDanmakuMatchButtonPressed: (fullscreenContext) {
               // 在全屏模式下，使用传入的 context 显示弹幕手动匹配面板
               _showDanmakuMatchPanelInFullscreen(fullscreenContext);
+            },
+            onSourceChanged: (source) {
+              _switchSource(source);
+            },
+            isFavorite: _isFavorite,
+            onFavoriteToggle: _toggleFavorite,
+            onCastButtonPressed: () {
+               _showCastDeviceDialog();
             },
             longPressSpeed: _longPressSpeed,
             progressMode: _progressMode,
@@ -1769,6 +1771,31 @@ class _PlayerScreenState extends State<PlayerScreen>
           onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
         ),
       ],
+    );
+  }
+
+  /// 弹出投屏设备选择对话框
+  void _showCastDeviceDialog() async {
+    if (currentDetail == null) return;
+
+    // 获取当前播放的 URL
+    final currentUrl = currentDetail!.episodes[currentEpisodeIndex];
+    // 获取当前播放位置
+    final currentPos = _videoPlayerController?.currentPosition;
+
+    // 显示设备选择对话框
+    await showDialog(
+      context: context,
+      builder: (context) => DLNADeviceDialog(
+        currentUrl: currentUrl,
+        currentDevice: _dlnaDevice,
+        resumePosition: currentPos,
+        videoTitle: videoTitle,
+        currentEpisodeIndex: currentEpisodeIndex,
+        totalEpisodes: totalEpisodes,
+        sourceName: currentDetail?.sourceName ?? currentSource,
+        onCastStarted: _onCastStarted,
+      ),
     );
   }
 
@@ -3245,67 +3272,108 @@ class _PlayerScreenState extends State<PlayerScreen>
     final theme = Theme.of(fullscreenContext);
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+    final isPortrait = MediaQuery.of(fullscreenContext).orientation == Orientation.portrait;
 
-    final panelWidth = screenWidth * 0.4;
-    final panelHeight = screenHeight;
-
-    showGeneralDialog(
-      context: fullscreenContext,
-      barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Material(
-            color: Colors.transparent,
-            child: SizedBox(
-              width: panelWidth,
-              height: panelHeight,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOut,
-                )),
-                child: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter dialogSetState) {
-                    return DanmakuSettingsPanel(
-                      theme: theme,
-                      settings: _danmakuSettings,
-                      onSettingsChanged: (settings) {
-                        setState(() => _danmakuSettings = settings);
-                        dialogSetState(() {});
-                        // 更新弹幕控制器的设置
-                        _danmakuController?.updateOption(DanmakuOption(
-                          fontSize: settings.fontSize * settings.scale,
-                          opacity: settings.opacity,
-                          duration: settings.syncVideoSpeed
-                              ? (settings.duration /
-                                  (_videoPlayerController?.playbackSpeed ??
-                                      1.0))
-                              : settings.duration,
-                          hideScroll: settings.hideScroll,
-                          hideTop: settings.hideTop,
-                          hideBottom: settings.hideBottom,
-                          lineHeight: settings.lineSpacing,
-                          fontWeight:
-                              (settings.fontWeight * 4).round().clamp(1, 9),
-                          massiveMode: !settings.preventOverlap,
-                        ));
-                      },
-                    );
-                  },
+    if (isPortrait) {
+      // 💡 短剧/竖屏模式：从底部弹出
+      showModalBottomSheet(
+        context: fullscreenContext,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        useSafeArea: false, // 💡 禁用安全区域以确保顶到两边
+        builder: (context) => StatefulBuilder(
+          builder: (BuildContext context, StateSetter dialogSetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor, // 💡 确保背景色正确
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)), // 💡 添加一致的顶部圆角
+              ),
+              margin: EdgeInsets.zero,
+              height: screenHeight * 0.6,
+              width: double.infinity,
+              clipBehavior: Clip.antiAlias, // 💡 确保子元素不超出圆角
+              child: DanmakuSettingsPanel(
+                theme: theme,
+                settings: _danmakuSettings,
+                onSettingsChanged: (settings) {
+                  setState(() => _danmakuSettings = settings);
+                  dialogSetState(() {});
+                  _danmakuController?.updateOption(DanmakuOption(
+                    fontSize: settings.fontSize * settings.scale,
+                    opacity: settings.opacity,
+                    duration: settings.syncVideoSpeed
+                        ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+                        : settings.duration,
+                    hideScroll: settings.hideScroll,
+                    hideTop: settings.hideTop,
+                    hideBottom: settings.hideBottom,
+                    lineHeight: settings.lineSpacing,
+                    fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
+                    massiveMode: !settings.preventOverlap,
+                  ));
+                },
+              ),
+            );
+          }
+        ),
+      );
+    } else {
+      // 横屏模式：保持右侧滑动弹出
+      final panelWidth = screenWidth * 0.4;
+      showGeneralDialog(
+        context: fullscreenContext,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: Colors.transparent,
+              child: SizedBox(
+                width: panelWidth,
+                height: screenHeight,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOut,
+                  )),
+                  child: StatefulBuilder(
+                    builder: (BuildContext context, StateSetter dialogSetState) {
+                      return DanmakuSettingsPanel(
+                        theme: theme,
+                        settings: _danmakuSettings,
+                        onSettingsChanged: (settings) {
+                          setState(() => _danmakuSettings = settings);
+                          dialogSetState(() {});
+                          _danmakuController?.updateOption(DanmakuOption(
+                            fontSize: settings.fontSize * settings.scale,
+                            opacity: settings.opacity,
+                            duration: settings.syncVideoSpeed
+                                ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+                                : settings.duration,
+                            hideScroll: settings.hideScroll,
+                            hideTop: settings.hideTop,
+                            hideBottom: settings.hideBottom,
+                            lineHeight: settings.lineSpacing,
+                            fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
+                            massiveMode: !settings.preventOverlap,
+                          ));
+                        },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    }
   }
 
   /// 在全屏模式下显示选集面板（使用传入的 context）
@@ -3853,7 +3921,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       else if (_isPortraitTablet)
                         // 平板竖屏模式：上下布局，播放器占50%高度
                         _buildPortraitTabletLayout(theme)
-                      else if (!_isShortDrama) // 💡 优化：短剧模式下不渲染普通手机布局
+                      else
                         // 手机模式：保持原有布局
                         _buildPhoneLayout(theme),
                     // 播放器层（使用 Positioned 控制位置和大小）

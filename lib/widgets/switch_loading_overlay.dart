@@ -20,6 +20,8 @@ class SwitchLoadingOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isVisible) return const SizedBox.shrink();
 
+    final double topPadding = MediaQuery.of(context).padding.top;
+
     return Positioned.fill(
       child: Container(
         color: Colors.black,
@@ -28,7 +30,7 @@ class SwitchLoadingOverlay extends StatelessWidget {
             // 左上角返回按钮
             if (onBackPressed != null)
               Positioned(
-                top: 4,
+                top: DeviceUtils.isPC() ? 4 : topPadding + 4, // 💡 适配状态栏高度
                 left: 8.0,
                 child: DeviceUtils.isPC()
                     ? _HoverBackButton(
