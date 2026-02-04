@@ -191,14 +191,14 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
         children: [
           // 标题栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+            padding: const EdgeInsets.fromLTRB(20, 10, 8, 4), // 💡 压缩上下边距 (16/8 -> 10/4)
             child: Row(
               children: [
                 Text(
                   '手动匹配弹幕',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 17,
+                    fontSize: 16, // 💡 略微缩小字号
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -206,6 +206,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 // 收起按钮
                 if (_searchResults.isNotEmpty)
                   IconButton(
+                    visualDensity: VisualDensity.compact, // 💡 紧凑模式
                     tooltip: '收起所有结果',
                     icon: Icon(Icons.unfold_less, color: textColor.withOpacity(0.7), size: 18),
                     onPressed: _collapseAll,
@@ -213,12 +214,14 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 // 定位按钮
                 if (widget.currentEpisodeId != null && _searchResults.isNotEmpty)
                   IconButton(
+                    visualDensity: VisualDensity.compact,
                     tooltip: '定位到当前弹幕',
                     icon: const Icon(Icons.location_searching, color: Colors.green, size: 18),
                     onPressed: _locateToCurrent,
                   ),
                 // 排序切换按钮
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   tooltip: _isDescending ? '当前：年份倒序' : '当前：年份正序',
                   icon: Icon(
                     _isDescending ? Icons.arrow_downward : Icons.arrow_upward,
@@ -229,6 +232,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 ),
                 // 关闭按钮
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: Icon(Icons.close,
                       color: textColor.withOpacity(0.7), size: 20),
                   onPressed: () => Navigator.pop(context),
@@ -241,8 +245,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Container(
-              height: 42,
-              margin: const EdgeInsets.only(bottom: 16),
+              height: 38, // 💡 降低高度 (42 -> 38)
+              margin: const EdgeInsets.only(bottom: 12), // 💡 缩小下方间距 (16 -> 12)
               decoration: BoxDecoration(
                 color: inputColor,
                 borderRadius: BorderRadius.circular(8),
@@ -251,19 +255,20 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
               ),
               child: TextField(
                 controller: _searchController,
-                style: TextStyle(color: textColor, fontSize: 14),
+                style: TextStyle(color: textColor, fontSize: 13), // 💡 缩小字号
                 textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   hintText: '输入作品名称搜索',
-                  hintStyle: TextStyle(color: subTextColor),
+                  hintStyle: TextStyle(color: subTextColor, fontSize: 13),
                   prefixIcon:
-                      Icon(Icons.search, color: subTextColor, size: 18),
+                      Icon(Icons.search, color: subTextColor, size: 17),
                   border: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                   suffixIcon: IconButton(
+                    padding: EdgeInsets.zero,
                     icon: const Icon(Icons.send,
-                        color: Colors.green, size: 18),
+                        color: Colors.green, size: 17),
                     onPressed: _onSearch,
                   ),
                 ),
@@ -320,38 +325,57 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       decoration: BoxDecoration(
         color: textColor.withOpacity(0.03),
         borderRadius: BorderRadius.circular(8),
+        // 💡 优化：移除外层厚重的绿色边框，改为仅在有选中项时显示极淡的底色
         border: hasSelected
-            ? Border.all(color: Colors.green.withOpacity(0.5), width: 1)
+            ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
             : null,
       ),
-      child: Theme(
-        data: widget.theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          key: ValueKey('tile_${anime.animeId}_$_resetCounter'), // 💡 包含计数器
-          initiallyExpanded: _expansionStates[anime.animeId] ?? false,
-          onExpansionChanged: (expanded) {
-            _expansionStates[anime.animeId] = expanded;
-          },
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          title: Text(
-            anime.animeTitle,
-            style: TextStyle(
-                color: hasSelected ? Colors.green : textColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w600),
+      child: Stack(
+        children: [
+          // 💡 优化：在左侧增加一个细长的绿色指示条，代替原本的标题变绿，这样更专业
+          if (hasSelected)
+            Positioned(
+              left: 0,
+              top: 12,
+              bottom: 12,
+              child: Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          Theme(
+            data: widget.theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              key: ValueKey('tile_${anime.animeId}_$_resetCounter'),
+              initiallyExpanded: _expansionStates[anime.animeId] ?? false,
+              onExpansionChanged: (expanded) {
+                _expansionStates[anime.animeId] = expanded;
+              },
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              title: Text(
+                anime.animeTitle,
+                style: TextStyle(
+                    // 💡 优化：标题颜色不再强制变绿，保持统一，仅通过左侧条指示
+                    color: textColor, 
+                    fontSize: 14,
+                    fontWeight: hasSelected ? FontWeight.w600 : FontWeight.normal),
+              ),
+              subtitle: Text(
+                '${anime.typeDescription} • ${anime.episodes.length}个结果',
+                style: TextStyle(color: subTextColor, fontSize: 11),
+              ),
+              iconColor: textColor.withOpacity(0.5),
+              collapsedIconColor: textColor.withOpacity(0.5),
+              childrenPadding: EdgeInsets.zero,
+              children: [
+                ...anime.episodes.map((ep) => _buildEpisodeItem(ep, textColor)),
+              ],
+            ),
           ),
-          subtitle: Text(
-            '${anime.typeDescription} • ${anime.episodes.length}个结果',
-            style: TextStyle(color: subTextColor, fontSize: 11),
-          ),
-          iconColor: textColor.withOpacity(0.5),
-          collapsedIconColor: textColor.withOpacity(0.5),
-          childrenPadding: EdgeInsets.zero, // 移除默认边距
-          children: [
-            // 针对大量集数的情况，虽然这里不能直接用 ListView，但我们可以预先处理数据
-            ...anime.episodes.map((ep) => _buildEpisodeItem(ep, textColor)),
-          ],
-        ),
+        ],
       ),
     );
   }
