@@ -28,6 +28,10 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   List<DanmakuSearchAnime> _searchResults = [];
   String? _errorMessage;
   bool _isDescending = true;
+  int _resetCounter = 0; // 💡 新增：用于强制重置所有 Tile 状态
+
+  // 💡 优化：用于存储集数项的 GlobalKey，实现 100% 精准定位
+  final Map<int, GlobalKey> _itemKeys = {};
 
   // 用于存储 ExpansionTile 的状态，方便定位时展开
   final Map<int, bool> _expansionStates = {};
@@ -62,54 +66,51 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
   }
 
+  /// 💡 新增：收起所有已展开的项
+  void _collapseAll() {
+    setState(() {
+      _expansionStates.clear();
+      _resetCounter++; // 💡 增加计数器，强制 Key 变化
+    });
+  }
+
   /// 定位到当前正在使用的弹幕位置
   void _locateToCurrent() {
     if (widget.currentEpisodeId == null || _searchResults.isEmpty) return;
 
-    int animeIndex = -1;
-    int episodeIndex = -1;
+    int animeId = -1;
+    int targetEpisodeId = widget.currentEpisodeId!;
 
-    // 1. 查找当前 ID 所在的动画索引和集数索引
-    for (int i = 0; i < _searchResults.length; i++) {
-      final episodes = _searchResults[i].episodes;
-      for (int j = 0; j < episodes.length; j++) {
-        if (episodes[j].episodeId == widget.currentEpisodeId) {
-          animeIndex = i;
-          episodeIndex = j;
-          break;
-        }
+    // 1. 查找当前 ID 所在的动画
+    for (var anime in _searchResults) {
+      if (anime.episodes.any((e) => e.episodeId == targetEpisodeId)) {
+        animeId = anime.animeId;
+        break;
       }
-      if (animeIndex != -1) break;
     }
 
-    if (animeIndex != -1) {
+    if (animeId != -1) {
       // 2. 确保目标动画条目处于展开状态
       setState(() {
-        _expansionStates[_searchResults[animeIndex].animeId] = true;
+        _expansionStates[animeId] = true;
       });
 
-      // 3. 执行精确滚动
-      // 这里的计算逻辑：
-      // - 动画卡片折叠时高度约为 68
-      // - 每集条目高度约为 48 (12+12 padding + 13 font + border)
-      // - ExpansionTile 展开后会有一些额外的内边距
+      // 3. 💡 核心优化：分两步精准定位
+      // 第一步：先快速滚动到动画标题位置，确保目标组件在渲染范围内
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollController.hasClients) return;
-
-        double animeHeaderHeight = 68.0;
-        double episodeItemHeight = 48.5;
-        
-        // 计算偏移量：之前的动画项总高度 + 当前动画项内的集数偏移
-        double offset = (animeIndex * animeHeaderHeight) + (episodeIndex * episodeItemHeight);
-        
-        // 适当向上偏移一点，避免贴顶
-        double finalOffset = (offset - 100).clamp(0.0, _scrollController.position.maxScrollExtent);
-
-        _scrollController.animateTo(
-          finalOffset,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.fastOutSlowIn,
-        );
+        // 给 ExpansionTile 展开一点时间
+        Future.delayed(const Duration(milliseconds: 150), () {
+          final targetKey = _itemKeys[targetEpisodeId];
+          if (targetKey?.currentContext != null) {
+            // 第二步：使用官方提供的 ensureVisible 自动对齐，完美避开高度计算
+            Scrollable.ensureVisible(
+              targetKey!.currentContext!,
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOut,
+              alignment: 0.3, // 💡 0.3 表示定位在距离顶部 30% 的位置，视觉最舒适
+            );
+          }
+        });
       });
     }
   }
@@ -122,6 +123,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       _isLoading = true;
       _errorMessage = null;
       _expansionStates.clear();
+      _itemKeys.clear(); // 💡 搜索时清理 Key 缓存
     });
 
     try {
@@ -165,14 +167,18 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     final inputColor =
         isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05);
 
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+
     return Container(
-      width: 360,
+      width: double.infinity, // 💡 改为填满宽度
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          bottomLeft: Radius.circular(16),
-        ),
+        borderRadius: isPortrait 
+          ? const BorderRadius.vertical(top: Radius.circular(24)) // 💡 底部弹出时使用顶部圆角
+          : const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              bottomLeft: Radius.circular(16),
+            ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
@@ -197,6 +203,13 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                   ),
                 ),
                 const Spacer(),
+                // 收起按钮
+                if (_searchResults.isNotEmpty)
+                  IconButton(
+                    tooltip: '收起所有结果',
+                    icon: Icon(Icons.unfold_less, color: textColor.withOpacity(0.7), size: 18),
+                    onPressed: _collapseAll,
+                  ),
                 // 定位按钮
                 if (widget.currentEpisodeId != null && _searchResults.isNotEmpty)
                   IconButton(
@@ -314,7 +327,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       child: Theme(
         data: widget.theme.copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          key: ValueKey('tile_${anime.animeId}'),
+          key: ValueKey('tile_${anime.animeId}_$_resetCounter'), // 💡 包含计数器
           initiallyExpanded: _expansionStates[anime.animeId] ?? false,
           onExpansionChanged: (expanded) {
             _expansionStates[anime.animeId] = expanded;
@@ -346,7 +359,11 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   Widget _buildEpisodeItem(DanmakuSearchEpisode episode, Color textColor) {
     bool isSelected = episode.episodeId == widget.currentEpisodeId;
     
+    // 💡 优化：为每个集数项生成一个 GlobalKey，并在定位时使用
+    final key = _itemKeys.putIfAbsent(episode.episodeId, () => GlobalKey());
+
     return Material(
+      key: key, // 💡 绑定 Key
       color: Colors.transparent,
       child: InkWell(
         onTap: () => widget.onEpisodeSelected(episode.episodeId),

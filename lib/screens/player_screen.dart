@@ -343,7 +343,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (episodeId == null) {
         debugPrint('弹幕匹配失败或无匹配结果');
         if (mounted && _danmakuSettings.enabled) {
-          _showToast('自动匹配弹幕失败，可尝试手动匹配');
+          // _showToast('自动匹配弹幕失败，可尝试手动匹配');
         }
         setState(() => _isDanmakuLoading = false);
         return;
@@ -3051,47 +3051,78 @@ class _PlayerScreenState extends State<PlayerScreen>
     final theme = Theme.of(fullscreenContext);
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+    final isPortrait = MediaQuery.of(fullscreenContext).orientation == Orientation.portrait;
 
-    final panelWidth = screenWidth * 0.4;
-    final panelHeight = screenHeight;
-
-    showGeneralDialog(
-      context: fullscreenContext,
-      barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return Align(
-          alignment: Alignment.centerRight,
-          child: Material(
-            color: Colors.transparent,
-            child: SizedBox(
-              width: panelWidth,
-              height: panelHeight,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOut,
-                )),
-                child: DanmakuMatchPanel(
-                  theme: theme,
-                  initialQuery: videoTitle,
-                  currentEpisodeId: _currentDanmakuEpisodeId,
-                  onEpisodeSelected: (episodeId) {
-                    Navigator.pop(dialogContext);
-                    _loadDanmakuById(episodeId);
-                  },
+    if (isPortrait) {
+      // 💡 竖屏/短剧模式：从底部弹出
+      showModalBottomSheet(
+        context: fullscreenContext,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        useSafeArea: false, // 💡 顶到两边
+        builder: (context) {
+          return Container(
+            margin: EdgeInsets.zero,
+            height: screenHeight * 0.7,
+            width: double.infinity,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: theme.scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: DanmakuMatchPanel(
+              theme: theme,
+              initialQuery: videoTitle,
+              currentEpisodeId: _currentDanmakuEpisodeId,
+              onEpisodeSelected: (episodeId) {
+                Navigator.pop(context);
+                _loadDanmakuById(episodeId);
+              },
+            ),
+          );
+        },
+      );
+    } else {
+      // 横屏模式：保持右侧滑动弹出
+      final panelWidth = screenWidth * 0.4;
+      showGeneralDialog(
+        context: fullscreenContext,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) {
+          return Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: Colors.transparent,
+              child: SizedBox(
+                width: panelWidth,
+                height: screenHeight,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(1, 0),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeInOut,
+                  )),
+                  child: DanmakuMatchPanel(
+                    theme: theme,
+                    initialQuery: videoTitle,
+                    currentEpisodeId: _currentDanmakuEpisodeId,
+                    onEpisodeSelected: (episodeId) {
+                      Navigator.pop(dialogContext);
+                      _loadDanmakuById(episodeId);
+                    },
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    }
   }
 
   /// 显示下载面板
@@ -3884,6 +3915,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
       child: Scaffold(
         backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: false, // 💡 关键：防止键盘弹出时顶起或压缩背景视频
         body: Container(
           decoration: BoxDecoration(
             gradient: isDarkMode

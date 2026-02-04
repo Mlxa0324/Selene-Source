@@ -818,7 +818,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
           // 2. 弹幕层
           if (widget.danmakuLayer != null)
-            RepaintBoundary(child: widget.danmakuLayer!),
+            Positioned.fill(
+              top: (widget.isShortDrama && _isFullscreen && !Platform.isWindows && !Platform.isMacOS)
+                  ? MediaQuery.of(context).padding.top + 50
+                  : 0,
+              child: RepaintBoundary(child: widget.danmakuLayer!),
+            ),
 
           // 3. 交互与控制层
           if (widget.isShortDrama && _isFullscreen && (Platform.isAndroid || Platform.isIOS))
@@ -962,6 +967,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           playbackSpeedListenable: _playbackSpeed,
           onSetSpeed: _setPlaybackSpeed,
           onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+          onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
           videoCover: widget.videoCover ?? '',
           currentSource: widget.currentSource,
           currentId: widget.currentId,

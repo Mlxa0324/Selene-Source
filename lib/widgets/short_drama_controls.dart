@@ -33,6 +33,7 @@ class ShortDramaControls extends StatefulWidget {
   final void Function(SearchResult source)? onSourceTap;
   final Future<void> Function()? onRefreshSources;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
+  final void Function(BuildContext context)? onDanmakuMatchButtonPressed; // 💡 新增
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
   final VoidCallback? onCastPressed; // 💡 新增
@@ -66,6 +67,7 @@ class ShortDramaControls extends StatefulWidget {
     this.onSourceTap,
     this.onRefreshSources,
     this.onDanmakuButtonPressed,
+    this.onDanmakuMatchButtonPressed, // 💡 新增
     this.isFavorite,
     this.onFavoriteToggle,
     this.onCastPressed,
@@ -338,6 +340,10 @@ class ShortDramaControlsState extends State<ShortDramaControls>
           Navigator.pop(context);
           widget.onDanmakuButtonPressed?.call(context);
         },
+        onDanmakuMatchPressed: () { // 💡 新增
+          Navigator.pop(context);
+          widget.onDanmakuMatchButtonPressed?.call(context);
+        },
         onDownloadPressed: () {
           Navigator.pop(context);
           _showDownloadDialog();
@@ -536,7 +542,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
           GestureDetector(
             onTap: () => widget.onFullscreenChange(false),
             child: Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
@@ -631,7 +637,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                 ),
                 if (_isDragging && _dragPosition != null)
                   Positioned(
-                    top: -55,
+                    top: -80,
                     left: 0,
                     right: 0,
                     child: Center(
@@ -662,18 +668,13 @@ class ShortDramaControlsState extends State<ShortDramaControls>
   }
 }
 
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return "$m:$s";
-  }
-
 class _ShortDramaSettingsSheet extends StatefulWidget {
   final bool isDarkMode;
   final double currentSpeed;
   final bool? isFavorite;
   final Function(double) onSpeedChanged;
   final VoidCallback onDanmakuPressed;
+  final VoidCallback onDanmakuMatchPressed; // 💡 新增
   final VoidCallback onDownloadPressed;
   final VoidCallback onFavoriteToggle;
   final VoidCallback onCastPressed;
@@ -684,6 +685,7 @@ class _ShortDramaSettingsSheet extends StatefulWidget {
     required this.currentSpeed,
     required this.onSpeedChanged,
     required this.onDanmakuPressed,
+    required this.onDanmakuMatchPressed, // 💡 新增
     required this.onDownloadPressed,
     required this.onFavoriteToggle,
     required this.onCastPressed,
@@ -802,7 +804,28 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
               ],
             )
           ),
-          const SizedBox(height: 4), // 💡 缩小间距 (8 -> 4)
+          const SizedBox(height: 4), 
+          _buildMenuRow(
+            Icons.search,
+            '手动匹配弹幕', 
+            titleColor: textColor,
+            iconColor: iconBtnColor,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: widget.onDanmakuMatchPressed,
+                  child: const Row(
+                    children: [
+                      Text('搜索', style: TextStyle(color: Colors.green, fontSize: 13)),
+                      Icon(Icons.chevron_right, color: Colors.green, size: 16),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          ),
+          const SizedBox(height: 4), 
           _buildMenuRow(
             LucideIcons.messageSquareText, 
             '弹幕列表', 
