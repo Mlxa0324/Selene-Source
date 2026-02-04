@@ -1769,6 +1769,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           message: _switchLoadingMessage,
           animationController: _switchLoadingAnimationController,
           onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
+          isFullscreen: _isFullscreen, // 💡 传入全屏状态
         ),
       ],
     );
