@@ -414,7 +414,8 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         onLongPressStart: (details) {
           final screenWidth = MediaQuery.of(context).size.width;
           final x = details.localPosition.dx;
-          if (x < screenWidth * 0.15 || x > screenWidth * 0.85) {
+          // 💡 优化：将两侧倍速感应区域从 15% 扩大到 20%
+          if (x < screenWidth * 0.2 || x > screenWidth * 0.8) {
             _originalSpeed = widget.playbackSpeedListenable.value;
             widget.onSetSpeed(2.0);
             setState(() => _isEdgeLongPressing = true);
