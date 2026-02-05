@@ -443,16 +443,21 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                         width: double.infinity,
                         height: double.infinity,
                         decoration: BoxDecoration(
-                          color: (isEffectivelySelected || isCurrentPlaying)
+                          // 💡 优化：手动选中颜色正常，仅播放颜色变淡
+                          color: isEffectivelySelected
                               ? Colors.green.withOpacity(0.2)
-                              : (isDarkMode
-                                  ? Colors.white10
-                                  : Colors.black.withOpacity(0.05)),
+                              : (isCurrentPlaying
+                                  ? Colors.green.withOpacity(0.08)
+                                  : (isDarkMode
+                                      ? Colors.white10
+                                      : Colors.black.withOpacity(0.05))),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: (isEffectivelySelected || isCurrentPlaying)
+                            color: isEffectivelySelected
                                 ? Colors.green
-                                : Colors.transparent,
+                                : (isCurrentPlaying
+                                    ? Colors.green.withOpacity(0.4)
+                                    : Colors.transparent),
                             width: 1.5,
                           ),
                         ),
@@ -474,6 +479,20 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                           ),
                         ),
                       ),
+                      // 💡 新增：正在播放标记
+                      if (isCurrentPlaying)
+                        const Positioned(
+                          top: 3,
+                          right: 5,
+                          child: Text(
+                            '正在播放',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                       if (isDownloaded)
                         const Positioned(
                           right: 4,

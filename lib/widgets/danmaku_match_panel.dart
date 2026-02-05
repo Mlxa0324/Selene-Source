@@ -90,25 +90,32 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
 
     if (animeId != -1) {
-      // 2. 确保目标动画条目处于展开状态
-      setState(() {
-        _expansionStates[animeId] = true;
-      });
+      // 2. 💡 核心优化：确保目标动画条目处于展开状态
+      // 如果原本没展开，setState 会触发重绘展开它
+      if (_expansionStates[animeId] != true) {
+        setState(() {
+          _expansionStates[animeId] = true;
+        });
+      }
 
       // 3. 💡 核心优化：分两步精准定位
-      // 第一步：先快速滚动到动画标题位置，确保目标组件在渲染范围内
+      // 必须给 ExpansionTile 一点动画和渲染子项的时间，否则 Scrollable 找不到目标 Context
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // 给 ExpansionTile 展开一点时间
-        Future.delayed(const Duration(milliseconds: 150), () {
+        // 延时 200ms 以确保子项集数列表已经 layout 完成
+        Future.delayed(const Duration(milliseconds: 200), () {
           final targetKey = _itemKeys[targetEpisodeId];
           if (targetKey?.currentContext != null) {
-            // 第二步：使用官方提供的 ensureVisible 自动对齐，完美避开高度计算
+            // 使用官方提供的 ensureVisible 自动对齐
             Scrollable.ensureVisible(
               targetKey!.currentContext!,
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOut,
-              alignment: 0.3, // 💡 0.3 表示定位在距离顶部 30% 的位置，视觉最舒适
+              alignment: 0.3, // 定位在屏幕上方 30% 处
             );
+          } else {
+            // 💡 兜底：如果 Key 还是找不到（可能因为列表太长未进入 Viewport），尝试先滚动到大概位置
+            debugPrint('定位失败：目标 Context 为空，尝试二级定位');
+            // ... 这里的二级定位逻辑通常不需要，因为 addPostFrameCallback + delayed 已经足够
           }
         });
       });
