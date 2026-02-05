@@ -28,13 +28,15 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   List<DanmakuSearchAnime> _searchResults = [];
   String? _errorMessage;
   bool _isDescending = true;
-  int _resetCounter = 0; // 💡 新增：用于强制重置所有 Tile 状态
 
   // 💡 优化：用于存储集数项的 GlobalKey，实现 100% 精准定位
   final Map<int, GlobalKey> _itemKeys = {};
 
   // 用于存储 ExpansionTile 的状态，方便定位时展开
   final Map<int, bool> _expansionStates = {};
+
+  // 💡 核心修复：使用 ExpansionTileController 强力控制展开/收起
+  final Map<int, ExpansionTileController> _tileControllers = {};
 
   @override
   void initState() {
@@ -47,6 +49,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   void dispose() {
     _scrollController.dispose();
     _searchController.dispose();
+    // 💡 按照规范清理控制器（虽然 ExpansionTileController 不强制要求 dispose，但保持良好习惯）
+    _tileControllers.clear();
     super.dispose();
   }
 
@@ -66,15 +70,21 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
   }
 
-  /// 💡 新增：收起所有已展开的项
+  /// 💡 修复：使用控制器强制收起所有已展开的项
   void _collapseAll() {
     setState(() {
       _expansionStates.clear();
-      _resetCounter++; // 💡 增加计数器，强制 Key 变化
     });
+
+    // 遍历所有已绑定的控制器执行收起动画
+    for (final controller in _tileControllers.values) {
+      if (controller.isExpanded) {
+        controller.collapse();
+      }
+    }
   }
 
-  /// 定位到当前正在使用的弹幕位置
+  /// 💡 修复：使用控制器实现 100% 成功的展开定位
   void _locateToCurrent() {
     if (widget.currentEpisodeId == null || _searchResults.isEmpty) return;
 
@@ -90,22 +100,22 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
 
     if (animeId != -1) {
-      // 2. 💡 核心优化：确保目标动画条目处于展开状态
-      // 如果原本没展开，setState 会触发重绘展开它
-      if (_expansionStates[animeId] != true) {
-        setState(() {
-          _expansionStates[animeId] = true;
-        });
-      }
+      // 2. 💡 核心修复：首先确保数据状态为展开
+      setState(() {
+        _expansionStates[animeId] = true;
+      });
 
-      // 3. 💡 核心优化：分两步精准定位
+      // 3. 💡 核心修复：直接通过控制器下发展开指令
+      // 这解决了 initiallyExpanded 在 Widget 已经存在时无效的问题
+      _tileControllers[animeId]?.expand();
+
+      // 4. 💡 核心优化：分两步精准定位
       // 必须给 ExpansionTile 一点动画和渲染子项的时间，否则 Scrollable 找不到目标 Context
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // 延时 200ms 以确保子项集数列表已经 layout 完成
-        Future.delayed(const Duration(milliseconds: 200), () {
+        // 延时 250ms 以确保子项集数列表已经 layout 完成
+        Future.delayed(const Duration(milliseconds: 250), () {
           final targetKey = _itemKeys[targetEpisodeId];
           if (targetKey?.currentContext != null) {
-            // 使用官方提供的 ensureVisible 自动对齐
             Scrollable.ensureVisible(
               targetKey!.currentContext!,
               duration: const Duration(milliseconds: 400),
@@ -113,9 +123,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
               alignment: 0.3, // 定位在屏幕上方 30% 处
             );
           } else {
-            // 💡 兜底：如果 Key 还是找不到（可能因为列表太长未进入 Viewport），尝试先滚动到大概位置
-            debugPrint('定位失败：目标 Context 为空，尝试二级定位');
-            // ... 这里的二级定位逻辑通常不需要，因为 addPostFrameCallback + delayed 已经足够
+            debugPrint('定位失败：目标 Context 为空，当前集数可能还在屏幕外或未渲染');
           }
         });
       });
@@ -130,7 +138,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       _isLoading = true;
       _errorMessage = null;
       _expansionStates.clear();
-      _itemKeys.clear(); // 💡 搜索时清理 Key 缓存
+      _itemKeys.clear(); 
+      _tileControllers.clear(); // 💡 搜索时清理控制器缓存
     });
 
     try {
@@ -144,7 +153,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           });
           // 如果有当前 ID，自动定位一次
           if (widget.currentEpisodeId != null) {
-             _locateToCurrent();
+             // 延时一点点确保列表已构建
+             WidgetsBinding.instance.addPostFrameCallback((_) => _locateToCurrent());
           }
         } else {
           setState(() {
@@ -326,20 +336,23 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     bool hasSelected =
         anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
 
+    // 💡 核心：为每个动画项绑定一个持久的控制器
+    final controller = _tileControllers.putIfAbsent(
+      anime.animeId, 
+      () => ExpansionTileController()
+    );
+
     return Container(
-      key: PageStorageKey('anime_${anime.animeId}'),
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: textColor.withOpacity(0.03),
         borderRadius: BorderRadius.circular(8),
-        // 💡 优化：移除外层厚重的绿色边框，改为仅在有选中项时显示极淡的底色
         border: hasSelected
             ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
             : null,
       ),
       child: Stack(
         children: [
-          // 💡 优化：在左侧增加一个细长的绿色指示条，代替原本的标题变绿，这样更专业
           if (hasSelected)
             Positioned(
               left: 0,
@@ -356,16 +369,19 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           Theme(
             data: widget.theme.copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
-              key: ValueKey('tile_${anime.animeId}_$_resetCounter'),
+              controller: controller, // 💡 绑定控制器
+              key: PageStorageKey('tile_${anime.animeId}'), // 💡 使用 PageStorageKey 保持滚动后的状态
               initiallyExpanded: _expansionStates[anime.animeId] ?? false,
               onExpansionChanged: (expanded) {
-                _expansionStates[anime.animeId] = expanded;
+                // 💡 实时同步数据状态
+                setState(() {
+                  _expansionStates[anime.animeId] = expanded;
+                });
               },
               tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               title: Text(
                 anime.animeTitle,
                 style: TextStyle(
-                    // 💡 优化：标题颜色不再强制变绿，保持统一，仅通过左侧条指示
                     color: textColor, 
                     fontSize: 14,
                     fontWeight: hasSelected ? FontWeight.w600 : FontWeight.normal),
