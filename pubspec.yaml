@@ -35,16 +35,16 @@ dependencies:
   
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.6
+#  cupertino_icons: ^1.0.6
   
   # 添加用于创建美观UI的依赖
   google_fonts: ^6.2.1
-  flutter_svg: ^2.0.10+1
+#  flutter_svg: ^2.0.10+1
   http: ^1.2.1
   shared_preferences: ^2.2.3
   lucide_icons_flutter: ^3.1.0
   provider: ^6.1.2
-  web_socket_channel: ^3.0.3
+#  web_socket_channel: ^3.0.3
   cached_network_image: ^3.3.1
   url_launcher: ^6.3.0
   path_provider: ^2.1.3
@@ -52,7 +52,7 @@ dependencies:
   gal: ^2.3.0
   app_settings: ^6.1.1
   gbk_codec: ^0.4.0
-  scrollable_positioned_list: ^0.3.8
+#  scrollable_positioned_list: ^0.3.8
   dlna_dart: ^0.1.0
   macos_window_utils: ^1.5.1
   media_kit: 1.2.6
