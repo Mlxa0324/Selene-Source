@@ -977,6 +977,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           onFavoriteToggle: widget.onFavoriteToggle,
           onCastPressed: widget.onCastButtonPressed,
           onPipPressed: _enterPipMode,
+          isPipMode: _isPipMode, // 💡 传给短剧控制层
           onEpisodeTap: (index) {
             widget.onEpisodeChanged?.call(index);
           },

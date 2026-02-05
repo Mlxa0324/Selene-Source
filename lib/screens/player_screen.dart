@@ -4,6 +4,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import '../models/video_info.dart';
+import '../widgets/video_menu_bottom_sheet.dart';
 import '../widgets/video_player_surface.dart';
 import '../widgets/video_player_widget.dart';
 import '../widgets/video_card.dart';
@@ -2188,7 +2190,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                 videoInfo: videoInfo,
                 from: 'douban',
                 cardWidth: itemWidth,
+                isFavorited: PageCacheService().isFavoritedSync(videoInfo.source, videoInfo.id), // 💡 实时检查收藏状态
                 onTap: () => _onRecommendTap(recommend),
+                onGlobalMenuAction: (action) {
+                  // 💡 复用已有的菜单处理逻辑
+                  _onGlobalMenuActionFromVideoInfo(videoInfo, action);
+                },
               );
             },
           ),
@@ -2232,6 +2239,101 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       ),
     );
+  }
+
+  /// 💡 新增：处理来自VideoInfo的全局菜单操作 (用于修复报错)
+  void _onGlobalMenuActionFromVideoInfo(
+      VideoInfo videoInfo, VideoMenuAction action) {
+    // 将VideoInfo转换为PlayRecord用于统一处理
+    final playRecord = PlayRecord(
+      id: videoInfo.id,
+      source: videoInfo.source,
+      title: videoInfo.title,
+      sourceName: videoInfo.sourceName,
+      year: videoInfo.year,
+      cover: videoInfo.cover,
+      index: videoInfo.index,
+      totalEpisodes: videoInfo.totalEpisodes,
+      playTime: videoInfo.playTime,
+      totalTime: videoInfo.totalTime,
+      saveTime: videoInfo.saveTime,
+      searchTitle: videoInfo.searchTitle,
+    );
+    _onGlobalMenuAction(playRecord, action);
+  }
+
+  /// 💡 新增：处理视频菜单具体逻辑 (用于修复报错)
+  void _onGlobalMenuAction(PlayRecord playRecord, VideoMenuAction action) {
+    switch (action) {
+      case VideoMenuAction.play:
+        // 跳转到新播放页
+        _navigateToNewVideo(playRecord);
+        break;
+      case VideoMenuAction.favorite:
+        _handleMenuFavorite(playRecord);
+        break;
+      case VideoMenuAction.unfavorite:
+        _handleMenuUnfavorite(playRecord);
+        break;
+      case VideoMenuAction.deleteRecord:
+        _handleMenuDeleteRecord(playRecord);
+        break;
+      case VideoMenuAction.doubanDetail:
+      case VideoMenuAction.bangumiDetail:
+        // 详情已在组件内部处理
+        break;
+    }
+  }
+
+  /// 辅助方法：跳转到新视频并替换当前页
+  void _navigateToNewVideo(PlayRecord playRecord) {
+     if (_videoPlayerController?.isPlaying == true) {
+      _videoPlayerController?.pause();
+    }
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PlayerScreen(
+          source: playRecord.source,
+          id: playRecord.id,
+          title: playRecord.title,
+          year: playRecord.year,
+        ),
+      ),
+    );
+  }
+
+  /// 辅助处理：菜单收藏
+  void _handleMenuFavorite(PlayRecord playRecord) async {
+    final favoriteData = {
+      'cover': playRecord.cover,
+      'save_time': DateTime.now().millisecondsSinceEpoch,
+      'source_name': playRecord.sourceName,
+      'title': playRecord.title,
+      'total_episodes': playRecord.totalEpisodes,
+      'year': playRecord.year,
+    };
+    final result = await PageCacheService().addFavorite(
+        playRecord.source, playRecord.id, favoriteData, context);
+    if (result.success && mounted) {
+      setState(() {}); // 刷新当前页显示状态
+    }
+  }
+
+  /// 辅助处理：菜单取消收藏
+  void _handleMenuUnfavorite(PlayRecord playRecord) async {
+    final result = await PageCacheService().removeFavorite(
+        playRecord.source, playRecord.id, context);
+    if (result.success && mounted) {
+      setState(() {});
+    }
+  }
+
+  /// 辅助处理：删除记录
+  void _handleMenuDeleteRecord(PlayRecord playRecord) async {
+    await PageCacheService().deletePlayRecord(
+        playRecord.source, playRecord.id, context);
+    if (mounted) setState(() {});
   }
 
   /// 构建选集区域

@@ -31,13 +31,14 @@ class ShortDramaControls extends StatefulWidget {
   final Future<void> Function(double speed) onSetSpeed;
   final void Function(int index)? onEpisodeTap;
   final void Function(SearchResult source)? onSourceTap;
-  final Future<void> Function()? onRefreshSources;
-  final void Function(BuildContext context)? onDanmakuButtonPressed;
-  final void Function(BuildContext context)? onDanmakuMatchButtonPressed; // 💡 新增
+  final Future<void> Function()? onRefreshSources; // 💡 补全缺失的变量
+  final void Function(BuildContext context)? onDanmakuButtonPressed; // 💡 补全缺失的变量
+  final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
   final VoidCallback? onCastPressed; // 💡 新增
   final VoidCallback? onPipPressed; // 💡 新增
+  final bool isPipMode; // 💡 新增：小窗模式标记
   final String videoCover;
 
   const ShortDramaControls({
@@ -67,11 +68,12 @@ class ShortDramaControls extends StatefulWidget {
     this.onSourceTap,
     this.onRefreshSources,
     this.onDanmakuButtonPressed,
-    this.onDanmakuMatchButtonPressed, // 💡 新增
+    this.onDanmakuMatchButtonPressed,
     this.isFavorite,
     this.onFavoriteToggle,
     this.onCastPressed,
     this.onPipPressed,
+    this.isPipMode = false, // 💡 默认非小窗
     required this.videoCover,
   });
 
@@ -370,9 +372,10 @@ class ShortDramaControlsState extends State<ShortDramaControls>
       children: [
         _buildGestureLayer(),
         _buildPlayPauseIndicator(),
+        // 💡 优化：进入小窗前自动隐藏，从小窗返回渐入
         _buildTopBar(),
         _buildBottomUI(),
-        _buildToast(), // 💡 新增
+        _buildToast(),
       ],
     );
   }
@@ -455,37 +458,41 @@ class ShortDramaControlsState extends State<ShortDramaControls>
 
   Widget _buildTopBar() {
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 5,
+      top: MediaQuery.of(context).padding.top + 12,
       left: 0,
       right: 0,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-              onPressed: widget.onBackPressed,
-            ),
-            Expanded(
-              child: Text(
-                widget.videoTitle ?? '',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  shadows: [
-                    Shadow(
-                      offset: Offset(0, 1),
-                      blurRadius: 3.0,
-                      color: Colors.black,
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      child: AnimatedOpacity(
+        opacity: widget.isPipMode ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 300),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                onPressed: widget.onBackPressed,
               ),
-            ),
-          ],
+              Expanded(
+                child: Text(
+                  widget.videoTitle ?? '',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    shadows: [
+                      Shadow(
+                        offset: Offset(0, 1),
+                        blurRadius: 3.0,
+                        color: Colors.black,
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -496,14 +503,18 @@ class ShortDramaControlsState extends State<ShortDramaControls>
       bottom: 0,
       left: 0,
       right: 0,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildProgressBar(),
-          const SizedBox(height: 8),
-          _buildActionButtons(),
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
-        ],
+      child: AnimatedOpacity(
+        opacity: widget.isPipMode ? 0.0 : 1.0,
+        duration: const Duration(milliseconds: 300),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildProgressBar(),
+            const SizedBox(height: 8),
+            _buildActionButtons(),
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
+          ],
+        ),
       ),
     );
   }
