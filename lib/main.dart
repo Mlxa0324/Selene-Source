@@ -18,11 +18,17 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 初始化 media_kit (用于 PC 端播放器)
-  MediaKit.ensureInitialized();
+  // 💡 优化：仅在 PC 端初始化 media_kit (因为 Android/iOS 已改用 video_player)
+  if (Platform.isWindows || Platform.isMacOS) {
+    MediaKit.ensureInitialized();
+  }
 
   // 初始化下载服务
-  await DownloadService().init();
+  try {
+    await DownloadService().init();
+  } catch (e) {
+    debugPrint('DownloadService init error: $e');
+  }
 
   // 初始化 macOS 窗口配置
   if (Platform.isMacOS) {
@@ -126,7 +132,10 @@ class _AppWrapperState extends State<AppWrapper> {
           final subscriptionUrl =
               await LocalModeStorageService.getSubscriptionUrl();
           if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
-            final response = await http.get(Uri.parse(subscriptionUrl));
+            // 💡 优化：增加 10 秒超时控制，防止因网络波动导致启动页永久卡死
+            final response = await http
+                .get(Uri.parse(subscriptionUrl))
+                .timeout(const Duration(seconds: 10));
             if (response.statusCode == 200) {
               final content =
                   await SubscriptionService.parseSubscriptionContent(
@@ -153,6 +162,7 @@ class _AppWrapperState extends State<AppWrapper> {
             MaterialPageRoute(builder: (context) => const HomeScreen()),
           );
         }
+        return; // 💡 确保进入本地模式流程后不再执行后续代码
       }
 
       // 检查是否有自动登录所需的数据

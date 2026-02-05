@@ -39,13 +39,6 @@
 }
 
 # =========================
-# Video Players (只保留必要的)
-# =========================
-# Media Kit - 只保留公共 API
--keep class com.alexmercerind.**.MediaKitPlugin { *; }
--dontwarn com.alexmercerind.**
-
-# =========================
 # Network (最小化)
 # =========================
 # OkHttp - 只保留必要的
