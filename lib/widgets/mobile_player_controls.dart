@@ -327,12 +327,17 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onSwipeStart(DragStartDetails details) {
     if (_isLocked || widget.live) return;
     _screenSize ??= MediaQuery.of(context).size;
+    
+    // 💡 优化：横屏全屏时，如果触摸起点在屏幕底部 40 像素内，视为系统导航操作，直接拦截进度调节
+    if (_isEffectiveFullscreen && details.globalPosition.dy > (_screenSize!.height - 40)) {
+      return;
+    }
+
     setState(() {
       _isSeekingViaSwipe = true;
       _swipeStartX = details.globalPosition.dx;
       _swipeStartPosition = _position;
       _dragPosition = null;
-      // 💡 优化：不再强制显示整个控制栏按钮组
     });
     // 同步给父组件但不立即开启 timer，由 _onSwipeEnd 处理
     widget.onControlsVisibilityChanged(_controlsVisible);
@@ -342,6 +347,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onSwipeUpdate(DragUpdateDetails details) {
     if (_isLocked || !_isSeekingViaSwipe || widget.live || _screenSize == null)
       return;
+
+    // 💡 优化：横屏全屏时，如果向上滑动的趋势明显（dy 负值较大），视为尝试退出或进入小窗，停止进度调节
+    if (_isEffectiveFullscreen && details.delta.dy < -5 && details.delta.dy.abs() > details.delta.dx.abs()) {
+      _onSwipeEnd(DragEndDetails());
+      return;
+    }
+
     final screenWidth = _screenSize!.width;
     final swipeDistance = details.globalPosition.dx - _swipeStartX;
     final swipeRatio = swipeDistance / (screenWidth * 0.5);
@@ -1787,6 +1799,10 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
             onHorizontalDragStart: widget.live
                 ? null
                 : (details) {
+                    // 💡 优化：横屏全屏时，如果触摸点在进度条容器的最底部边缘（dy 较大），
+                    // 说明可能是想滑出系统导航栏，此时忽略拖动起手。
+                    if (details.localPosition.dy > 20) return;
+
                     _isDragging = true;
                     widget.onDragStart?.call();
                     _updateDrag(details.localPosition.dx, context);
