@@ -113,6 +113,22 @@ class _MovieScreenState extends State<MovieScreen> {
     SelectorOption(label: '更早', value: 'earlier'),
   ];
 
+  // 平台选项（与 TV 一致）
+  final List<SelectorOption> _platformOptions = const [
+    SelectorOption(label: '全部', value: 'all'),
+    SelectorOption(label: '腾讯视频', value: 'tencent'),
+    SelectorOption(label: '爱奇艺', value: 'iqiyi'),
+    SelectorOption(label: '优酷', value: 'youku'),
+    SelectorOption(label: '湖南卫视', value: 'hunan_tv'),
+    SelectorOption(label: 'Netflix', value: 'netflix'),
+    SelectorOption(label: 'HBO', value: 'hbo'),
+    SelectorOption(label: 'BBC', value: 'bbc'),
+    SelectorOption(label: 'NHK', value: 'nhk'),
+    SelectorOption(label: 'CBS', value: 'cbs'),
+    SelectorOption(label: 'NBC', value: 'nbc'),
+    SelectorOption(label: 'tvN', value: 'tvn'),
+  ];
+
   final List<SelectorOption> _movieSortOptions = const [
     SelectorOption(label: '综合排序', value: 'T'),
     SelectorOption(label: '近期热度', value: 'U'),
@@ -127,6 +143,7 @@ class _MovieScreenState extends State<MovieScreen> {
   String _selectedMovieType = 'all';
   String _selectedMovieRegion = 'all';
   String _selectedMovieYear = 'all';
+  String _selectedMoviePlatform = 'all';
   String _selectedMovieSort = 'T';
 
   final ScrollController _scrollController = ScrollController();
@@ -216,6 +233,7 @@ class _MovieScreenState extends State<MovieScreen> {
       String categoryValue = _selectedMovieType;
       String regionValue = _selectedMovieRegion;
       String yearValue = _selectedMovieYear;
+      String platformValue = _selectedMoviePlatform;
 
       // 转换地区参数为中文标签
       if (regionValue != 'all') {
@@ -235,11 +253,18 @@ class _MovieScreenState extends State<MovieScreen> {
             _movieTypeOptions.firstWhere((e) => e.value == categoryValue).label;
       }
 
+      // 转换类型参数为中文标签
+      if (platformValue != 'all') {
+        platformValue =
+            _platformOptions.firstWhere((e) => e.value == platformValue).label;
+      }
+
       final params = DoubanRecommendsParams(
         kind: 'movie',
         category: categoryValue,
         region: regionValue,
         year: yearValue,
+        platform: platformValue,
         sort: _selectedMovieSort,
         pageLimit: _pageLimit,
         page: _page,
@@ -333,6 +358,7 @@ class _MovieScreenState extends State<MovieScreen> {
       String categoryValue = _selectedMovieType;
       String regionValue = _selectedMovieRegion;
       String yearValue = _selectedMovieYear;
+      String platformValue = _selectedMoviePlatform;
 
       // 转换地区参数为中文标签
       if (regionValue != 'all') {
@@ -351,12 +377,18 @@ class _MovieScreenState extends State<MovieScreen> {
         categoryValue =
             _movieTypeOptions.firstWhere((e) => e.value == categoryValue).label;
       }
+      // 转换类型参数为中文标签
+      if (platformValue != 'all') {
+        platformValue =
+            _platformOptions.firstWhere((e) => e.value == platformValue).label;
+      }
 
       final params = DoubanRecommendsParams(
         kind: 'movie',
         category: categoryValue,
         region: regionValue,
         year: yearValue,
+        platform: platformValue,
         sort: _selectedMovieSort,
         pageLimit: _pageLimit,
         page: _page,
@@ -610,6 +642,10 @@ class _MovieScreenState extends State<MovieScreen> {
                 _buildFilterPill('年代', _movieYearOptions, _selectedMovieYear,
                     (v) {
                   setState(() => _selectedMovieYear = v);
+                  _fetchMovies(isRefresh: true);
+                }),
+                _buildFilterPill('平台', _platformOptions, _selectedMoviePlatform, (v) {
+                  setState(() => _selectedMoviePlatform = v);
                   _fetchMovies(isRefresh: true);
                 }),
                 _buildFilterPill('排序', _movieSortOptions, _selectedMovieSort,
