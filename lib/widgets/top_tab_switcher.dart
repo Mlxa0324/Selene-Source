@@ -266,7 +266,7 @@ class _TopTabSwitcherState extends State<TopTabSwitcher>
                 child: Text(
                   label,
                   style: FontUtils.poppins(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: fontWeight,
                     color: textColor,
                   ),
