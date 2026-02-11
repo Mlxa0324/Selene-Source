@@ -29,8 +29,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   String? _errorMessage;
   bool _isDescending = true;
 
-  // 💡 优化：用于存储集数项的 GlobalKey，实现 100% 精准定位
-  final Map<int, GlobalKey> _itemKeys = {};
+  // 💡 优化：改为使用复合字符串 Key (animeId_episodeId)，防止不同搜索结果下重复的 episodeId 导致 GlobalKey 冲突
+  final Map<String, GlobalKey> _itemKeys = {};
 
   // 用于存储 ExpansionTile 的状态，方便定位时展开
   final Map<int, bool> _expansionStates = {};
@@ -49,8 +49,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   void dispose() {
     _scrollController.dispose();
     _searchController.dispose();
-    // 💡 按照规范清理控制器（虽然 ExpansionTileController 不强制要求 dispose，但保持良好习惯）
     _tileControllers.clear();
+    _itemKeys.clear();
     super.dispose();
   }
 
@@ -95,38 +95,35 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     for (var anime in _searchResults) {
       if (anime.episodes.any((e) => e.episodeId == targetEpisodeId)) {
         animeId = anime.animeId;
-        break;
-      }
-    }
-
-    if (animeId != -1) {
-      // 2. 💡 核心修复：首先确保数据状态为展开
-      setState(() {
-        _expansionStates[animeId] = true;
-      });
-
-      // 3. 💡 核心修复：直接通过控制器下发展开指令
-      // 这解决了 initiallyExpanded 在 Widget 已经存在时无效的问题
-      _tileControllers[animeId]?.expand();
-
-      // 4. 💡 核心优化：分两步精准定位
-      // 必须给 ExpansionTile 一点动画和渲染子项的时间，否则 Scrollable 找不到目标 Context
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // 延时 250ms 以确保子项集数列表已经 layout 完成
-        Future.delayed(const Duration(milliseconds: 250), () {
-          final targetKey = _itemKeys[targetEpisodeId];
-          if (targetKey?.currentContext != null) {
-            Scrollable.ensureVisible(
-              targetKey!.currentContext!,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-              alignment: 0.3, // 定位在屏幕上方 30% 处
-            );
-          } else {
-            debugPrint('定位失败：目标 Context 为空，当前集数可能还在屏幕外或未渲染');
-          }
+        
+        // 2. 💡 核心修复：确保数据状态为展开
+        setState(() {
+          _expansionStates[animeId] = true;
         });
-      });
+
+        // 3. 💡 直接通过控制器下发展开指令
+        _tileControllers[animeId]?.expand();
+
+        // 4. 💡 精准定位
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          // 延时 250ms 待动画完成
+          Future.delayed(const Duration(milliseconds: 250), () {
+            final compositeKey = '${animeId}_$targetEpisodeId';
+            final targetKey = _itemKeys[compositeKey];
+            if (targetKey?.currentContext != null) {
+              Scrollable.ensureVisible(
+                targetKey!.currentContext!,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeInOut,
+                alignment: 0.3,
+              );
+            }
+          });
+        });
+
+        // 找到第一个匹配项并处理后就退出循环，防止多个重复 ID 引起冲突
+        break; 
+      }
     }
   }
 
@@ -308,111 +305,112 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                         ? Center(
                             child: Text('未找到相关弹幕',
                                 style: TextStyle(color: subTextColor)))
-                        : ListView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: _searchResults.length,
-                            itemExtent: null, // 高度自适应
-                            cacheExtent: 1000, // 增加预渲染区域减少闪烁
-                            itemBuilder: (context, index) {
-                              final anime = _searchResults[index];
-                              return _buildAnimeItem(
-                                anime,
-                                isDarkMode,
-                                textColor,
-                                subTextColor,
-                              );
-                            },
-                          ),
-          ),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
-      Color textColor, Color subTextColor) {
-    bool hasSelected =
-        anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
-
-    // 💡 核心：为每个动画项绑定一个持久的控制器
-    final controller = _tileControllers.putIfAbsent(
-      anime.animeId, 
-      () => ExpansionTileController()
-    );
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: textColor.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(8),
-        border: hasSelected
-            ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
-            : null,
-      ),
-      child: Stack(
-        children: [
-          if (hasSelected)
-            Positioned(
-              left: 0,
-              top: 12,
-              bottom: 12,
-              child: Container(
-                width: 3,
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          Theme(
-            data: widget.theme.copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              controller: controller, // 💡 绑定控制器
-              key: PageStorageKey('tile_${anime.animeId}'), // 💡 使用 PageStorageKey 保持滚动后的状态
-              initiallyExpanded: _expansionStates[anime.animeId] ?? false,
-              onExpansionChanged: (expanded) {
-                // 💡 实时同步数据状态
-                setState(() {
-                  _expansionStates[anime.animeId] = expanded;
-                });
-              },
-              tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              title: Text(
-                anime.animeTitle,
-                style: TextStyle(
-                    color: textColor, 
-                    fontSize: 14,
-                    fontWeight: hasSelected ? FontWeight.w600 : FontWeight.normal),
-              ),
-              subtitle: Text(
-                '${anime.typeDescription} • ${anime.episodes.length}个结果',
-                style: TextStyle(color: subTextColor, fontSize: 11),
-              ),
-              iconColor: textColor.withOpacity(0.5),
-              collapsedIconColor: textColor.withOpacity(0.5),
-              childrenPadding: EdgeInsets.zero,
-              children: [
-                ...anime.episodes.map((ep) => _buildEpisodeItem(ep, textColor)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEpisodeItem(DanmakuSearchEpisode episode, Color textColor) {
-    bool isSelected = episode.episodeId == widget.currentEpisodeId;
-    
-    // 💡 优化：为每个集数项生成一个 GlobalKey，并在定位时使用
-    final key = _itemKeys.putIfAbsent(episode.episodeId, () => GlobalKey());
-
-    return Material(
-      key: key, // 💡 绑定 Key
-      color: Colors.transparent,
-      child: InkWell(
+                                                : ListView.builder(
+                                                    controller: _scrollController,
+                                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                    itemCount: _searchResults.length,
+                                                    itemExtent: null, // 高度自适应
+                                                    cacheExtent: 1000, // 增加预渲染区域减少闪烁
+                                                    itemBuilder: (context, index) {
+                                                      final anime = _searchResults[index];
+                                                      return _buildAnimeItem(
+                                                        anime,
+                                                        isDarkMode,
+                                                        textColor,
+                                                        subTextColor,
+                                                      );
+                                                    },
+                                                  ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+                              ),
+                            );
+                          }
+                        
+                          Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
+                              Color textColor, Color subTextColor) {
+                            bool hasSelected =
+                                anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
+                        
+                            // 💡 核心：为每个动画项绑定一个持久的控制器
+                            final controller = _tileControllers.putIfAbsent(
+                              anime.animeId, 
+                              () => ExpansionTileController()
+                            );
+                        
+                            return Container(
+                              key: ValueKey('anime_${anime.animeId}'), // 💡 增加 Key 增加稳定性
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: textColor.withOpacity(0.03),
+                                borderRadius: BorderRadius.circular(8),
+                                border: hasSelected
+                                    ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
+                                    : null,
+                              ),
+                              child: Stack(
+                                children: [
+                                  if (hasSelected)
+                                    Positioned(
+                                      left: 0,
+                                      top: 12,
+                                      bottom: 12,
+                                      child: Container(
+                                        width: 3,
+                                        decoration: BoxDecoration(
+                                          color: Colors.green,
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
+                                    ),
+                                  Theme(
+                                    data: widget.theme.copyWith(dividerColor: Colors.transparent),
+                                    child: ExpansionTile(
+                                      controller: controller, // 💡 绑定控制器
+                                      key: PageStorageKey('tile_${anime.animeId}'), // 💡 使用 PageStorageKey 保持滚动后的状态
+                                      initiallyExpanded: _expansionStates[anime.animeId] ?? false,
+                                      onExpansionChanged: (expanded) {
+                                        // 💡 实时同步数据状态
+                                        setState(() {
+                                          _expansionStates[anime.animeId] = expanded;
+                                        });
+                                      },
+                                      tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                      title: Text(
+                                        anime.animeTitle,
+                                        style: TextStyle(
+                                            color: textColor, 
+                                            fontSize: 14,
+                                            fontWeight: hasSelected ? FontWeight.w600 : FontWeight.normal),
+                                      ),
+                                      subtitle: Text(
+                                        '${anime.typeDescription} • ${anime.episodes.length}个结果',
+                                        style: TextStyle(color: subTextColor, fontSize: 11),
+                                      ),
+                                      iconColor: textColor.withOpacity(0.5),
+                                      collapsedIconColor: textColor.withOpacity(0.5),
+                                      childrenPadding: EdgeInsets.zero,
+                                      children: [
+                                        ...anime.episodes.map((ep) => _buildEpisodeItem(anime.animeId, ep, textColor)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                        
+                          Widget _buildEpisodeItem(int animeId, DanmakuSearchEpisode episode, Color textColor) {
+                            bool isSelected = episode.episodeId == widget.currentEpisodeId;
+                            
+                            // 💡 复合 Key 生成
+                            final compositeKey = '${animeId}_${episode.episodeId}';
+                            final key = _itemKeys.putIfAbsent(compositeKey, () => GlobalKey());
+                        
+                            return Material(
+                              key: key, 
+                              color: Colors.transparent,      child: InkWell(
         onTap: () => widget.onEpisodeSelected(episode.episodeId),
         borderRadius: BorderRadius.circular(4),
         child: Container(
