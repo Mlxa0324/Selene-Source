@@ -19,6 +19,7 @@ class MainLayout extends StatefulWidget {
   final String selectedTopTab;
   final Function(String) onTopTabChanged;
   final bool isSearchMode;
+  final bool isOffline;
   final VoidCallback? onSearchTap;
   final VoidCallback? onHomeTap;
   final TextEditingController? searchController;
@@ -37,6 +38,7 @@ class MainLayout extends StatefulWidget {
     required this.selectedTopTab,
     required this.onTopTabChanged,
     this.isSearchMode = false,
+    this.isOffline = false,
     this.onSearchTap,
     this.onHomeTap,
     this.searchController,
@@ -475,24 +477,51 @@ class _MainLayoutState extends State<MainLayout> {
               ),
             ),
           ),
-          // 完全居中的 Logo
-          Center(
-            child: GestureDetector(
-              onTap: widget.onHomeTap,
-              behavior: HitTestBehavior.opaque,
-              child: Text(
-                'Selene',
-                style: FontUtils.sourceCodePro(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w400,
-                  color: themeService.isDarkMode
-                      ? Colors.white
-                      : const Color(0xFF2c3e50),
-                  letterSpacing: 1.5,
-                ),
-              ),
-            ),
-          ),
+                    // 完全居中的 Logo
+                    Center(
+                      child: GestureDetector(
+                        onTap: widget.onHomeTap,
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Selene',
+                              style: FontUtils.sourceCodePro(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w400,
+                                color: themeService.isDarkMode
+                                    ? Colors.white
+                                    : const Color(0xFF2c3e50),
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                            if (widget.isOffline) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF5A05D),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '离线',
+                                  style: FontUtils.poppins(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+          
           // 右侧按钮组
           Positioned(
             right: 0,

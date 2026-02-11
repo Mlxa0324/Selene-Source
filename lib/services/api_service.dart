@@ -550,12 +550,17 @@ class ApiService {
       final baseUrl = await _getBaseUrl();
       if (baseUrl == null) return false;
 
-      final response = await http.get(
+      final maniestResponse = await http.get(
+        Uri.parse('$baseUrl/c.json'),
+        headers: {'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 5));
+
+      final healthResponse = await http.get(
         Uri.parse('$baseUrl/api/health'),
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 5));
 
-      return response.statusCode == 200;
+      return healthResponse.statusCode == 200 || maniestResponse.statusCode == 200;
     } catch (e) {
       return false;
     }

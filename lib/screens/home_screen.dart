@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../widgets/continue_watching_section.dart';
 import '../widgets/hot_movies_section.dart';
 import '../widgets/hot_tv_section.dart';
@@ -38,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedTopTab = '首页';
   late PageController _pageController;
   late PageController _bottomNavPageController;
+  bool _isOffline = false;
 
   @override
   void initState() {
@@ -46,14 +48,61 @@ class _HomeScreenState extends State<HomeScreen> {
     _pageController = PageController(initialPage: 0);
     // 初始化底栏 PageController
     _bottomNavPageController = PageController(initialPage: 0);
-    // 进入首页时直接刷新播放记录和收藏夹缓存
-    _refreshCacheOnHomeEnter();
+    // 检查网络状态并刷新缓存
+    _initNetworkAndCache();
     // 检查应用更新
     _checkForUpdates();
   }
 
+  /// 初始化网络状态和缓存
+  void _initNetworkAndCache() async {
+    // 检查网络状态
+    final isConnected = await ApiService.checkConnection();
+    if (mounted) {
+      setState(() {
+        _isOffline = !isConnected;
+      });
+
+      if (_isOffline) {
+        // 在页面构建完成后显示提示
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.cloud_off, color: Colors.white, size: 20),
+                    const SizedBox(width: 12),
+                    Text(
+                      '当前处于离线模式，仅可播放下载内容',
+                      style: FontUtils.poppins(color: Colors.white),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFFF5A05D), // 橘黄色警告
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                margin: const EdgeInsets.all(16),
+              ),
+            );
+          }
+        });
+      }
+    }
+
+    // 进入首页时直接刷新播放记录和收藏夹缓存
+    _refreshCacheOnHomeEnter();
+  }
+
   /// 检查应用更新
   void _checkForUpdates() async {
+    // 💡 优化：如果完全断网（如在飞机上），则不检查更新，避免不必要的请求
+    final isConnected = await ApiService.checkConnection();
+    if (!isConnected) return;
+
     // 延迟3秒后检查更新，避免影响页面加载
     await Future.delayed(const Duration(seconds: 3));
 
@@ -393,6 +442,7 @@ class _HomeScreenState extends State<HomeScreen> {
       onTopTabChanged: _onTopTabChanged,
       onHomeTap: _onHomeTap,
       onSearchTap: _onSearchTap,
+      isOffline: _isOffline,
     );
   }
 

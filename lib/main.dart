@@ -188,7 +188,20 @@ class _AppWrapperState extends State<AppWrapper> {
             MaterialPageRoute(builder: (context) => const HomeScreen()),
           );
         } else {
-          // 自动登录失败，进入登录页
+          // 💡 优化：如果自动登录失败是因为断网（例如在飞机上），
+          // 但本地已经有登录凭证，则允许直接进入首页看下载内容
+          final isConnected = await ApiService.checkConnection();
+          if (!isConnected && hasAutoLoginData) {
+            debugPrint('检测到完全断网，且本地存有凭证，允许进入首页（离线模式）');
+            if (mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => const HomeScreen()),
+              );
+            }
+            return;
+          }
+
+          // 真正的登录失败（如密码错误）或有网但连不上服务器，才进入登录页
           setState(() {
             _isLoading = false;
           });
