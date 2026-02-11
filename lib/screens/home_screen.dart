@@ -169,6 +169,14 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 刷新首页数据
   Future<void> _refreshHomeData() async {
     try {
+      // 💡 优化：刷新时检查网络，如果连通则取消离线标记
+      final isConnected = await ApiService.checkConnection();
+      if (mounted && isConnected && _isOffline) {
+        setState(() {
+          _isOffline = false;
+        });
+      }
+
       // 调用各个组件的刷新方法
       if (mounted) {
         // 刷新继续观看组件
@@ -743,6 +751,14 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 从播放页返回时刷新播放记录
   Future<void> _refreshOnResume() async {
     try {
+      // 💡 优化：返回首页时重新检查网络状态
+      final isConnected = await ApiService.checkConnection();
+      if (mounted && _isOffline != !isConnected) {
+        setState(() {
+          _isOffline = !isConnected;
+        });
+      }
+
       // 通知继续观看组件和播放历史组件更新UI
       if (mounted) {
         ContinueWatchingSection.refreshPlayRecords();
