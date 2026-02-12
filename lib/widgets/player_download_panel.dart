@@ -6,6 +6,7 @@ import '../models/download_task.dart';
 import '../services/download_service.dart';
 import 'package:provider/provider.dart';
 import '../screens/download_screen.dart';
+import '../utils/device_utils.dart';
 
 class PlayerDownloadPanel extends StatefulWidget {
   final ThemeData theme;
@@ -39,6 +40,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   final ScrollController _scrollController = ScrollController(); // 集数网格滚动
   final ScrollController _groupScrollController = ScrollController(); // 💡 分组列表滚动
   final GlobalKey _gridKey = GlobalKey(); 
+  bool _isHoveringGroupPager = false;
 
   @override
   void initState() {
@@ -82,6 +84,21 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
       offset.clamp(0.0, _groupScrollController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
+    );
+  }
+
+  void _pageScrollGroup(bool forward) {
+    if (!_groupScrollController.hasClients) return;
+
+    final position = _groupScrollController.position;
+    final page = position.viewportDimension * 0.9;
+    final target = (position.pixels + (forward ? page : -page))
+        .clamp(0.0, position.maxScrollExtent);
+
+    _groupScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
     );
   }
 
@@ -262,51 +279,93 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
             Container(
               height: 40,
               margin: const EdgeInsets.only(bottom: 8),
-              child: ListView.builder(
-                controller: _groupScrollController,
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: (widget.episodes.length / 50).ceil(),
-                itemBuilder: (context, index) {
-                  final start = index * 50 + 1;
-                  final end =
-                      ((index + 1) * 50).clamp(0, widget.episodes.length);
-                  final isSelected = _selectedGroupIndex == index;
+              child: MouseRegion(
+                onEnter: (_) {
+                  if (DeviceUtils.isPC()) {
+                    setState(() => _isHoveringGroupPager = true);
+                  }
+                },
+                onExit: (_) {
+                  if (DeviceUtils.isPC()) {
+                    setState(() => _isHoveringGroupPager = false);
+                  }
+                },
+                child: Stack(
+                  children: [
+                    ListView.builder(
+                      controller: _groupScrollController,
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: (widget.episodes.length / 50).ceil(),
+                      itemBuilder: (context, index) {
+                        final start = index * 50 + 1;
+                        final end =
+                            ((index + 1) * 50).clamp(0, widget.episodes.length);
+                        final isSelected = _selectedGroupIndex == index;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text('$start-$end'),
-                      selected: isSelected,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() {
-                            _selectedGroupIndex = index;
-                          });
-                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text('$start-$end'),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                setState(() {
+                                  _selectedGroupIndex = index;
+                                });
+                              }
+                            },
+                            selectedColor: Colors.green.withOpacity(0.2),
+                            backgroundColor: isDarkMode
+                                ? Colors.white10
+                                : Colors.black.withOpacity(0.05),
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? Colors.green
+                                  : textColor.withOpacity(0.7),
+                              fontSize: 13,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color:
+                                    isSelected ? Colors.green : Colors.transparent,
+                              ),
+                            ),
+                            showCheckmark: false,
+                          ),
+                        );
                       },
-                      selectedColor: Colors.green.withOpacity(0.2),
-                      backgroundColor: isDarkMode
-                          ? Colors.white10
-                          : Colors.black.withOpacity(0.05),
-                      labelStyle: TextStyle(
-                        color: isSelected
-                            ? Colors.green
-                            : textColor.withOpacity(0.7),
-                        fontSize: 13,
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                        side: BorderSide(
-                          color: isSelected ? Colors.green : Colors.transparent,
+                    ),
+                    if (DeviceUtils.isPC() &&
+                        _isHoveringGroupPager &&
+                        _groupScrollController.hasClients &&
+                        _groupScrollController.position.maxScrollExtent > 0)
+                      Positioned.fill(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _GroupPagerButton(
+                                isLeft: true,
+                                isDarkMode: isDarkMode,
+                                onTap: () => _pageScrollGroup(false),
+                              ),
+                              _GroupPagerButton(
+                                isLeft: false,
+                                isDarkMode: isDarkMode,
+                                onTap: () => _pageScrollGroup(true),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                      showCheckmark: false,
-                    ),
-                  );
-                },
+                  ],
+                ),
               ),
             ),
 
@@ -622,6 +681,49 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _GroupPagerButton extends StatelessWidget {
+  final bool isLeft;
+  final bool isDarkMode;
+  final VoidCallback onTap;
+
+  const _GroupPagerButton({
+    required this.isLeft,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = isDarkMode
+        ? Colors.black.withOpacity(0.35)
+        : Colors.white.withOpacity(0.9);
+    final borderColor = isDarkMode ? Colors.white24 : Colors.black12;
+    final iconColor = isDarkMode ? Colors.white : Colors.black87;
+
+    return MouseRegion(
+      cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: bgColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: borderColor),
+          ),
+          child: Icon(
+            isLeft ? Icons.chevron_left : Icons.chevron_right,
+            size: 22,
+            color: iconColor,
+          ),
+        ),
       ),
     );
   }

@@ -52,6 +52,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
   late AnimationController _rotationController;
   bool _isRefreshing = false;
   late ScrollController _scrollController;
+  bool _isHoveringPager = false;
 
   @override
   void initState() {
@@ -104,6 +105,21 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
       targetOffset.clamp(0.0, _scrollController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
+    );
+  }
+
+  void _pageScrollList(bool forward) {
+    if (!_scrollController.hasClients) return;
+
+    final position = _scrollController.position;
+    final page = position.viewportDimension * 0.9;
+    final target = (position.pixels + (forward ? page : -page))
+        .clamp(0.0, position.maxScrollExtent);
+
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
     );
   }
 
@@ -182,27 +198,69 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: EdgeInsets.fromLTRB(16, 4, 16, widget.isCompact ? 16 : 24),
-              itemCount: widget.sources.length,
-              itemBuilder: (context, index) {
-                final source = widget.sources[index];
-                final isCurrent = source.source == widget.currentSource &&
-                    source.id == widget.currentId;
-                final speedInfo =
-                    widget.sourcesSpeed['${source.source}_${source.id}'];
-
-                return _SourcePanelItemWithHover(
-                  isCurrent: isCurrent,
-                  isDarkMode: isDarkMode,
-                  source: source,
-                  speedInfo: speedInfo,
-                  theme: widget.theme,
-                  isCompact: widget.isCompact,
-                  onTap: isCurrent ? null : () => widget.onSourceTap(source),
-                );
+            child: MouseRegion(
+              onEnter: (_) {
+                if (DeviceUtils.isPC()) {
+                  setState(() => _isHoveringPager = true);
+                }
               },
+              onExit: (_) {
+                if (DeviceUtils.isPC()) {
+                  setState(() => _isHoveringPager = false);
+                }
+              },
+              child: Stack(
+                children: [
+                  ListView.builder(
+                    controller: _scrollController,
+                    padding: EdgeInsets.fromLTRB(
+                        16, 4, 16, widget.isCompact ? 16 : 24),
+                    itemCount: widget.sources.length,
+                    itemBuilder: (context, index) {
+                      final source = widget.sources[index];
+                      final isCurrent =
+                          source.source == widget.currentSource &&
+                              source.id == widget.currentId;
+                      final speedInfo = widget
+                          .sourcesSpeed['${source.source}_${source.id}'];
+
+                      return _SourcePanelItemWithHover(
+                        isCurrent: isCurrent,
+                        isDarkMode: isDarkMode,
+                        source: source,
+                        speedInfo: speedInfo,
+                        theme: widget.theme,
+                        isCompact: widget.isCompact,
+                        onTap: isCurrent ? null : () => widget.onSourceTap(source),
+                      );
+                    },
+                  ),
+                  if (DeviceUtils.isPC() &&
+                      _isHoveringPager &&
+                      _scrollController.hasClients &&
+                      _scrollController.position.maxScrollExtent > 0)
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _ListPagerButton(
+                              isLeft: true,
+                              isDarkMode: isDarkMode,
+                              onTap: () => _pageScrollList(false),
+                            ),
+                            _ListPagerButton(
+                              isLeft: false,
+                              isDarkMode: isDarkMode,
+                              onTap: () => _pageScrollList(true),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -233,6 +291,49 @@ class _SourcePanelItemWithHover extends StatefulWidget {
   @override
   State<_SourcePanelItemWithHover> createState() =>
       _SourcePanelItemWithHoverState();
+}
+
+class _ListPagerButton extends StatelessWidget {
+  final bool isLeft;
+  final bool isDarkMode;
+  final VoidCallback onTap;
+
+  const _ListPagerButton({
+    required this.isLeft,
+    required this.isDarkMode,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = isDarkMode
+        ? Colors.black.withOpacity(0.35)
+        : Colors.white.withOpacity(0.9);
+    final borderColor = isDarkMode ? Colors.white24 : Colors.black12;
+    final iconColor = isDarkMode ? Colors.white : Colors.black87;
+
+    return MouseRegion(
+      cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: bgColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: borderColor),
+          ),
+          child: Icon(
+            isLeft ? Icons.chevron_left : Icons.chevron_right,
+            size: 22,
+            color: iconColor,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {

@@ -19,7 +19,7 @@ abstract class PlayerAdapter {
   Future<void> dispose();
   Future<void> updateVideoFit(BoxFit fit);
   
-  Widget buildVideo(BuildContext context, {BoxFit fit, Key? key});
+  Widget buildVideo(BuildContext context, {BoxFit fit, Key? key, Widget Function(mkv.VideoState state)? controls});
 }
 
 abstract class PlayerAdapterStream {
@@ -77,8 +77,8 @@ class MediaKitAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key}) {
-    return mkv.Video(controller: videoController, fit: fit, controls: null, key: key);
+  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key, Widget Function(mkv.VideoState state)? controls}) {
+    return mkv.Video(controller: videoController, fit: fit, controls: controls, key: key);
   }
 }
 
@@ -216,7 +216,7 @@ class VideoPlayerAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key}) {
+  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key, Widget Function(mkv.VideoState state)? controls}) {
     return Center(
       key: key,
       child: FittedBox(
@@ -461,7 +461,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   @override
   Widget buildVideo(BuildContext context,
-      {BoxFit fit = BoxFit.contain, Key? key}) {
+      {BoxFit fit = BoxFit.contain, Key? key, Widget Function(mkv.VideoState state)? controls}) {
     return _WebViewPlayer(
       key: key,
       adapter: this,

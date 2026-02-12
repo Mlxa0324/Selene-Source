@@ -42,7 +42,6 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
         : Colors.white.withOpacity(0.95);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
-    final dividerColor = isDarkMode ? Colors.white12 : Colors.black12;
 
     return Container(
       width: 320,
@@ -92,14 +91,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 弹幕开关
-                  _buildSwitchRow('开启弹幕', _settings.enabled, textColor, (v) {
-                    _updateSettings(_settings.copyWith(enabled: v));
-                  }),
-
-                  const SizedBox(height: 16),
-                  Divider(color: dividerColor, height: 1),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
                   // 显示设置
                   _buildSectionHeader('显示设置', subTextColor),

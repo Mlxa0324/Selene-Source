@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, File;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -152,9 +152,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 选集相关状态
   bool _isEpisodesReversed = false;
   final ScrollController _episodesScrollController = ScrollController();
+  bool _isHoveringEpisodesPager = false;
 
   // 换源相关状态
   final ScrollController _sourcesScrollController = ScrollController();
+  bool _isHoveringSourcesPager = false;
 
   // 是否正在关闭页面（用于立即隐藏播放器）
   bool _isClosing = false;
@@ -178,6 +180,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _isEpisodesPanelVisible = false;
   bool _isSourcesPanelVisible = false;
   bool _isShortDrama = false; // 💡 新增：是否为短剧模式
+  bool _forcePcControlsVisible = false;
 
   // 播放设置状态
   VideoFitType _currentFitType = VideoFitType.contain;
@@ -301,6 +304,54 @@ class _PlayerScreenState extends State<PlayerScreen>
         _danmakuSettings = settings;
       });
     }
+  }
+
+  Future<void> _toggleDanmakuEnabled(bool enabled) async {
+    if (_danmakuSettings.enabled == enabled) return;
+
+    final newSettings = _danmakuSettings.copyWith(enabled: enabled);
+    if (mounted) {
+      setState(() {
+        _danmakuSettings = newSettings;
+      });
+    } else {
+      _danmakuSettings = newSettings;
+    }
+
+    await DanmakuService().saveSettings(newSettings);
+
+    if (!enabled) {
+      _danmakuController?.clear();
+      return;
+    }
+
+    _lastDanmakuCheckTime = -1;
+    _resetDanmakuIndex(currentPosition ?? Duration.zero);
+    _loadDanmaku();
+  }
+
+  Future<void> _applyDanmakuSettings(DanmakuSettings settings) async {
+    if (mounted) {
+      setState(() => _danmakuSettings = settings);
+    } else {
+      _danmakuSettings = settings;
+    }
+
+    await DanmakuService().saveSettings(settings);
+
+    _danmakuController?.updateOption(DanmakuOption(
+      fontSize: settings.fontSize * settings.scale,
+      opacity: settings.opacity,
+      duration: settings.syncVideoSpeed
+          ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
+          : settings.duration,
+      hideScroll: settings.hideScroll,
+      hideTop: settings.hideTop,
+      hideBottom: settings.hideBottom,
+      lineHeight: settings.lineSpacing,
+      fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
+      massiveMode: !settings.preventOverlap,
+    ));
   }
 
   /// 加载弹幕数据
@@ -642,7 +693,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 将 playTime 转换为 Duration 并传递给 updateVideoUrl
     final startAt = playTime > 0 ? Duration(seconds: playTime) : null;
     _resumeStartAt = startAt;
-    updateVideoUrl(currentDetail!.episodes[targetIndex], startAt: null);
+    final episodeUrl = currentDetail!.episodes[targetIndex];
+    updateVideoUrl(episodeUrl, startAt: null);
     _scrollToCurrentEpisode();
   }
 
@@ -1006,7 +1058,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     try {
       String finalUrl = newUrl;
       final bool isLocal = !newUrl.startsWith('http');
-
       // 1. 如果是网络请求，才执行去广告和代理逻辑
       if (!isLocal) {
         // 获取 M3U8 代理 URL (如果没被 Data URI 替换)
@@ -1270,7 +1321,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 检查是否为最后一集
     if (currentEpisodeIndex >= currentDetail!.episodes.length - 1) {
-      _showToast('播放完成');
+      // _showToast('播放完成');
       return;
     }
 
@@ -1681,6 +1732,11 @@ class _PlayerScreenState extends State<PlayerScreen>
               // 在全屏模式下，使用传入的 context 显示弹幕手动匹配面板
               _showDanmakuMatchPanelInFullscreen(fullscreenContext);
             },
+            isDanmakuEnabled: _danmakuSettings.enabled,
+            onDanmakuToggle: _toggleDanmakuEnabled,
+            danmakuSettings: _danmakuSettings,
+            onDanmakuSettingsChanged: _applyDanmakuSettings,
+            forceControlsVisible: _forcePcControlsVisible,
             onSourceChanged: (source) {
               _switchSource(source);
             },
@@ -1696,45 +1752,36 @@ class _PlayerScreenState extends State<PlayerScreen>
             danmakuLayer: _danmakuSettings.enabled
                 ? IgnorePointer(
               child: LayoutBuilder(builder: (context, constraints) {
-                // 💡 核心优化：统一体感高度
-                double baseHeight;
-                final bool isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+                // 💡 统一按播放器真实高度比例裁剪显示区域
+                final baseHeight = constraints.maxHeight;
 
-                if (_isFullscreen && !isPortrait) {
-                  // A. 横屏全屏模式：使用真实的屏幕高度作为基准
-                  baseHeight = constraints.maxHeight;
-                } else {
-                  // B. 竖屏模式（全屏短剧或详情页预览）：
-                  // 如果直接用屏幕高度，弹幕会因为轨道太多而显得满屏都是。
-                  // 解决方案：强制以 16:9 的比例高度作为弹幕分布的基准，确保体感一致。
-                  final screenWidth = MediaQuery.of(context).size.width;
-                  baseHeight = screenWidth / (16 / 9);
-                }
-
-                return SizedBox(
-                  height: baseHeight * _danmakuSettings.displayArea,
-                  child: DanmakuScreen(
-                    key: ValueKey('danmaku_${_currentDanmakuEpisodeId}'),
-                    createdController: (controller) {
-                      _danmakuController = controller;
-                    },
-                    option: DanmakuOption(
-                      fontSize: _danmakuSettings.fontSize *
-                          _danmakuSettings.scale,
-                      opacity: _danmakuSettings.opacity,
-                      duration: _danmakuSettings.syncVideoSpeed
-                          ? (_danmakuSettings.duration /
-                          (_videoPlayerController?.playbackSpeed ??
-                              1.0))
-                          : _danmakuSettings.duration,
-                      hideScroll: _danmakuSettings.hideScroll,
-                      hideTop: _danmakuSettings.hideTop,
-                      hideBottom: _danmakuSettings.hideBottom,
-                      lineHeight: _danmakuSettings.lineSpacing,
-                      fontWeight: (_danmakuSettings.fontWeight * 4)
-                          .round()
-                          .clamp(1, 9),
-                      massiveMode: !_danmakuSettings.preventOverlap,
+                return Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    height: baseHeight * _danmakuSettings.displayArea,
+                    child: DanmakuScreen(
+                      key: ValueKey('danmaku_${_currentDanmakuEpisodeId}'),
+                      createdController: (controller) {
+                        _danmakuController = controller;
+                      },
+                      option: DanmakuOption(
+                        fontSize: _danmakuSettings.fontSize *
+                            _danmakuSettings.scale,
+                        opacity: _danmakuSettings.opacity,
+                        duration: _danmakuSettings.syncVideoSpeed
+                            ? (_danmakuSettings.duration /
+                            (_videoPlayerController?.playbackSpeed ??
+                                1.0))
+                            : _danmakuSettings.duration,
+                        hideScroll: _danmakuSettings.hideScroll,
+                        hideTop: _danmakuSettings.hideTop,
+                        hideBottom: _danmakuSettings.hideBottom,
+                        lineHeight: _danmakuSettings.lineSpacing,
+                        fontWeight: (_danmakuSettings.fontWeight * 4)
+                            .round()
+                            .clamp(1, 9),
+                        massiveMode: !_danmakuSettings.preventOverlap,
+                      ),
                     ),
                   ),
                 );
@@ -2474,57 +2521,99 @@ class _PlayerScreenState extends State<PlayerScreen>
               height: buttonHeight,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: ListView.builder(
-                  // 💡 关键：使用 Key 强制在方向或顺序变化时重建列表，解决位置错乱问题
-                  key: ValueKey('episodes_list_${MediaQuery.of(context).orientation}_$_isEpisodesReversed'),
-                  controller: _episodesScrollController,
-                  scrollDirection: Axis.horizontal,
-                  itemCount: currentDetail!.episodes.length,
-                  itemBuilder: (context, index) {
-                    final episodeIndex = _isEpisodesReversed
-                        ? currentDetail!.episodes.length - 1 - index
-                        : index;
-                    final isCurrentEpisode =
-                        episodeIndex == currentEpisodeIndex;
-
-                    // 获取集数名称，如果episodesTitles为空或长度不够，则使用默认格式
-                    String episodeTitle = '';
-                    if (currentDetail!.episodesTitles.isNotEmpty &&
-                        episodeIndex < currentDetail!.episodesTitles.length) {
-                      episodeTitle =
-                      currentDetail!.episodesTitles[episodeIndex];
-                    } else {
-                      episodeTitle = '第${episodeIndex + 1}集';
+                child: MouseRegion(
+                  onEnter: (_) {
+                    if (DeviceUtils.isPC()) {
+                      setState(() => _isHoveringEpisodesPager = true);
                     }
-
-                    return Container(
-                      width: buttonWidth,
-                      margin: const EdgeInsets.only(right: 6),
-                      child: AspectRatio(
-                        aspectRatio: 3 / 2, // 严格保持3:2宽高比
-                        child: _EpisodeCardWithHover(
-                          isCurrentEpisode: isCurrentEpisode,
-                          isDarkMode: isDarkMode,
-                          episodeIndex: episodeIndex,
-                          episodeTitle: episodeTitle,
-                          onTap: isCurrentEpisode
-                              ? null
-                              : () {
-                            // 显示切换加载蒙版
-                            setState(() {
-                              _showSwitchLoadingOverlay = true;
-                              _switchLoadingMessage = '切换选集...';
-                            });
-
-                            // 集数切换前保存进度
-                            _saveProgress(force: true, scene: '选集列表点击');
-
-                            startPlay(episodeIndex, 0);
-                          },
-                        ),
-                      ),
-                    );
                   },
+                  onExit: (_) {
+                    if (DeviceUtils.isPC()) {
+                      setState(() => _isHoveringEpisodesPager = false);
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      ListView.builder(
+                        // 💡 关键：使用 Key 强制在方向或顺序变化时重建列表，解决位置错乱问题
+                        key: ValueKey('episodes_list_${MediaQuery.of(context).orientation}_$_isEpisodesReversed'),
+                        controller: _episodesScrollController,
+                        scrollDirection: Axis.horizontal,
+                        itemCount: currentDetail!.episodes.length,
+                        itemBuilder: (context, index) {
+                          final episodeIndex = _isEpisodesReversed
+                              ? currentDetail!.episodes.length - 1 - index
+                              : index;
+                          final isCurrentEpisode =
+                              episodeIndex == currentEpisodeIndex;
+
+                          // 获取集数名称，如果episodesTitles为空或长度不够，则使用默认格式
+                          String episodeTitle = '';
+                          if (currentDetail!.episodesTitles.isNotEmpty &&
+                              episodeIndex < currentDetail!.episodesTitles.length) {
+                            episodeTitle =
+                            currentDetail!.episodesTitles[episodeIndex];
+                          } else {
+                            episodeTitle = '第${episodeIndex + 1}集';
+                          }
+
+                          return Container(
+                            width: buttonWidth,
+                            margin: const EdgeInsets.only(right: 6),
+                            child: AspectRatio(
+                              aspectRatio: 3 / 2, // 严格保持3:2宽高比
+                              child: _EpisodeCardWithHover(
+                                isCurrentEpisode: isCurrentEpisode,
+                                isDarkMode: isDarkMode,
+                                episodeIndex: episodeIndex,
+                                episodeTitle: episodeTitle,
+                                onTap: isCurrentEpisode
+                                    ? null
+                                    : () {
+                                  // 显示切换加载蒙版
+                                  setState(() {
+                                    _showSwitchLoadingOverlay = true;
+                                    _switchLoadingMessage = '切换选集...';
+                                  });
+
+                                  // 集数切换前保存进度
+                                  _saveProgress(force: true, scene: '选集列表点击');
+
+                                  startPlay(episodeIndex, 0);
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      if (DeviceUtils.isPC() &&
+                          _isHoveringEpisodesPager &&
+                          _episodesScrollController.hasClients &&
+                          _episodesScrollController.position.maxScrollExtent > 0)
+                        Positioned.fill(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                _buildPagerButton(
+                                  isLeft: true,
+                                  isDarkMode: isDarkMode,
+                                  onTap: () => _pageScrollHorizontal(
+                                      _episodesScrollController, false),
+                                ),
+                                _buildPagerButton(
+                                  isLeft: false,
+                                  isDarkMode: isDarkMode,
+                                  onTap: () => _pageScrollHorizontal(
+                                      _episodesScrollController, true),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -2562,56 +2651,45 @@ class _PlayerScreenState extends State<PlayerScreen>
         barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return Align(
+          return _buildSidePanel(
+            context: context,
+            panelWidth: panelWidth,
+            panelHeight: panelHeight,
             alignment: alignment,
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: panelWidth,
-                height: panelHeight,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: slideBegin,
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
-                  child: StatefulBuilder(
-                    builder: (BuildContext context, StateSetter setState) {
-                      return PlayerEpisodesPanel(
-                        theme: theme,
-                        episodes: currentDetail!.episodes,
-                        episodesTitles: currentDetail!.episodesTitles,
-                        currentEpisodeIndex: currentEpisodeIndex,
-                        isReversed: _isEpisodesReversed,
-                        crossAxisCount: crossAxisCount,
-                        isCompact: true, // 横屏使用紧凑模式
-                        onEpisodeTap: (index) {
-                          Navigator.pop(context);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            this.setState(() {
-                              _showSwitchLoadingOverlay = true;
-                              _switchLoadingMessage = '切换选集...';
-                            });
-                          });
-                          _saveProgress(force: true, scene: '选集面板点击');
-                          startPlay(index, 0);
-                        },
-                        onToggleOrder: () {
-                          setState(() {
-                            _isEpisodesReversed = !_isEpisodesReversed;
-                          });
-                          // this.setState(() {
-                          //   _isEpisodesReversed = !_isEpisodesReversed;
-                          // });
-                          // setState(() {}); // 同步弹窗内部状态
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ),
+            slideBegin: slideBegin,
+            animation: animation,
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                return PlayerEpisodesPanel(
+                  theme: theme,
+                  episodes: currentDetail!.episodes,
+                  episodesTitles: currentDetail!.episodesTitles,
+                  currentEpisodeIndex: currentEpisodeIndex,
+                  isReversed: _isEpisodesReversed,
+                  crossAxisCount: crossAxisCount,
+                  isCompact: true, // 横屏使用紧凑模式
+                  onEpisodeTap: (index) {
+                    Navigator.pop(context);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      this.setState(() {
+                        _showSwitchLoadingOverlay = true;
+                        _switchLoadingMessage = '切换选集...';
+                      });
+                    });
+                    _saveProgress(force: true, scene: '选集面板点击');
+                    startPlay(index, 0);
+                  },
+                  onToggleOrder: () {
+                    setState(() {
+                      _isEpisodesReversed = !_isEpisodesReversed;
+                    });
+                    // this.setState(() {
+                    //   _isEpisodesReversed = !_isEpisodesReversed;
+                    // });
+                    // setState(() {}); // 同步弹窗内部状态
+                  },
+                );
+              },
             ),
           );
         },
@@ -2697,28 +2775,17 @@ class _PlayerScreenState extends State<PlayerScreen>
         barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return Align(
+          return _buildSidePanel(
+            context: context,
+            panelWidth: panelWidth,
+            panelHeight: panelHeight,
             alignment: alignment,
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: panelWidth,
-                height: panelHeight,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: slideBegin,
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
-                  child: PlayerDetailsPanel(
-                    theme: theme,
-                    doubanDetails: doubanDetails,
-                    currentDetail: currentDetail,
-                  ),
-                ),
-              ),
+            slideBegin: slideBegin,
+            animation: animation,
+            child: PlayerDetailsPanel(
+              theme: theme,
+              doubanDetails: doubanDetails,
+              currentDetail: currentDetail,
             ),
           );
         },
@@ -2886,37 +2953,182 @@ class _PlayerScreenState extends State<PlayerScreen>
           height: cardHeight,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ListView.builder(
-              controller: _sourcesScrollController,
-              scrollDirection: Axis.horizontal,
-              itemCount: allSources.length,
-              itemBuilder: (context, index) {
-                final source = allSources[index];
-                final isCurrentSource =
-                    source.source == currentSource && source.id == currentID;
-                final sourceKey = '${source.source}_${source.id}';
-                final speedInfo = allSourcesSpeed[sourceKey];
-
-                return Container(
-                  width: cardWidth,
-                  margin: const EdgeInsets.only(right: 6),
-                  child: AspectRatio(
-                    aspectRatio: 3 / 2, // 严格保持3:2宽高比
-                    child: _SourceCardWithHover(
-                      isCurrentSource: isCurrentSource,
-                      isDarkMode: isDarkMode,
-                      source: source,
-                      speedInfo: speedInfo,
-                      onTap:
-                      isCurrentSource ? null : () => _switchSource(source),
-                    ),
-                  ),
-                );
+            child: MouseRegion(
+              onEnter: (_) {
+                if (DeviceUtils.isPC()) {
+                  setState(() => _isHoveringSourcesPager = true);
+                }
               },
+              onExit: (_) {
+                if (DeviceUtils.isPC()) {
+                  setState(() => _isHoveringSourcesPager = false);
+                }
+              },
+              child: Stack(
+                children: [
+                  ListView.builder(
+                    controller: _sourcesScrollController,
+                    scrollDirection: Axis.horizontal,
+                    itemCount: allSources.length,
+                    itemBuilder: (context, index) {
+                      final source = allSources[index];
+                      final isCurrentSource =
+                          source.source == currentSource && source.id == currentID;
+                      final sourceKey = '${source.source}_${source.id}';
+                      final speedInfo = allSourcesSpeed[sourceKey];
+
+                      return Container(
+                        width: cardWidth,
+                        margin: const EdgeInsets.only(right: 6),
+                        child: AspectRatio(
+                          aspectRatio: 3 / 2, // 严格保持3:2宽高比
+                          child: _SourceCardWithHover(
+                            isCurrentSource: isCurrentSource,
+                            isDarkMode: isDarkMode,
+                            source: source,
+                            speedInfo: speedInfo,
+                            onTap:
+                            isCurrentSource ? null : () => _switchSource(source),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  if (DeviceUtils.isPC() &&
+                      _isHoveringSourcesPager &&
+                      _sourcesScrollController.hasClients &&
+                      _sourcesScrollController.position.maxScrollExtent > 0)
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildPagerButton(
+                              isLeft: true,
+                              isDarkMode: isDarkMode,
+                              onTap: () => _pageScrollHorizontal(
+                                  _sourcesScrollController, false),
+                            ),
+                            _buildPagerButton(
+                              isLeft: false,
+                              isDarkMode: isDarkMode,
+                              onTap: () => _pageScrollHorizontal(
+                                  _sourcesScrollController, true),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  double _getPcRightPanelTopInset(Alignment alignment) {
+    if (!Platform.isWindows) return 0;
+    if (alignment != Alignment.centerRight) return 0;
+    return 40;
+  }
+
+  Widget _buildSidePanel({
+    required BuildContext context,
+    required double panelWidth,
+    required double panelHeight,
+    required Alignment alignment,
+    required Offset slideBegin,
+    required Animation<double> animation,
+    required Widget child,
+  }) {
+    final topInset = _getPcRightPanelTopInset(alignment);
+    final effectiveHeight = math.max(0, panelHeight - topInset);
+    final effectiveAlignment =
+        topInset > 0 ? Alignment.topRight : alignment;
+
+    return Align(
+      alignment: effectiveAlignment,
+      child: Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: Material(
+          color: Colors.transparent,
+          child: SizedBox(
+            width: panelWidth,
+            height: effectiveHeight.toDouble(),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: slideBegin,
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOut,
+              )),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Rect? _getPlayerGlobalRect() {
+    final ctx = _videoPlayerWidgetKey.currentContext;
+    if (ctx == null) return null;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    final offset = box.localToGlobal(Offset.zero);
+    return offset & box.size;
+  }
+
+  void _pageScrollHorizontal(ScrollController controller, bool forward) {
+    if (!controller.hasClients) return;
+
+    final position = controller.position;
+    final page = position.viewportDimension * 0.9;
+    final target = (position.pixels + (forward ? page : -page))
+        .clamp(0.0, position.maxScrollExtent);
+
+    controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOut,
+    );
+  }
+
+  Widget _buildPagerButton({
+    required bool isLeft,
+    required bool isDarkMode,
+    required VoidCallback onTap,
+  }) {
+    final bgColor = isDarkMode
+        ? Colors.black.withOpacity(0.35)
+        : Colors.white.withOpacity(0.9);
+    final borderColor = isDarkMode ? Colors.white24 : Colors.black12;
+    final iconColor = isDarkMode ? Colors.white : Colors.black87;
+
+    return MouseRegion(
+      cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: bgColor,
+            shape: BoxShape.circle,
+            border: Border.all(color: borderColor),
+          ),
+          child: Icon(
+            isLeft ? Icons.chevron_left : Icons.chevron_right,
+            size: 22,
+            color: iconColor,
+          ),
+        ),
+      ),
     );
   }
 
@@ -2948,46 +3160,35 @@ class _PlayerScreenState extends State<PlayerScreen>
         barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return Align(
+          return _buildSidePanel(
+            context: context,
+            panelWidth: panelWidth,
+            panelHeight: panelHeight,
             alignment: alignment,
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: panelWidth,
-                height: panelHeight,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: slideBegin,
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
-                  child: StatefulBuilder(
-                    builder: (BuildContext context, StateSetter setState) {
-                      return PlayerSourcesPanel(
-                        theme: theme,
-                        sources: allSources,
-                        currentSource: currentSource,
-                        currentId: currentID,
-                        sourcesSpeed: allSourcesSpeed,
-                        isCompact: true, // 横屏紧凑模式
-                        onSourceTap: (source) {
-                          this.setState(() {
-                            _switchSource(source);
-                          });
-                          Navigator.pop(context);
-                        },
-                        onRefresh: () async {
-                          await _refreshSourcesSpeed(setState);
-                        },
-                        videoCover: videoCover,
-                        videoTitle: videoTitle,
-                      );
-                    },
-                  ),
-                ),
-              ),
+            slideBegin: slideBegin,
+            animation: animation,
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                return PlayerSourcesPanel(
+                  theme: theme,
+                  sources: allSources,
+                  currentSource: currentSource,
+                  currentId: currentID,
+                  sourcesSpeed: allSourcesSpeed,
+                  isCompact: true, // 横屏紧凑模式
+                  onSourceTap: (source) {
+                    this.setState(() {
+                      _switchSource(source);
+                    });
+                    Navigator.pop(context);
+                  },
+                  onRefresh: () async {
+                    await _refreshSourcesSpeed(setState);
+                  },
+                  videoCover: videoCover,
+                  videoTitle: videoTitle,
+                );
+              },
             ),
           );
         },
@@ -3061,45 +3262,34 @@ class _PlayerScreenState extends State<PlayerScreen>
       barrierColor: Colors.black.withValues(alpha: 0.3),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return Align(
+        return _buildSidePanel(
+          context: dialogContext,
+          panelWidth: panelWidth,
+          panelHeight: panelHeight,
           alignment: Alignment.centerRight,
-          child: Material(
-            color: Colors.transparent,
-            child: SizedBox(
-              width: panelWidth,
-              height: panelHeight,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOut,
-                )),
-                child: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter dialogSetState) {
-                    return PlayerSourcesPanel(
-                      theme: theme,
-                      sources: allSources,
-                      currentSource: currentSource,
-                      currentId: currentID,
-                      sourcesSpeed: allSourcesSpeed,
-                      onSourceTap: (source) {
-                        setState(() {
-                          _switchSource(source);
-                        });
-                        Navigator.pop(dialogContext);
-                      },
-                      onRefresh: () async {
-                        await _refreshSourcesSpeed(dialogSetState);
-                      },
-                      videoCover: videoCover,
-                      videoTitle: videoTitle,
-                    );
-                  },
-                ),
-              ),
-            ),
+          slideBegin: const Offset(1, 0),
+          animation: animation,
+          child: StatefulBuilder(
+            builder: (BuildContext context, StateSetter dialogSetState) {
+              return PlayerSourcesPanel(
+                theme: theme,
+                sources: allSources,
+                currentSource: currentSource,
+                currentId: currentID,
+                sourcesSpeed: allSourcesSpeed,
+                onSourceTap: (source) {
+                  setState(() {
+                    _switchSource(source);
+                  });
+                  Navigator.pop(dialogContext);
+                },
+                onRefresh: () async {
+                  await _refreshSourcesSpeed(dialogSetState);
+                },
+                videoCover: videoCover,
+                videoTitle: videoTitle,
+              );
+            },
           ),
         );
       },
@@ -3184,30 +3374,27 @@ class _PlayerScreenState extends State<PlayerScreen>
         },
       );
     } else {
-      // 横屏模式：保持右侧滑动弹出
-      final panelWidth = screenWidth * 0.4;
-      showGeneralDialog(
-        context: fullscreenContext,
-        barrierDismissible: true,
-        barrierLabel: '',
-        barrierColor: Colors.black.withValues(alpha: 0.3),
-        transitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (dialogContext, animation, secondaryAnimation) {
-          return Align(
-            alignment: Alignment.centerRight,
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: panelWidth,
-                height: screenHeight,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(1, 0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
+      // 横屏模式：PC 端使用小弹框，其余保持右侧滑动弹出
+      if (DeviceUtils.isPC()) {
+        final topInset = Platform.isWindows ? 40.0 : 0.0;
+        final availableHeight = screenHeight - topInset;
+        final panelHeight = math.min(availableHeight * 0.6, 620.0);
+        final panelWidth = math.min(screenWidth * 0.6, 560.0);
+
+        setState(() => _forcePcControlsVisible = true);
+        showGeneralDialog(
+          context: fullscreenContext,
+          barrierDismissible: true,
+          barrierLabel: '',
+          barrierColor: Colors.black.withValues(alpha: 0.35),
+          transitionDuration: const Duration(milliseconds: 200),
+          pageBuilder: (dialogContext, animation, secondaryAnimation) {
+            return Padding(
+              padding: EdgeInsets.only(top: topInset),
+              child: Center(
+                child: SizedBox(
+                  width: panelWidth,
+                  height: panelHeight,
                   child: DanmakuMatchPanel(
                     theme: theme,
                     initialQuery: videoTitle,
@@ -3216,9 +3403,44 @@ class _PlayerScreenState extends State<PlayerScreen>
                       Navigator.pop(dialogContext);
                       _loadDanmakuById(episodeId);
                     },
+                    borderRadiusOverride: BorderRadius.circular(10),
                   ),
                 ),
               ),
+            );
+          },
+        ).whenComplete(() {
+          if (mounted) {
+            setState(() => _forcePcControlsVisible = false);
+          }
+        });
+        return;
+      }
+
+      // 其他横屏模式：保持右侧滑动弹出
+      final panelWidth = screenWidth * 0.4;
+      showGeneralDialog(
+        context: fullscreenContext,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) {
+          return _buildSidePanel(
+            context: dialogContext,
+            panelWidth: panelWidth,
+            panelHeight: screenHeight,
+            alignment: Alignment.centerRight,
+            slideBegin: const Offset(1, 0),
+            animation: animation,
+            child: DanmakuMatchPanel(
+              theme: theme,
+              initialQuery: videoTitle,
+              currentEpisodeId: _currentDanmakuEpisodeId,
+              onEpisodeSelected: (episodeId) {
+                Navigator.pop(dialogContext);
+                _loadDanmakuById(episodeId);
+              },
             ),
           );
         },
@@ -3246,39 +3468,32 @@ class _PlayerScreenState extends State<PlayerScreen>
         barrierColor: Colors.black.withValues(alpha: 0.3),
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
-          return Align(
-            alignment: (_isTablet && _isPortraitTablet)
-                ? Alignment.bottomCenter
-                : Alignment.centerRight,
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width:
-                (_isTablet && _isPortraitTablet) ? screenWidth : panelWidth,
-                height: (_isTablet && _isPortraitTablet)
-                    ? (screenHeight - statusBarHeight) * 0.5
-                    : screenHeight,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: (_isTablet && _isPortraitTablet)
-                        ? const Offset(0, 1)
-                        : const Offset(1, 0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
-                  child: PlayerDownloadPanel(
-                    theme: theme,
-                    title: videoTitle,
-                    cover: videoCover,
-                    episodes: currentDetail!.episodes,
-                    episodesTitles: currentDetail!.episodesTitles,
-                    currentEpisodeIndex: currentEpisodeIndex, // 💡 传给面板
-                    isCompact: true,
-                  ),
-                ),
-              ),
+          final alignment = (_isTablet && _isPortraitTablet)
+              ? Alignment.bottomCenter
+              : Alignment.centerRight;
+          final panelHeight = (_isTablet && _isPortraitTablet)
+              ? (screenHeight - statusBarHeight) * 0.5
+              : screenHeight;
+          final slideBegin = (_isTablet && _isPortraitTablet)
+              ? const Offset(0, 1)
+              : const Offset(1, 0);
+
+          return _buildSidePanel(
+            context: context,
+            panelWidth:
+            (_isTablet && _isPortraitTablet) ? screenWidth : panelWidth,
+            panelHeight: panelHeight,
+            alignment: alignment,
+            slideBegin: slideBegin,
+            animation: animation,
+            child: PlayerDownloadPanel(
+              theme: theme,
+              title: videoTitle,
+              cover: videoCover,
+              episodes: currentDetail!.episodes,
+              episodesTitles: currentDetail!.episodesTitles,
+              currentEpisodeIndex: currentEpisodeIndex, // 💡 传给面板
+              isCompact: true,
             ),
           );
         },
@@ -3329,71 +3544,60 @@ class _PlayerScreenState extends State<PlayerScreen>
       barrierColor: Colors.black.withValues(alpha: 0.3),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return Align(
+        return _buildSidePanel(
+          context: dialogContext,
+          panelWidth: panelWidth,
+          panelHeight: panelHeight,
           alignment: Alignment.centerRight,
-          child: Material(
-            color: Colors.transparent,
-            child: SizedBox(
-              width: panelWidth,
-              height: panelHeight,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOut,
-                )),
-                child: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter dialogSetState) {
-                    return PlayerSettingsPanel(
-                      theme: theme,
-                      currentFitType: _currentFitType,
-                      currentLongPressSpeed: _longPressSpeed,
-                      progressMode: _progressMode,
-                      showSystemTime: _showSystemTime,
-                      skipIntro: _skipIntroDuration,
-                      skipOutro: _skipOutroDuration,
-                      videoPosition: currentPosition?.inSeconds ?? 0,
-                      videoDuration: duration?.inSeconds ?? 0,
-                      onFitTypeChanged: (type) {
-                        setState(() => _currentFitType = type);
-                        dialogSetState(() {});
-                        _videoPlayerController?.setVideoFit(type);
-                        UserDataService.saveVideoFitType(type.index);
-                      },
-                      onLongPressSpeedChanged: (speed) {
-                        setState(() => _longPressSpeed = speed);
-                        dialogSetState(() {});
-                        UserDataService.saveLongPressSpeed(speed);
-                      },
-                      onProgressModeChanged: (mode) {
-                        setState(() => _progressMode = mode);
-                        dialogSetState(() {});
-                        UserDataService.saveProgressDisplayMode(mode.index);
-                      },
-                      onShowSystemTimeChanged: (show) {
-                        setState(() => _showSystemTime = show);
-                        dialogSetState(() {});
-                        UserDataService.saveShowSystemTime(show);
-                      },
-                      onSkipIntroChanged: (v) {
-                        setState(() => _skipIntroDuration = v);
-                        dialogSetState(() {});
-                        // 仅保存针对当前视频的特定设置，不修改全局默认设置
-                        UserDataService.saveVideoSkipSettings(videoTitle, videoYear, v, _skipOutroDuration);
-                      },
-                      onSkipOutroChanged: (v) {
-                        setState(() => _skipOutroDuration = v);
-                        dialogSetState(() {});
-                        // 仅保存针对当前视频的特定设置，不修改全局默认设置
-                        UserDataService.saveVideoSkipSettings(videoTitle, videoYear, _skipIntroDuration, v);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ),
+          slideBegin: const Offset(1, 0),
+          animation: animation,
+          child: StatefulBuilder(
+            builder: (BuildContext context, StateSetter dialogSetState) {
+              return PlayerSettingsPanel(
+                theme: theme,
+                currentFitType: _currentFitType,
+                currentLongPressSpeed: _longPressSpeed,
+                progressMode: _progressMode,
+                showSystemTime: _showSystemTime,
+                skipIntro: _skipIntroDuration,
+                skipOutro: _skipOutroDuration,
+                videoPosition: currentPosition?.inSeconds ?? 0,
+                videoDuration: duration?.inSeconds ?? 0,
+                onFitTypeChanged: (type) {
+                  setState(() => _currentFitType = type);
+                  dialogSetState(() {});
+                  _videoPlayerController?.setVideoFit(type);
+                  UserDataService.saveVideoFitType(type.index);
+                },
+                onLongPressSpeedChanged: (speed) {
+                  setState(() => _longPressSpeed = speed);
+                  dialogSetState(() {});
+                  UserDataService.saveLongPressSpeed(speed);
+                },
+                onProgressModeChanged: (mode) {
+                  setState(() => _progressMode = mode);
+                  dialogSetState(() {});
+                  UserDataService.saveProgressDisplayMode(mode.index);
+                },
+                onShowSystemTimeChanged: (show) {
+                  setState(() => _showSystemTime = show);
+                  dialogSetState(() {});
+                  UserDataService.saveShowSystemTime(show);
+                },
+                onSkipIntroChanged: (v) {
+                  setState(() => _skipIntroDuration = v);
+                  dialogSetState(() {});
+                  // 仅保存针对当前视频的特定设置，不修改全局默认设置
+                  UserDataService.saveVideoSkipSettings(videoTitle, videoYear, v, _skipOutroDuration);
+                },
+                onSkipOutroChanged: (v) {
+                  setState(() => _skipOutroDuration = v);
+                  dialogSetState(() {});
+                  // 仅保存针对当前视频的特定设置，不修改全局默认设置
+                  UserDataService.saveVideoSkipSettings(videoTitle, videoYear, _skipIntroDuration, v);
+                },
+              );
+            },
           ),
         );
       },
@@ -3429,21 +3633,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                   theme: theme,
                   settings: _danmakuSettings,
                   onSettingsChanged: (settings) {
-                    setState(() => _danmakuSettings = settings);
+                    _applyDanmakuSettings(settings);
                     dialogSetState(() {});
-                    _danmakuController?.updateOption(DanmakuOption(
-                      fontSize: settings.fontSize * settings.scale,
-                      opacity: settings.opacity,
-                      duration: settings.syncVideoSpeed
-                          ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
-                          : settings.duration,
-                      hideScroll: settings.hideScroll,
-                      hideTop: settings.hideTop,
-                      hideBottom: settings.hideBottom,
-                      lineHeight: settings.lineSpacing,
-                      fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
-                      massiveMode: !settings.preventOverlap,
-                    ));
                   },
                 ),
               );
@@ -3460,48 +3651,24 @@ class _PlayerScreenState extends State<PlayerScreen>
         barrierColor: Colors.black.withValues(alpha: 0.3),
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (dialogContext, animation, secondaryAnimation) {
-          return Align(
+          return _buildSidePanel(
+            context: dialogContext,
+            panelWidth: panelWidth,
+            panelHeight: screenHeight,
             alignment: Alignment.centerRight,
-            child: Material(
-              color: Colors.transparent,
-              child: SizedBox(
-                width: panelWidth,
-                height: screenHeight,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(1, 0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeInOut,
-                  )),
-                  child: StatefulBuilder(
-                    builder: (BuildContext context, StateSetter dialogSetState) {
-                      return DanmakuSettingsPanel(
-                        theme: theme,
-                        settings: _danmakuSettings,
+            slideBegin: const Offset(1, 0),
+            animation: animation,
+            child: StatefulBuilder(
+              builder: (BuildContext context, StateSetter dialogSetState) {
+                return DanmakuSettingsPanel(
+                  theme: theme,
+                  settings: _danmakuSettings,
                         onSettingsChanged: (settings) {
-                          setState(() => _danmakuSettings = settings);
+                          _applyDanmakuSettings(settings);
                           dialogSetState(() {});
-                          _danmakuController?.updateOption(DanmakuOption(
-                            fontSize: settings.fontSize * settings.scale,
-                            opacity: settings.opacity,
-                            duration: settings.syncVideoSpeed
-                                ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
-                                : settings.duration,
-                            hideScroll: settings.hideScroll,
-                            hideTop: settings.hideTop,
-                            hideBottom: settings.hideBottom,
-                            lineHeight: settings.lineSpacing,
-                            fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
-                            massiveMode: !settings.preventOverlap,
-                          ));
                         },
                       );
                     },
-                  ),
-                ),
-              ),
             ),
           );
         },
@@ -3528,55 +3695,44 @@ class _PlayerScreenState extends State<PlayerScreen>
       barrierColor: Colors.black.withValues(alpha: 0.3),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return Align(
+        return _buildSidePanel(
+          context: dialogContext,
+          panelWidth: panelWidth,
+          panelHeight: panelHeight,
           alignment: Alignment.centerRight,
-          child: Material(
-            color: Colors.transparent,
-            child: SizedBox(
-              width: panelWidth,
-              height: panelHeight,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(1, 0),
-                  end: Offset.zero,
-                ).animate(CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeInOut,
-                )),
-                child: StatefulBuilder(
-                  builder: (BuildContext context, StateSetter dialogSetState) {
-                    return PlayerEpisodesPanel(
-                      theme: theme,
-                      episodes: currentDetail!.episodes,
-                      episodesTitles: currentDetail!.episodesTitles,
-                      currentEpisodeIndex: currentEpisodeIndex,
-                      isReversed: _isEpisodesReversed,
-                      crossAxisCount: widget.title.length > 6 ? 2 : 3,
-                      onEpisodeTap: (index) {
-                        Navigator.pop(dialogContext);
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          setState(() {
-                            _showSwitchLoadingOverlay = true;
-                            _switchLoadingMessage = '切换选集...';
-                          });
-                        });
-                        _saveProgress(force: true, scene: '选集面板点击');
-                        startPlay(index, 0);
-                      },
-                      onToggleOrder: () {
-                        dialogSetState(() {
-                          _isEpisodesReversed = !_isEpisodesReversed;
-                        });
-                        // this.setState(() {
-                        //   _isEpisodesReversed = !_isEpisodesReversed;
-                        // });
-                        // dialogSetState(() {}); // 同步弹窗内部状态
-                      },
-                    );
-                  },
-                ),
-              ),
-            ),
+          slideBegin: const Offset(1, 0),
+          animation: animation,
+          child: StatefulBuilder(
+            builder: (BuildContext context, StateSetter dialogSetState) {
+              return PlayerEpisodesPanel(
+                theme: theme,
+                episodes: currentDetail!.episodes,
+                episodesTitles: currentDetail!.episodesTitles,
+                currentEpisodeIndex: currentEpisodeIndex,
+                isReversed: _isEpisodesReversed,
+                crossAxisCount: widget.title.length > 6 ? 2 : 3,
+                onEpisodeTap: (index) {
+                  Navigator.pop(dialogContext);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    setState(() {
+                      _showSwitchLoadingOverlay = true;
+                      _switchLoadingMessage = '切换选集...';
+                    });
+                  });
+                  _saveProgress(force: true, scene: '选集面板点击');
+                  startPlay(index, 0);
+                },
+                onToggleOrder: () {
+                  dialogSetState(() {
+                    _isEpisodesReversed = !_isEpisodesReversed;
+                  });
+                  // this.setState(() {
+                  //   _isEpisodesReversed = !_isEpisodesReversed;
+                  // });
+                  // dialogSetState(() {}); // 同步弹窗内部状态
+                },
+              );
+            },
           ),
         );
       },
@@ -4038,11 +4194,9 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
             child: Column(
               children: [
-                // Windows 自定义标题栏（播放页使用纯黑背景）
+                // Windows 自定义标题栏
                 if (Platform.isWindows)
-                  const WindowsTitleBar(
-                    customBackgroundColor: Color(0xFF000000),
-                  ),
+                  const WindowsTitleBar(),
                 // 主要内容
                 Expanded(
                   child: Stack(

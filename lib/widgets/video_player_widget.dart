@@ -8,6 +8,7 @@ import 'package:selene/widgets/player_sources_panel.dart';
 import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
 import '../models/search_result.dart';
+import '../models/danmaku_model.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
 import 'short_drama_controls.dart'; // 💡 新增
@@ -53,6 +54,11 @@ class VideoPlayerWidget extends StatefulWidget {
   final void Function(BuildContext context)? onSettingsButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
+  final bool isDanmakuEnabled;
+  final void Function(bool enabled)? onDanmakuToggle;
+  final DanmakuSettings danmakuSettings;
+  final void Function(DanmakuSettings settings)? onDanmakuSettingsChanged;
+  final bool forceControlsVisible;
   final VoidCallback? onCastButtonPressed; // 💡 新增：投屏按钮点击回调
   final Function(SearchResult)? onSourceChanged; // 💡 新增：源切换回调
   final double longPressSpeed;
@@ -100,6 +106,11 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onSettingsButtonPressed,
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
+    this.isDanmakuEnabled = false,
+    this.onDanmakuToggle,
+    this.danmakuSettings = const DanmakuSettings(),
+    this.onDanmakuSettingsChanged,
+    this.forceControlsVisible = false,
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
@@ -817,7 +828,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
 
           // 2. 弹幕层
-          if (widget.danmakuLayer != null)
+          // 💡 PC 端统一交给 Video 控制层内部渲染，避免全屏切换时弹幕层在树中迁移导致丢失。
+          if (widget.danmakuLayer != null &&
+              widget.surface != VideoPlayerSurface.desktop)
             Positioned.fill(
               top: (widget.isShortDrama && _isFullscreen && !Platform.isWindows && !Platform.isMacOS)
                   ? MediaQuery.of(context).padding.top + 50
@@ -886,6 +899,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       key: _adapter is MediaKitAdapter
           ? _videoKey
           : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
+      controls: widget.surface == VideoPlayerSurface.desktop
+          ? (state) => _buildPCControls(state)
+          : null,
     );
 
     // 始终包裹 Center 层级，并使用 ClipRect 允许超出部分被裁剪（针对宽度/高度拉伸模式）
@@ -898,42 +914,73 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     );
   }
 
+  Widget _buildPCControls(mkv.VideoState state) {
+    if (_adapter is! MediaKitAdapter) return const SizedBox.shrink();
+
+    final mkAdapter = _adapter as MediaKitAdapter;
+    return Stack(
+      children: [
+        // 弹幕层（PC 端统一在 controls 内渲染，避免切换全屏时被移除）
+        if (widget.danmakuLayer != null)
+          Positioned.fill(
+            child: RepaintBoundary(child: widget.danmakuLayer!),
+          ),
+        // 控制层
+        PCPlayerControls(
+          state: state,
+          player: mkAdapter.player,
+          onBackPressed: widget.onBackPressed,
+          onNextEpisode: widget.onNextEpisode,
+          onPause: widget.onPause,
+          videoUrl: _currentUrl ?? '',
+          isLastEpisode: widget.isLastEpisode,
+          isLoadingVideo: _isLoadingVideo,
+          onCastStarted: widget.onCastStarted,
+          videoTitle: widget.videoTitle,
+          videoYear: widget.videoYear,
+          currentEpisodeIndex: widget.currentEpisodeIndex,
+          totalEpisodes: widget.totalEpisodes,
+          episodesTitles: widget.episodesTitles,
+          sourceName: widget.sourceName,
+          isLocal: widget.isLocal,
+          onWebFullscreenChanged: widget.onWebFullscreenChanged,
+          onExitWebFullscreenCallbackReady: (callback) {
+            _exitWebFullscreenCallback = callback;
+          },
+          onExitFullScreen: widget.onExitFullScreen,
+          onFullscreenChange: (isFullscreen) {
+            if (_isFullscreen != isFullscreen) {
+              _safeSetState(() {
+                _isFullscreen = isFullscreen;
+              });
+              widget.onFullscreenChanged?.call(isFullscreen);
+            }
+          },
+          isDanmakuEnabled: widget.isDanmakuEnabled,
+          onDanmakuToggle: widget.onDanmakuToggle,
+          danmakuSettings: widget.danmakuSettings,
+          onDanmakuSettingsChanged: widget.onDanmakuSettingsChanged,
+          onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+          onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+          forceControlsVisible: widget.forceControlsVisible,
+          live: widget.live,
+          playbackSpeedListenable: _playbackSpeed,
+          onSetSpeed: _setPlaybackSpeed,
+          onControlsVisibilityChanged: (visible) {
+            _safeSetState(() => _controlsVisible = visible);
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildControls() {
     if (_adapter == null) return const SizedBox.shrink();
 
     if (widget.surface == VideoPlayerSurface.desktop) {
-      if (_adapter is! MediaKitAdapter) return const SizedBox.shrink();
-
-      final mkAdapter = _adapter as MediaKitAdapter;
-      return PCPlayerControls(
-        state: _videoKey.currentState!,
-        player: mkAdapter.player,
-        onBackPressed: widget.onBackPressed,
-        onNextEpisode: widget.onNextEpisode,
-        onPause: widget.onPause,
-        videoUrl: _currentUrl ?? '',
-        isLastEpisode: widget.isLastEpisode,
-        isLoadingVideo: _isLoadingVideo,
-        onCastStarted: widget.onCastStarted,
-        videoTitle: widget.videoTitle,
-        videoYear: widget.videoYear,
-        currentEpisodeIndex: widget.currentEpisodeIndex,
-        totalEpisodes: widget.totalEpisodes,
-        episodesTitles: widget.episodesTitles,
-        sourceName: widget.sourceName,
-        isLocal: widget.isLocal,
-        onWebFullscreenChanged: widget.onWebFullscreenChanged,
-        onExitWebFullscreenCallbackReady: (callback) {
-          _exitWebFullscreenCallback = callback;
-        },
-        onExitFullScreen: widget.onExitFullScreen,
-        live: widget.live,
-        playbackSpeedListenable: _playbackSpeed,
-        onSetSpeed: _setPlaybackSpeed,
-        onControlsVisibilityChanged: (visible) {
-          _safeSetState(() => _controlsVisible = visible);
-        },
-      );
+      // 在 PC 端，控制层已通过 buildVideo 注入到 Video 组件内部，
+      // 这里返回空以避免在 Stack 中重复渲染。
+      return const SizedBox.shrink();
     } else {
       // 💡 优化：不再通过视频尺寸实时探测，直接信任外部传入的 isShortDrama 标记
       // 这样在滑动切换视频、视频未加载完成时，UI 状态依然保持稳定，不会产生闪烁

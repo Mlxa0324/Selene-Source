@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'dlna_device_dialog.dart';
+import '../models/danmaku_model.dart';
 
 // 带 hover 效果的按钮组件
 class HoverButton extends StatefulWidget {
@@ -50,7 +51,7 @@ class _HoverButtonState extends State<HoverButton> {
 }
 
 class PCPlayerControls extends StatefulWidget {
-  final VideoState state;
+  final VideoState? state;
   final Player player;
   final VoidCallback? onBackPressed;
   final VoidCallback? onNextEpisode;
@@ -74,10 +75,18 @@ class PCPlayerControls extends StatefulWidget {
   final ValueNotifier<double> playbackSpeedListenable;
   final Future<void> Function(double speed) onSetSpeed;
   final Function(bool)? onControlsVisibilityChanged;
+  final Function(bool)? onFullscreenChange; // 💡 新增
+  final bool forceControlsVisible;
+  final bool isDanmakuEnabled;
+  final void Function(bool enabled)? onDanmakuToggle;
+  final void Function(BuildContext context)? onDanmakuButtonPressed;
+  final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
+  final DanmakuSettings danmakuSettings;
+  final void Function(DanmakuSettings settings)? onDanmakuSettingsChanged;
 
   const PCPlayerControls({
     super.key,
-    required this.state,
+    this.state,
     required this.player,
     this.onBackPressed,
     this.onNextEpisode,
@@ -101,6 +110,14 @@ class PCPlayerControls extends StatefulWidget {
     required this.playbackSpeedListenable,
     required this.onSetSpeed,
     this.onControlsVisibilityChanged,
+    this.onFullscreenChange, // 💡 新增
+    this.forceControlsVisible = false,
+    this.isDanmakuEnabled = false,
+    this.onDanmakuToggle,
+    this.onDanmakuButtonPressed,
+    this.onDanmakuMatchButtonPressed,
+    this.danmakuSettings = const DanmakuSettings(),
+    this.onDanmakuSettingsChanged,
   });
 
   @override
@@ -117,6 +134,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   Duration _swipeStartPosition = Duration.zero;
   StreamSubscription? _playingSubscription;
   StreamSubscription? _positionSubscription;
+
   bool _isFullscreen = false;
   bool _isWebFullscreen = false;
   bool _showSpeedMenu = false;
@@ -127,6 +145,10 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   final GlobalKey _volumeButtonKey = GlobalKey();
   bool _isHoveringVolumeButton = false;
   bool _isHoveringVolumeMenu = false;
+  bool _showDanmakuMenu = false;
+  final GlobalKey _danmakuButtonKey = GlobalKey();
+  bool _isHoveringDanmakuButton = false;
+  bool _isHoveringDanmakuMenu = false;
   double _volumeBeforeMute = 1.0;
   Timer? _volumeMenuHideTimer;
   final FocusNode _focusNode = FocusNode();
@@ -182,18 +204,31 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   @override
   void didUpdateWidget(PCPlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.forceControlsVisible) {
+      _hideTimer?.cancel();
+      if (!_controlsVisible) {
+        setState(() {
+          _controlsVisible = true;
+        });
+        widget.onControlsVisibilityChanged?.call(true);
+      }
+    }
     // 当 widget 更新时，尝试同步全屏状态
     // 使用 try-catch 避免在不安全的时机访问 InheritedWidget
     try {
-      final actualFullscreen = widget.state.isFullscreen();
-      if (_isFullscreen != actualFullscreen) {
-        // 检测到从全屏退出
-        if (_isFullscreen && !actualFullscreen) {
-          widget.onExitFullScreen?.call();
+      if (widget.state != null) {
+        final actualFullscreen = widget.state!.isFullscreen();
+        if (_isFullscreen != actualFullscreen) {
+          // 检测到从全屏退出
+          if (_isFullscreen && !actualFullscreen) {
+            widget.onExitFullScreen?.call();
+          }
+          setState(() {
+            _isFullscreen = actualFullscreen;
+          });
+          // 💡 通知父组件状态变化
+          widget.onFullscreenChange?.call(actualFullscreen);
         }
-        setState(() {
-          _isFullscreen = actualFullscreen;
-        });
       }
     } catch (e) {
       // 如果无法安全获取状态，保持当前状态不变
@@ -212,13 +247,17 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
 
   void _startHideTimer() {
     _hideTimer?.cancel();
-    // 如果倍速菜单或音量菜单正在显示或鼠标悬停在按钮/菜单上，不启动隐藏定时器
+    if (widget.forceControlsVisible) return;
+    // 如果倍速菜单/音量菜单/弹幕菜单正在显示或鼠标悬停在按钮/菜单上，不启动隐藏定时器
     if (_showSpeedMenu ||
         _isHoveringSpeedButton ||
         _isHoveringSpeedMenu ||
         _showVolumeMenu ||
         _isHoveringVolumeButton ||
-        _isHoveringVolumeMenu) {
+        _isHoveringVolumeMenu ||
+        _showDanmakuMenu ||
+        _isHoveringDanmakuButton ||
+        _isHoveringDanmakuMenu) {
       return;
     }
     if (widget.player.state.playing) {
@@ -235,6 +274,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
 
   void _forceStartHideTimer() {
     _hideTimer?.cancel();
+    if (widget.forceControlsVisible) return;
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
@@ -367,12 +407,13 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   void _toggleFullscreen() {
+    if (widget.state == null) return;
     // 直接触发全屏切换，不要提前更新本地状态
     // 状态会在 didUpdateWidget 中同步
     if (_isFullscreen) {
-      widget.state.exitFullscreen();
+      widget.state!.exitFullscreen();
     } else {
-      widget.state.enterFullscreen();
+      widget.state!.enterFullscreen();
     }
   }
 
@@ -478,9 +519,10 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
       else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
         final currentPosition = widget.player.state.position;
         final newPosition = currentPosition - const Duration(seconds: 10);
+        final duration = widget.player.state.duration;
         final clampedPosition = Duration(
           milliseconds: newPosition.inMilliseconds
-              .clamp(0, widget.player.state.duration.inMilliseconds),
+              .clamp(0, duration.inMilliseconds),
         );
         widget.player.seek(clampedPosition);
         // 显示控制栏
@@ -586,7 +628,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
         onExit: (_) {
           // 鼠标移出时立即隐藏控制栏，但如果菜单正在显示或鼠标在按钮/菜单上则不隐藏
           _hideTimer?.cancel();
-          if (_controlsVisible &&
+          if (!widget.forceControlsVisible &&
+              _controlsVisible &&
               !_showSpeedMenu &&
               !_isHoveringSpeedButton &&
               !_isHoveringSpeedMenu &&
@@ -948,6 +991,107 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                 ),
                               ),
                             ),
+                          if (widget.onDanmakuToggle != null)
+                            HoverButton(
+                              onTap: () {
+                                _onUserInteraction();
+                                widget.onDanmakuToggle
+                                    ?.call(!widget.isDanmakuEnabled);
+                              },
+                              child: Container(
+                                width: effectiveFullscreen ? 26 : 22,
+                                height: effectiveFullscreen ? 26 : 22,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: widget.isDanmakuEnabled
+                                      ? Colors.green.withValues(alpha: 0.2)
+                                      : Colors.transparent,
+                                  border: Border.all(
+                                    color: widget.isDanmakuEnabled
+                                        ? Colors.greenAccent
+                                        : Colors.white54,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  '弹',
+                                  style: TextStyle(
+                                    color: widget.isDanmakuEnabled
+                                        ? Colors.greenAccent
+                                        : Colors.white,
+                                    fontSize: effectiveFullscreen ? 13 : 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (widget.onDanmakuSettingsChanged != null)
+                            MouseRegion(
+                              key: _danmakuButtonKey,
+                              cursor: SystemMouseCursors.click,
+                              onEnter: (_) {
+                                setState(() {
+                                  _isHoveringDanmakuButton = true;
+                                  _showDanmakuMenu = true;
+                                  _controlsVisible = true;
+                                });
+                                _hideTimer?.cancel();
+                              },
+                              onExit: (_) {
+                                setState(() {
+                                  _isHoveringDanmakuButton = false;
+                                });
+                                // 延迟检查是否需要隐藏菜单
+                                Future.delayed(const Duration(milliseconds: 100),
+                                    () {
+                                  if (mounted &&
+                                      !_isHoveringDanmakuButton &&
+                                      !_isHoveringDanmakuMenu) {
+                                    setState(() {
+                                      _showDanmakuMenu = false;
+                                    });
+                                    _startHideTimer();
+                                  }
+                                });
+                              },
+                              child: GestureDetector(
+                                onTap: () {
+                                  _onUserInteraction();
+                                  setState(() {
+                                    _showDanmakuMenu = true;
+                                  });
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: _isHoveringDanmakuButton
+                                      ? BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color:
+                                              Colors.grey.withValues(alpha: 0.5),
+                                        )
+                                      : null,
+                                  child: Icon(
+                                    Icons.tune,
+                                    color: Colors.white,
+                                    size: effectiveFullscreen ? 22 : 20,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (widget.onDanmakuMatchButtonPressed != null)
+                            HoverButton(
+                              onTap: () {
+                                _onUserInteraction();
+                                widget.onDanmakuMatchButtonPressed
+                                    ?.call(context);
+                              },
+                              child: Icon(
+                                Icons.search,
+                                color: Colors.white,
+                                size: effectiveFullscreen ? 22 : 20,
+                              ),
+                            ),
                           if (widget.live) const Spacer(),
                           // 网页全屏按钮（仅在非真全屏时显示）
                           if (!_isFullscreen)
@@ -990,6 +1134,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
             if (_showSpeedMenu) _buildSpeedMenu(),
             // 音量调节弹窗
             if (_showVolumeMenu) _buildVolumeMenu(),
+            // 弹幕设置弹窗
+            if (_showDanmakuMenu) _buildDanmakuMenu(),
           ],
         ),
       ),
@@ -1239,6 +1385,304 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _updateDanmakuSettings(DanmakuSettings settings) {
+    widget.onDanmakuSettingsChanged?.call(settings);
+    setState(() {});
+  }
+
+  Widget _buildDanmakuMenu() {
+    final settings = widget.danmakuSettings;
+
+    // 获取弹幕按钮的位置
+    final RenderBox? renderBox =
+        _danmakuButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return const SizedBox.shrink();
+
+    final buttonPosition = renderBox.localToGlobal(Offset.zero);
+    final buttonSize = renderBox.size;
+
+    // 根据全屏状态调整弹窗大小
+    final effectiveFullscreen = _isWebFullscreen || _isFullscreen;
+    final menuWidth = effectiveFullscreen ? 280.0 : 240.0;
+    final menuHeight = effectiveFullscreen ? 320.0 : 320.0;
+
+    // 计算水平居中位置：按钮中心 - 弹框宽度的一半
+    final menuLeft =
+        buttonPosition.dx + (buttonSize.width / 2) - (menuWidth / 2);
+    // 计算垂直位置：按钮顶部 - 弹框高度 - 间距
+    final menuTop = buttonPosition.dy - menuHeight - (_isFullscreen ? 2 : 36);
+
+    final screenSize = MediaQuery.of(context).size;
+    final minLeft = 8.0;
+    final maxLeft = screenSize.width - menuWidth - 8.0;
+    final safeMaxLeft = maxLeft < minLeft ? minLeft : maxLeft;
+    final clampedLeft = menuLeft.clamp(minLeft, safeMaxLeft);
+
+    final minTop = 8.0;
+    final maxTop = screenSize.height - menuHeight - 8.0;
+    final safeMaxTop = maxTop < minTop ? minTop : maxTop;
+    final clampedTop = menuTop.clamp(minTop, safeMaxTop);
+
+    return Positioned(
+      left: clampedLeft,
+      top: clampedTop,
+      child: MouseRegion(
+        onEnter: (_) {
+          setState(() {
+            _isHoveringDanmakuMenu = true;
+          });
+          _hideTimer?.cancel();
+        },
+        onExit: (_) {
+          setState(() {
+            _isHoveringDanmakuMenu = false;
+          });
+          // 延迟检查是否需要隐藏菜单
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (mounted && !_isHoveringDanmakuButton && !_isHoveringDanmakuMenu) {
+              setState(() {
+                _showDanmakuMenu = false;
+              });
+              _startHideTimer();
+            }
+          });
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: menuWidth,
+            height: menuHeight,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.85),
+              borderRadius: BorderRadius.circular(effectiveFullscreen ? 8 : 6),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(effectiveFullscreen ? 8 : 6),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '弹幕设置',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: effectiveFullscreen ? 14 : 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildDanmakuSliderRow(
+                      label: '不透明度',
+                      value: settings.opacity,
+                      min: 0.1,
+                      max: 1.0,
+                      valueLabel: '${(settings.opacity * 100).toInt()}%',
+                      onChanged: (v) =>
+                          _updateDanmakuSettings(settings.copyWith(opacity: v)),
+                    ),
+                    _buildDanmakuSliderRow(
+                      label: '缩放',
+                      value: settings.scale,
+                      min: 0.5,
+                      max: 2.0,
+                      valueLabel: '${settings.scale.toStringAsFixed(1)}x',
+                      onChanged: (v) =>
+                          _updateDanmakuSettings(settings.copyWith(scale: v)),
+                    ),
+                    _buildDanmakuSliderRow(
+                      label: '速度',
+                      value: settings.duration,
+                      min: 3.0,
+                      max: 15.0,
+                      valueLabel:
+                          '${(18 - settings.duration).toStringAsFixed(1)}x',
+                      reverse: true,
+                      onChanged: (v) => _updateDanmakuSettings(
+                          settings.copyWith(duration: v)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '显示区域',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: effectiveFullscreen ? 12 : 11,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _buildDanmakuChip(
+                          label: '1/4',
+                          selected: settings.displayArea == 0.25,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(displayArea: 0.25)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '1/2',
+                          selected: settings.displayArea == 0.5,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(displayArea: 0.5)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '3/4',
+                          selected: settings.displayArea == 0.75,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(displayArea: 0.75)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '全屏',
+                          selected: settings.displayArea == 1.0,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(displayArea: 1.0)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _buildDanmakuChip(
+                          label: '防重叠',
+                          selected: settings.preventOverlap,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(preventOverlap: !settings.preventOverlap)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '同步倍速',
+                          selected: settings.syncVideoSpeed,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(syncVideoSpeed: !settings.syncVideoSpeed)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '屏蔽滚动',
+                          selected: settings.hideScroll,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(hideScroll: !settings.hideScroll)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '屏蔽顶部',
+                          selected: settings.hideTop,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(hideTop: !settings.hideTop)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '屏蔽底部',
+                          selected: settings.hideBottom,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(hideBottom: !settings.hideBottom)),
+                        ),
+                        _buildDanmakuChip(
+                          label: '屏蔽彩色',
+                          selected: settings.hideColor,
+                          onTap: () => _updateDanmakuSettings(
+                              settings.copyWith(hideColor: !settings.hideColor)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDanmakuSliderRow({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required String valueLabel,
+    required ValueChanged<double> onChanged,
+    bool reverse = false,
+  }) {
+    final displayValue = reverse ? (max - (value - min)) : value;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const Spacer(),
+              Text(
+                valueLabel,
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+              activeTrackColor: Colors.greenAccent,
+              inactiveTrackColor: Colors.white24,
+              thumbColor: Colors.greenAccent,
+            ),
+            child: Slider(
+              value: displayValue,
+              min: min,
+              max: max,
+              onChanged: (v) {
+                final actual = reverse ? (max - (v - min)) : v;
+                onChanged(actual);
+              },
+              divisions: 20,
+              label: valueLabel,
+              inactiveColor: Colors.white24,
+              activeColor: Colors.greenAccent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDanmakuChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: selected
+              ? Colors.green.withValues(alpha: 0.2)
+              : Colors.white10,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? Colors.greenAccent : Colors.white24,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.greenAccent : Colors.white70,
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
       ),
@@ -1547,7 +1991,7 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
       _dragValue = value;
     });
 
-    final duration = widget.player.state.duration;
+        final duration = widget.player.state.duration;
     final position =
         Duration(milliseconds: (value * duration.inMilliseconds).round());
 

@@ -8,6 +8,9 @@ class DanmakuMatchPanel extends StatefulWidget {
   final String initialQuery;
   final int? currentEpisodeId; // 当前选中的弹幕 ID
   final Function(int episodeId) onEpisodeSelected;
+  final double? backgroundOpacity;
+  final BorderRadius? borderRadiusOverride;
+  final bool forceDarkStyle;
 
   const DanmakuMatchPanel({
     super.key,
@@ -15,6 +18,9 @@ class DanmakuMatchPanel extends StatefulWidget {
     required this.initialQuery,
     this.currentEpisodeId,
     required this.onEpisodeSelected,
+    this.backgroundOpacity,
+    this.borderRadiusOverride,
+    this.forceDarkStyle = false,
   });
 
   @override
@@ -28,6 +34,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   List<DanmakuSearchAnime> _searchResults = [];
   String? _errorMessage;
   bool _isDescending = true;
+  int? _selectedAnimeId;
 
   // 💡 优化：改为使用复合字符串 Key (animeId_episodeId)，防止不同搜索结果下重复的 episodeId 导致 GlobalKey 冲突
   final Map<String, GlobalKey> _itemKeys = {};
@@ -70,6 +77,23 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
   }
 
+  void _syncSelectedAnimeId() {
+    final currentId = widget.currentEpisodeId;
+    if (currentId == null || _searchResults.isEmpty) {
+      _selectedAnimeId = null;
+      return;
+    }
+
+    for (final anime in _searchResults) {
+      if (anime.episodes.any((e) => e.episodeId == currentId)) {
+        _selectedAnimeId = anime.animeId;
+        return;
+      }
+    }
+
+    _selectedAnimeId = null;
+  }
+
   /// 💡 修复：使用控制器强制收起所有已展开的项
   void _collapseAll() {
     setState(() {
@@ -88,43 +112,45 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   void _locateToCurrent() {
     if (widget.currentEpisodeId == null || _searchResults.isEmpty) return;
 
-    int animeId = -1;
+    int animeId = _selectedAnimeId ?? -1;
     int targetEpisodeId = widget.currentEpisodeId!;
 
-    // 1. 查找当前 ID 所在的动画
-    for (var anime in _searchResults) {
-      if (anime.episodes.any((e) => e.episodeId == targetEpisodeId)) {
-        animeId = anime.animeId;
-        
-        // 2. 💡 核心修复：确保数据状态为展开
-        setState(() {
-          _expansionStates[animeId] = true;
-        });
-
-        // 3. 💡 直接通过控制器下发展开指令
-        _tileControllers[animeId]?.expand();
-
-        // 4. 💡 精准定位
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // 延时 250ms 待动画完成
-          Future.delayed(const Duration(milliseconds: 250), () {
-            final compositeKey = '${animeId}_$targetEpisodeId';
-            final targetKey = _itemKeys[compositeKey];
-            if (targetKey?.currentContext != null) {
-              Scrollable.ensureVisible(
-                targetKey!.currentContext!,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeInOut,
-                alignment: 0.3,
-              );
-            }
-          });
-        });
-
-        // 找到第一个匹配项并处理后就退出循环，防止多个重复 ID 引起冲突
-        break; 
+    if (animeId == -1) {
+      // 1. 查找当前 ID 所在的动画
+      for (var anime in _searchResults) {
+        if (anime.episodes.any((e) => e.episodeId == targetEpisodeId)) {
+          animeId = anime.animeId;
+          break;
+        }
       }
     }
+
+    if (animeId == -1) return;
+
+    // 2. 💡 核心修复：确保数据状态为展开
+    setState(() {
+      _expansionStates[animeId] = true;
+    });
+
+    // 3. 💡 直接通过控制器下发展开指令
+    _tileControllers[animeId]?.expand();
+
+    // 4. 💡 精准定位
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 延时 250ms 待动画完成
+      Future.delayed(const Duration(milliseconds: 250), () {
+        final compositeKey = '${animeId}_$targetEpisodeId';
+        final targetKey = _itemKeys[compositeKey];
+        if (targetKey?.currentContext != null) {
+          Scrollable.ensureVisible(
+            targetKey!.currentContext!,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+            alignment: 0.3,
+          );
+        }
+      });
+    });
   }
 
   Future<void> _onSearch() async {
@@ -146,6 +172,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           setState(() {
             _searchResults = result.animes;
             _sortResults();
+            _syncSelectedAnimeId();
             _isLoading = false;
           });
           // 如果有当前 ID，自动定位一次
@@ -171,11 +198,23 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   }
 
   @override
+  void didUpdateWidget(covariant DanmakuMatchPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentEpisodeId != widget.currentEpisodeId) {
+      setState(() {
+        _syncSelectedAnimeId();
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isDarkMode = widget.theme.brightness == Brightness.dark;
+    final isDarkMode =
+        widget.forceDarkStyle ? true : widget.theme.brightness == Brightness.dark;
+    final backgroundOpacity = widget.backgroundOpacity ?? (isDarkMode ? 0.9 : 0.98);
     final backgroundColor = isDarkMode
-        ? Colors.black.withOpacity(0.9)
-        : Colors.white.withOpacity(0.98);
+        ? Colors.black.withOpacity(backgroundOpacity)
+        : Colors.white.withOpacity(backgroundOpacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white38 : Colors.black38;
     final inputColor =
@@ -183,26 +222,29 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
 
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
 
-    return Container(
-      width: double.infinity, // 💡 改为填满宽度
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: isPortrait 
-          ? const BorderRadius.vertical(top: Radius.circular(24)) // 💡 底部弹出时使用顶部圆角
-          : const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              bottomLeft: Radius.circular(16),
-            ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            spreadRadius: 1,
-          )
-        ],
-      ),
-      child: Column(
-        children: [
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: double.infinity, // 💡 改为填满宽度
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: widget.borderRadiusOverride ??
+              (isPortrait
+                  ? const BorderRadius.vertical(top: Radius.circular(24)) // 💡 底部弹出时使用顶部圆角
+                  : const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                    )),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              spreadRadius: 1,
+            )
+          ],
+        ),
+        child: Column(
+          children: [
           // 标题栏
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 10, 8, 4), // 💡 压缩上下边距 (16/8 -> 10/4)
@@ -323,14 +365,15 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                                                   ),
                                   ),
                                   const SizedBox(height: 16),
-                                ],
-                              ),
-                            );
+          ],
+        ),
+      ),
+    );
                           }
                         
-                          Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
-                              Color textColor, Color subTextColor) {
-                            bool hasSelected =
+  Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
+      Color textColor, Color subTextColor) {
+                            bool hasSelected = _selectedAnimeId == anime.animeId &&
                                 anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
                         
                             // 💡 核心：为每个动画项绑定一个持久的控制器
@@ -402,7 +445,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                           }
                         
                           Widget _buildEpisodeItem(int animeId, DanmakuSearchEpisode episode, Color textColor) {
-                            bool isSelected = episode.episodeId == widget.currentEpisodeId;
+                            bool isSelected = _selectedAnimeId == animeId &&
+                                episode.episodeId == widget.currentEpisodeId;
                             
                             // 💡 复合 Key 生成
                             final compositeKey = '${animeId}_${episode.episodeId}';
@@ -411,7 +455,12 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                             return Material(
                               key: key, 
                               color: Colors.transparent,      child: InkWell(
-        onTap: () => widget.onEpisodeSelected(episode.episodeId),
+        onTap: () {
+          setState(() {
+            _selectedAnimeId = animeId;
+          });
+          widget.onEpisodeSelected(episode.episodeId);
+        },
         borderRadius: BorderRadius.circular(4),
         child: Container(
           width: double.infinity,
