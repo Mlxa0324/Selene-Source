@@ -15,6 +15,85 @@ class DownloadService extends ChangeNotifier {
   final Dio _dio = Dio();
   final List<DownloadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
+
+  Future<String?> _findFfmpeg() async {
+    try {
+      final result = await Process.run(
+        'ffmpeg',
+        ['-version'],
+        runInShell: true,
+      );
+      if (result.exitCode == 0) {
+        return 'ffmpeg';
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> _concatSegmentsToTs(
+      DownloadTask task, int totalSegments) async {
+    try {
+      final outputFile = File("${task.savePath}/merged.ts");
+      if (await outputFile.exists()) {
+        await outputFile.delete();
+      }
+      final sink = outputFile.openWrite();
+      for (var i = 0; i < totalSegments; i++) {
+        final segFile = File("${task.savePath}/seg_$i.ts");
+        if (await segFile.exists()) {
+          await sink.addStream(segFile.openRead());
+        }
+      }
+      await sink.close();
+      return await outputFile.exists();
+    } catch (e) {
+      debugPrint('合并成 ts 失败: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _tryMergeSegmentsToMp4(
+      DownloadTask task, int totalSegments) async {
+    if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
+      return false;
+    }
+
+    final ffmpeg = await _findFfmpeg();
+    if (ffmpeg == null) {
+      debugPrint('未检测到 ffmpeg，尝试合并为单个 ts');
+      return await _concatSegmentsToTs(task, totalSegments);
+    }
+
+    try {
+      final concatFile = File("${task.savePath}/concat.txt");
+      final buffer = StringBuffer();
+      for (var i = 0; i < totalSegments; i++) {
+        final segFile = File("${task.savePath}/seg_$i.ts");
+        if (await segFile.exists()) {
+          buffer.writeln("file 'seg_$i.ts'");
+        }
+      }
+      if (buffer.length == 0) return false;
+
+      await concatFile.writeAsString(buffer.toString());
+
+      final outputPath = "${task.savePath}/merged.mp4";
+      final result = await Process.run(
+        ffmpeg,
+        ['-y', '-f', 'concat', '-safe', '0', '-i', concatFile.path, '-c', 'copy', outputPath],
+        workingDirectory: task.savePath,
+        runInShell: true,
+      );
+      if (result.exitCode != 0) {
+        debugPrint('合并失败: ${result.stderr}');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      debugPrint('合并异常: $e');
+      return false;
+    }
+  }
   
   List<DownloadTask> get tasks => _tasks;
   
@@ -331,6 +410,9 @@ class DownloadService extends ChangeNotifier {
         }
       }
       await localM3u8File.writeAsString(localLines.join('\n'));
+
+      // 4.5 尝试合并 ts 为 mp4（可选）
+      await _tryMergeSegmentsToMp4(task, segmentUrls.length);
 
       // 5. 计算最终文件大小
       int totalSize = 0;
