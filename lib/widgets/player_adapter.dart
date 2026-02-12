@@ -280,6 +280,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final Map<String, String>? headers;
   final Duration? startAt;
   final bool adFilterEnabled;
+  final bool seekBoostEnabled;
 
   final StreamController<bool> _playingController =
       StreamController<bool>.broadcast();
@@ -314,6 +315,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     this.startAt,
     this.onReady,
     this.adFilterEnabled = false,
+    this.seekBoostEnabled = false,
   }) {
     stream = _WebViewPlayerStream(this);
     state = _WebViewPlayerState(this);
@@ -405,9 +407,37 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> seek(Duration position) async {
-    final seconds = position.inMilliseconds / 1000;
+    final safePosition = position < Duration.zero ? Duration.zero : position;
+    final seconds = safePosition.inMilliseconds / 1000;
+
+    // 先在 Flutter 侧立即更新，避免拖动后进度条“回弹”。
+    _position = safePosition;
+    if (!_positionController.isClosed) {
+      _positionController.add(_position);
+    }
+
     await _controller?.evaluateJavascript(
-        source: 'player.currentTime = $seconds;');
+      source: '''
+        (function(targetSeconds) {
+          var p = window.player || document.getElementById('player');
+          if (!p) return;
+          var sec = Math.max(0, Number(targetSeconds) || 0);
+          if (typeof window.fastSeekTo === 'function') {
+            window.fastSeekTo(sec);
+            return;
+          }
+          try {
+            if (typeof p.fastSeek === 'function') {
+              p.fastSeek(sec);
+            } else {
+              p.currentTime = sec;
+            }
+          } catch (_) {
+            p.currentTime = sec;
+          }
+        })($seconds);
+      ''',
+    );
   }
 
   @override
@@ -472,6 +502,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   String _buildHtmlContent() {
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
+    final seekBoostEnabledJs = seekBoostEnabled ? 'true' : 'false';
 
     // 如果有缓存内容，则注入内联脚本；否则使用 CDN 链接
     final hlsJsTag = (_hlsJsContent != null && _hlsJsContent!.isNotEmpty)
@@ -494,9 +525,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   <video id="player" playsinline></video>
   <script>
     var player = document.getElementById('player');
+    window.player = player;
+    window.hlsInstance = null;
     var videoUrl = '$url';
     var startTime = $startSeconds;
     var adFilterEnabled = $adFilterEnabledJs;
+    var seekBoostEnabled = $seekBoostEnabledJs;
 
     // 如果是通过 CDN 加载的，尝试获取源码并回传给 Flutter 缓存
     var hlsScript = document.getElementById('hls-script');
@@ -565,6 +599,31 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
     }
 
+    function fastSeekTo(targetSeconds) {
+      if (!player) return;
+      var sec = Math.max(0, Number(targetSeconds) || 0);
+
+      try {
+        if (typeof player.fastSeek === 'function') {
+          player.fastSeek(sec);
+        } else {
+          player.currentTime = sec;
+        }
+      } catch (e) {
+        player.currentTime = sec;
+      }
+
+      try {
+        if (seekBoostEnabled && window.hlsInstance && typeof window.hlsInstance.startLoad === 'function') {
+          window.hlsInstance.startLoad(sec);
+        }
+      } catch (e) {}
+
+      sendEvent('timeupdate', { currentTime: sec });
+    }
+
+    window.fastSeekTo = fastSeekTo;
+
     if (player) {
       player.addEventListener('play', function() { sendEvent('play'); });
       player.addEventListener('pause', function() { sendEvent('pause'); });
@@ -589,6 +648,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       player.addEventListener('waiting', function() { sendEvent('buffering', { value: true }); });
       player.addEventListener('canplay', function() { sendEvent('buffering', { value: false }); });
       player.addEventListener('playing', function() { sendEvent('buffering', { value: false }); });
+      player.addEventListener('seeking', function() { sendEvent('buffering', { value: true }); });
+      player.addEventListener('seeked', function() {
+        sendEvent('buffering', { value: false });
+        sendEvent('timeupdate', { currentTime: player.currentTime });
+      });
 
       player.addEventListener('loadedmetadata', function() {
         if (startTime > 0) player.currentTime = startTime;
@@ -601,6 +665,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     if (isM3u8) {
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         var config = { enableWorker: true, lowLatencyMode: true };
+        if (seekBoostEnabled) {
+          config.maxBufferLength = 8;
+          config.maxMaxBufferLength = 16;
+          config.backBufferLength = 30;
+          config.nudgeMaxRetry = 1;
+        }
         
         if (adFilterEnabled) {
           class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
@@ -626,6 +696,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         }
 
         var hls = new Hls(config);
+        window.hlsInstance = hls;
         hls.loadSource(videoUrl);
         if (player) {
           hls.attachMedia(player);

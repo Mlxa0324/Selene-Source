@@ -1895,20 +1895,17 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
             
             setState(() {
               _isDragging = false;
-              _isSeeking = true; // 标记开始 seek
+              _isSeeking = true; // 标记开始 seek（完成后立即恢复）
             });
-            
-            await widget.player.seek(seekPosition);
-            
-            // seek 完成后，延迟一小段时间再允许位置更新，确保播放器状态已同步
-            await Future.delayed(const Duration(milliseconds: 100));
-            
-            if (mounted) {
-              setState(() {
-                _isSeeking = false; // 标记 seek 完成
-              });
-            }
-            
+
+            unawaited(widget.player.seek(seekPosition).whenComplete(() {
+              if (mounted) {
+                setState(() {
+                  _isSeeking = false;
+                });
+              }
+            }));
+
             widget.onDragEnd?.call();
           }
         },
@@ -1919,20 +1916,17 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
               milliseconds: (_dragValue * duration.inMilliseconds).round());
           
           setState(() {
-            _isSeeking = true; // 标记开始 seek
+            _isSeeking = true; // 标记开始 seek（完成后立即恢复）
           });
-          
-          await widget.player.seek(seekPosition);
-          
-          // seek 完成后，延迟一小段时间再允许位置更新，确保播放器状态已同步
-          await Future.delayed(const Duration(milliseconds: 100));
-          
-          if (mounted) {
-            setState(() {
-              _isSeeking = false; // 标记 seek 完成
-            });
-          }
-          
+
+          unawaited(widget.player.seek(seekPosition).whenComplete(() {
+            if (mounted) {
+              setState(() {
+                _isSeeking = false;
+              });
+            }
+          }));
+
           widget.onDragEnd?.call();
         },
         child: Container(

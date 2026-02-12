@@ -312,6 +312,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             url: _currentUrl!,
             headers: _currentHeaders,
             adFilterEnabled: widget.adFilterEnabled,
+            seekBoostEnabled: false,
             onReady: () {
               debugPrint('VideoPlayerWidget: WebView ready (init)');
               if (mounted) {
@@ -342,6 +343,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           url: _currentUrl!,
           headers: _currentHeaders,
           adFilterEnabled: widget.adFilterEnabled,
+          seekBoostEnabled: true,
           onReady: () {
             debugPrint('VideoPlayerWidget: WebView ready (desktop init)');
             if (mounted) {
@@ -591,6 +593,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           headers: _currentHeaders,
           startAt: startAt,
           adFilterEnabled: widget.adFilterEnabled,
+          seekBoostEnabled:
+              (Platform.isWindows || Platform.isMacOS) && !widget.isLocal,
           onReady: () {
             debugPrint('VideoPlayerWidget: WebView ready (update)');
             if (mounted) {
