@@ -551,8 +551,7 @@ class ApiService {
       if (baseUrl == null) return false;
 
       final maniestResponse = await http.get(
-        Uri.parse('$baseUrl/c.json'),
-        headers: {'Accept': 'application/json'},
+        Uri.parse('$baseUrl/login'),
       ).timeout(const Duration(seconds: 5));
 
       final healthResponse = await http.get(
