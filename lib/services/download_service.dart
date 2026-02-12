@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/download_task.dart';
+import 'mobile_background_download_service.dart';
 
 class DownloadService extends ChangeNotifier {
   static final DownloadService _instance = DownloadService._internal();
@@ -15,6 +15,42 @@ class DownloadService extends ChangeNotifier {
   final Dio _dio = Dio();
   final List<DownloadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
+  final Map<String, int> _retryCounts = {};
+
+  static const int _maxRetryCount = 3;
+
+  void _syncBackgroundService() {
+    final downloadingCount =
+        _tasks.where((t) => t.status == DownloadStatus.downloading).length;
+    final queuedCount =
+        _tasks.where((t) => t.status == DownloadStatus.queued).length;
+
+    unawaited(
+      MobileBackgroundDownloadService.syncForegroundService(
+        downloadingCount: downloadingCount,
+        queuedCount: queuedCount,
+      ),
+    );
+  }
+
+  bool _isRetriableError(Object error) {
+    if (error is DioException) {
+      if (error.type == DioExceptionType.connectionError ||
+          error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.sendTimeout) {
+        return true;
+      }
+      final errText = error.error?.toString().toLowerCase() ?? '';
+      if (errText.contains('socket') || errText.contains('network')) {
+        return true;
+      }
+      return false;
+    }
+
+    final text = error.toString().toLowerCase();
+    return text.contains('socket') || text.contains('network');
+  }
 
   Future<String?> _findFfmpeg() async {
     try {
@@ -30,8 +66,7 @@ class DownloadService extends ChangeNotifier {
     return null;
   }
 
-  Future<bool> _concatSegmentsToTs(
-      DownloadTask task, int totalSegments) async {
+  Future<bool> _concatSegmentsToTs(DownloadTask task, int totalSegments) async {
     try {
       final outputFile = File("${task.savePath}/merged.ts");
       if (await outputFile.exists()) {
@@ -80,7 +115,18 @@ class DownloadService extends ChangeNotifier {
       final outputPath = "${task.savePath}/merged.mp4";
       final result = await Process.run(
         ffmpeg,
-        ['-y', '-f', 'concat', '-safe', '0', '-i', concatFile.path, '-c', 'copy', outputPath],
+        [
+          '-y',
+          '-f',
+          'concat',
+          '-safe',
+          '0',
+          '-i',
+          concatFile.path,
+          '-c',
+          'copy',
+          outputPath
+        ],
         workingDirectory: task.savePath,
         runInShell: true,
       );
@@ -94,9 +140,9 @@ class DownloadService extends ChangeNotifier {
       return false;
     }
   }
-  
+
   List<DownloadTask> get tasks => _tasks;
-  
+
   static const String _tasksKey = 'download_tasks';
 
   Future<void> init() async {
@@ -107,7 +153,8 @@ class DownloadService extends ChangeNotifier {
         _tasks[i] = _tasks[i].copyWith(status: DownloadStatus.paused);
       }
       // 如果已完成但没有文件大小信息，则尝试计算
-      if (_tasks[i].status == DownloadStatus.completed && _tasks[i].fileSize == null) {
+      if (_tasks[i].status == DownloadStatus.completed &&
+          _tasks[i].fileSize == null) {
         final size = await _calculateDirSize(Directory(_tasks[i].savePath));
         if (size > 0) {
           _tasks[i] = _tasks[i].copyWith(fileSize: size);
@@ -115,6 +162,7 @@ class DownloadService extends ChangeNotifier {
       }
     }
     notifyListeners();
+    _syncBackgroundService();
   }
 
   Future<void> _loadTasks() async {
@@ -141,6 +189,7 @@ class DownloadService extends ChangeNotifier {
     _tasks.add(task);
     await _saveTasks();
     notifyListeners();
+    _syncBackgroundService();
     _checkQueue(); // 尝试从队列启动
   }
 
@@ -152,25 +201,32 @@ class DownloadService extends ChangeNotifier {
       _tasks[index].speed = 0; // 重置速度
       _saveTasks();
       notifyListeners();
+      _syncBackgroundService();
       _checkQueue(); // 腾出一个位置，检查队列
     }
   }
 
   void resumeTask(String id) {
     final index = _tasks.indexWhere((t) => t.id == id);
-    if (index != -1 && (_tasks[index].status == DownloadStatus.paused || _tasks[index].status == DownloadStatus.failed)) {
+    if (index != -1 &&
+        (_tasks[index].status == DownloadStatus.paused ||
+            _tasks[index].status == DownloadStatus.failed)) {
       _tasks[index] = _tasks[index].copyWith(status: DownloadStatus.queued);
       _saveTasks();
       notifyListeners();
+      _syncBackgroundService();
       _checkQueue(); // 加入队列等待调度
     }
   }
 
   /// 检查并调度下载队列
   void _checkQueue() {
+    _syncBackgroundService();
+
     // 统计当前正在下载的任务
-    int downloadingCount = _tasks.where((t) => t.status == DownloadStatus.downloading).length;
-    
+    int downloadingCount =
+        _tasks.where((t) => t.status == DownloadStatus.downloading).length;
+
     // 如果下载中的任务已达3个，则不再启动新任务
     if (downloadingCount >= 3) return;
 
@@ -182,6 +238,8 @@ class DownloadService extends ChangeNotifier {
         if (downloadingCount >= 3) break;
       }
     }
+
+    _syncBackgroundService();
   }
 
   Future<void> deleteTask(String id) async {
@@ -192,8 +250,10 @@ class DownloadService extends ChangeNotifier {
       _tasks.removeAt(index);
       await _saveTasks();
       notifyListeners();
+      _retryCounts.remove(id);
+      _syncBackgroundService();
       _checkQueue(); // 删除后也检查队列
-      
+
       // 删除本地文件
       try {
         final dir = Directory(task.savePath);
@@ -209,12 +269,13 @@ class DownloadService extends ChangeNotifier {
   Future<void> _startDownload(String id) async {
     final index = _tasks.indexWhere((t) => t.id == id);
     if (index == -1) return;
-    
+
     var task = _tasks[index];
     if (task.status == DownloadStatus.completed) return;
 
     _tasks[index] = task.copyWith(status: DownloadStatus.downloading);
     notifyListeners();
+    _syncBackgroundService();
 
     final cancelToken = CancelToken();
     _cancelTokens[id] = cancelToken;
@@ -229,14 +290,14 @@ class DownloadService extends ChangeNotifier {
       String currentUrl = task.url;
       String m3u8Content = '';
       List<String> segmentUrls = [];
-      
+
       // 循环解析直到找到包含分片的 M3U8
       int maxRedirects = 3;
       while (maxRedirects > 0) {
         final response = await _dio.get(currentUrl, cancelToken: cancelToken);
         m3u8Content = response.data.toString();
         final lines = m3u8Content.split('\n');
-        
+
         bool hasSegments = false;
         bool hasSubPlaylist = false;
         String? firstSubPlaylist;
@@ -289,9 +350,9 @@ class DownloadService extends ChangeNotifier {
           initialSize += await segmentFile.length();
         }
       }
-      
+
       _tasks[index] = _tasks[index].copyWith(
-        downloadedSegments: downloaded, 
+        downloadedSegments: downloaded,
         progress: downloaded / segmentUrls.length,
         currentSize: initialSize,
       );
@@ -308,9 +369,8 @@ class DownloadService extends ChangeNotifier {
       }
 
       int activeDownloads = 0;
-      int completedInSession = 0;
       final completer = Completer<void>();
-      
+
       // 用于计算速度
       DateTime lastUpdateTime = DateTime.now();
       int lastDownloadedSize = initialSize; // 关键修复：从当前已下载的大小开始计算增量
@@ -331,36 +391,36 @@ class DownloadService extends ChangeNotifier {
         try {
           final segmentUrl = segmentUrls[i];
           final segmentFile = File("${task.savePath}/seg_$i.ts");
-          
+
           await _dio.download(
             segmentUrl,
             segmentFile.path,
             cancelToken: cancelToken,
           );
 
-          completedInSession++;
           downloaded++;
-          
+
           // 获取文件大小以更新已下载字节数
           final segSize = await segmentFile.length();
-          
+
           // 更新进度和大小
           final currentIndex = _tasks.indexWhere((t) => t.id == id);
           if (currentIndex != -1) {
             final now = DateTime.now();
-            
+
             // 始终在内存中累加最新的数据，但不一定要立即同步给 UI 任务对象
             // 我们通过一个临时变量来追踪真实的下载总量
             _tasks[currentIndex].currentSize += segSize;
-            
+
             final interval = now.difference(lastUpdateTime).inMilliseconds;
             if (interval >= 1500) {
               final currentTotalSize = _tasks[currentIndex].currentSize;
-              double newSpeed = (currentTotalSize - lastDownloadedSize) / (interval / 1000.0);
-              
+              double newSpeed =
+                  (currentTotalSize - lastDownloadedSize) / (interval / 1000.0);
+
               lastUpdateTime = now;
               lastDownloadedSize = currentTotalSize;
-              
+
               // 只有达到间隔时，才创建新的 Task 对象并通知 UI
               _tasks[currentIndex] = _tasks[currentIndex].copyWith(
                 downloadedSegments: downloaded,
@@ -402,10 +462,10 @@ class DownloadService extends ChangeNotifier {
         } else {
           // 移除所有可能导致播放器尝试联网的标签，除了密钥标签
           if (!trimmed.startsWith('#EXT-X-KEY')) {
-             localLines.add(line);
+            localLines.add(line);
           } else {
-             // 如果有加密，目前我们只是简单保留标签，实际上可能需要处理 Key 的下载
-             localLines.add(line);
+            // 如果有加密，目前我们只是简单保留标签，实际上可能需要处理 Key 的下载
+            localLines.add(line);
           }
         }
       }
@@ -433,25 +493,46 @@ class DownloadService extends ChangeNotifier {
         );
         await _saveTasks();
         notifyListeners();
+        _retryCounts.remove(id);
+        _syncBackgroundService();
       }
-
     } catch (e) {
-      if (CancelToken.isCancel(e as DioException)) {
-        debugPrint("Download cancelled for $id");
+      if (e is DioException && CancelToken.isCancel(e)) {
+        debugPrint("下载任务已取消: $id");
       } else {
-        debugPrint("Download error for $id: $e");
+        debugPrint("下载任务异常: $id, error: $e");
         final errIndex = _tasks.indexWhere((t) => t.id == id);
         if (errIndex != -1) {
-          _tasks[errIndex] = _tasks[errIndex].copyWith(
-            status: DownloadStatus.failed,
-            error: e.toString(),
-          );
+          final retryCount = _retryCounts[id] ?? 0;
+          final canRetry = _isRetriableError(e) && retryCount < _maxRetryCount;
+
+          if (canRetry) {
+            final nextRetry = retryCount + 1;
+            _retryCounts[id] = nextRetry;
+            _tasks[errIndex] = _tasks[errIndex].copyWith(
+              status: DownloadStatus.queued,
+              error: '网络波动，自动重试中（$nextRetry/$_maxRetryCount）',
+            );
+          } else {
+            _tasks[errIndex] = _tasks[errIndex].copyWith(
+              status: DownloadStatus.failed,
+              error: e.toString(),
+            );
+            _retryCounts.remove(id);
+          }
+
           await _saveTasks();
           notifyListeners();
+          _syncBackgroundService();
+
+          if (canRetry) {
+            Future.delayed(const Duration(seconds: 2), _checkQueue);
+          }
         }
       }
     } finally {
       _cancelTokens.remove(id);
+      _syncBackgroundService();
       _checkQueue(); // 任务结束，检查并启动下一个
     }
   }
@@ -468,7 +549,8 @@ class DownloadService extends ChangeNotifier {
     int totalSize = 0;
     try {
       if (await dir.exists()) {
-        await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        await for (final entity
+            in dir.list(recursive: true, followLinks: false)) {
           if (entity is File) {
             totalSize += await entity.length();
           }
