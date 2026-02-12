@@ -527,6 +527,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var player = document.getElementById('player');
     window.player = player;
     window.hlsInstance = null;
+    var lastFastSeekSec = -1;
+    var lastFastSeekTs = 0;
     var videoUrl = '$url';
     var startTime = $startSeconds;
     var adFilterEnabled = $adFilterEnabledJs;
@@ -602,6 +604,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     function fastSeekTo(targetSeconds) {
       if (!player) return;
       var sec = Math.max(0, Number(targetSeconds) || 0);
+      var now = Date.now();
+      if (Math.abs(lastFastSeekSec - sec) < 0.05 && (now - lastFastSeekTs) < 50) {
+        return;
+      }
+      lastFastSeekSec = sec;
+      lastFastSeekTs = now;
 
       try {
         if (typeof player.fastSeek === 'function') {
@@ -670,6 +678,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           config.maxMaxBufferLength = 16;
           config.backBufferLength = 30;
           config.nudgeMaxRetry = 1;
+          config.maxFragLookUpTolerance = 0.1;
+          config.maxBufferHole = 0.1;
         }
         
         if (adFilterEnabled) {

@@ -1824,6 +1824,10 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   bool _isHoveringThumb = false;
   bool _isSeeking = false; // 新增：标记是否正在 seek
   StreamSubscription? _positionSubscription;
+  Timer? _realtimeSeekTimer;
+  Duration? _latestRealtimeSeekPosition;
+  bool _realtimeSeekInFlight = false;
+  static const Duration _realtimeSeekInterval = Duration(milliseconds: 80);
 
   @override
   void initState() {
@@ -1844,14 +1848,63 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   void didUpdateWidget(covariant CustomVideoProgressBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.player != widget.player) {
+      _stopRealtimeSeekScheduler(flush: false);
       _bindPositionListener();
     }
   }
 
   @override
   void dispose() {
+    _stopRealtimeSeekScheduler(flush: false);
     _positionSubscription?.cancel();
     super.dispose();
+  }
+
+  bool get _enableRealtimeScrubSeek {
+    final player = widget.player;
+    return player is WebViewPlayerAdapter && player.seekBoostEnabled;
+  }
+
+  void _scheduleRealtimeSeek(Duration position) {
+    if (!_enableRealtimeScrubSeek || widget.live) return;
+
+    _latestRealtimeSeekPosition = position;
+    if (_realtimeSeekTimer != null) {
+      return;
+    }
+
+    _dispatchRealtimeSeek();
+    _realtimeSeekTimer = Timer.periodic(_realtimeSeekInterval, (_) {
+      if (_latestRealtimeSeekPosition == null) {
+        _stopRealtimeSeekScheduler(flush: false);
+        return;
+      }
+      _dispatchRealtimeSeek();
+    });
+  }
+
+  void _dispatchRealtimeSeek() {
+    if (_realtimeSeekInFlight) {
+      return;
+    }
+    final target = _latestRealtimeSeekPosition;
+    if (target == null) {
+      return;
+    }
+    _latestRealtimeSeekPosition = null;
+    _realtimeSeekInFlight = true;
+    unawaited(widget.player.seek(target).whenComplete(() {
+      _realtimeSeekInFlight = false;
+    }));
+  }
+
+  void _stopRealtimeSeekScheduler({required bool flush}) {
+    if (flush) {
+      _dispatchRealtimeSeek();
+    }
+    _latestRealtimeSeekPosition = null;
+    _realtimeSeekTimer?.cancel();
+    _realtimeSeekTimer = null;
   }
 
   @override
@@ -1879,6 +1932,7 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
         behavior: HitTestBehavior.opaque,
         onHorizontalDragStart: widget.live ? null : (details) {
           _isDragging = true;
+          _stopRealtimeSeekScheduler(flush: false);
           widget.onDragStart?.call();
           _updateDragPosition(details.localPosition.dx, context);
         },
@@ -1892,6 +1946,8 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
           if (_isDragging) {
             final seekPosition = Duration(
                 milliseconds: (_dragValue * duration.inMilliseconds).round());
+
+            _stopRealtimeSeekScheduler(flush: true);
             
             setState(() {
               _isDragging = false;
@@ -1910,6 +1966,7 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
           }
         },
         onTapDown: widget.live ? null : (details) async {
+          _stopRealtimeSeekScheduler(flush: false);
           widget.onDragStart?.call();
           _updateDragPosition(details.localPosition.dx, context);
           final seekPosition = Duration(
@@ -2022,11 +2079,12 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
       _dragValue = value;
     });
 
-        final duration = widget.player.state.duration;
+    final duration = widget.player.state.duration;
     final position =
         Duration(milliseconds: (value * duration.inMilliseconds).round());
 
     widget.onPositionUpdate?.call(position);
+    _scheduleRealtimeSeek(position);
   }
 }
 
