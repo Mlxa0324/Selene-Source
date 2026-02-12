@@ -273,7 +273,7 @@ class _VideoPlayerState implements PlayerAdapterState {
   double get height => adapter.controller.value.size.height;
 }
 
-/// WebView-based HLS player adapter for mobile (faster seek experience)
+/// WebView-based player adapter (mobile + desktop online streams)
 class WebViewPlayerAdapter implements PlayerAdapter {
   InAppWebViewController? _controller;
   final String url;

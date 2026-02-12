@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'dlna_device_dialog.dart';
 import '../models/danmaku_model.dart';
+import 'player_adapter.dart';
 
 // 带 hover 效果的按钮组件
 class HoverButton extends StatefulWidget {
@@ -52,7 +52,8 @@ class _HoverButtonState extends State<HoverButton> {
 
 class PCPlayerControls extends StatefulWidget {
   final VideoState? state;
-  final Player player;
+  final PlayerAdapter player;
+  final bool isFullscreen;
   final VoidCallback? onBackPressed;
   final VoidCallback? onNextEpisode;
   final VoidCallback? onPause;
@@ -88,6 +89,7 @@ class PCPlayerControls extends StatefulWidget {
     super.key,
     this.state,
     required this.player,
+    this.isFullscreen = false,
     this.onBackPressed,
     this.onNextEpisode,
     this.onPause,
@@ -156,6 +158,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   @override
   void initState() {
     super.initState();
+    _isFullscreen = widget.isFullscreen;
     _setupPlayerListeners();
     // 注册退出网页全屏的回调
     widget.onExitWebFullscreenCallbackReady?.call(exitWebFullscreen);
@@ -204,6 +207,12 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   @override
   void didUpdateWidget(PCPlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      _playingSubscription?.cancel();
+      _positionSubscription?.cancel();
+      _setupPlayerListeners();
+    }
+
     if (widget.forceControlsVisible) {
       _hideTimer?.cancel();
       if (!_controlsVisible) {
@@ -213,10 +222,10 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
         widget.onControlsVisibilityChanged?.call(true);
       }
     }
-    // 当 widget 更新时，尝试同步全屏状态
-    // 使用 try-catch 避免在不安全的时机访问 InheritedWidget
-    try {
-      if (widget.state != null) {
+    // 当 widget 更新时，同步全屏状态
+    if (widget.state != null) {
+      // 使用 try-catch 避免在不安全的时机访问 InheritedWidget
+      try {
         final actualFullscreen = widget.state!.isFullscreen();
         if (_isFullscreen != actualFullscreen) {
           // 检测到从全屏退出
@@ -229,9 +238,13 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
           // 💡 通知父组件状态变化
           widget.onFullscreenChange?.call(actualFullscreen);
         }
+      } catch (e) {
+        // 如果无法安全获取状态，保持当前状态不变
       }
-    } catch (e) {
-      // 如果无法安全获取状态，保持当前状态不变
+    } else if (_isFullscreen != widget.isFullscreen) {
+      setState(() {
+        _isFullscreen = widget.isFullscreen;
+      });
     }
   }
 
@@ -407,13 +420,24 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   void _toggleFullscreen() {
-    if (widget.state == null) return;
-    // 直接触发全屏切换，不要提前更新本地状态
-    // 状态会在 didUpdateWidget 中同步
-    if (_isFullscreen) {
-      widget.state!.exitFullscreen();
-    } else {
-      widget.state!.enterFullscreen();
+    if (widget.state != null) {
+      // 直接触发全屏切换，不要提前更新本地状态
+      // 状态会在 didUpdateWidget 中同步
+      if (_isFullscreen) {
+        widget.state!.exitFullscreen();
+      } else {
+        widget.state!.enterFullscreen();
+      }
+      return;
+    }
+
+    final nextFullscreen = !_isFullscreen;
+    setState(() {
+      _isFullscreen = nextFullscreen;
+    });
+    widget.onFullscreenChange?.call(nextFullscreen);
+    if (!nextFullscreen) {
+      widget.onExitFullScreen?.call();
     }
   }
 
@@ -1419,12 +1443,12 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     final menuTop = buttonPosition.dy - menuHeight - (_isFullscreen ? 2 : 36);
 
     final screenSize = MediaQuery.of(context).size;
-    final minLeft = 8.0;
+    const minLeft = 8.0;
     final maxLeft = screenSize.width - menuWidth - 8.0;
     final safeMaxLeft = maxLeft < minLeft ? minLeft : maxLeft;
     final clampedLeft = menuLeft.clamp(minLeft, safeMaxLeft);
 
-    final minTop = 8.0;
+    const minTop = 8.0;
     final maxTop = screenSize.height - menuHeight - 8.0;
     final safeMaxTop = maxTop < minTop ? minTop : maxTop;
     final clampedTop = menuTop.clamp(minTop, safeMaxTop);
@@ -1769,7 +1793,7 @@ class _SpeedMenuItemState extends State<_SpeedMenuItem> {
 }
 
 class CustomVideoProgressBar extends StatefulWidget {
-  final Player player;
+  final PlayerAdapter player;
   final VoidCallback? onDragStart;
   final VoidCallback? onDragEnd;
   final VoidCallback? onDragUpdate;
@@ -1804,11 +1828,24 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   @override
   void initState() {
     super.initState();
+    _bindPositionListener();
+  }
+
+  void _bindPositionListener() {
+    _positionSubscription?.cancel();
     _positionSubscription = widget.player.stream.position.listen((_) {
       if (mounted && !_isDragging && !_isSeeking) {
         setState(() {});
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomVideoProgressBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      _bindPositionListener();
+    }
   }
 
   @override

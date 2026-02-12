@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:selene/widgets/player_sources_panel.dart';
@@ -331,18 +330,45 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _isInitialized = true;
       });
     } else {
-      // Use media_kit on desktop
-      final player = mk.Player(
-        configuration: const mk.PlayerConfiguration(
-          bufferSize: 32 * 1024 * 1024,
-          ready: null,
-        ),
-      );
-      _adapter = MediaKitAdapter(player);
-      _setupPlayerListeners();
-      if (_currentUrl != null) {
-        await _openCurrentMedia();
+      final useDesktopWebView =
+          (Platform.isWindows || Platform.isMacOS) && !widget.isLocal;
+
+      if (useDesktopWebView && _currentUrl != null) {
+        debugPrint('VideoPlayerWidget: 桌面端使用 WebViewPlayerAdapter 播放网络流');
+        _safeSetState(() {
+          _isLoadingVideo = true;
+        });
+        _adapter = WebViewPlayerAdapter(
+          url: _currentUrl!,
+          headers: _currentHeaders,
+          adFilterEnabled: widget.adFilterEnabled,
+          onReady: () {
+            debugPrint('VideoPlayerWidget: WebView ready (desktop init)');
+            if (mounted) {
+              _safeSetState(() {
+                _isLoadingVideo = false;
+              });
+              widget.onReady?.call();
+            }
+          },
+        );
+        _setupPlayerListeners();
+        _adapter?.updateVideoFit(_getBoxFit());
+      } else {
+        // Linux 与桌面本地文件继续使用 media_kit
+        final player = mk.Player(
+          configuration: const mk.PlayerConfiguration(
+            bufferSize: 32 * 1024 * 1024,
+            ready: null,
+          ),
+        );
+        _adapter = MediaKitAdapter(player);
+        _setupPlayerListeners();
+        if (_currentUrl != null) {
+          await _openCurrentMedia();
+        }
       }
+
       _safeSetState(() {
         _isInitialized = true;
       });
@@ -893,13 +919,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   Widget _buildVideoSurface() {
+    final useEmbeddedDesktopControls =
+        widget.surface == VideoPlayerSurface.desktop && _adapter is MediaKitAdapter;
     Widget videoWidget = _adapter!.buildVideo(
       context,
       fit: _getBoxFit(),
       key: _adapter is MediaKitAdapter
           ? _videoKey
           : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
-      controls: widget.surface == VideoPlayerSurface.desktop
+      controls: useEmbeddedDesktopControls
           ? (state) => _buildPCControls(state)
           : null,
     );
@@ -914,10 +942,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     );
   }
 
-  Widget _buildPCControls(mkv.VideoState state) {
-    if (_adapter is! MediaKitAdapter) return const SizedBox.shrink();
-
-    final mkAdapter = _adapter as MediaKitAdapter;
+  Widget _buildPCControls(mkv.VideoState? state) {
     return Stack(
       children: [
         // 弹幕层（PC 端统一在 controls 内渲染，避免切换全屏时被移除）
@@ -928,7 +953,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         // 控制层
         PCPlayerControls(
           state: state,
-          player: mkAdapter.player,
+          player: _adapter!,
+          isFullscreen: _isFullscreen,
           onBackPressed: widget.onBackPressed,
           onNextEpisode: widget.onNextEpisode,
           onPause: widget.onPause,
@@ -978,9 +1004,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_adapter == null) return const SizedBox.shrink();
 
     if (widget.surface == VideoPlayerSurface.desktop) {
-      // 在 PC 端，控制层已通过 buildVideo 注入到 Video 组件内部，
-      // 这里返回空以避免在 Stack 中重复渲染。
-      return const SizedBox.shrink();
+      // media_kit 在 Video 内部注入控件；WebView 在外层叠加控件。
+      if (_adapter is MediaKitAdapter) {
+        return const SizedBox.shrink();
+      }
+      return _buildPCControls(null);
     } else {
       // 💡 优化：不再通过视频尺寸实时探测，直接信任外部传入的 isShortDrama 标记
       // 这样在滑动切换视频、视频未加载完成时，UI 状态依然保持稳定，不会产生闪烁
