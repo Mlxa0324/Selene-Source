@@ -605,14 +605,14 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                 color: Colors.white,
                 strokeWidth: 3,
               ),
-              SizedBox(height: 16),
-              Text(
-                '加载中...',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                ),
-              ),
+              // SizedBox(height: 16),
+              // Text(
+              //   '加载中...',
+              //   style: TextStyle(
+              //     color: Colors.white,
+              //     fontSize: 14,
+              //   ),
+              // ),
             ],
           ),
         ),
