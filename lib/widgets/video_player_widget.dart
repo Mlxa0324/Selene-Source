@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:selene/widgets/player_sources_panel.dart';
@@ -238,11 +239,42 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
 
   void _safeSetState(VoidCallback fn) {
-    try {
-      setState(fn);
-    } catch (e) {
-      debugPrint('_safeSetState：$e');
+    if (!mounted) return;
+
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    final inBuildPhase = phase == SchedulerPhase.transientCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks ||
+        phase == SchedulerPhase.persistentCallbacks;
+
+    if (inBuildPhase) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(fn);
+      });
+      return;
     }
+
+    setState(fn);
+  }
+
+  void _configurePipAutoEnter(bool enabled) {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+
+    unawaited(_pip
+        .setup(PipOptions(
+      autoEnterEnabled: enabled,
+      aspectRatioX: 16,
+      aspectRatioY: 9,
+      preferredContentWidth: 480,
+      preferredContentHeight: 270,
+      controlStyle: 2,
+    ))
+        .catchError((error) {
+      debugPrint('[PiP] setup_skip: $error');
+      return false;
+    }));
   }
 
   @override
@@ -441,24 +473,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _safeSetState(() {
           _hasCompleted = false;
         });
-        _pip.setup(const PipOptions(
-          autoEnterEnabled: false,
-          aspectRatioX: 16,
-          aspectRatioY: 9,
-          preferredContentWidth: 480,
-          preferredContentHeight: 270,
-          controlStyle: 2,
-        ));
+        _configurePipAutoEnter(false);
       } else {
         widget.onPlay?.call();
-        _pip.setup(const PipOptions(
-          autoEnterEnabled: true,
-          aspectRatioX: 16,
-          aspectRatioY: 9,
-          preferredContentWidth: 480,
-          preferredContentHeight: 270,
-          controlStyle: 2,
-        ));
+        _configurePipAutoEnter(true);
       }
     });
 
@@ -864,8 +882,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
           // 2. 弹幕层
           // 💡 PC 端统一交给 Video 控制层内部渲染，避免全屏切换时弹幕层在树中迁移导致丢失。
-          if (widget.danmakuLayer != null &&
-              widget.surface != VideoPlayerSurface.desktop)
+          if (widget.danmakuLayer != null)
             Positioned.fill(
               top: (widget.isShortDrama &&
                       _isFullscreen &&
@@ -964,11 +981,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Widget _buildPCControls(mkv.VideoState? state) {
     return Stack(
       children: [
-        // 弹幕层（PC 端统一在 controls 内渲染，避免切换全屏时被移除）
-        if (widget.danmakuLayer != null)
-          Positioned.fill(
-            child: RepaintBoundary(child: widget.danmakuLayer!),
-          ),
         // 控制层
         PCPlayerControls(
           state: state,

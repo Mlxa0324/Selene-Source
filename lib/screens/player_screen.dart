@@ -207,6 +207,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   DanmakuSettings _danmakuSettings = const DanmakuSettings();
   int? _currentDanmakuEpisodeId;
   bool _isDanmakuLoading = false;
+  bool _danmakuShouldPlay = false;
+  bool _hasExplicitDanmakuState = false;
 
   // 播放器的 GlobalKey，用于保持播放器状态
   // final GlobalKey _playerKey = GlobalKey();
@@ -393,6 +395,75 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 加载弹幕数据
+
+  void _syncDanmakuPlaybackState({
+    required String reason,
+    bool? forcePlaying,
+  }) {
+    if (!_danmakuSettings.enabled || _danmakuController == null) return;
+
+    if (forcePlaying != null) {
+      _hasExplicitDanmakuState = true;
+      _danmakuShouldPlay = forcePlaying;
+    }
+
+    final playerPlaying = _videoPlayerController?.isPlaying;
+    final shouldPlay = forcePlaying ??
+        (_hasExplicitDanmakuState
+            ? _danmakuShouldPlay
+            : (playerPlaying ?? false));
+
+    _danmakuShouldPlay = shouldPlay;
+
+    if (shouldPlay) {
+      _danmakuController?.resume();
+    } else {
+      _danmakuController?.pause();
+    }
+
+    debugPrint(
+        '[DanmakuSync] reason=$reason, force=$forcePlaying, player=$playerPlaying, applied=$shouldPlay');
+  }
+
+  void _rebaseDanmakuCursorToCurrentPosition({
+    required String reason,
+    bool triggerNow = false,
+  }) {
+    if (!_danmakuSettings.enabled || _danmakuController == null) return;
+    if (_danmakuList.isEmpty) return;
+
+    final pos = _videoPlayerController?.currentPosition;
+    if (pos == null) return;
+
+    _lastDanmakuCheckTime = -1;
+    _resetDanmakuIndex(pos);
+
+    debugPrint(
+        '[DanmakuSync] rebase: reason=$reason, position=${pos.inMilliseconds}ms, index=$_danmakuIndex');
+
+    if (!triggerNow) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _isSeeking) return;
+      if (!_danmakuSettings.enabled || _danmakuController == null) return;
+      _sendDanmakuByPosition(pos);
+    });
+  }
+
+  void _handleDanmakuControllerCreated(DanmakuController controller) {
+    _danmakuController = controller;
+
+    // Avoid pause/resume during DanmakuScreen init build phase.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!identical(_danmakuController, controller)) return;
+
+      _rebaseDanmakuCursorToCurrentPosition(
+          reason: 'controller_created', triggerNow: true);
+      _syncDanmakuPlaybackState(reason: 'controller_created');
+    });
+  }
+
   Future<void> _loadDanmaku() async {
     if (!_danmakuSettings.enabled) return;
 
@@ -1313,10 +1384,18 @@ class _PlayerScreenState extends State<PlayerScreen>
       _isFullscreen = isFullscreen;
     });
 
-    // 💡 关键修复：全屏状态切换后，自动校准选集列表位置
+    // Keep episode list aligned after fullscreen toggle.
     _scrollToCurrentEpisode();
 
-    if (DeviceUtils.isPC()) return;
+    if (DeviceUtils.isPC()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _rebaseDanmakuCursorToCurrentPosition(
+            reason: 'fullscreen_changed', triggerNow: true);
+        _syncDanmakuPlaybackState(reason: 'fullscreen_changed');
+      });
+      return;
+    }
 
     if (isFullscreen) {
       // 💡 优化：根据进场时或准备就绪时判断的 _isShortDrama 决定全屏方向
@@ -2030,12 +2109,16 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
             onVideoCompleted: _onVideoCompleted,
             onPlay: () {
-              _danmakuController?.resume();
+              _rebaseDanmakuCursorToCurrentPosition(
+                  reason: 'player_on_play', triggerNow: true);
+              _syncDanmakuPlaybackState(
+                  reason: 'player_on_play', forcePlaying: true);
             },
             onPause: () {
               // 暂停时保存进度
               _saveProgress(force: true, scene: '暂停');
-              _danmakuController?.pause();
+              _syncDanmakuPlaybackState(
+                  reason: 'player_on_pause', forcePlaying: false);
             },
             isLastEpisode: currentDetail != null &&
                 currentEpisodeIndex >= currentDetail!.episodes.length - 1,
@@ -2056,6 +2139,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             onWebFullscreenChanged: (isWebFullscreen) {
               setState(() {
                 _isWebFullscreen = isWebFullscreen;
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                _rebaseDanmakuCursorToCurrentPosition(
+                    reason: 'web_fullscreen_changed', triggerNow: true);
+                _syncDanmakuPlaybackState(reason: 'web_fullscreen_changed');
               });
             },
             onFullscreenChanged: _onFullscreenChanged,
@@ -2110,7 +2199,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                             key:
                                 ValueKey('danmaku_${_currentDanmakuEpisodeId}'),
                             createdController: (controller) {
-                              _danmakuController = controller;
+                              _handleDanmakuControllerCreated(controller);
                             },
                             option: DanmakuOption(
                               fontSize: _danmakuSettings.fontSize *
