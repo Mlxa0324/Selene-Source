@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -157,6 +158,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 选集相关状态
   bool _isEpisodesReversed = false;
   final ScrollController _episodesScrollController = ScrollController();
+  final Map<int, GlobalKey> _episodeCardKeys = {};
   bool _isHoveringEpisodesPager = false;
 
   // 换源相关状态
@@ -1709,56 +1711,301 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _performScrollToCurrentEpisode() {
     if (currentDetail == null || !_episodesScrollController.hasClients) return;
 
-    // 💡 推翻重做：彻底解决定位失效问题
-    // 增加一个小延时，确保在方向旋转或重建 ListView 后，控制器已经重新 Attach 并获取到新的 Viewport 尺寸
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_episodesScrollController.hasClients) return;
 
-      // 1. 获取最真实的数据
-      final viewportWidth =
-          _episodesScrollController.position.viewportDimension;
-      if (viewportWidth <= 0) return;
-
-      // 2. 这里的计算必须和 UI 构建层的逻辑 100% 对齐
-      // 在 _buildEpisodesSection 中：availableWidth = screenWidth - 32.0;
-      // 而 viewportWidth 实际上就是 screenWidth - 32.0 (因为 Padding 是在外层的)
-      final availableWidth = viewportWidth;
-      final cardsPerView = _isTablet ? 6.2 : 3.2;
-      const itemMargin = 6.0;
-
-      // 核心公式：
-      // 单项占据的总空间 (包含右侧 margin) = (可用宽度 / 每屏显示个数)
-      final itemTotalWidth = availableWidth / cardsPerView;
-      // 实际卡片宽度 = itemTotalWidth - itemMargin
-      final buttonWidth = itemTotalWidth - itemMargin;
-
-      // 3. 计算物理索引
-      final targetIndex = _isEpisodesReversed
-          ? currentDetail!.episodes.length - 1 - currentEpisodeIndex
+      final totalEpisodes = currentDetail!.episodes.length;
+      final targetPhysicalIndex = _isEpisodesReversed
+          ? totalEpisodes - 1 - currentEpisodeIndex
           : currentEpisodeIndex;
 
-      // 4. 计算居中 Offset
-      // 项目中心点 = (index * itemTotalWidth) + (buttonWidth / 2)
-      // 视口中心点 = viewportWidth / 2
-      final itemCenter = (targetIndex * itemTotalWidth) + (buttonWidth / 2.0);
-      final viewportCenter = viewportWidth / 2.0;
-      final targetOffset = itemCenter - viewportCenter;
+      debugPrint(
+          '[EpisodeLocate] begin: total=$totalEpisodes, current=$currentEpisodeIndex, target=$targetPhysicalIndex, reversed=$_isEpisodesReversed');
 
-      // 5. 限制范围并执行
-      final maxScroll = _episodesScrollController.position.maxScrollExtent;
-      final finalOffset = targetOffset.clamp(0.0, maxScroll);
-
-      if (_episodesScrollController.hasClients) {
-        _episodesScrollController.animateTo(
-          finalOffset,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        );
+      if (targetPhysicalIndex < 0 || targetPhysicalIndex >= totalEpisodes) {
+        debugPrint(
+            '[EpisodeLocate] index_out_of_range: target=$targetPhysicalIndex, total=$totalEpisodes, current=$currentEpisodeIndex');
+        return;
       }
+
+      final position = _episodesScrollController.position;
+      final viewportWidth = position.viewportDimension;
+      if (viewportWidth <= 0) {
+        debugPrint(
+            '[EpisodeLocate] invalid_viewport_width: viewportWidth=$viewportWidth');
+        return;
+      }
+
+      double estimateOffsetByProgress() {
+        final maxScrollExtent = position.maxScrollExtent;
+        if (totalEpisodes <= 1 || maxScrollExtent <= 0) {
+          debugPrint(
+              '[EpisodeLocate] estimate_progress: fallback_zero, max=${maxScrollExtent.toStringAsFixed(2)}');
+          return 0;
+        }
+
+        final ratio = targetPhysicalIndex / (totalEpisodes - 1);
+        final rawOffset = ratio * maxScrollExtent;
+        debugPrint(
+            '[EpisodeLocate] estimate_progress: ratio=${ratio.toStringAsFixed(4)}, raw=${rawOffset.toStringAsFixed(2)}, max=${maxScrollExtent.toStringAsFixed(2)}');
+        return rawOffset;
+      }
+
+      double estimateOffsetByItemSize() {
+        const itemMargin = 6.0;
+        const cardsPerViewTablet = 6.2;
+        const cardsPerViewPhone = 3.2;
+        final cardsPerView = _isTablet ? cardsPerViewTablet : cardsPerViewPhone;
+
+        double? measuredCardWidth;
+        for (final key in _episodeCardKeys.values) {
+          final cardContext = key.currentContext;
+          if (cardContext == null) continue;
+          final renderObject = cardContext.findRenderObject();
+          if (renderObject is RenderBox &&
+              renderObject.attached &&
+              renderObject.hasSize &&
+              renderObject.size.width > 0) {
+            measuredCardWidth = renderObject.size.width;
+            break;
+          }
+        }
+
+        final cardWidth =
+            measuredCardWidth ?? (viewportWidth / cardsPerView) - itemMargin;
+        final itemExtent = cardWidth + itemMargin;
+        final rawOffset = (targetPhysicalIndex * itemExtent) -
+            ((viewportWidth - cardWidth) / 2);
+
+        debugPrint(
+            '[EpisodeLocate] estimate_formula: viewport=${viewportWidth.toStringAsFixed(2)}, card=${cardWidth.toStringAsFixed(2)}, itemExtent=${itemExtent.toStringAsFixed(2)}, raw=${rawOffset.toStringAsFixed(2)}');
+
+        return rawOffset;
+      }
+
+      double? estimateOffsetByVisibleItems() {
+        final viewportContext =
+            _episodesScrollController.position.context.notificationContext;
+        final viewportObject = viewportContext?.findRenderObject();
+        if (viewportObject is! RenderBox ||
+            !viewportObject.attached ||
+            !viewportObject.hasSize) {
+          debugPrint('[EpisodeLocate] estimate_visible_skip: no_viewport');
+          return null;
+        }
+
+        final viewportLeft = viewportObject.localToGlobal(Offset.zero).dx;
+        final List<Map<String, double>> visibleItems = [];
+
+        for (final entry in _episodeCardKeys.entries) {
+          final cardContext = entry.value.currentContext;
+          if (cardContext == null) continue;
+
+          final scrollable = Scrollable.maybeOf(cardContext);
+          if (scrollable == null ||
+              scrollable.widget.controller != _episodesScrollController) {
+            continue;
+          }
+
+          final renderObject = cardContext.findRenderObject();
+          if (renderObject is! RenderBox ||
+              !renderObject.attached ||
+              !renderObject.hasSize) {
+            continue;
+          }
+
+          final width = renderObject.size.width;
+          if (width <= 0) continue;
+
+          final localLeft =
+              renderObject.localToGlobal(Offset.zero).dx - viewportLeft;
+          if (localLeft > viewportWidth + 1 || localLeft + width < -1) {
+            continue;
+          }
+
+          visibleItems.add({
+            'index': entry.key.toDouble(),
+            'leading': position.pixels + localLeft,
+            'width': width,
+          });
+        }
+
+        if (visibleItems.length < 2) {
+          debugPrint(
+              '[EpisodeLocate] estimate_visible_skip: not_enough_items=${visibleItems.length}');
+          return null;
+        }
+
+        visibleItems.sort((a, b) => a['index']!.compareTo(b['index']!));
+
+        final first = visibleItems.first;
+        final last = visibleItems.last;
+        final firstIndex = first['index']!;
+        final lastIndex = last['index']!;
+        final firstLeading = first['leading']!;
+        final lastLeading = last['leading']!;
+        final indexSpan = lastIndex - firstIndex;
+
+        if (indexSpan.abs() < 0.5) {
+          debugPrint(
+              '[EpisodeLocate] estimate_visible_skip: index_span_too_small=$indexSpan');
+          return null;
+        }
+
+        final itemExtent = (lastLeading - firstLeading) / indexSpan;
+        if (itemExtent.abs() < 1) {
+          debugPrint(
+              '[EpisodeLocate] estimate_visible_skip: invalid_item_extent=$itemExtent');
+          return null;
+        }
+
+        final totalWidth =
+            visibleItems.fold<double>(0, (sum, item) => sum + item['width']!);
+        final cardWidth = totalWidth / visibleItems.length;
+        final targetLeading =
+            firstLeading + ((targetPhysicalIndex - firstIndex) * itemExtent);
+        final rawOffset = targetLeading - ((viewportWidth - cardWidth) / 2);
+
+        debugPrint(
+            '[EpisodeLocate] estimate_visible: first=${firstIndex.toStringAsFixed(0)}, last=${lastIndex.toStringAsFixed(0)}, itemExtent=${itemExtent.toStringAsFixed(2)}, card=${cardWidth.toStringAsFixed(2)}, raw=${rawOffset.toStringAsFixed(2)}');
+
+        return rawOffset;
+      }
+
+      Future<void> animateTo(double offset, String mode) async {
+        final maxScrollExtent = position.maxScrollExtent;
+        final currentOffset = position.pixels;
+        final clampedOffset = offset.clamp(0.0, maxScrollExtent).toDouble();
+
+        debugPrint(
+            '[EpisodeLocate] $mode: current=${currentOffset.toStringAsFixed(2)}, target=${clampedOffset.toStringAsFixed(2)}, max=${maxScrollExtent.toStringAsFixed(2)}');
+
+        await _episodesScrollController.animateTo(
+          clampedOffset,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+
+        if (!mounted || !_episodesScrollController.hasClients) return;
+        final afterOffset = _episodesScrollController.position.pixels;
+        debugPrint(
+            '[EpisodeLocate] ${mode}_end: after=${afterOffset.toStringAsFixed(2)}, diff=${(afterOffset - clampedOffset).toStringAsFixed(2)}');
+      }
+
+      double? tryGetRevealOffset(String stage) {
+        final targetKey = _episodeCardKeys[currentEpisodeIndex];
+        final cardContext = targetKey?.currentContext;
+
+        if (cardContext == null) {
+          debugPrint('[EpisodeLocate] reveal_skip($stage): no_context');
+          return null;
+        }
+
+        final scrollable = Scrollable.maybeOf(cardContext);
+        if (scrollable == null ||
+            scrollable.widget.controller != _episodesScrollController) {
+          debugPrint('[EpisodeLocate] reveal_skip($stage): wrong_scrollable');
+          return null;
+        }
+
+        final renderObject = cardContext.findRenderObject();
+        if (renderObject == null || !renderObject.attached) {
+          debugPrint(
+              '[EpisodeLocate] reveal_skip($stage): detached_render_object');
+          return null;
+        }
+
+        final viewport = RenderAbstractViewport.of(renderObject);
+        final revealOffset =
+            viewport.getOffsetToReveal(renderObject, 0.5).offset;
+
+        debugPrint(
+            '[EpisodeLocate] reveal($stage): offset=${revealOffset.toStringAsFixed(2)}');
+        return revealOffset;
+      }
+
+      Future<void> tryVisualCorrection() async {
+        if (!mounted || !_episodesScrollController.hasClients) return;
+
+        final targetKey = _episodeCardKeys[currentEpisodeIndex];
+        final cardContext = targetKey?.currentContext;
+        final cardObject = cardContext?.findRenderObject();
+        final viewportContext =
+            _episodesScrollController.position.context.notificationContext;
+        final viewportObject = viewportContext?.findRenderObject();
+
+        if (cardObject is! RenderBox ||
+            viewportObject is! RenderBox ||
+            !cardObject.attached ||
+            !viewportObject.attached ||
+            !cardObject.hasSize ||
+            !viewportObject.hasSize) {
+          debugPrint(
+              '[EpisodeLocate] visual_skip: card_or_viewport_unavailable');
+          return;
+        }
+
+        final cardLeft = cardObject.localToGlobal(Offset.zero).dx;
+        final viewportLeft = viewportObject.localToGlobal(Offset.zero).dx;
+        final cardCenter = cardLeft + (cardObject.size.width / 2);
+        final viewportCenter = viewportLeft + (viewportObject.size.width / 2);
+        final delta = cardCenter - viewportCenter;
+
+        debugPrint(
+            '[EpisodeLocate] visual: viewportLeft=${viewportLeft.toStringAsFixed(2)}, viewportWidth=${viewportObject.size.width.toStringAsFixed(2)}, cardLeft=${cardLeft.toStringAsFixed(2)}, cardWidth=${cardObject.size.width.toStringAsFixed(2)}, delta=${delta.toStringAsFixed(2)}');
+
+        if (delta.abs() < 1.0) {
+          return;
+        }
+
+        await animateTo(position.pixels + delta, 'correct');
+      }
+
+      Future<bool> revealAndCorrect(String stage,
+          {String mode = 'reveal'}) async {
+        final revealOffset = tryGetRevealOffset(stage);
+        if (revealOffset == null) return false;
+        await animateTo(revealOffset, mode);
+        await tryVisualCorrection();
+        return true;
+      }
+
+      Future<void> runLocate() async {
+        if (!mounted || !_episodesScrollController.hasClients) return;
+
+        if (await revealAndCorrect('initial')) return;
+
+        final visibleOffset = estimateOffsetByVisibleItems();
+        if (visibleOffset != null) {
+          await animateTo(visibleOffset, 'estimate_visible');
+          await Future<void>.delayed(const Duration(milliseconds: 16));
+          if (!mounted || !_episodesScrollController.hasClients) return;
+          if (await revealAndCorrect('after_visible')) return;
+        }
+
+        await animateTo(estimateOffsetByProgress(), 'estimate_progress');
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+        if (!mounted || !_episodesScrollController.hasClients) return;
+        if (await revealAndCorrect('after_progress')) return;
+
+        await animateTo(estimateOffsetByItemSize(), 'estimate_formula');
+
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (!mounted || !_episodesScrollController.hasClients) return;
+          if (await revealAndCorrect('after_formula', mode: 'reveal_retry')) {
+            return;
+          }
+          await tryVisualCorrection();
+        });
+      }
+
+      runLocate().catchError((error) {
+        debugPrint('[EpisodeLocate] locate_error: $error');
+      });
     });
   }
 
-  /// 构建播放器组件
+  /// Build player widget
   Widget _buildPlayerWidget() {
     final isPC = DeviceUtils.isPC();
 
@@ -2661,7 +2908,13 @@ class _PlayerScreenState extends State<PlayerScreen>
                             episodeTitle = '第${episodeIndex + 1}集';
                           }
 
+                          final episodeCardKey = _episodeCardKeys.putIfAbsent(
+                            episodeIndex,
+                            () => GlobalKey(),
+                          );
+
                           return Container(
+                            key: episodeCardKey,
                             width: buttonWidth,
                             margin: const EdgeInsets.only(right: 6),
                             child: AspectRatio(
