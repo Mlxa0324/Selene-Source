@@ -1,107 +1,95 @@
 {
-  "timestamp": "2026-01-11T13:45:58.000Z",
-  "version": "1.1.0",
+  "timestamp": "2026-02-24T13:22:09+08:00",
+  "version": "2.0.0",
   "project": {
-    "name": "Selene-Source",
+    "name": "Selene",
     "description": "Flutter 视频播放应用",
+    "version": "1.6.6+2156",
     "language": "Dart",
-    "framework": "Flutter 3.4.3+"
+    "framework": "Flutter 3.4.3+",
+    "platforms": ["Windows", "macOS", "Android", "iOS"]
   },
   "modules": [
     {
-      "path": "lib/screens",
-      "name": "Screens",
+      "path": "lib/models",
+      "name": "Models",
       "language": "Dart",
-      "responsibility": "应用页面（登录、首页、播放器、搜索等）",
+      "responsibility": "数据模型定义与序列化",
       "entryFiles": [
-        "lib/screens/home_screen.dart",
-        "lib/screens/login_screen.dart",
-        "lib/screens/player_screen.dart"
+        "lib/models/search_result.dart",
+        "lib/models/video_info.dart",
+        "lib/models/douban_movie.dart",
+        "lib/models/play_record.dart",
+        "lib/models/danmaku_model.dart",
+        "lib/models/download_task.dart"
       ],
-      "fileCount": 11,
+      "fileCount": 14,
       "hasTests": false,
       "hasConfig": false,
       "keyFiles": [
-        "lib/screens/home_screen.dart",
-        "lib/screens/login_screen.dart",
-        "lib/screens/player_screen.dart",
-        "lib/screens/search_screen.dart",
-        "lib/screens/movie_screen.dart",
-        "lib/screens/show_screen.dart",
-        "lib/screens/tv_screen.dart",
-        "lib/screens/anime_screen.dart",
-        "lib/screens/live_screen.dart",
-        "lib/screens/live_player_screen.dart"
+        "lib/models/search_result.dart",
+        "lib/models/search_resource.dart",
+        "lib/models/search_suggestion.dart",
+        "lib/models/aggregated_search_result.dart",
+        "lib/models/video_info.dart",
+        "lib/models/bangumi.dart",
+        "lib/models/douban_movie.dart",
+        "lib/models/live_source.dart",
+        "lib/models/live_channel.dart",
+        "lib/models/epg_program.dart",
+        "lib/models/m3u_content.dart",
+        "lib/models/favorite_item.dart",
+        "lib/models/play_record.dart",
+        "lib/models/danmaku_model.dart",
+        "lib/models/download_task.dart"
       ],
-      "dependencies": [
-        "lib/services/api_service.dart",
-        "lib/services/search_service.dart",
-        "lib/widgets/video_player_widget.dart"
-      ],
+      "dependencies": [],
       "coverage": {
         "scanned": true,
-        "depth": "medium",
-        "missingItems": ["测试文件", "集成测试"]
-      }
-    },
-    {
-      "path": "lib/widgets",
-      "name": "Widgets",
-      "language": "Dart",
-      "responsibility": "可复用 UI 组件（播放器控件、卡片、对话框等）",
-      "entryFiles": [
-        "lib/widgets/video_player_widget.dart",
-        "lib/widgets/main_layout.dart"
-      ],
-      "fileCount": 40,
-      "hasTests": false,
-      "hasConfig": false,
-      "keyFiles": [
-        "lib/widgets/video_player_widget.dart",
-        "lib/widgets/pc_player_controls.dart",
-        "lib/widgets/mobile_player_controls.dart",
-        "lib/widgets/player_settings_panel.dart",
-        "lib/widgets/video_card.dart",
-        "lib/widgets/dlna_player.dart",
-        "lib/widgets/main_layout.dart"
-      ],
-      "dependencies": [
-        "media_kit",
-        "media_kit_video",
-        "dlna_dart",
-        "pip"
-      ],
-      "coverage": {
-        "scanned": true,
-        "depth": "medium",
-        "missingItems": ["Widget 测试", "Golden 测试"]
+        "depth": "full",
+        "percentage": 100,
+        "missingItems": ["序列化测试", "验证测试"]
       },
-      "recentChanges": [
-        {
-          "date": "2026-01-11T13:45:58.000Z",
-          "description": "新增 player_settings_panel.dart（倍速、画面比例设置）"
-        }
-      ]
+      "documentation": "lib/models/CLAUDE.md"
     },
     {
       "path": "lib/services",
       "name": "Services",
       "language": "Dart",
-      "responsibility": "业务逻辑服务（API、搜索、缓存、主题等）",
+      "responsibility": "业务逻辑与数据服务",
       "entryFiles": [
         "lib/services/api_service.dart",
-        "lib/services/search_service.dart"
+        "lib/services/user_data_service.dart",
+        "lib/services/search_service.dart",
+        "lib/services/theme_service.dart"
       ],
-      "fileCount": 17,
+      "fileCount": 22,
       "hasTests": false,
       "hasConfig": false,
       "keyFiles": [
         "lib/services/api_service.dart",
+        "lib/services/downstream_service.dart",
+        "lib/services/sse_search_service.dart",
         "lib/services/search_service.dart",
-        "lib/services/user_data_service.dart",
-        "lib/services/theme_service.dart",
+        "lib/services/local_search_cache_service.dart",
         "lib/services/douban_service.dart",
-        "lib/services/douban_cache_service.dart"
+        "lib/services/douban_verify_service.dart",
+        "lib/services/douban_verify_service_with_expir.dart",
+        "lib/services/douban_cache_service.dart",
+        "lib/services/bangumi_service.dart",
+        "lib/services/live_service.dart",
+        "lib/services/m3u8_service.dart",
+        "lib/services/danmaku_service.dart",
+        "lib/services/download_service.dart",
+        "lib/services/mobile_background_download_service.dart",
+        "lib/services/page_cache_service.dart",
+        "lib/services/user_data_service.dart",
+        "lib/services/local_mode_storage_service.dart",
+        "lib/services/theme_service.dart",
+        "lib/services/version_service.dart",
+        "lib/services/subscription_service.dart",
+        "lib/services/content_filter_service.dart",
+        "lib/services/data_operation_interface.dart"
       ],
       "dependencies": [
         "http",
@@ -111,40 +99,153 @@
       ],
       "coverage": {
         "scanned": true,
-        "depth": "medium",
-        "missingItems": ["单元测试", "Mock 测试"]
-      }
+        "depth": "full",
+        "percentage": 100,
+        "missingItems": ["单元测试", "Mock 测试", "API 测试"]
+      },
+      "documentation": "lib/services/CLAUDE.md"
     },
     {
-      "path": "lib/models",
-      "name": "Models",
+      "path": "lib/screens",
+      "name": "Screens",
       "language": "Dart",
-      "responsibility": "数据模型定义",
-      "entryFiles": [],
-      "fileCount": 14,
+      "responsibility": "页面级组件",
+      "entryFiles": [
+        "lib/screens/login_screen.dart",
+        "lib/screens/home_screen.dart",
+        "lib/screens/player_screen.dart",
+        "lib/screens/search_screen.dart"
+      ],
+      "fileCount": 11,
       "hasTests": false,
       "hasConfig": false,
       "keyFiles": [
-        "lib/models/search_result.dart",
-        "lib/models/video_info.dart",
-        "lib/models/douban_movie.dart",
-        "lib/models/play_record.dart",
-        "lib/models/favorite_item.dart",
-        "lib/models/live_channel.dart"
+        "lib/screens/login_screen.dart",
+        "lib/screens/home_screen.dart",
+        "lib/screens/player_screen.dart",
+        "lib/screens/search_screen.dart",
+        "lib/screens/movie_screen.dart",
+        "lib/screens/show_screen.dart",
+        "lib/screens/tv_screen.dart",
+        "lib/screens/anime_screen.dart",
+        "lib/screens/live_screen.dart",
+        "lib/screens/live_player_screen.dart",
+        "lib/screens/download_screen.dart"
       ],
-      "dependencies": [],
+      "dependencies": [
+        "lib/services/api_service.dart",
+        "lib/services/search_service.dart",
+        "lib/widgets/video_player_widget.dart"
+      ],
       "coverage": {
         "scanned": true,
-        "depth": "light",
-        "missingItems": ["序列化测试", "验证测试"]
-      }
+        "depth": "full",
+        "percentage": 100,
+        "missingItems": ["Widget 测试", "集成测试"]
+      },
+      "documentation": "lib/screens/CLAUDE.md"
+    },
+    {
+      "path": "lib/widgets",
+      "name": "Widgets",
+      "language": "Dart",
+      "responsibility": "可复用 UI 组件",
+      "entryFiles": [
+        "lib/widgets/video_player_widget.dart",
+        "lib/widgets/main_layout.dart",
+        "lib/widgets/pc_player_controls.dart",
+        "lib/widgets/mobile_player_controls.dart"
+      ],
+      "fileCount": 43,
+      "hasTests": false,
+      "hasConfig": false,
+      "keyFiles": [
+        "lib/widgets/video_player_widget.dart",
+        "lib/widgets/video_player_surface.dart",
+        "lib/widgets/player_adapter.dart",
+        "lib/widgets/pc_player_controls.dart",
+        "lib/widgets/mobile_player_controls.dart",
+        "lib/widgets/short_drama_controls.dart",
+        "lib/widgets/player_details_panel.dart",
+        "lib/widgets/player_episodes_panel.dart",
+        "lib/widgets/player_sources_panel.dart",
+        "lib/widgets/player_settings_panel.dart",
+        "lib/widgets/player_download_panel.dart",
+        "lib/widgets/danmaku_settings_panel.dart",
+        "lib/widgets/danmaku_match_panel.dart",
+        "lib/widgets/dlna_player.dart",
+        "lib/widgets/dlna_player_controls.dart",
+        "lib/widgets/dlna_device_dialog.dart",
+        "lib/widgets/video_card.dart",
+        "lib/widgets/bangumi_grid.dart",
+        "lib/widgets/bangumi_section.dart",
+        "lib/widgets/douban_movies_grid.dart",
+        "lib/widgets/favorites_grid.dart",
+        "lib/widgets/history_grid.dart",
+        "lib/widgets/search_results_grid.dart",
+        "lib/widgets/search_result_agg_grid.dart",
+        "lib/widgets/custom_switch.dart",
+        "lib/widgets/filter_options_selector.dart",
+        "lib/widgets/filter_pill_hover.dart",
+        "lib/widgets/capsule_tab_switcher.dart",
+        "lib/widgets/simple_tab_switcher.dart",
+        "lib/widgets/top_tab_switcher.dart",
+        "lib/widgets/update_dialog.dart",
+        "lib/widgets/video_menu_bottom_sheet.dart",
+        "lib/widgets/main_layout.dart",
+        "lib/widgets/windows_title_bar.dart",
+        "lib/widgets/user_menu.dart",
+        "lib/widgets/shimmer_effect.dart",
+        "lib/widgets/pulsing_dots_indicator.dart",
+        "lib/widgets/switch_loading_overlay.dart",
+        "lib/widgets/custom_refresh_indicator.dart",
+        "lib/widgets/fullscreen_image_viewer.dart",
+        "lib/widgets/continue_watching_section.dart",
+        "lib/widgets/recommendation_section.dart",
+        "lib/widgets/hot_movies_section.dart",
+        "lib/widgets/hot_show_section.dart",
+        "lib/widgets/hot_tv_section.dart"
+      ],
+      "dependencies": [
+        "media_kit",
+        "media_kit_video",
+        "video_player",
+        "dlna_dart",
+        "pip",
+        "canvas_danmaku"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "full",
+        "percentage": 100,
+        "missingItems": ["Widget 测试", "Golden 测试"]
+      },
+      "documentation": "lib/widgets/CLAUDE.md",
+      "recentChanges": [
+        {
+          "date": "2026-02-24T13:22:09+08:00",
+          "description": "完成模块文档更新，包含弹幕、下载等新功能"
+        },
+        {
+          "date": "2026-01-12T16:55:00+08:00",
+          "description": "重构 danmaku_settings_panel.dart，新增 danmaku_match_panel.dart"
+        },
+        {
+          "date": "2026-01-11T13:45:58+08:00",
+          "description": "新增 player_settings_panel.dart（倍速、画面比例设置）"
+        }
+      ]
     },
     {
       "path": "lib/utils",
       "name": "Utils",
       "language": "Dart",
-      "responsibility": "工具函数（设备检测、字体、图片处理）",
-      "entryFiles": [],
+      "responsibility": "工具函数",
+      "entryFiles": [
+        "lib/utils/device_utils.dart",
+        "lib/utils/font_utils.dart",
+        "lib/utils/image_url.dart"
+      ],
       "fileCount": 3,
       "hasTests": false,
       "hasConfig": false,
@@ -156,15 +257,17 @@
       "dependencies": [],
       "coverage": {
         "scanned": true,
-        "depth": "light",
+        "depth": "full",
+        "percentage": 100,
         "missingItems": ["单元测试"]
-      }
+      },
+      "documentation": "lib/utils/CLAUDE.md"
     },
     {
       "path": "android",
       "name": "Android",
       "language": "Kotlin",
-      "responsibility": "Android 原生模块",
+      "responsibility": "Android 平台配置",
       "entryFiles": [
         "android/app/src/main/kotlin/com/example/selene/MainActivity.kt"
       ],
@@ -183,19 +286,21 @@
       ],
       "coverage": {
         "scanned": true,
-        "depth": "medium",
-        "missingItems": ["Instrumentation 测试"]
-      }
+        "depth": "light",
+        "percentage": 30,
+        "missingItems": ["模块文档", "Instrumentation 测试"]
+      },
+      "documentation": "android/CLAUDE.md"
     },
     {
       "path": "ios",
       "name": "iOS",
       "language": "Swift",
-      "responsibility": "iOS 原生模块",
+      "responsibility": "iOS 平台配置",
       "entryFiles": [
         "ios/Runner/AppDelegate.swift"
       ],
-      "fileCount": 1,
+      "fileCount": 2,
       "hasTests": false,
       "hasConfig": true,
       "keyFiles": [
@@ -209,64 +314,105 @@
       ],
       "coverage": {
         "scanned": true,
-        "depth": "medium",
-        "missingItems": ["XCTest", "UI 测试"]
-      }
+        "depth": "light",
+        "percentage": 30,
+        "missingItems": ["模块文档", "XCTest", "UI 测试"]
+      },
+      "documentation": "ios/CLAUDE.md"
     },
     {
-      "path": ".spec-workflow",
-      "name": "Spec-Workflow",
-      "language": "Markdown",
-      "responsibility": "文档模板工作流",
-      "entryFiles": [],
-      "fileCount": 7,
-      "hasTests": false,
-      "hasConfig": false,
-      "keyFiles": [
-        ".spec-workflow/templates/requirements-template.md",
-        ".spec-workflow/templates/product-template.md",
-        ".spec-workflow/templates/design-template.md",
-        ".spec-workflow/templates/tech-template.md"
+      "path": "macos",
+      "name": "macOS",
+      "language": "Swift",
+      "responsibility": "macOS 平台配置",
+      "entryFiles": [
+        "macos/Runner/AppDelegate.swift",
+        "macos/Runner/MainFlutterWindow.swift"
       ],
-      "dependencies": [],
+      "fileCount": 4,
+      "hasTests": false,
+      "hasConfig": true,
+      "keyFiles": [
+        "macos/Runner/AppDelegate.swift",
+        "macos/Runner/MainFlutterWindow.swift",
+        "macos/Runner/Info.plist"
+      ],
+      "dependencies": [
+        "macos_window_utils",
+        "media_kit_libs_macos_video"
+      ],
       "coverage": {
         "scanned": true,
         "depth": "light",
-        "missingItems": []
-      }
+        "percentage": 20,
+        "missingItems": ["模块文档", "XCTest"]
+      },
+      "documentation": null
+    },
+    {
+      "path": "windows",
+      "name": "Windows",
+      "language": "C++",
+      "responsibility": "Windows 平台配置",
+      "entryFiles": [
+        "windows/runner/main.cpp",
+        "windows/runner/flutter_window.cpp"
+      ],
+      "fileCount": 4,
+      "hasTests": false,
+      "hasConfig": true,
+      "keyFiles": [
+        "windows/runner/main.cpp",
+        "windows/runner/flutter_window.cpp",
+        "windows/runner/win32_window.cpp",
+        "windows/runner/utils.cpp"
+      ],
+      "dependencies": [
+        "bitsdojo_window",
+        "media_kit_libs_windows_video"
+      ],
+      "coverage": {
+        "scanned": true,
+        "depth": "light",
+        "percentage": 20,
+        "missingItems": ["模块文档", "单元测试"]
+      },
+      "documentation": null
     }
   ],
   "statistics": {
-    "totalModules": 8,
-    "totalFiles": 94,
-    "dartFiles": 85,
+    "totalModules": 9,
+    "totalFiles": 104,
+    "dartFiles": 93,
     "kotlinFiles": 1,
-    "swiftFiles": 1,
-    "markdownFiles": 7,
-    "estimatedLines": 35000,
+    "swiftFiles": 6,
+    "cppFiles": 4,
+    "estimatedLines": 40000,
     "hasTests": false,
-    "testCoverage": "0%"
+    "testCoverage": "0%",
+    "documentedModules": 7,
+    "coveragePercentage": 78
   },
   "coverage": {
-    "overallPercentage": 80,
-    "scannedModules": 8,
-    "totalModules": 8,
+    "overallPercentage": 78,
+    "scannedModules": 9,
+    "totalModules": 9,
     "gaps": [
       {
-        "module": "lib/screens",
-        "missing": ["单元测试", "Widget 测试", "集成测试"]
-      },
-      {
-        "module": "lib/widgets",
-        "missing": ["Widget 测试", "Golden 测试"]
+        "module": "lib/models",
+        "missing": ["序列化测试", "数据验证测试"]
       },
       {
         "module": "lib/services",
         "missing": ["单元测试", "Mock 测试", "API 测试"]
       },
       {
-        "module": "lib/models",
-        "missing": ["序列化测试", "数据验证测试"]
+        "module": "lib/screens",
+        "missing": ["Widget 测试", "集成测试"]
+      },
+      {
+        "module": "lib/widgets",
+        "missing": ["Widget 测试", "Golden 测试"]
       },
       {
         "module": "lib/utils",
@@ -274,11 +420,19 @@
       },
       {
         "module": "android",
-        "missing": ["Instrumentation 测试"]
+        "missing": ["模块文档", "Instrumentation 测试"]
       },
       {
         "module": "ios",
-        "missing": ["XCTest", "UI 测试"]
+        "missing": ["模块文档", "XCTest", "UI 测试"]
+      },
+      {
+        "module": "macos",
+        "missing": ["模块文档", "XCTest"]
+      },
+      {
+        "module": "windows",
+        "missing": ["模块文档", "单元测试"]
       }
     ],
     "ignoredPaths": [
@@ -289,38 +443,83 @@
       "ios-build/**",
       ".dart_tool/**",
       ".git/**",
+      ".github/**",
       "android/.gradle/**",
+      "android/build/**",
       "ios/Pods/**",
+      "macos/Flutter/ephemeral/**",
+      "windows/flutter/ephemeral/**",
       "*.lock",
-      "*.log"
+      "*.log",
+      "*.bin",
+      "*.pdf",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.gif",
+      "*.mp4",
+      "*.zip",
+      "*.tar",
+      "*.gz"
     ]
   },
   "recentChanges": [
     {
-      "timestamp": "2026-01-11T13:45:58.000Z",
+      "timestamp": "2026-02-24T13:22:09+08:00",
       "changes": [
-        "新增 lib/widgets/player_settings_panel.dart（播放器设置面板）",
-        "修改 lib/screens/player_screen.dart",
-        "修改 lib/widgets/mobile_player_controls.dart",
-        "修改 lib/widgets/video_player_widget.dart"
+        "完成项目架构文档初始化",
+        "生成根级 CLAUDE.md 文档，包含 Mermaid 模块结构图",
+        "更新所有模块的 CLAUDE.md 文档",
+        "建立模块间导航面包屑",
+        "更新 .claude/index.json 索引文件"
+      ]
+    },
+    {
+      "timestamp": "2026-01-12T18:45:00+08:00",
+      "changes": [
+        "新增 M3U8 下载功能（分片并行下载、断点续传）",
+        "新增下载选集面板和下载管理页面",
+        "在播放器选集区添加下载图标"
+      ]
+    },
+    {
+      "timestamp": "2026-01-12T16:55:00+08:00",
+      "changes": [
+        "弹幕功能重大更新：重构 DanmakuSettingsPanel",
+        "修复全屏弹幕消失问题",
+        "增强 DanmakuSettings 模型"
+      ]
+    },
+    {
+      "timestamp": "2026-01-11T13:45:58+08:00",
+      "changes": [
+        "新增 player_settings_panel.dart（播放器设置面板）",
+        "播放器功能增强：支持倍速播放和画面比例调整"
       ]
     }
   ],
   "nextSteps": [
+    "为 Android、iOS、macOS、Windows 平台模块创建文档（优先级：高）",
+    "建立测试框架，添加核心功能的单元测试（优先级：高）",
     "为 Services 层添加单元测试（优先级：高）",
-    "为关键 Widgets 添加 Widget 测试（优先级：高）",
+    "为关键 Widgets 添加 Widget 测试（优先级：中）",
     "为 Models 添加序列化测试（优先级：中）",
     "添加端到端集成测试（优先级：中）",
-    "补充 API 文档和接口说明（优先级：低）"
+    "补充 API 文档和接口说明（优先级：低）",
+    "完善 CI/CD 流程文档（优先级：低）"
   ],
   "truncated": false,
-  "scanDepth": "medium",
+  "scanDepth": "full",
+  "scanDuration": "约 5 分钟",
   "notes": [
-    "项目结构清晰，模块划分合理",
+    "已完成 lib/ 目录下所有 Dart 代码的全面扫描和文档化",
+    "平台特定代码（Android/iOS/macOS/Windows）已识别但文档化程度较低",
+    "项目结构清晰，模块划分合理，遵循 Flutter 最佳实践",
     "缺少测试覆盖，建议优先添加 Services 和 Widgets 测试",
-    "原生代码较少，主要逻辑在 Flutter 层",
     "使用 Provider 进行状态管理，架构简洁",
     "支持本地模式和服务器模式双运行方式",
-    "新增播放器设置面板支持倍速和画面比例调整"
+    "弹幕系统已完成性能优化，支持自动匹配和手动匹配",
+    "下载功能支持 M3U8 分片并行下载和断点续传",
+    "建议后续补充平台配置文档和测试覆盖"
   ]
 }
