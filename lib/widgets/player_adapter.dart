@@ -18,8 +18,9 @@ abstract class PlayerAdapter {
   Future<void> setVolume(double volume);
   Future<void> dispose();
   Future<void> updateVideoFit(BoxFit fit);
-  
-  Widget buildVideo(BuildContext context, {BoxFit fit, Key? key, Widget Function(mkv.VideoState state)? controls});
+
+  Widget buildVideo(BuildContext context,
+      {BoxFit fit, Key? key, Widget Function(mkv.VideoState state)? controls});
 }
 
 abstract class PlayerAdapterStream {
@@ -39,7 +40,7 @@ abstract class PlayerAdapterState {
   double get volume;
   double get rate;
   bool get buffering;
-  double get width;  // 💡 新增：视频原始宽度
+  double get width; // 💡 新增：视频原始宽度
   double get height; // 💡 新增：视频原始高度
 }
 
@@ -47,7 +48,7 @@ abstract class PlayerAdapterState {
 class MediaKitAdapter implements PlayerAdapter {
   final mk.Player player;
   final mkv.VideoController videoController;
-  
+
   @override
   late final PlayerAdapterStream stream;
   @override
@@ -77,8 +78,12 @@ class MediaKitAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key, Widget Function(mkv.VideoState state)? controls}) {
-    return mkv.Video(controller: videoController, fit: fit, controls: controls, key: key);
+  Widget buildVideo(BuildContext context,
+      {BoxFit fit = BoxFit.contain,
+      Key? key,
+      Widget Function(mkv.VideoState state)? controls}) {
+    return mkv.Video(
+        controller: videoController, fit: fit, controls: controls, key: key);
   }
 }
 
@@ -127,13 +132,20 @@ class _MediaKitState implements PlayerAdapterState {
 /// video_player implementation (for mobile)
 class VideoPlayerAdapter implements PlayerAdapter {
   final vp.VideoPlayerController controller;
-  final StreamController<bool> _playingController = StreamController<bool>.broadcast();
-  final StreamController<Duration> _positionController = StreamController<Duration>.broadcast();
-  final StreamController<Duration> _durationController = StreamController<Duration>.broadcast();
-  final StreamController<bool> _completedController = StreamController<bool>.broadcast();
-  final StreamController<double> _volumeController = StreamController<double>.broadcast();
-  final StreamController<double> _rateController = StreamController<double>.broadcast();
-  final StreamController<bool> _bufferingController = StreamController<bool>.broadcast();
+  final StreamController<bool> _playingController =
+      StreamController<bool>.broadcast();
+  final StreamController<Duration> _positionController =
+      StreamController<Duration>.broadcast();
+  final StreamController<Duration> _durationController =
+      StreamController<Duration>.broadcast();
+  final StreamController<bool> _completedController =
+      StreamController<bool>.broadcast();
+  final StreamController<double> _volumeController =
+      StreamController<double>.broadcast();
+  final StreamController<double> _rateController =
+      StreamController<double>.broadcast();
+  final StreamController<bool> _bufferingController =
+      StreamController<bool>.broadcast();
 
   @override
   late final PlayerAdapterStream stream;
@@ -143,7 +155,7 @@ class VideoPlayerAdapter implements PlayerAdapter {
   VideoPlayerAdapter(this.controller) {
     stream = _VideoPlayerStream(this);
     state = _VideoPlayerState(this);
-    
+
     controller.addListener(_onControllerChanged);
   }
 
@@ -162,9 +174,10 @@ class VideoPlayerAdapter implements PlayerAdapter {
     if (controller.value.position != _lastPosition) {
       _lastPosition = controller.value.position;
       _positionController.add(_lastPosition);
-      
+
       // Check for completion
-      if (controller.value.duration != Duration.zero && _lastPosition >= controller.value.duration) {
+      if (controller.value.duration != Duration.zero &&
+          _lastPosition >= controller.value.duration) {
         _completedController.add(true);
       }
     }
@@ -174,7 +187,8 @@ class VideoPlayerAdapter implements PlayerAdapter {
     }
     if (controller.value.volume != _lastVolume) {
       _lastVolume = controller.value.volume;
-      _volumeController.add(_lastVolume * 100); // Scale to 0-100 to match media_kit
+      _volumeController
+          .add(_lastVolume * 100); // Scale to 0-100 to match media_kit
     }
     if (controller.value.playbackSpeed != _lastRate) {
       _lastRate = controller.value.playbackSpeed;
@@ -196,12 +210,12 @@ class VideoPlayerAdapter implements PlayerAdapter {
   Future<void> setRate(double rate) => controller.setPlaybackSpeed(rate);
   @override
   Future<void> setVolume(double volume) => controller.setVolume(volume / 100);
-  
+
   @override
   Future<void> updateVideoFit(BoxFit fit) async {
     // Handled in buildVideo via FittedBox
   }
-  
+
   @override
   Future<void> dispose() async {
     controller.removeListener(_onControllerChanged);
@@ -216,14 +230,22 @@ class VideoPlayerAdapter implements PlayerAdapter {
   }
 
   @override
-  Widget buildVideo(BuildContext context, {BoxFit fit = BoxFit.contain, Key? key, Widget Function(mkv.VideoState state)? controls}) {
-    return Center(
+  Widget buildVideo(BuildContext context,
+      {BoxFit fit = BoxFit.contain,
+      Key? key,
+      Widget Function(mkv.VideoState state)? controls}) {
+    final videoSize = controller.value.size;
+    final width = videoSize.width > 0 ? videoSize.width : 1.0;
+    final height = videoSize.height > 0 ? videoSize.height : 1.0;
+
+    return SizedBox.expand(
       key: key,
       child: FittedBox(
         fit: fit,
+        alignment: Alignment.center,
         child: SizedBox(
-          width: controller.value.size.width,
-          height: controller.value.size.height,
+          width: width,
+          height: height,
           child: vp.VideoPlayer(controller),
         ),
       ),
@@ -284,12 +306,18 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   final StreamController<bool> _playingController =
       StreamController<bool>.broadcast();
-  final StreamController<Duration> _positionController = StreamController<Duration>.broadcast();
-  final StreamController<Duration> _durationController = StreamController<Duration>.broadcast();
-  final StreamController<bool> _completedController = StreamController<bool>.broadcast();
-  final StreamController<double> _volumeController = StreamController<double>.broadcast();
-  final StreamController<double> _rateController = StreamController<double>.broadcast();
-  final StreamController<bool> _bufferingController = StreamController<bool>.broadcast();
+  final StreamController<Duration> _positionController =
+      StreamController<Duration>.broadcast();
+  final StreamController<Duration> _durationController =
+      StreamController<Duration>.broadcast();
+  final StreamController<bool> _completedController =
+      StreamController<bool>.broadcast();
+  final StreamController<double> _volumeController =
+      StreamController<double>.broadcast();
+  final StreamController<double> _rateController =
+      StreamController<double>.broadcast();
+  final StreamController<bool> _bufferingController =
+      StreamController<bool>.broadcast();
 
   bool _playing = false;
   Duration _position = Duration.zero;
@@ -297,7 +325,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _volume = 100;
   double _rate = 1.0;
   bool _buffering = false;
-  double _videoWidth = 0;  // 💡 新增
+  double _videoWidth = 0; // 💡 新增
   double _videoHeight = 0; // 💡 新增
   bool _isDisposed = false;
   String? _hlsJsContent; // 缓存的 hls.js 源码内容
@@ -337,9 +365,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       callback: (args) {
         if (args.isNotEmpty && args[0] is String) {
           final content = args[0] as String;
-          if (content.length > 1000) { // 简单校验
-             _hlsJsContent = content;
-             UserDataService.saveHlsJsCache(content);
+          if (content.length > 1000) {
+            // 简单校验
+            _hlsJsContent = content;
+            UserDataService.saveHlsJsCache(content);
           }
         }
       },
@@ -370,22 +399,32 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       case 'durationchange':
         final seconds = (event['duration'] as num?)?.toDouble() ?? 0;
         _duration = Duration(milliseconds: (seconds * 1000).round());
-        if (!_durationController.isClosed) _durationController.add(_duration);
+        if (!_durationController.isClosed) {
+          _durationController.add(_duration);
+        }
         break;
       case 'ended':
-        if (!_completedController.isClosed) _completedController.add(true);
+        if (!_completedController.isClosed) {
+          _completedController.add(true);
+        }
         break;
       case 'volumechange':
         _volume = ((event['volume'] as num?)?.toDouble() ?? 1.0) * 100;
-        if (!_volumeController.isClosed) _volumeController.add(_volume);
+        if (!_volumeController.isClosed) {
+          _volumeController.add(_volume);
+        }
         break;
       case 'ratechange':
         _rate = (event['rate'] as num?)?.toDouble() ?? 1.0;
-        if (!_rateController.isClosed) _rateController.add(_rate);
+        if (!_rateController.isClosed) {
+          _rateController.add(_rate);
+        }
         break;
       case 'buffering':
         _buffering = event['value'] as bool? ?? false;
-        if (!_bufferingController.isClosed) _bufferingController.add(_buffering);
+        if (!_bufferingController.isClosed) {
+          _bufferingController.add(_buffering);
+        }
         break;
       // 💡 新增：处理视频尺寸变化
       case 'sizechange':
@@ -450,7 +489,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   @override
   Future<void> setVolume(double volume) async {
     final normalized = volume / 100;
-    await _controller?.evaluateJavascript(source: 'player.volume = $normalized;');
+    await _controller?.evaluateJavascript(
+        source: 'player.volume = $normalized;');
   }
 
   @override
@@ -491,7 +531,9 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   @override
   Widget buildVideo(BuildContext context,
-      {BoxFit fit = BoxFit.contain, Key? key, Widget Function(mkv.VideoState state)? controls}) {
+      {BoxFit fit = BoxFit.contain,
+      Key? key,
+      Widget Function(mkv.VideoState state)? controls}) {
     return _WebViewPlayer(
       key: key,
       adapter: this,

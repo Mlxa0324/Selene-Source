@@ -7,12 +7,14 @@ class DanmakuSettingsPanel extends StatefulWidget {
   final ThemeData theme;
   final DanmakuSettings settings;
   final Function(DanmakuSettings) onSettingsChanged;
+  final Future<void> Function(bool)? onEnabledChanged;
 
   const DanmakuSettingsPanel({
     super.key,
     required this.theme,
     required this.settings,
     required this.onSettingsChanged,
+    this.onEnabledChanged,
   });
 
   @override
@@ -37,8 +39,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
-    final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(0.85) 
+    final backgroundColor = isDarkMode
+        ? Colors.black.withOpacity(0.85)
         : Colors.white.withOpacity(0.95);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
@@ -93,6 +95,16 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                 children: [
                   const SizedBox(height: 8),
 
+                  // 弹幕开关
+                  _buildSectionHeader('弹幕开关', subTextColor),
+                  const SizedBox(height: 12),
+                  _buildSwitchRow('显示弹幕', _settings.enabled, textColor, (v) {
+                    _updateSettings(_settings.copyWith(enabled: v));
+                    widget.onEnabledChanged?.call(v);
+                  }),
+
+                  const SizedBox(height: 24),
+
                   // 显示设置
                   _buildSectionHeader('显示设置', subTextColor),
                   const SizedBox(height: 12),
@@ -104,7 +116,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     textColor,
                     subTextColor,
                     (v) => _updateSettings(_settings.copyWith(opacity: v)),
-                    valueLabel: '${( _settings.opacity * 100).toInt()}%',
+                    valueLabel: '${(_settings.opacity * 100).toInt()}%',
                   ),
                   _buildSliderRow(
                     '弹幕缩放',
@@ -124,7 +136,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     textColor,
                     subTextColor,
                     (v) => _updateSettings(_settings.copyWith(duration: v)),
-                    valueLabel: '${(18 - _settings.duration).toStringAsFixed(1)}x',
+                    valueLabel:
+                        '${(18 - _settings.duration).toStringAsFixed(1)}x',
                     reverse: true,
                   ),
                   _buildSliderRow(
@@ -163,12 +176,14 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     (v) => _updateSettings(_settings.copyWith(displayArea: v)),
                     valueLabel: _getDisplayAreaLabel(_settings.displayArea),
                   ),
-                  
+
                   // 功能开关
-                  _buildSwitchRow('防止弹幕重叠', _settings.preventOverlap, textColor, (v) {
+                  _buildSwitchRow('防止弹幕重叠', _settings.preventOverlap, textColor,
+                      (v) {
                     _updateSettings(_settings.copyWith(preventOverlap: v));
                   }),
-                  _buildSwitchRow('同步视频速度', _settings.syncVideoSpeed, textColor, (v) {
+                  _buildSwitchRow('同步视频速度', _settings.syncVideoSpeed, textColor,
+                      (v) {
                     _updateSettings(_settings.copyWith(syncVideoSpeed: v));
                   }),
 
@@ -181,16 +196,20 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      _buildBlockTextButton('滚动', _settings.hideScroll, isDarkMode, (v) {
+                      _buildBlockTextButton(
+                          '滚动', _settings.hideScroll, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideScroll: v));
                       }),
-                      _buildBlockTextButton('顶部', _settings.hideTop, isDarkMode, (v) {
+                      _buildBlockTextButton('顶部', _settings.hideTop, isDarkMode,
+                          (v) {
                         _updateSettings(_settings.copyWith(hideTop: v));
                       }),
-                      _buildBlockTextButton('底部', _settings.hideBottom, isDarkMode, (v) {
+                      _buildBlockTextButton(
+                          '底部', _settings.hideBottom, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideBottom: v));
                       }),
-                      _buildBlockTextButton('彩色', _settings.hideColor, isDarkMode, (v) {
+                      _buildBlockTextButton(
+                          '彩色', _settings.hideColor, isDarkMode, (v) {
                         _updateSettings(_settings.copyWith(hideColor: v));
                       }),
                     ],
@@ -216,7 +235,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     );
   }
 
-  Widget _buildSwitchRow(String title, bool value, Color textColor, Function(bool) onChanged) {
+  Widget _buildSwitchRow(
+      String title, bool value, Color textColor, Function(bool) onChanged) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -297,15 +317,16 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     );
   }
 
-  Widget _buildBlockTextButton(String text, bool isSelected, bool isDarkMode, Function(bool) onTap) {
+  Widget _buildBlockTextButton(
+      String text, bool isSelected, bool isDarkMode, Function(bool) onTap) {
     return GestureDetector(
       onTap: () => onTap(!isSelected),
       child: Container(
         width: 65,
         height: 32,
         decoration: BoxDecoration(
-          color: isSelected 
-              ? Colors.green.withOpacity(0.2) 
+          color: isSelected
+              ? Colors.green.withOpacity(0.2)
               : (isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05)),
           borderRadius: BorderRadius.circular(4),
           border: isSelected ? Border.all(color: Colors.green, width: 1) : null,
@@ -314,7 +335,9 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
           child: Text(
             text,
             style: TextStyle(
-              color: isSelected ? Colors.green : (isDarkMode ? Colors.white70 : Colors.black54),
+              color: isSelected
+                  ? Colors.green
+                  : (isDarkMode ? Colors.white70 : Colors.black54),
               fontSize: 13,
             ),
           ),

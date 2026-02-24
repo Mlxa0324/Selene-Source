@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 import '../models/download_task.dart';
 import '../services/download_service.dart';
 import 'package:provider/provider.dart';
@@ -38,8 +36,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   int _selectedGroupIndex = 0;
   late AnimationController _animController;
   final ScrollController _scrollController = ScrollController(); // 集数网格滚动
-  final ScrollController _groupScrollController = ScrollController(); // 💡 分组列表滚动
-  final GlobalKey _gridKey = GlobalKey(); 
+  final ScrollController _groupScrollController =
+      ScrollController(); // 💡 分组列表滚动
+  final GlobalKey _gridKey = GlobalKey();
   bool _isHoveringGroupPager = false;
 
   @override
@@ -74,12 +73,13 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
   // 💡 定位到当前激活的分组
   void _scrollToActiveGroup() {
-    if (!_groupScrollController.hasClients || widget.episodes.length <= 50) return;
-    
+    if (!_groupScrollController.hasClients || widget.episodes.length <= 50)
+      return;
+
     // 估算每个 ChoiceChip 的平均宽度（Label + Padding）约 85px
     const double approxItemWidth = 85.0;
     final double offset = _selectedGroupIndex * approxItemWidth;
-    
+
     _groupScrollController.animateTo(
       offset.clamp(0.0, _groupScrollController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 300),
@@ -104,27 +104,31 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
   // 💡 滚动到当前播放集逻辑
   void _scrollToCurrent() {
-    if (widget.currentEpisodeIndex == null || 
-        _gridKey.currentContext == null || 
+    if (widget.currentEpisodeIndex == null ||
+        _gridKey.currentContext == null ||
         !_scrollController.hasClients) return;
 
     // 检查当前播放集是否在当前显示的分组内
     final startOfGroup = _selectedGroupIndex * 50;
-    final endOfGroup = ((_selectedGroupIndex + 1) * 50).clamp(0, widget.episodes.length);
-    
-    if (widget.currentEpisodeIndex! < startOfGroup || widget.currentEpisodeIndex! >= endOfGroup) {
+    final endOfGroup =
+        ((_selectedGroupIndex + 1) * 50).clamp(0, widget.episodes.length);
+
+    if (widget.currentEpisodeIndex! < startOfGroup ||
+        widget.currentEpisodeIndex! >= endOfGroup) {
       return;
     }
 
     final physicalIndexInGrid = widget.currentEpisodeIndex! - startOfGroup;
 
-    final RenderBox gridBox = _gridKey.currentContext!.findRenderObject() as RenderBox;
+    final RenderBox gridBox =
+        _gridKey.currentContext!.findRenderObject() as RenderBox;
     final crossAxisCount = widget.isCompact ? 4 : 3;
     final mainAxisSpacing = 8.0;
     final childAspectRatio = widget.isCompact ? 3.2 : 2.0;
 
     // 计算宽度和高度（需要减去横向 padding 24，因为左右各 12）
-    final itemWidth = (gridBox.size.width - 24.0 - (crossAxisCount - 1) * 8.0) / crossAxisCount;
+    final itemWidth = (gridBox.size.width - 24.0 - (crossAxisCount - 1) * 8.0) /
+        crossAxisCount;
     final itemHeight = itemWidth / childAspectRatio;
 
     final row = (physicalIndexInGrid / crossAxisCount).floor();
@@ -180,12 +184,44 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
     });
   }
 
+  bool get _isGrouped => widget.episodes.length > 50;
+
+  int get _groupStartIndex => _selectedGroupIndex * 50;
+
+  int get _groupEndIndex =>
+      ((_selectedGroupIndex + 1) * 50).clamp(0, widget.episodes.length);
+
+  Iterable<int> get _currentGroupIndices =>
+      Iterable<int>.generate(_groupEndIndex - _groupStartIndex)
+          .map((i) => _groupStartIndex + i);
+
+  bool get _isCurrentGroupAllSelected {
+    if (!_isGrouped) {
+      return _selectedIndices.length == widget.episodes.length;
+    }
+    for (final index in _currentGroupIndices) {
+      if (!_selectedIndices.contains(index)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _selectAll() {
     setState(() {
-      if (_selectedIndices.length == widget.episodes.length) {
-        _selectedIndices.clear();
+      if (_isGrouped) {
+        if (_isCurrentGroupAllSelected) {
+          _selectedIndices.removeWhere(
+              (index) => index >= _groupStartIndex && index < _groupEndIndex);
+        } else {
+          _selectedIndices.addAll(_currentGroupIndices);
+        }
       } else {
-        _selectedIndices.addAll(Iterable.generate(widget.episodes.length));
+        if (_selectedIndices.length == widget.episodes.length) {
+          _selectedIndices.clear();
+        } else {
+          _selectedIndices.addAll(Iterable.generate(widget.episodes.length));
+        }
       }
     });
   }
@@ -248,7 +284,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                 topLeft: Radius.circular(16),
                 bottomLeft: Radius.circular(16),
               )
-            : const BorderRadius.vertical(top: Radius.circular(24)), // 💡 竖屏底部弹窗显示完整的顶部圆角
+            : const BorderRadius.vertical(
+                top: Radius.circular(24)), // 💡 竖屏底部弹窗显示完整的顶部圆角
       ),
       child: Column(
         children: [
@@ -331,8 +368,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
-                                color:
-                                    isSelected ? Colors.green : Colors.transparent,
+                                color: isSelected
+                                    ? Colors.green
+                                    : Colors.transparent,
                               ),
                             ),
                             showCheckmark: false,
@@ -394,7 +432,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                 final downloadService = context.watch<DownloadService>();
                 final isSelected = _selectedIndices.contains(actualIndex);
                 // 💡 新增：是否是当前播放集
-                final isCurrentPlaying = actualIndex == widget.currentEpisodeIndex;
+                final isCurrentPlaying =
+                    actualIndex == widget.currentEpisodeIndex;
 
                 String title = '';
                 if (widget.episodesTitles.isNotEmpty &&
@@ -526,11 +565,14 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                             child: Text(
                               title,
                               style: TextStyle(
-                                color: (isEffectivelySelected || isCurrentPlaying)
-                                    ? Colors.green
-                                    : textColor,
+                                color:
+                                    (isEffectivelySelected || isCurrentPlaying)
+                                        ? Colors.green
+                                        : textColor,
                                 fontSize: 13,
-                                fontWeight: isCurrentPlaying ? FontWeight.bold : FontWeight.normal,
+                                fontWeight: isCurrentPlaying
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
@@ -655,9 +697,12 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     child: Text(
-                        _selectedIndices.length == widget.episodes.length
-                            ? '取消全选'
-                            : '全选'),
+                      _isGrouped
+                          ? (_isCurrentGroupAllSelected ? '取消本组' : '本组全选')
+                          : (_selectedIndices.length == widget.episodes.length
+                              ? '取消全选'
+                              : '全选'),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),

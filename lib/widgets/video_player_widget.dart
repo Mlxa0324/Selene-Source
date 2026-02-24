@@ -121,7 +121,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.currentId,
     this.currentSource,
     this.onSourceChanged,
-    required this.isShortDrama, 
+    required this.isShortDrama,
     this.onCastButtonPressed,
     this.isFavorite,
     this.onFavoriteToggle,
@@ -136,10 +136,10 @@ class VideoPlayerWidgetController {
   final _VideoPlayerWidgetState _state;
 
   Future<void> updateDataSource(
-      String url, {
-        Duration? startAt,
-        Map<String, String>? headers,
-      }) async {
+    String url, {
+    Duration? startAt,
+    Map<String, String>? headers,
+  }) async {
     await _state._updateDataSource(
       url,
       startAt: startAt,
@@ -234,7 +234,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _isFullscreen = false; // 💡 新增：记录内部全屏状态
   late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
-  final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey = GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
+  final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey =
+      GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
 
   void _safeSetState(VoidCallback fn) {
     try {
@@ -263,7 +264,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   void didUpdateWidget(covariant VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialFitType != oldWidget.initialFitType) {
-      _currentFitType = widget.initialFitType;
+      _setVideoFit(widget.initialFitType);
     }
     if (widget.headers != oldWidget.headers && widget.headers != null) {
       _currentHeaders = widget.headers;
@@ -553,6 +554,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
         _adapter = VideoPlayerAdapter(newController);
         _setupPlayerListeners();
+        _adapter?.updateVideoFit(_getBoxFit());
         await _adapter!.play();
 
         if (mounted) {
@@ -840,15 +842,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             builder: (context, child) {
               double offset = 0;
               // 只有在短剧、全屏、且 PageController 已就绪时才计算位移
-              if (widget.isShortDrama && _isFullscreen && (Platform.isAndroid || Platform.isIOS)) {
+              if (widget.isShortDrama &&
+                  _isFullscreen &&
+                  (Platform.isAndroid || Platform.isIOS)) {
                 double page = widget.currentEpisodeIndex?.toDouble() ?? 0;
                 if (_shortDramaPageController.hasClients) {
                   page = _shortDramaPageController.page ?? page;
                 }
                 final double screenHeight = MediaQuery.of(context).size.height;
-                offset = (widget.currentEpisodeIndex! - page) * screenHeight * 0.6;
+                offset =
+                    (widget.currentEpisodeIndex! - page) * screenHeight * 0.6;
               }
-              
+
               return Transform.translate(
                 offset: Offset(0, offset),
                 child: child,
@@ -862,22 +867,29 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           if (widget.danmakuLayer != null &&
               widget.surface != VideoPlayerSurface.desktop)
             Positioned.fill(
-              top: (widget.isShortDrama && _isFullscreen && !Platform.isWindows && !Platform.isMacOS)
+              top: (widget.isShortDrama &&
+                      _isFullscreen &&
+                      !Platform.isWindows &&
+                      !Platform.isMacOS)
                   ? MediaQuery.of(context).padding.top + 50
                   : 0,
               child: RepaintBoundary(child: widget.danmakuLayer!),
             ),
 
           // 3. 交互与控制层
-          if (widget.isShortDrama && _isFullscreen && (Platform.isAndroid || Platform.isIOS))
+          if (widget.isShortDrama &&
+              _isFullscreen &&
+              (Platform.isAndroid || Platform.isIOS))
             NotificationListener<ScrollNotification>(
               onNotification: (notification) {
                 // 💡 优化：捕获滑动到顶部或底部的“撞墙”行为
                 if (notification is OverscrollNotification) {
-                  if (notification.overscroll < -5 && widget.currentEpisodeIndex == 0) {
+                  if (notification.overscroll < -5 &&
+                      widget.currentEpisodeIndex == 0) {
                     _shortDramaControlsKey.currentState?.showToast('已经是第一集了');
                   } else if (notification.overscroll > 5 &&
-                      widget.currentEpisodeIndex == (widget.totalEpisodes ?? 1) - 1) {
+                      widget.currentEpisodeIndex ==
+                          (widget.totalEpisodes ?? 1) - 1) {
                     _shortDramaControlsKey.currentState?.showToast('已经是最后一集了');
                   }
                 }
@@ -924,13 +936,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   Widget _buildVideoSurface() {
     final useEmbeddedDesktopControls =
-        widget.surface == VideoPlayerSurface.desktop && _adapter is MediaKitAdapter;
+        widget.surface == VideoPlayerSurface.desktop &&
+            _adapter is MediaKitAdapter;
+    final videoKey = _adapter is MediaKitAdapter
+        ? ValueKey(
+            'media_${_currentFitType.name}_${_currentUrl ?? ''}_${widget.surface.name}')
+        : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}');
     Widget videoWidget = _adapter!.buildVideo(
       context,
       fit: _getBoxFit(),
-      key: _adapter is MediaKitAdapter
-          ? _videoKey
-          : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}'),
+      key: videoKey,
       controls: useEmbeddedDesktopControls
           ? (state) => _buildPCControls(state)
           : null,
@@ -1018,52 +1033,53 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       // 这样在滑动切换视频、视频未加载完成时，UI 状态依然保持稳定，不会产生闪烁
       if (widget.isShortDrama && _isFullscreen) {
         return ShortDramaControls(
-          key: _shortDramaControlsKey, // 💡 绑定 Key 以便触发 showToast
-          player: _adapter!,
-          onControlsVisibilityChanged: (visible) {
-            _safeSetState(() => _controlsVisible = visible);
-          },
-          onBackPressed: widget.onBackPressed,
-          onFullscreenChange: (isFullscreen) {
-            if (isFullscreen && widget.isShortDrama) {
-              // 💡 关键修复：进入全屏前，确保 PageController 索引同步
-              if (_shortDramaPageController.initialPage != widget.currentEpisodeIndex) {
-                _shortDramaPageController.dispose();
-                _shortDramaPageController = PageController(initialPage: widget.currentEpisodeIndex ?? 0);
+            key: _shortDramaControlsKey, // 💡 绑定 Key 以便触发 showToast
+            player: _adapter!,
+            onControlsVisibilityChanged: (visible) {
+              _safeSetState(() => _controlsVisible = visible);
+            },
+            onBackPressed: widget.onBackPressed,
+            onFullscreenChange: (isFullscreen) {
+              if (isFullscreen && widget.isShortDrama) {
+                // 💡 关键修复：进入全屏前，确保 PageController 索引同步
+                if (_shortDramaPageController.initialPage !=
+                    widget.currentEpisodeIndex) {
+                  _shortDramaPageController.dispose();
+                  _shortDramaPageController = PageController(
+                      initialPage: widget.currentEpisodeIndex ?? 0);
+                }
               }
-            }
-            _safeSetState(() => _isFullscreen = isFullscreen);
-            widget.onFullscreenChanged?.call(isFullscreen);
-          },
-          onNextEpisode: widget.onNextEpisode,
-          onPause: widget.onPause,
-          videoUrl: _currentUrl ?? '',
-          videoTitle: widget.videoTitle,
-          currentEpisodeIndex: widget.currentEpisodeIndex,
-          totalEpisodes: widget.totalEpisodes,
-          episodesTitles: widget.episodesTitles,
-          live: widget.live,
-          playbackSpeedListenable: _playbackSpeed,
-          onSetSpeed: _setPlaybackSpeed,
-          onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-          onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
-          videoCover: widget.videoCover ?? '',
-          currentSource: widget.currentSource,
-          currentId: widget.currentId,
-          allSources: widget.allSources,
-          allSourcesSpeed: widget.allSourcesSpeed,
-          isFavorite: widget.isFavorite,
-          onFavoriteToggle: widget.onFavoriteToggle,
-          onCastPressed: widget.onCastButtonPressed,
-          onPipPressed: _enterPipMode,
-          isPipMode: _isPipMode, // 💡 传给短剧控制层
-          onEpisodeTap: (index) {
-            widget.onEpisodeChanged?.call(index);
-          },
-          onSourceTap: (source) {
-            widget.onSourceChanged?.call(source);
-          }
-        );
+              _safeSetState(() => _isFullscreen = isFullscreen);
+              widget.onFullscreenChanged?.call(isFullscreen);
+            },
+            onNextEpisode: widget.onNextEpisode,
+            onPause: widget.onPause,
+            videoUrl: _currentUrl ?? '',
+            videoTitle: widget.videoTitle,
+            currentEpisodeIndex: widget.currentEpisodeIndex,
+            totalEpisodes: widget.totalEpisodes,
+            episodesTitles: widget.episodesTitles,
+            live: widget.live,
+            playbackSpeedListenable: _playbackSpeed,
+            onSetSpeed: _setPlaybackSpeed,
+            onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+            onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+            videoCover: widget.videoCover ?? '',
+            currentSource: widget.currentSource,
+            currentId: widget.currentId,
+            allSources: widget.allSources,
+            allSourcesSpeed: widget.allSourcesSpeed,
+            isFavorite: widget.isFavorite,
+            onFavoriteToggle: widget.onFavoriteToggle,
+            onCastPressed: widget.onCastButtonPressed,
+            onPipPressed: _enterPipMode,
+            isPipMode: _isPipMode, // 💡 传给短剧控制层
+            onEpisodeTap: (index) {
+              widget.onEpisodeChanged?.call(index);
+            },
+            onSourceTap: (source) {
+              widget.onSourceChanged?.call(source);
+            });
       }
 
       return MobilePlayerControls(
@@ -1076,9 +1092,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onFullscreenChange: (isFullscreen) {
           if (isFullscreen && widget.isShortDrama) {
             // 💡 关键修复：从普通模式进入全屏前，同步索引
-            if (_shortDramaPageController.initialPage != widget.currentEpisodeIndex) {
+            if (_shortDramaPageController.initialPage !=
+                widget.currentEpisodeIndex) {
               _shortDramaPageController.dispose();
-              _shortDramaPageController = PageController(initialPage: widget.currentEpisodeIndex ?? 0);
+              _shortDramaPageController =
+                  PageController(initialPage: widget.currentEpisodeIndex ?? 0);
             }
           }
           _safeSetState(() => _isFullscreen = isFullscreen);
@@ -1107,8 +1125,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onSourcesButtonPressed: widget.onSourcesButtonPressed,
         onSettingsButtonPressed: widget.onSettingsButtonPressed,
         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-        onDanmakuMatchButtonPressed:
-        widget.onDanmakuMatchButtonPressed,
+        onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,

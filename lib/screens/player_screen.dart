@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/video_info.dart';
 import '../widgets/video_menu_bottom_sheet.dart';
 import '../widgets/video_player_surface.dart';
@@ -46,6 +47,8 @@ class PlayerScreen extends StatefulWidget {
   final String? localPath; // 本地播放路径
   final SearchResult? initialVideoDetail; // 初始详情（用于离线播放）
   final int initialEpisodeIndex; // 初始集数索引
+  final List<String>? localEpisodeIds; // 离线播放时每集对应的任务 ID
+  final List<int>? localEpisodeNumbers; // 离线播放时每集对应的原始集序（1 开始）
 
   const PlayerScreen({
     super.key,
@@ -59,6 +62,8 @@ class PlayerScreen extends StatefulWidget {
     this.localPath,
     this.initialVideoDetail,
     this.initialEpisodeIndex = 0,
+    this.localEpisodeIds,
+    this.localEpisodeNumbers,
   });
 
   @override
@@ -207,6 +212,36 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 💡 关键：为 VideoPlayerWidget 增加专门的全局 Key，确保其在层级移动时不会销毁重建
   final GlobalKey _videoPlayerWidgetKey = GlobalKey();
 
+  String _getLocalRecordId(int episodeIndex) {
+    final ids = widget.localEpisodeIds;
+    if (ids != null && episodeIndex >= 0 && episodeIndex < ids.length) {
+      return ids[episodeIndex];
+    }
+    return currentID;
+  }
+
+  int _getLocalRecordEpisodeNumber(int episodeIndex) {
+    final numbers = widget.localEpisodeNumbers;
+    if (numbers != null &&
+        episodeIndex >= 0 &&
+        episodeIndex < numbers.length &&
+        numbers[episodeIndex] > 0) {
+      return numbers[episodeIndex];
+    }
+    return episodeIndex + 1;
+  }
+
+  int _getLocalEpisodeListIndexByNumber(int episodeNumber) {
+    final numbers = widget.localEpisodeNumbers;
+    if (numbers != null && numbers.isNotEmpty) {
+      final mappedIndex = numbers.indexOf(episodeNumber);
+      if (mappedIndex >= 0) {
+        return mappedIndex;
+      }
+    }
+    return episodeNumber - 1;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -250,6 +285,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _loadSkipSettings();
     // 加载通用播放设置
     _loadPlayerGeneralSettings();
+    _setKeepScreenOn(true);
   }
 
   /// 加载通用播放设置
@@ -558,19 +594,21 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       final localPlayRecords = await LocalModeStorageService.getPlayRecords();
       PlayRecord? matchedRecord;
+      final targetRecordId = _getLocalRecordId(widget.initialEpisodeIndex);
+      final targetEpisodeNumber =
+          _getLocalRecordEpisodeNumber(widget.initialEpisodeIndex);
       for (final record in localPlayRecords) {
-        if (record.id == currentID && record.source == currentSource) {
+        if (record.id == targetRecordId && record.source == currentSource) {
           matchedRecord = record;
           break;
         }
       }
 
       if (matchedRecord == null) {
-        final targetEpisodeIndex = widget.initialEpisodeIndex + 1;
         for (final record in localPlayRecords) {
           if (record.source == currentSource &&
               record.title == localDetail.title &&
-              record.index == targetEpisodeIndex) {
+              record.index == targetEpisodeNumber) {
             matchedRecord = record;
             break;
           }
@@ -579,7 +617,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       if (matchedRecord != null) {
         if (widget.initialEpisodeIndex == 0) {
-          final resumeIndex = matchedRecord.index - 1;
+          final resumeIndex =
+              _getLocalEpisodeListIndexByNumber(matchedRecord.index);
           if (resumeIndex >= 0 && resumeIndex < localDetail.episodes.length) {
             playEpisodeIndex = resumeIndex;
           }
@@ -954,16 +993,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       final totalEpisodesSnapshot = totalEpisodes;
       final searchTitleSnapshot = searchTitle;
       final sourceNameSnapshot = currentDetail?.sourceName ?? currentSource;
+      final recordIDSnapshot = widget.localPath != null
+          ? _getLocalRecordId(currentEpisodeIndexSnapshot)
+          : currentIDSnapshot;
+      final recordEpisodeNumber = widget.localPath != null
+          ? _getLocalRecordEpisodeNumber(currentEpisodeIndexSnapshot)
+          : currentEpisodeIndexSnapshot + 1;
 
       // 创建播放记录对象
       final playRecord = PlayRecord(
-        id: currentIDSnapshot,
+        id: recordIDSnapshot,
         source: currentSourceSnapshot,
         title: videoTitleSnapshot,
         sourceName: sourceNameSnapshot,
         year: videoYearSnapshot,
         cover: videoCoverSnapshot,
-        index: currentEpisodeIndexSnapshot + 1, // 转换为1开始的索引
+        index: recordEpisodeNumber,
         totalEpisodes: totalEpisodesSnapshot,
         playTime: playTime,
         totalTime: totalTime,
@@ -975,7 +1020,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (widget.localPath != null) {
         LocalModeStorageService.savePlayRecord(playRecord).then((_) {
           debugPrint(
-              '保存本地播放进度 [场景: $scene]: source: $currentSourceSnapshot, id: $currentIDSnapshot, 第${currentEpisodeIndexSnapshot + 1}集, 时间: ${playTime}秒');
+              '保存本地播放进度 [场景: $scene]: source: $currentSourceSnapshot, id: $recordIDSnapshot, 第$recordEpisodeNumber集, 时间: ${playTime}秒');
         }).catchError((e) {
           debugPrint('保存本地播放进度失败 [场景: $scene]: $e');
         });
@@ -998,6 +1043,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveProgress(scene: '定时保存');
   }
 
+  Future<void> _setKeepScreenOn(bool enabled) async {
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+    try {
+      if (enabled) {
+        await WakelockPlus.enable();
+      } else {
+        await WakelockPlus.disable();
+      }
+    } catch (e) {
+      debugPrint('设置常亮失败: $e');
+    }
+  }
+
   /// 应用生命周期状态变化
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -1007,6 +1067,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
+        _setKeepScreenOn(false);
         if (DeviceUtils.isPC()) {
           break;
         }
@@ -1014,6 +1075,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _saveProgress(force: true, scene: '应用进入后台');
         break;
       case AppLifecycleState.resumed:
+        _setKeepScreenOn(true);
         if (DeviceUtils.isPC()) {
           break;
         }
@@ -3686,6 +3748,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 _applyDanmakuSettings(settings);
                 dialogSetState(() {});
               },
+              onEnabledChanged: _toggleDanmakuEnabled,
             ),
           );
         }),
@@ -3716,6 +3779,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     _applyDanmakuSettings(settings);
                     dialogSetState(() {});
                   },
+                  onEnabledChanged: _toggleDanmakuEnabled,
                 );
               },
             ),
@@ -4173,6 +4237,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void dispose() {
     // 从活跃实例列表中移除
     _instances.remove(this);
+    _setKeepScreenOn(false);
     // 保存进度
     _saveProgress(force: true, scene: '页面销毁');
     // 取消超时计时器
