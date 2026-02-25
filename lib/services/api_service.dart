@@ -711,31 +711,91 @@ class ApiService {
     }
   }
 
-  /// 私有流式搜索实现
+  /// 私有流式搜索实现（优先 /api/search/ws，失败后降级 /api/search?stream=1）
   static Future<List<SearchResult>?> _fetchSourcesDataStreaming(
     String query, {
     void Function(List<SearchResult>)? onIncrementalResults,
     bool Function(SearchResult)? earlyReturnMatcher,
   }) async {
     final baseUrl = await _getBaseUrl();
-    final cookies = await _getCookies();
     if (baseUrl == null) return null;
 
+    final baseUri = Uri.parse(baseUrl);
+    final streamEndpoints = <MapEntry<String, Uri>>[
+      MapEntry(
+        '/api/search/ws',
+        baseUri.replace(
+          path: '/api/search/ws',
+          queryParameters: {
+            'q': query,
+            'timeout': '30',
+          },
+        ),
+      ),
+      MapEntry(
+        '/api/search?stream=1',
+        baseUri.replace(
+          path: '/api/search',
+          queryParameters: {
+            'q': query,
+            'stream': '1',
+            'timeout': '30',
+          },
+        ),
+      ),
+    ];
+
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (var i = 0; i < streamEndpoints.length; i++) {
+      final endpoint = streamEndpoints[i];
+      try {
+        final results = await _fetchSourcesDataFromStreamUri(
+          endpoint.value,
+          query: query,
+          onIncrementalResults: onIncrementalResults,
+          earlyReturnMatcher: earlyReturnMatcher,
+        );
+        if (results == null) {
+          debugPrint('搜索流端点不可用，准备降级: ${endpoint.key}');
+          continue;
+        }
+
+        final hasMoreFallback = i < streamEndpoints.length - 1;
+        if (results.isEmpty && hasMoreFallback) {
+          debugPrint('搜索流端点返回空结果，尝试下一个端点: ${endpoint.key}');
+          continue;
+        }
+
+        return results;
+      } catch (e, st) {
+        lastError = e;
+        lastStackTrace = st;
+        debugPrint('搜索流端点连接异常: ${endpoint.key}，错误: $e');
+      }
+    }
+
+    if (lastError != null) {
+      Error.throwWithStackTrace(
+          lastError, lastStackTrace ?? StackTrace.current);
+    }
+
+    return null;
+  }
+
+  static Future<List<SearchResult>?> _fetchSourcesDataFromStreamUri(
+    Uri streamUri, {
+    required String query,
+    void Function(List<SearchResult>)? onIncrementalResults,
+    bool Function(SearchResult)? earlyReturnMatcher,
+  }) async {
     final client = http.Client();
     final results = <SearchResult>[];
     final completer = Completer<List<SearchResult>?>();
 
     try {
-      final baseUri = Uri.parse(baseUrl);
-      final sseUri = baseUri.replace(
-        path: '/api/search',
-        queryParameters: {
-          'q': query,
-          'stream': '1',
-        },
-      );
-
-      final request = http.Request('GET', sseUri);
+      final request = http.Request('GET', streamUri);
       final headers = await _buildHeaders();
       request.headers.addAll(headers);
       request.headers['Accept'] = 'text/event-stream';
@@ -748,92 +808,75 @@ class ApiService {
         return null;
       }
 
+      final contentType =
+          streamedResponse.headers['content-type']?.toLowerCase() ?? '';
+      final isEventStream = contentType.contains('text/event-stream');
       String buffer = '';
       const utf8Decoder = Utf8Decoder(allowMalformed: true);
 
-      StreamSubscription<String>? subscription;
-      subscription = streamedResponse.stream.transform(utf8Decoder).listen(
-        (chunk) {
-          buffer += chunk;
-          final lines = buffer.split('\n');
+      bool tryHandlePayload(String rawPayload) {
+        final payload = rawPayload.trim();
+        if (payload.isEmpty || payload == '[DONE]') return false;
 
-          if (lines.isNotEmpty) {
-            buffer = lines.last;
-            lines.removeLast();
+        try {
+          final decoded = json.decode(payload);
+          return _processSearchPayload(
+            decoded,
+            query: query,
+            results: results,
+            completer: completer,
+            onIncrementalResults: onIncrementalResults,
+            earlyReturnMatcher: earlyReturnMatcher,
+          );
+        } catch (_) {
+          return false;
+        }
+      }
+
+      void drainEventStreamBuffer() {
+        while (true) {
+          final separatorIndex = buffer.indexOf('\n\n');
+          if (separatorIndex == -1) break;
+
+          final block = buffer.substring(0, separatorIndex);
+          buffer = buffer.substring(separatorIndex + 2);
+          if (block.trim().isEmpty) continue;
+
+          final dataLines = <String>[];
+          for (final line in block.split('\n')) {
+            if (line.startsWith('data:')) {
+              final dataPart = line.substring(5).trimLeft();
+              if (dataPart.isNotEmpty) dataLines.add(dataPart);
+            }
           }
 
-          for (final line in lines) {
-            if (line.trim().isEmpty) continue;
-            final jsonStr =
-                line.startsWith('data: ') ? line.substring(6) : line;
-            try {
-              final data = json.decode(jsonStr);
-              List<SearchResult> currentResults = [];
+          if (dataLines.isNotEmpty) {
+            tryHandlePayload(dataLines.join('\n'));
+          } else {
+            tryHandlePayload(block);
+          }
+        }
+      }
 
-              // 1. 优先尝试直接匹配需求中的 JSON 结构 (pageResults)
-              if (data['pageResults'] != null) {
-                final pageResultsList = data['pageResults'] as List<dynamic>;
-                currentResults = pageResultsList
-                    .map((item) =>
-                        SearchResult.fromJson(item as Map<String, dynamic>))
-                    .toList();
-              }
-              // 2. 检查失败源
-              else if (data['failedSources'] != null) {
-                debugPrint('SSE检测到失败源: ${data['failedSources']}');
-                continue;
-              }
-              // 3. 如果都不匹配，再尝试作为标准 SearchEvent 解析 (兼容原有逻辑)
-              else {
-                try {
-                  final event =
-                      SearchEvent.fromJson(data as Map<String, dynamic>);
-                  if (event is SearchSourceResultEvent) {
-                    currentResults = event.results;
-                  } else if (event is SearchCompleteEvent) {
-                    if (!completer.isCompleted) {
-                      completer.complete(results);
-                    }
-                    continue;
-                  } else {
-                    // start 事件或其他，继续监听
-                    continue;
-                  }
-                } catch (e) {
-                  // 既不是 pageResults 也不是标准事件，跳过
-                  continue;
-                }
-              }
+      void drainJsonLineBuffer() {
+        final lines = buffer.split('\n');
+        if (lines.isEmpty) return;
+        buffer = lines.removeLast();
 
-              // 处理获取到的结果 (无论来自 pageResults 还是 SearchSourceResultEvent)
-              if (currentResults.isNotEmpty) {
-                results.addAll(currentResults);
+        for (final line in lines) {
+          final payload =
+              line.startsWith('data:') ? line.substring(5).trimLeft() : line;
+          tryHandlePayload(payload);
+        }
+      }
 
-                // 💡 实时回调，让 UI 能够更新后续搜到的源
-                onIncrementalResults?.call(List.from(results));
-
-                // 💡 优化：如果发现标题完全一致的精准匹配结果，提前完成 Future 启动播放器
-                final hasEarlyMatch = currentResults.any((r) {
-                  if (earlyReturnMatcher != null) {
-                    return earlyReturnMatcher(r);
-                  }
-                  final t = r.title.trim().toLowerCase();
-                  final q = query.trim().toLowerCase();
-                  return t == q;
-                });
-
-                if (hasEarlyMatch && !completer.isCompleted) {
-                  if (earlyReturnMatcher != null) {
-                    debugPrint('检测到符合播放筛选条件的结果: $query，提前返回 Future 以启动播放');
-                  } else {
-                    debugPrint('检测到精准匹配结果: $query，提前返回 Future 以启动播放');
-                  }
-                  completer.complete(List.from(results));
-                }
-              }
-            } catch (e) {
-              print('SSE数据解析失败: $e');
-            }
+      streamedResponse.stream.transform(utf8Decoder).listen(
+        (chunk) {
+          buffer += chunk.replaceAll('\r\n', '\n');
+          if (isEventStream) {
+            drainEventStreamBuffer();
+          } else {
+            drainJsonLineBuffer();
           }
         },
         onError: (error) {
@@ -842,6 +885,15 @@ class ApiService {
           }
         },
         onDone: () {
+          final tail = buffer.trim();
+          if (tail.isNotEmpty) {
+            if (!tryHandlePayload(tail)) {
+              for (final line in tail.split('\n')) {
+                tryHandlePayload(line);
+              }
+            }
+          }
+
           if (!completer.isCompleted) {
             completer.complete(results);
           }
@@ -863,6 +915,94 @@ class ApiService {
       client.close();
       rethrow;
     }
+  }
+
+  static bool _processSearchPayload(
+    dynamic data, {
+    required String query,
+    required List<SearchResult> results,
+    required Completer<List<SearchResult>?> completer,
+    void Function(List<SearchResult>)? onIncrementalResults,
+    bool Function(SearchResult)? earlyReturnMatcher,
+  }) {
+    if (completer.isCompleted) return true;
+
+    List<SearchResult> currentResults = [];
+
+    if (data is List) {
+      currentResults = _parseSearchResultsList(data);
+    } else if (data is Map<String, dynamic>) {
+      // 1. 兼容 /api/search?stream=1 返回的 pageResults
+      if (data['pageResults'] is List) {
+        currentResults = _parseSearchResultsList(data['pageResults'] as List);
+      }
+      // 2. 兼容普通接口直接返回 results
+      else if (data['results'] is List) {
+        currentResults = _parseSearchResultsList(data['results'] as List);
+      }
+      // 3. 记录失败源信息
+      else if (data['failedSources'] != null) {
+        debugPrint('SSE检测到失败源: ${data['failedSources']}');
+        return true;
+      }
+      // 4. 兼容标准 SearchEvent
+      else {
+        try {
+          final event = SearchEvent.fromJson(data);
+          if (event is SearchSourceResultEvent) {
+            currentResults = event.results;
+          } else if (event is SearchCompleteEvent) {
+            completer.complete(results);
+            return true;
+          } else {
+            return false;
+          }
+        } catch (_) {
+          return false;
+        }
+      }
+    } else {
+      return false;
+    }
+
+    if (currentResults.isEmpty) return true;
+
+    results.addAll(currentResults);
+    onIncrementalResults?.call(List.from(results));
+
+    final hasEarlyMatch = currentResults.any((r) {
+      if (earlyReturnMatcher != null) {
+        return earlyReturnMatcher(r);
+      }
+      final t = r.title.trim().toLowerCase();
+      final q = query.trim().toLowerCase();
+      return t == q;
+    });
+
+    if (hasEarlyMatch && !completer.isCompleted) {
+      if (earlyReturnMatcher != null) {
+        debugPrint('检测到符合播放筛选条件的结果: $query，提前返回 Future 以启动播放');
+      } else {
+        debugPrint('检测到精准匹配结果: $query，提前返回 Future 以启动播放');
+      }
+      completer.complete(List.from(results));
+    }
+
+    return true;
+  }
+
+  static List<SearchResult> _parseSearchResultsList(List<dynamic> rawList) {
+    final parsedResults = <SearchResult>[];
+    for (final item in rawList) {
+      if (item is Map<String, dynamic>) {
+        parsedResults.add(SearchResult.fromJson(item));
+      } else if (item is Map) {
+        parsedResults.add(
+          SearchResult.fromJson(item.cast<String, dynamic>()),
+        );
+      }
+    }
+    return parsedResults;
   }
 
   /// 获取搜索资源列表
