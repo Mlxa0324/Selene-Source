@@ -550,16 +550,19 @@ class ApiService {
       final baseUrl = await _getBaseUrl();
       if (baseUrl == null) return false;
 
-      final maniestResponse = await http.get(
-        Uri.parse('$baseUrl/login'),
-      ).timeout(const Duration(seconds: 5));
+      final maniestResponse = await http
+          .get(
+            Uri.parse('$baseUrl/login'),
+          )
+          .timeout(const Duration(seconds: 5));
 
       final healthResponse = await http.get(
         Uri.parse('$baseUrl/api/health'),
         headers: {'Accept': 'application/json'},
       ).timeout(const Duration(seconds: 5));
 
-      return healthResponse.statusCode == 200 || maniestResponse.statusCode == 200;
+      return healthResponse.statusCode == 200 ||
+          maniestResponse.statusCode == 200;
     } catch (e) {
       return false;
     }
@@ -650,8 +653,11 @@ class ApiService {
   }
 
   /// 搜索视频源数据
-  static Future<List<SearchResult>> fetchSourcesData(String query,
-      {void Function(List<SearchResult>)? onIncrementalResults}) async {
+  static Future<List<SearchResult>> fetchSourcesData(
+    String query, {
+    void Function(List<SearchResult>)? onIncrementalResults,
+    bool Function(SearchResult)? earlyReturnMatcher,
+  }) async {
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return [];
 
@@ -664,7 +670,8 @@ class ApiService {
     // 尝试流式搜索
     try {
       final results = await _fetchSourcesDataStreaming(cleanQuery,
-          onIncrementalResults: onIncrementalResults);
+          onIncrementalResults: onIncrementalResults,
+          earlyReturnMatcher: earlyReturnMatcher);
       if (results != null && results.isNotEmpty) {
         return results;
       }
@@ -705,8 +712,11 @@ class ApiService {
   }
 
   /// 私有流式搜索实现
-  static Future<List<SearchResult>?> _fetchSourcesDataStreaming(String query,
-      {void Function(List<SearchResult>)? onIncrementalResults}) async {
+  static Future<List<SearchResult>?> _fetchSourcesDataStreaming(
+    String query, {
+    void Function(List<SearchResult>)? onIncrementalResults,
+    bool Function(SearchResult)? earlyReturnMatcher,
+  }) async {
     final baseUrl = await _getBaseUrl();
     final cookies = await _getCookies();
     if (baseUrl == null) return null;
@@ -754,9 +764,8 @@ class ApiService {
 
           for (final line in lines) {
             if (line.trim().isEmpty) continue;
-            final jsonStr = line.startsWith('data: ')
-                ? line.substring(6)
-                : line;
+            final jsonStr =
+                line.startsWith('data: ') ? line.substring(6) : line;
             try {
               final data = json.decode(jsonStr);
               List<SearchResult> currentResults = [];
@@ -804,14 +813,21 @@ class ApiService {
                 onIncrementalResults?.call(List.from(results));
 
                 // 💡 优化：如果发现标题完全一致的精准匹配结果，提前完成 Future 启动播放器
-                final hasExactMatch = currentResults.any((r) {
+                final hasEarlyMatch = currentResults.any((r) {
+                  if (earlyReturnMatcher != null) {
+                    return earlyReturnMatcher(r);
+                  }
                   final t = r.title.trim().toLowerCase();
                   final q = query.trim().toLowerCase();
                   return t == q;
                 });
 
-                if (hasExactMatch && !completer.isCompleted) {
-                  debugPrint('检测到精准匹配结果: $query，提前返回 Future 以启动播放');
+                if (hasEarlyMatch && !completer.isCompleted) {
+                  if (earlyReturnMatcher != null) {
+                    debugPrint('检测到符合播放筛选条件的结果: $query，提前返回 Future 以启动播放');
+                  } else {
+                    debugPrint('检测到精准匹配结果: $query，提前返回 Future 以启动播放');
+                  }
                   completer.complete(List.from(results));
                 }
               }

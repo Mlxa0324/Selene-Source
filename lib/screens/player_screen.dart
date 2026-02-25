@@ -4644,37 +4644,39 @@ class _PlayerScreenState extends State<PlayerScreen>
           final filtered = _filterSearchResults(incrementalResults);
           onIncrementalResults(filtered);
         }
-      });
+      }, earlyReturnMatcher: _matchesSearchResult);
     }
 
     // 返回最终过滤后的全量结果
     return _filterSearchResults(results);
   }
 
+  bool _matchesSearchResult(SearchResult result) {
+    // 标题匹配检查
+    final titleMatch = result.title.replaceAll(' ', '').toLowerCase() ==
+        (videoTitle.replaceAll(' ', '').toLowerCase());
+
+    // 年份匹配检查
+    final yearMatch = videoYear.isEmpty ||
+        videoYear == 'unknown' ||
+        result.year.toLowerCase() == videoYear.toLowerCase();
+
+    // 类型匹配检查
+    bool typeMatch = true;
+    if (widget.stype != null) {
+      if (widget.stype == 'tv') {
+        typeMatch = result.episodes.length > 1;
+      } else if (widget.stype == 'movie') {
+        typeMatch = result.episodes.length == 1;
+      }
+    }
+
+    return titleMatch && typeMatch && yearMatch;
+  }
+
   /// 提取的统一过滤逻辑
   List<SearchResult> _filterSearchResults(List<SearchResult> results) {
-    return results.where((result) {
-      // 标题匹配检查
-      final titleMatch = result.title.replaceAll(' ', '').toLowerCase() ==
-          (videoTitle.replaceAll(' ', '').toLowerCase());
-
-      // 年份匹配检查
-      final yearMatch = videoYear.isEmpty ||
-          videoYear == 'unknown' ||
-          result.year.toLowerCase() == videoYear.toLowerCase();
-
-      // 类型匹配检查
-      bool typeMatch = true;
-      if (widget.stype != null) {
-        if (widget.stype == 'tv') {
-          typeMatch = result.episodes.length > 1;
-        } else if (widget.stype == 'movie') {
-          typeMatch = result.episodes.length == 1;
-        }
-      }
-
-      return titleMatch && typeMatch && yearMatch;
-    }).toList();
+    return results.where(_matchesSearchResult).toList();
   }
 
   @override
