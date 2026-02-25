@@ -267,7 +267,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     if (trace == _lastDanmakuOverlayTrace) return;
     _lastDanmakuOverlayTrace = trace;
-    debugPrint('[DanmakuLayer] video_widget: $trace');
+    // debugPrint('[DanmakuLayer] video_widget: $trace');
   }
 
   void _safeSetState(VoidCallback fn) {

@@ -249,6 +249,94 @@ class _PlayerScreenState extends State<PlayerScreen>
     return episodeNumber - 1;
   }
 
+  String? _getCurrentEpisodeTitleForDanmaku() {
+    final titles = currentDetail?.episodesTitles;
+    if (titles == null ||
+        currentEpisodeIndex < 0 ||
+        currentEpisodeIndex >= titles.length) {
+      return null;
+    }
+    final text = titles[currentEpisodeIndex].trim();
+    return text.isEmpty ? null : text;
+  }
+
+  int? _extractEpisodeNumberFromText(String? text) {
+    if (text == null || text.isEmpty) return null;
+    final patterns = <RegExp>[
+      RegExp(r'[第EPep]\s*(\d{1,4})'),
+      RegExp(r'(\d{1,4})\s*[集话期回]'),
+      RegExp(r'S\d{1,2}\s*E(\d{1,4})', caseSensitive: false),
+      RegExp(r'^\s*(\d{1,4})\s*$'),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      if (match != null) {
+        final value = int.tryParse(match.group(1) ?? '');
+        if (value != null && value > 0) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  int _getDanmakuMatchEpisodeIndex() {
+    if (currentSource != 'local') {
+      return currentEpisodeIndex;
+    }
+
+    final mappedByNumber = _getLocalRecordEpisodeNumber(currentEpisodeIndex);
+    if (mappedByNumber > 0) {
+      return mappedByNumber - 1;
+    }
+
+    final parsed =
+        _extractEpisodeNumberFromText(_getCurrentEpisodeTitleForDanmaku());
+    if (parsed != null && parsed > 0) {
+      return parsed - 1;
+    }
+
+    return currentEpisodeIndex;
+  }
+
+  List<String> _buildDanmakuMatchFileNames() {
+    final sourceName = currentDetail?.sourceName ?? currentSource;
+    final episodeTitle = _getCurrentEpisodeTitleForDanmaku();
+    final matchEpisodeIndex = _getDanmakuMatchEpisodeIndex();
+    final candidates = <String>[];
+
+    void addCandidate(String value) {
+      if (!candidates.contains(value)) {
+        candidates.add(value);
+      }
+    }
+
+    addCandidate(DanmakuService.buildFileName(
+      videoTitle,
+      matchEpisodeIndex,
+      sourceName,
+    ));
+
+    if (episodeTitle != null) {
+      addCandidate(DanmakuService.buildFileName(
+        '$videoTitle $episodeTitle',
+        null,
+        sourceName,
+      ));
+
+      final parsedEpisode = _extractEpisodeNumberFromText(episodeTitle);
+      if (parsedEpisode != null && parsedEpisode > 0) {
+        addCandidate(DanmakuService.buildFileName(
+          videoTitle,
+          parsedEpisode - 1,
+          sourceName,
+        ));
+      }
+    }
+
+    return candidates;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -408,7 +496,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (trace == _lastDanmakuLayerLayoutTrace) return;
     _lastDanmakuLayerLayoutTrace = trace;
 
-    debugPrint('[DanmakuLayer] layout: $trace');
+    // debugPrint('[DanmakuLayer] layout: $trace');
   }
 
   void _syncDanmakuPlaybackState({
@@ -512,30 +600,28 @@ class _PlayerScreenState extends State<PlayerScreen>
     try {
       int? episodeId;
 
+      final danmakuMatchEpisodeIndex = _getDanmakuMatchEpisodeIndex();
+
       // 1. 优先尝试获取手动匹配的 ID
       if (currentSource.isNotEmpty && currentID.isNotEmpty) {
         episodeId = await DanmakuService().getManualMatch(
           currentSource,
           currentID,
-          currentEpisodeIndex,
+          danmakuMatchEpisodeIndex,
         );
       }
 
       // 2. 如果没有手动匹配，则进行自动匹配
       if (episodeId == null) {
-        // 构建匹配文件名
-        final fileName = DanmakuService.buildFileName(
-          videoTitle,
-          currentEpisodeIndex,
-          currentDetail?.sourceName ?? currentSource,
-        );
-
-        // 匹配弹幕源
-        final matchResult = await DanmakuService().matchDanmaku(fileName);
-        if (matchResult != null &&
-            matchResult.isMatched &&
-            matchResult.matches.isNotEmpty) {
-          episodeId = matchResult.matches.first.episodeId;
+        final fileNames = _buildDanmakuMatchFileNames();
+        for (final fileName in fileNames) {
+          final matchResult = await DanmakuService().matchDanmaku(fileName);
+          if (matchResult != null &&
+              matchResult.isMatched &&
+              matchResult.matches.isNotEmpty) {
+            episodeId = matchResult.matches.first.episodeId;
+            break;
+          }
         }
       }
 
@@ -801,7 +887,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 2. 💡 强制等待 2 秒搜源窗口，确保获取足够多的候选源
     await Future.any([
       searchJob,
-      Future.delayed(const Duration(seconds: 2)),
+      Future.delayed(const Duration(seconds: 4)),
     ]);
 
     // 获取当前已搜到的所有结果
@@ -1919,7 +2005,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (viewportObject is! RenderBox ||
             !viewportObject.attached ||
             !viewportObject.hasSize) {
-          debugPrint('[EpisodeLocate] estimate_visible_skip: no_viewport');
+          // debugPrint('[EpisodeLocate] estimate_visible_skip: no_viewport');
           return null;
         }
 
@@ -2026,21 +2112,21 @@ class _PlayerScreenState extends State<PlayerScreen>
         final cardContext = targetKey?.currentContext;
 
         if (cardContext == null) {
-          debugPrint('[EpisodeLocate] reveal_skip($stage): no_context');
+          // debugPrint('[EpisodeLocate] reveal_skip($stage): no_context');
           return null;
         }
 
         final scrollable = Scrollable.maybeOf(cardContext);
         if (scrollable == null ||
             scrollable.widget.controller != _episodesScrollController) {
-          debugPrint('[EpisodeLocate] reveal_skip($stage): wrong_scrollable');
+          // debugPrint('[EpisodeLocate] reveal_skip($stage): wrong_scrollable');
           return null;
         }
 
         final renderObject = cardContext.findRenderObject();
         if (renderObject == null || !renderObject.attached) {
-          debugPrint(
-              '[EpisodeLocate] reveal_skip($stage): detached_render_object');
+          // debugPrint(
+          // '[EpisodeLocate] reveal_skip($stage): detached_render_object');
           return null;
         }
 
@@ -3816,10 +3902,11 @@ class _PlayerScreenState extends State<PlayerScreen>
 
         // 保存手动匹配关系
         if (currentSource.isNotEmpty && currentID.isNotEmpty) {
+          final danmakuMatchEpisodeIndex = _getDanmakuMatchEpisodeIndex();
           await DanmakuService().saveManualMatch(
             currentSource,
             currentID,
-            currentEpisodeIndex,
+            danmakuMatchEpisodeIndex,
             episodeId,
           );
         }
