@@ -209,6 +209,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _isDanmakuLoading = false;
   bool _danmakuShouldPlay = false;
   bool _hasExplicitDanmakuState = false;
+  int _danmakuControllerCreateCount = 0;
+  int _danmakuViewportVersion = 0;
+  String _lastDanmakuLayerLayoutTrace = '';
 
   // 播放器的 GlobalKey，用于保持播放器状态
   // final GlobalKey _playerKey = GlobalKey();
@@ -396,6 +399,18 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 加载弹幕数据
 
+  void _traceDanmakuLayerLayout(BoxConstraints constraints) {
+    final baseHeight = constraints.maxHeight;
+    final layerHeight = baseHeight * _danmakuSettings.displayArea;
+    final trace =
+        'w=${constraints.maxWidth.toStringAsFixed(2)},h=${baseHeight.toStringAsFixed(2)},layer=${layerHeight.toStringAsFixed(2)},ep=$_currentDanmakuEpisodeId,full=$_isFullscreen,web=$_isWebFullscreen';
+
+    if (trace == _lastDanmakuLayerLayoutTrace) return;
+    _lastDanmakuLayerLayoutTrace = trace;
+
+    debugPrint('[DanmakuLayer] layout: $trace');
+  }
+
   void _syncDanmakuPlaybackState({
     required String reason,
     bool? forcePlaying,
@@ -421,8 +436,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       _danmakuController?.pause();
     }
 
+    final controllerHash = _danmakuController == null
+        ? 'null'
+        : identityHashCode(_danmakuController);
     debugPrint(
-        '[DanmakuSync] reason=$reason, force=$forcePlaying, player=$playerPlaying, applied=$shouldPlay');
+        '[DanmakuSync] reason=$reason, force=$forcePlaying, player=$playerPlaying, applied=$shouldPlay, controller=$controllerHash, list=${_danmakuList.length}, ep=$_currentDanmakuEpisodeId, full=$_isFullscreen, web=$_isWebFullscreen');
   }
 
   void _rebaseDanmakuCursorToCurrentPosition({
@@ -438,8 +456,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     _lastDanmakuCheckTime = -1;
     _resetDanmakuIndex(pos);
 
+    final controllerHash = _danmakuController == null
+        ? 'null'
+        : identityHashCode(_danmakuController);
     debugPrint(
-        '[DanmakuSync] rebase: reason=$reason, position=${pos.inMilliseconds}ms, index=$_danmakuIndex');
+        '[DanmakuSync] rebase: reason=$reason, position=${pos.inMilliseconds}ms, index=$_danmakuIndex, controller=$controllerHash, list=${_danmakuList.length}, ep=$_currentDanmakuEpisodeId, full=$_isFullscreen, web=$_isWebFullscreen');
 
     if (!triggerNow) return;
 
@@ -451,12 +472,28 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _handleDanmakuControllerCreated(DanmakuController controller) {
+    final prevHash = _danmakuController == null
+        ? 'null'
+        : identityHashCode(_danmakuController);
+    final nextHash = identityHashCode(controller);
     _danmakuController = controller;
+    _danmakuControllerCreateCount++;
+
+    debugPrint(
+        '[DanmakuLayer] controller_created: count=$_danmakuControllerCreateCount, prev=$prevHash, next=$nextHash, ep=$_currentDanmakuEpisodeId, list=${_danmakuList.length}, full=$_isFullscreen, web=$_isWebFullscreen');
 
     // Avoid pause/resume during DanmakuScreen init build phase.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!identical(_danmakuController, controller)) return;
+      if (!mounted) {
+        debugPrint(
+            '[DanmakuLayer] controller_postframe_skip: not_mounted, next=$nextHash');
+        return;
+      }
+      if (!identical(_danmakuController, controller)) {
+        debugPrint(
+            '[DanmakuLayer] controller_postframe_skip: stale_controller, next=$nextHash, current=${identityHashCode(_danmakuController)}');
+        return;
+      }
 
       _rebaseDanmakuCursorToCurrentPosition(
           reason: 'controller_created', triggerNow: true);
@@ -1380,9 +1417,22 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _onFullscreenChanged(bool isFullscreen) {
+    final prev = _isFullscreen;
+    final changed = prev != isFullscreen;
+    debugPrint(
+        '[FullscreenTrace] source=player_screen, event=onFullscreenChanged, prev=$prev, next=$isFullscreen, web=$_isWebFullscreen, ep=$_currentDanmakuEpisodeId, list=${_danmakuList.length}');
+
     setState(() {
       _isFullscreen = isFullscreen;
+      if (changed && DeviceUtils.isPC()) {
+        // Desktop DanmakuScreen needs a hard refresh after fullscreen resize.
+        _danmakuViewportVersion++;
+      }
     });
+    if (changed && DeviceUtils.isPC()) {
+      debugPrint(
+          '[DanmakuLayer] viewport_reset: full=$isFullscreen, version=$_danmakuViewportVersion, ep=$_currentDanmakuEpisodeId');
+    }
 
     // Keep episode list aligned after fullscreen toggle.
     _scrollToCurrentEpisode();
@@ -2137,6 +2187,9 @@ class _PlayerScreenState extends State<PlayerScreen>
             isShortDrama: _isShortDrama,
             isLocal: widget.localPath != null,
             onWebFullscreenChanged: (isWebFullscreen) {
+              final prevWeb = _isWebFullscreen;
+              debugPrint(
+                  '[FullscreenTrace] source=player_screen, event=onWebFullscreenChanged, prev=$prevWeb, next=$isWebFullscreen, full=$_isFullscreen, ep=$_currentDanmakuEpisodeId');
               setState(() {
                 _isWebFullscreen = isWebFullscreen;
               });
@@ -2190,14 +2243,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                     child: LayoutBuilder(builder: (context, constraints) {
                       // 💡 统一按播放器真实高度比例裁剪显示区域
                       final baseHeight = constraints.maxHeight;
+                      _traceDanmakuLayerLayout(constraints);
 
                       return Align(
                         alignment: Alignment.topCenter,
                         child: SizedBox(
                           height: baseHeight * _danmakuSettings.displayArea,
                           child: DanmakuScreen(
-                            key:
-                                ValueKey('danmaku_${_currentDanmakuEpisodeId}'),
+                            key: ValueKey(
+                                'danmaku_${_currentDanmakuEpisodeId}_v$_danmakuViewportVersion'),
                             createdController: (controller) {
                               _handleDanmakuControllerCreated(controller);
                             },
@@ -4654,82 +4708,88 @@ class _PlayerScreenState extends State<PlayerScreen>
                 if (Platform.isWindows) const WindowsTitleBar(),
                 // 主要内容
                 Expanded(
-                  child: Stack(
-                    children: [
-                      // 主要内容（不包含播放器）
-                      if (!_isWebFullscreen)
-                        if (_isTablet && !_isPortraitTablet)
-                          // 平板横屏模式：左右布局
-                          _buildTabletLandscapeLayout(theme)
-                        else if (_isPortraitTablet)
-                          // 平板竖屏模式：上下布局，播放器占50%高度
-                          _buildPortraitTabletLayout(theme)
-                        else
-                          // 手机模式：保持原有布局
-                          _buildPhoneLayout(theme),
-                      // 播放器层（使用 Positioned 控制位置和大小）
-                      _buildPlayerLayer(theme),
-                      // 选集面板(从右侧滑入,仅手机横屏模式)
-                      if (!_isTablet)
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          top: 0,
-                          bottom: 0,
-                          right: _isEpisodesPanelVisible ? 0 : -400,
-                          width: 400,
-                          child: PlayerEpisodesPanel(
-                            theme: theme,
-                            episodes: currentDetail?.episodes ?? [],
-                            episodesTitles: currentDetail?.episodesTitles ?? [],
-                            currentEpisodeIndex: currentEpisodeIndex,
-                            isReversed: _isEpisodesReversed,
-                            onEpisodeTap: (index) {
-                              setState(() {
-                                _isEpisodesPanelVisible = false;
-                              });
-                              _onEpisodeTap(index);
-                            },
-                            onToggleOrder: () {
-                              setState(() {
-                                _isEpisodesReversed = !_isEpisodesReversed;
-                              });
-                            },
-                            crossAxisCount: 4,
-                          ),
-                        ),
-                      // 换源面板(从右侧滑入,仅手机横屏模式)
-                      if (!_isTablet)
-                        AnimatedPositioned(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeInOut,
-                          top: 0,
-                          bottom: 0,
-                          right: _isSourcesPanelVisible ? 0 : -400,
-                          width: 400,
-                          child: PlayerSourcesPanel(
-                            theme: theme,
-                            sources: allSources,
-                            currentSource: currentSource,
-                            currentId: currentID,
-                            sourcesSpeed: allSourcesSpeed,
-                            onSourceTap: (source) {
-                              setState(() {
-                                _isSourcesPanelVisible = false;
-                              });
-                              _onSourceTap(source);
-                            },
-                            onRefresh: _refreshSources,
-                            videoCover: videoCover,
-                            videoTitle: videoTitle,
-                          ),
-                        ),
-                      // 错误覆盖层
-                      if (_showError && _errorMessage != null)
-                        _buildErrorOverlay(theme),
-                      // 加载覆盖层
-                      if (_isLoading) _buildLoadingOverlay(theme),
-                    ],
+                  child: LayoutBuilder(
+                    builder: (context, stackConstraints) {
+                      return Stack(
+                        children: [
+                          // Main content (without player).
+                          if (!_isWebFullscreen)
+                            if (_isTablet && !_isPortraitTablet)
+                              // Tablet landscape layout.
+                              _buildTabletLandscapeLayout(
+                                  theme, stackConstraints)
+                            else if (_isPortraitTablet)
+                              // Tablet portrait layout, player takes 50% height.
+                              _buildPortraitTabletLayout(theme)
+                            else
+                              // Phone layout.
+                              _buildPhoneLayout(theme),
+                          // Player layer positioned over the content stack.
+                          _buildPlayerLayer(theme, stackConstraints),
+                          // Episode panel (slide in from right, phone landscape only).
+                          if (!_isTablet)
+                            AnimatedPositioned(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              top: 0,
+                              bottom: 0,
+                              right: _isEpisodesPanelVisible ? 0 : -400,
+                              width: 400,
+                              child: PlayerEpisodesPanel(
+                                theme: theme,
+                                episodes: currentDetail?.episodes ?? [],
+                                episodesTitles:
+                                    currentDetail?.episodesTitles ?? [],
+                                currentEpisodeIndex: currentEpisodeIndex,
+                                isReversed: _isEpisodesReversed,
+                                onEpisodeTap: (index) {
+                                  setState(() {
+                                    _isEpisodesPanelVisible = false;
+                                  });
+                                  _onEpisodeTap(index);
+                                },
+                                onToggleOrder: () {
+                                  setState(() {
+                                    _isEpisodesReversed = !_isEpisodesReversed;
+                                  });
+                                },
+                                crossAxisCount: 4,
+                              ),
+                            ),
+                          // Source panel (slide in from right, phone landscape only).
+                          if (!_isTablet)
+                            AnimatedPositioned(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeInOut,
+                              top: 0,
+                              bottom: 0,
+                              right: _isSourcesPanelVisible ? 0 : -400,
+                              width: 400,
+                              child: PlayerSourcesPanel(
+                                theme: theme,
+                                sources: allSources,
+                                currentSource: currentSource,
+                                currentId: currentID,
+                                sourcesSpeed: allSourcesSpeed,
+                                onSourceTap: (source) {
+                                  setState(() {
+                                    _isSourcesPanelVisible = false;
+                                  });
+                                  _onSourceTap(source);
+                                },
+                                onRefresh: _refreshSources,
+                                videoCover: videoCover,
+                                videoTitle: videoTitle,
+                              ),
+                            ),
+                          // Error overlay.
+                          if (_showError && _errorMessage != null)
+                            _buildErrorOverlay(theme),
+                          // Loading overlay.
+                          if (_isLoading) _buildLoadingOverlay(theme),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ],
@@ -4741,7 +4801,25 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 构建播放器层（使用 Positioned 控制位置和大小）
-  Widget _buildPlayerLayer(ThemeData theme) {
+  double _computeTabletLandscapePlayerHeight({
+    required double stackWidth,
+    required double stackHeight,
+    required double topOffset,
+  }) {
+    final availableHeight = math.max(0.0, stackHeight - topOffset);
+    final leftWidth = stackWidth * 0.65;
+    final playerHeightByAspect = leftWidth / (16 / 9);
+    const minDetailHeight = 220.0;
+    final maxPlayerHeight = math.max(0.0, availableHeight - minDetailHeight);
+    return maxPlayerHeight <= 0
+        ? (availableHeight * 0.5)
+        : math.min(playerHeightByAspect, maxPlayerHeight);
+  }
+
+  Widget _buildPlayerLayer(
+    ThemeData theme,
+    BoxConstraints? stackConstraints,
+  ) {
     if (_isClosing) return const SizedBox.shrink();
 
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
@@ -4778,9 +4856,16 @@ class _PlayerScreenState extends State<PlayerScreen>
       // 非网页全屏模式：根据不同布局计算播放器位置
       if (_isTablet && !_isPortraitTablet) {
         // 平板横屏模式：播放器在左侧65%区域
-        final screenWidth = MediaQuery.of(context).size.width;
+        final screenWidth =
+            stackConstraints?.maxWidth ?? MediaQuery.of(context).size.width;
+        final stackHeight =
+            stackConstraints?.maxHeight ?? MediaQuery.of(context).size.height;
         final leftWidth = screenWidth * 0.65;
-        final playerHeight = leftWidth / (16 / 9);
+        final playerHeight = _computeTabletLandscapePlayerHeight(
+          stackWidth: screenWidth,
+          stackHeight: stackHeight,
+          topOffset: topOffset,
+        );
 
         return Positioned(
           top: topOffset,
@@ -4884,12 +4969,20 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 构建平板横屏模式布局（不包含播放器）
-  Widget _buildTabletLandscapeLayout(ThemeData theme) {
+  Widget _buildTabletLandscapeLayout(
+      ThemeData theme, BoxConstraints stackConstraints) {
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final leftWidth = screenWidth * 0.65;
-    final playerHeight = leftWidth / (16 / 9);
+    final stackWidth =
+        stackConstraints.maxWidth.isFinite ? stackConstraints.maxWidth : 0.0;
+    final stackHeight =
+        stackConstraints.maxHeight.isFinite ? stackConstraints.maxHeight : 0.0;
+    final topOffset = statusBarHeight + macOSPadding;
+    final playerHeight = _computeTabletLandscapePlayerHeight(
+      stackWidth: stackWidth,
+      stackHeight: stackHeight,
+      topOffset: topOffset,
+    );
 
     return Column(
       children: [
@@ -4900,12 +4993,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         Expanded(
           child: Row(
             children: [
-              // 左侧：播放器和详情（65%）
+              // Left side: player and detail (65%).
               Expanded(
                 flex: 65,
                 child: Column(
                   children: [
-                    // 播放器占位空间
+                    // Player placeholder area.
                     SizedBox(height: playerHeight),
                     Expanded(
                       child: _buildVideoDetailSection(theme),
@@ -4913,7 +5006,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ],
                 ),
               ),
-              // 右侧：详情面板（35%）
+              // Right side: detail panel (35%).
               Expanded(
                 flex: 35,
                 child: Container(

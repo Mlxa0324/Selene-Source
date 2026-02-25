@@ -233,10 +233,42 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   late VideoFitType _currentFitType;
   bool _controlsVisible = true;
   bool _isFullscreen = false; // 💡 新增：记录内部全屏状态
+  String _lastDanmakuOverlayTrace = '';
   late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
   final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey =
       GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
+
+  bool _isDesktopFullscreenState(mkv.VideoState? state) {
+    if (widget.surface != VideoPlayerSurface.desktop) return false;
+    try {
+      return state?.isFullscreen() ?? _isFullscreen;
+    } catch (_) {
+      return _isFullscreen;
+    }
+  }
+
+  void _traceDanmakuOverlay({
+    required String reason,
+    mkv.VideoState? state,
+    bool? renderOuter,
+    bool? renderInner,
+  }) {
+    final hasLayer = widget.danmakuLayer != null;
+    bool? stateFullscreen;
+    try {
+      stateFullscreen = state?.isFullscreen();
+    } catch (_) {
+      stateFullscreen = null;
+    }
+
+    final trace =
+        'reason=$reason,surface=${widget.surface.name},hasLayer=$hasLayer,innerFull=$_isFullscreen,stateFull=$stateFullscreen,web=${widget.onWebFullscreenChanged != null},controls=$_controlsVisible,outer=$renderOuter,inner=$renderInner';
+
+    if (trace == _lastDanmakuOverlayTrace) return;
+    _lastDanmakuOverlayTrace = trace;
+    debugPrint('[DanmakuLayer] video_widget: $trace');
+  }
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
@@ -848,6 +880,19 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     // 提前构建视频表面
     final Widget videoSurface = _buildVideoSurface();
+    final useEmbeddedDesktopControls =
+        widget.surface == VideoPlayerSurface.desktop &&
+            _adapter is MediaKitAdapter;
+    final renderOuterDanmaku = widget.danmakuLayer != null &&
+        !(widget.surface == VideoPlayerSurface.desktop &&
+            useEmbeddedDesktopControls);
+    _traceDanmakuOverlay(
+      reason: 'build',
+      renderOuter: renderOuterDanmaku,
+      renderInner: widget.danmakuLayer != null &&
+          widget.surface == VideoPlayerSurface.desktop &&
+          useEmbeddedDesktopControls,
+    );
 
     // 💡 结构优化：视频表面永远保持在同一个 Transform 结构下，防止 Widget 树跳变导致黑屏
     return Container(
@@ -882,7 +927,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
           // 2. 弹幕层
           // 💡 PC 端统一交给 Video 控制层内部渲染，避免全屏切换时弹幕层在树中迁移导致丢失。
-          if (widget.danmakuLayer != null)
+          if (renderOuterDanmaku)
             Positioned.fill(
               top: (widget.isShortDrama &&
                       _isFullscreen &&
@@ -979,13 +1024,24 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   Widget _buildPCControls(mkv.VideoState? state) {
+    final renderInnerDanmaku = widget.danmakuLayer != null;
+    _traceDanmakuOverlay(
+      reason: 'pc_controls_build',
+      state: state,
+      renderInner: renderInnerDanmaku,
+    );
+
     return Stack(
       children: [
+        if (renderInnerDanmaku)
+          Positioned.fill(
+            child: RepaintBoundary(child: widget.danmakuLayer!),
+          ),
         // 控制层
         PCPlayerControls(
           state: state,
           player: _adapter!,
-          isFullscreen: _isFullscreen,
+          isFullscreen: _isDesktopFullscreenState(state),
           onBackPressed: widget.onBackPressed,
           onNextEpisode: widget.onNextEpisode,
           onPause: widget.onPause,
@@ -1006,12 +1062,38 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           },
           onExitFullScreen: widget.onExitFullScreen,
           onFullscreenChange: (isFullscreen) {
+            _traceDanmakuOverlay(
+              reason: 'pc_controls_callback_before',
+              state: state,
+              renderOuter: widget.danmakuLayer != null &&
+                  !(widget.surface == VideoPlayerSurface.desktop &&
+                      _adapter is MediaKitAdapter),
+              renderInner: widget.danmakuLayer != null &&
+                  widget.surface == VideoPlayerSurface.desktop &&
+                  _adapter is MediaKitAdapter,
+            );
             if (_isFullscreen != isFullscreen) {
+              final prev = _isFullscreen;
+              debugPrint(
+                  '[FullscreenTrace] source=video_widget, event=pc_controls_callback, prev=$prev, next=$isFullscreen');
               _safeSetState(() {
                 _isFullscreen = isFullscreen;
               });
-              widget.onFullscreenChanged?.call(isFullscreen);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                widget.onFullscreenChanged?.call(isFullscreen);
+              });
             }
+            _traceDanmakuOverlay(
+              reason: 'pc_controls_callback_after',
+              state: state,
+              renderOuter: widget.danmakuLayer != null &&
+                  !(widget.surface == VideoPlayerSurface.desktop &&
+                      _adapter is MediaKitAdapter),
+              renderInner: widget.danmakuLayer != null &&
+                  widget.surface == VideoPlayerSurface.desktop &&
+                  _adapter is MediaKitAdapter,
+            );
           },
           isDanmakuEnabled: widget.isDanmakuEnabled,
           onDanmakuToggle: widget.onDanmakuToggle,

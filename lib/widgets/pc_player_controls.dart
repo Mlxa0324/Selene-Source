@@ -154,11 +154,33 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   double _volumeBeforeMute = 1.0;
   Timer? _volumeMenuHideTimer;
   final FocusNode _focusNode = FocusNode();
+  bool? _lastNotifiedFullscreen;
+
+  void _traceFullscreenEvent(
+    String event, {
+    bool? target,
+    bool? actual,
+  }) {
+    debugPrint(
+        '[FullscreenTrace] source=pc_controls, event=$event, local=$_isFullscreen, widget=${widget.isFullscreen}, web=$_isWebFullscreen, hasState=${widget.state != null}, target=$target, actual=$actual');
+  }
+
+  void _notifyFullscreenChangeAsync(bool value, {required String reason}) {
+    if (_lastNotifiedFullscreen == value) return;
+    _lastNotifiedFullscreen = value;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _traceFullscreenEvent('notify_parent', target: value, actual: value);
+      widget.onFullscreenChange?.call(value);
+    });
+  }
 
   @override
   void initState() {
     super.initState();
     _isFullscreen = widget.isFullscreen;
+    _lastNotifiedFullscreen = _isFullscreen;
     _setupPlayerListeners();
     // 注册退出网页全屏的回调
     widget.onExitWebFullscreenCallbackReady?.call(exitWebFullscreen);
@@ -226,7 +248,14 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     if (widget.state != null) {
       // 使用 try-catch 避免在不安全的时机访问 InheritedWidget
       try {
-        final actualFullscreen = widget.state!.isFullscreen();
+        final videoState = widget.state!;
+        if (!videoState.mounted) {
+          _traceFullscreenEvent('did_update_state_skip_unmounted');
+          return;
+        }
+        final actualFullscreen = videoState.isFullscreen();
+        _traceFullscreenEvent('did_update_state_read',
+            actual: actualFullscreen);
         if (_isFullscreen != actualFullscreen) {
           // 检测到从全屏退出
           if (_isFullscreen && !actualFullscreen) {
@@ -235,10 +264,13 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
           setState(() {
             _isFullscreen = actualFullscreen;
           });
-          // 💡 通知父组件状态变化
-          widget.onFullscreenChange?.call(actualFullscreen);
+          // Notify parent next frame to avoid setState during build.
+          _notifyFullscreenChangeAsync(actualFullscreen,
+              reason: 'did_update_state');
         }
       } catch (e) {
+        debugPrint(
+            '[FullscreenTrace] source=pc_controls, event=did_update_state_error, error=$e');
         // 如果无法安全获取状态，保持当前状态不变
       }
     } else if (_isFullscreen != widget.isFullscreen) {
@@ -346,6 +378,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   void _onBlankAreaDoubleTap() {
+    _traceFullscreenEvent('double_tap');
     // 双击空白区域切换全屏
     // 如果在网页全屏模式，先切换到真全屏
     if (_isWebFullscreen && !_isFullscreen) {
@@ -385,7 +418,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   void _onSwipeUpdate(DragUpdateDetails details) {
-    if (!mounted || !_isSeekingViaSwipe || _screenSize == null || widget.live) return;
+    if (!mounted || !_isSeekingViaSwipe || _screenSize == null || widget.live)
+      return;
 
     final screenWidth = _screenSize!.width;
     final swipeDistance = details.globalPosition.dx - _swipeStartX;
@@ -420,6 +454,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   void _toggleFullscreen() {
+    _traceFullscreenEvent('toggle_start', target: !_isFullscreen);
     if (widget.state != null) {
       // 直接触发全屏切换，不要提前更新本地状态
       // 状态会在 didUpdateWidget 中同步
@@ -428,6 +463,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
       } else {
         widget.state!.enterFullscreen();
       }
+      _traceFullscreenEvent('toggle_delegate_to_state', target: !_isFullscreen);
       return;
     }
 
@@ -435,13 +471,15 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     setState(() {
       _isFullscreen = nextFullscreen;
     });
-    widget.onFullscreenChange?.call(nextFullscreen);
+    _traceFullscreenEvent('toggle_local_applied', target: nextFullscreen);
+    _notifyFullscreenChangeAsync(nextFullscreen, reason: 'toggle_local');
     if (!nextFullscreen) {
       widget.onExitFullScreen?.call();
     }
   }
 
   void _toggleWebFullscreen() {
+    _traceFullscreenEvent('web_toggle_start');
     final wasWebFullscreen = _isWebFullscreen;
     setState(() {
       _isWebFullscreen = !_isWebFullscreen;
@@ -545,8 +583,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
         final newPosition = currentPosition - const Duration(seconds: 10);
         final duration = widget.player.state.duration;
         final clampedPosition = Duration(
-          milliseconds: newPosition.inMilliseconds
-              .clamp(0, duration.inMilliseconds),
+          milliseconds:
+              newPosition.inMilliseconds.clamp(0, duration.inMilliseconds),
         );
         widget.player.seek(clampedPosition);
         // 显示控制栏
@@ -988,8 +1026,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                   _isHoveringSpeedButton = false;
                                 });
                                 // 延迟检查是否需要隐藏菜单
-                                Future.delayed(const Duration(milliseconds: 100),
-                                    () {
+                                Future.delayed(
+                                    const Duration(milliseconds: 100), () {
                                   if (mounted &&
                                       !_isHoveringSpeedButton &&
                                       !_isHoveringSpeedMenu) {
@@ -1005,7 +1043,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                 decoration: _isHoveringSpeedButton
                                     ? BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: Colors.grey.withValues(alpha: 0.5),
+                                        color:
+                                            Colors.grey.withValues(alpha: 0.5),
                                       )
                                     : null,
                                 child: Icon(
@@ -1067,8 +1106,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                   _isHoveringDanmakuButton = false;
                                 });
                                 // 延迟检查是否需要隐藏菜单
-                                Future.delayed(const Duration(milliseconds: 100),
-                                    () {
+                                Future.delayed(
+                                    const Duration(milliseconds: 100), () {
                                   if (mounted &&
                                       !_isHoveringDanmakuButton &&
                                       !_isHoveringDanmakuMenu) {
@@ -1091,8 +1130,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                   decoration: _isHoveringDanmakuButton
                                       ? BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color:
-                                              Colors.grey.withValues(alpha: 0.5),
+                                          color: Colors.grey
+                                              .withValues(alpha: 0.5),
                                         )
                                       : null,
                                   child: Icon(
@@ -1469,7 +1508,9 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
           });
           // 延迟检查是否需要隐藏菜单
           Future.delayed(const Duration(milliseconds: 100), () {
-            if (mounted && !_isHoveringDanmakuButton && !_isHoveringDanmakuMenu) {
+            if (mounted &&
+                !_isHoveringDanmakuButton &&
+                !_isHoveringDanmakuMenu) {
               setState(() {
                 _showDanmakuMenu = false;
               });
@@ -1582,20 +1623,20 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                         _buildDanmakuChip(
                           label: '防重叠',
                           selected: settings.preventOverlap,
-                          onTap: () => _updateDanmakuSettings(
-                              settings.copyWith(preventOverlap: !settings.preventOverlap)),
+                          onTap: () => _updateDanmakuSettings(settings.copyWith(
+                              preventOverlap: !settings.preventOverlap)),
                         ),
                         _buildDanmakuChip(
                           label: '同步倍速',
                           selected: settings.syncVideoSpeed,
-                          onTap: () => _updateDanmakuSettings(
-                              settings.copyWith(syncVideoSpeed: !settings.syncVideoSpeed)),
+                          onTap: () => _updateDanmakuSettings(settings.copyWith(
+                              syncVideoSpeed: !settings.syncVideoSpeed)),
                         ),
                         _buildDanmakuChip(
                           label: '屏蔽滚动',
                           selected: settings.hideScroll,
-                          onTap: () => _updateDanmakuSettings(
-                              settings.copyWith(hideScroll: !settings.hideScroll)),
+                          onTap: () => _updateDanmakuSettings(settings.copyWith(
+                              hideScroll: !settings.hideScroll)),
                         ),
                         _buildDanmakuChip(
                           label: '屏蔽顶部',
@@ -1606,14 +1647,14 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                         _buildDanmakuChip(
                           label: '屏蔽底部',
                           selected: settings.hideBottom,
-                          onTap: () => _updateDanmakuSettings(
-                              settings.copyWith(hideBottom: !settings.hideBottom)),
+                          onTap: () => _updateDanmakuSettings(settings.copyWith(
+                              hideBottom: !settings.hideBottom)),
                         ),
                         _buildDanmakuChip(
                           label: '屏蔽彩色',
                           selected: settings.hideColor,
-                          onTap: () => _updateDanmakuSettings(
-                              settings.copyWith(hideColor: !settings.hideColor)),
+                          onTap: () => _updateDanmakuSettings(settings.copyWith(
+                              hideColor: !settings.hideColor)),
                         ),
                       ],
                     ),
@@ -1693,9 +1734,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.green.withValues(alpha: 0.2)
-              : Colors.white10,
+          color:
+              selected ? Colors.green.withValues(alpha: 0.2) : Colors.white10,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: selected ? Colors.greenAccent : Colors.white24,
@@ -1930,62 +1970,72 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
       cursor: widget.live ? MouseCursor.defer : SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onHorizontalDragStart: widget.live ? null : (details) {
-          _isDragging = true;
-          _stopRealtimeSeekScheduler(flush: false);
-          widget.onDragStart?.call();
-          _updateDragPosition(details.localPosition.dx, context);
-        },
-        onHorizontalDragUpdate: widget.live ? null : (details) {
-          if (_isDragging) {
-            widget.onDragUpdate?.call();
-            _updateDragPosition(details.localPosition.dx, context);
-          }
-        },
-        onHorizontalDragEnd: widget.live ? null : (details) async {
-          if (_isDragging) {
-            final seekPosition = Duration(
-                milliseconds: (_dragValue * duration.inMilliseconds).round());
+        onHorizontalDragStart: widget.live
+            ? null
+            : (details) {
+                _isDragging = true;
+                _stopRealtimeSeekScheduler(flush: false);
+                widget.onDragStart?.call();
+                _updateDragPosition(details.localPosition.dx, context);
+              },
+        onHorizontalDragUpdate: widget.live
+            ? null
+            : (details) {
+                if (_isDragging) {
+                  widget.onDragUpdate?.call();
+                  _updateDragPosition(details.localPosition.dx, context);
+                }
+              },
+        onHorizontalDragEnd: widget.live
+            ? null
+            : (details) async {
+                if (_isDragging) {
+                  final seekPosition = Duration(
+                      milliseconds:
+                          (_dragValue * duration.inMilliseconds).round());
 
-            _stopRealtimeSeekScheduler(flush: true);
-            
-            setState(() {
-              _isDragging = false;
-              _isSeeking = true; // 标记开始 seek（完成后立即恢复）
-            });
+                  _stopRealtimeSeekScheduler(flush: true);
 
-            unawaited(widget.player.seek(seekPosition).whenComplete(() {
-              if (mounted) {
+                  setState(() {
+                    _isDragging = false;
+                    _isSeeking = true; // 标记开始 seek（完成后立即恢复）
+                  });
+
+                  unawaited(widget.player.seek(seekPosition).whenComplete(() {
+                    if (mounted) {
+                      setState(() {
+                        _isSeeking = false;
+                      });
+                    }
+                  }));
+
+                  widget.onDragEnd?.call();
+                }
+              },
+        onTapDown: widget.live
+            ? null
+            : (details) async {
+                _stopRealtimeSeekScheduler(flush: false);
+                widget.onDragStart?.call();
+                _updateDragPosition(details.localPosition.dx, context);
+                final seekPosition = Duration(
+                    milliseconds:
+                        (_dragValue * duration.inMilliseconds).round());
+
                 setState(() {
-                  _isSeeking = false;
+                  _isSeeking = true; // 标记开始 seek（完成后立即恢复）
                 });
-              }
-            }));
 
-            widget.onDragEnd?.call();
-          }
-        },
-        onTapDown: widget.live ? null : (details) async {
-          _stopRealtimeSeekScheduler(flush: false);
-          widget.onDragStart?.call();
-          _updateDragPosition(details.localPosition.dx, context);
-          final seekPosition = Duration(
-              milliseconds: (_dragValue * duration.inMilliseconds).round());
-          
-          setState(() {
-            _isSeeking = true; // 标记开始 seek（完成后立即恢复）
-          });
+                unawaited(widget.player.seek(seekPosition).whenComplete(() {
+                  if (mounted) {
+                    setState(() {
+                      _isSeeking = false;
+                    });
+                  }
+                }));
 
-          unawaited(widget.player.seek(seekPosition).whenComplete(() {
-            if (mounted) {
-              setState(() {
-                _isSeeking = false;
-              });
-            }
-          }));
-
-          widget.onDragEnd?.call();
-        },
+                widget.onDragEnd?.call();
+              },
         child: Container(
           height: 24,
           color: Colors.transparent,
