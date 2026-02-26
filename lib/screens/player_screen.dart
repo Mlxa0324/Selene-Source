@@ -1816,6 +1816,78 @@ class _PlayerScreenState extends State<PlayerScreen>
     _switchSource(source);
   }
 
+  String _normalizeRecordKey(String value) {
+    return value.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+  }
+
+  bool _isUnknownYear(String year) {
+    final normalized = year.trim().toLowerCase();
+    return normalized.isEmpty || normalized == 'unknown' || normalized == '未知';
+  }
+
+  bool _isSameVideoForPlayRecord(PlayRecord record, SearchResult targetSource) {
+    final targetTitle = _normalizeRecordKey(targetSource.title);
+    final recordTitle = _normalizeRecordKey(record.title);
+    final targetSearchTitle = _normalizeRecordKey(searchTitle);
+    final recordSearchTitle = _normalizeRecordKey(record.searchTitle);
+
+    final titleMatched = targetTitle.isNotEmpty && recordTitle == targetTitle;
+    final searchTitleMatched =
+        targetSearchTitle.isNotEmpty && recordSearchTitle == targetSearchTitle;
+
+    if (!titleMatched && !searchTitleMatched) {
+      return false;
+    }
+
+    if (_isUnknownYear(targetSource.year) || _isUnknownYear(record.year)) {
+      return true;
+    }
+
+    return targetSource.year.trim().toLowerCase() ==
+        record.year.trim().toLowerCase();
+  }
+
+  Future<void> _cleanupOtherSourcePlayRecords(SearchResult keepSource) async {
+    if (widget.localPath != null || !mounted) {
+      return;
+    }
+
+    try {
+      final cacheService = PageCacheService();
+      final recordsResult = await cacheService.getPlayRecords(context);
+      final records = recordsResult.data;
+      if (!recordsResult.success || records == null || records.isEmpty) {
+        return;
+      }
+
+      final toDelete = records
+          .where((record) =>
+              !(record.source == keepSource.source &&
+                  record.id == keepSource.id) &&
+              _isSameVideoForPlayRecord(record, keepSource))
+          .toList();
+
+      if (toDelete.isEmpty) {
+        return;
+      }
+
+      debugPrint('换源后开始清理其他播放记录，待清理 ${toDelete.length} 条');
+
+      for (final record in toDelete) {
+        if (!mounted) break;
+        final result = await cacheService.deletePlayRecord(
+            record.source, record.id, context);
+        if (!result.success) {
+          debugPrint('清理播放记录失败: ${record.source}+${record.id}');
+        }
+      }
+
+      debugPrint('换源后已清理其他源播放记录');
+    } catch (e) {
+      debugPrint('换源后清理其他源播放记录异常: $e');
+    }
+  }
+
   /// 刷新源列表
   Future<void> _refreshSources() async {
     await _refreshSourcesSpeed();
@@ -1934,6 +2006,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 开始播放新源
     startPlay(currentEpisode, currentProgress);
+
+    // 仅保留当前源的播放记录，清理同剧集其他源记录
+    unawaited(_cleanupOtherSourcePlayRecords(newSource));
 
     // 延迟滚动到当前源
     WidgetsBinding.instance.addPostFrameCallback((_) {
