@@ -876,12 +876,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 1. 启动全网搜源任务
     updateLoadingMessage('正在为您搜索最佳播放源...');
     updateLoadingProgress(0.3);
+    final preferSpeedTest = await UserDataService.getPreferSpeedTest();
 
     final searchJob = fetchSourcesData(
       (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
       onIncrementalResults: (newResults) {
         if (mounted) setState(() => allSources = newResults);
       },
+      allowEarlyReturn: !preferSpeedTest,
     );
 
     // 2. 💡 强制等待 2 秒搜源窗口，确保获取足够多的候选源
@@ -911,8 +913,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 4. 💡 兜底与优选逻辑
     // 如果没有找到历史源，或者当前是直接搜索进入，或者需要强制优选
-    final preferSpeedTest = await UserDataService.getPreferSpeedTest();
-
     if (currentDetail == null || needPrefer) {
       if (preferSpeedTest) {
         updateLoadingMessage('正在优选最佳播放源...');
@@ -4627,7 +4627,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 搜索视频源数据（带过滤）
   Future<List<SearchResult>> fetchSourcesData(String query,
-      {void Function(List<SearchResult>)? onIncrementalResults}) async {
+      {void Function(List<SearchResult>)? onIncrementalResults,
+      bool allowEarlyReturn = true}) async {
     // 检查是否启用本地搜索
     final isLocalSearch = await UserDataService.getLocalSearch();
     final isLocalMode = await UserDataService.getIsLocalMode();
@@ -4644,7 +4645,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           final filtered = _filterSearchResults(incrementalResults);
           onIncrementalResults(filtered);
         }
-      }, earlyReturnMatcher: _matchesSearchResult);
+      },
+          earlyReturnMatcher: _matchesSearchResult,
+          allowEarlyReturn: allowEarlyReturn);
     }
 
     // 返回最终过滤后的全量结果

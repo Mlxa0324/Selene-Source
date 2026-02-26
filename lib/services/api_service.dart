@@ -657,6 +657,7 @@ class ApiService {
     String query, {
     void Function(List<SearchResult>)? onIncrementalResults,
     bool Function(SearchResult)? earlyReturnMatcher,
+    bool allowEarlyReturn = true,
   }) async {
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return [];
@@ -671,7 +672,8 @@ class ApiService {
     try {
       final results = await _fetchSourcesDataStreaming(cleanQuery,
           onIncrementalResults: onIncrementalResults,
-          earlyReturnMatcher: earlyReturnMatcher);
+          earlyReturnMatcher: earlyReturnMatcher,
+          allowEarlyReturn: allowEarlyReturn);
       if (results != null && results.isNotEmpty) {
         return results;
       }
@@ -716,6 +718,7 @@ class ApiService {
     String query, {
     void Function(List<SearchResult>)? onIncrementalResults,
     bool Function(SearchResult)? earlyReturnMatcher,
+    bool allowEarlyReturn = true,
   }) async {
     final baseUrl = await _getBaseUrl();
     if (baseUrl == null) return null;
@@ -756,6 +759,7 @@ class ApiService {
           query: query,
           onIncrementalResults: onIncrementalResults,
           earlyReturnMatcher: earlyReturnMatcher,
+          allowEarlyReturn: allowEarlyReturn,
         );
         if (results == null) {
           debugPrint('搜索流端点不可用，准备降级: ${endpoint.key}');
@@ -789,6 +793,7 @@ class ApiService {
     required String query,
     void Function(List<SearchResult>)? onIncrementalResults,
     bool Function(SearchResult)? earlyReturnMatcher,
+    bool allowEarlyReturn = true,
   }) async {
     final client = http.Client();
     final results = <SearchResult>[];
@@ -827,6 +832,7 @@ class ApiService {
             completer: completer,
             onIncrementalResults: onIncrementalResults,
             earlyReturnMatcher: earlyReturnMatcher,
+            allowEarlyReturn: allowEarlyReturn,
           );
         } catch (_) {
           return false;
@@ -924,9 +930,8 @@ class ApiService {
     required Completer<List<SearchResult>?> completer,
     void Function(List<SearchResult>)? onIncrementalResults,
     bool Function(SearchResult)? earlyReturnMatcher,
+    bool allowEarlyReturn = true,
   }) {
-    if (completer.isCompleted) return true;
-
     List<SearchResult> currentResults = [];
 
     if (data is List) {
@@ -979,7 +984,7 @@ class ApiService {
       return t == q;
     });
 
-    if (hasEarlyMatch && !completer.isCompleted) {
+    if (allowEarlyReturn && hasEarlyMatch && !completer.isCompleted) {
       if (earlyReturnMatcher != null) {
         debugPrint('检测到符合播放筛选条件的结果: $query，提前返回 Future 以启动播放');
       } else {

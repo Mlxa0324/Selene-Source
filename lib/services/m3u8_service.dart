@@ -6,6 +6,18 @@ import '../models/search_result.dart';
 
 /// M3U8 解析和测速服务
 class M3U8Service {
+  /// 优选测速并发数（可在代码中修改）
+  static const int defaultPreferSpeedTestConcurrency = 10;
+  static int preferSpeedTestConcurrency = defaultPreferSpeedTestConcurrency;
+
+  /// 换源面板测速并发数（可在代码中修改）
+  static const int defaultPanelSpeedTestConcurrency = 10;
+  static int panelSpeedTestConcurrency = defaultPanelSpeedTestConcurrency;
+
+  /// 优选测速时，最多选择多少个测速大于 0KB/s 的源参与评估（可在代码中修改）
+  static const int defaultPreferPositiveSpeedLimit = 6;
+  static int preferPositiveSpeedLimit = defaultPreferPositiveSpeedLimit;
+
   final Dio _dio = Dio();
 
   M3U8Service() {
@@ -13,7 +25,8 @@ class M3U8Service {
     _dio.options.connectTimeout = const Duration(seconds: 10);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
     _dio.options.headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       'Accept': '*/*',
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     };
@@ -80,7 +93,7 @@ class M3U8Service {
     if (url.startsWith('http') || url.startsWith('data:')) {
       return url;
     }
-    
+
     try {
       final uri = Uri.parse(baseUrl);
       return uri.resolve(url).toString();
@@ -94,7 +107,7 @@ class M3U8Service {
     try {
       // 获取片段列表
       final segments = await _getSegmentUrls(streamUrl);
-      
+
       if (segments.isEmpty) {
         return {
           'resolution': {"width": 0, "height": 0},
@@ -104,18 +117,18 @@ class M3U8Service {
           'error': '未找到视频片段',
         };
       }
-      
+
       // 并发执行三个任务
       final futures = await Future.wait([
         _getResolutionFromM3U8(streamUrl),
         _measureLatency(segments.first),
         _measureDownloadSpeed(segments),
       ]);
-      
+
       final resolutionData = futures[0] as Map<String, int>;
       final latency = futures[1] as int;
       final downloadSpeedKBps = futures[2] as double;
-      
+
       return {
         'resolution': resolutionData,
         'downloadSpeed': downloadSpeedKBps,
@@ -123,7 +136,6 @@ class M3U8Service {
         'success': true,
         'error': '',
       };
-      
     } catch (e) {
       return {
         'resolution': {'width': 0, 'height': 0},
@@ -136,46 +148,71 @@ class M3U8Service {
   }
 
   /// 优选最佳播放源
-  Future<Map<String, dynamic>> preferBestSource(List<SearchResult> allSources) async {
-    final Map<String, dynamic> allSourcesSpeed = {};
-    SearchResult? bestSource;
-    double maxSpeed = -1.0;
-
-    // 为每个源进行测速（限制前 5 个源，避免耗时太长）
-    final sourcesToTest = allSources.take(5).toList();
-    
-    final List<Future<void>> testFutures = [];
-    for (var source in sourcesToTest) {
-      testFutures.add(() async {
-        if (source.episodes.isEmpty) return;
-        
-        final info = await getStreamInfo(source.episodes.first);
-        debugPrint('获取到的流信息: $info');
-        final speed = info['downloadSpeed'] as double;
-        final latency = info['latency'] as int;
-        final res = info['resolution'] as Map<String, int>;
-        
-        final speedStr = speed > 1024 
-            ? '${(speed / 1024).toStringAsFixed(1)} MB/s' 
-            : '${speed.toStringAsFixed(1)} KB/s';
-        
-        final quality = _getQualityLabel(res['height'] ?? 0);
-        
-        allSourcesSpeed['${source.source}_${source.id}'] = {
-          'quality': quality,
-          'loadSpeed': speedStr,
-          'pingTime': '${latency}ms',
-        };
-
-        // 简单的评分逻辑：速度优先
-        if (speed > maxSpeed) {
-          maxSpeed = speed;
-          bestSource = source;
-        }
-      }());
+  Future<Map<String, dynamic>> preferBestSource(
+      List<SearchResult> allSources) async {
+    if (allSources.isEmpty) {
+      throw Exception('没有可优选的播放源');
     }
 
-    await Future.wait(testFutures);
+    final Map<String, dynamic> allSourcesSpeed = {};
+    SearchResult? bestSource = allSources.first;
+    double maxSpeed = -1.0;
+    var validCount = 0;
+    final candidates =
+        allSources.where((source) => source.episodes.isNotEmpty).toList();
+    final positiveLimit = math.max(1, preferPositiveSpeedLimit);
+    final concurrency = math.max(1, preferSpeedTestConcurrency);
+
+    for (var start = 0;
+        start < candidates.length && validCount < positiveLimit;
+        start += concurrency) {
+      final end = math.min(start + concurrency, candidates.length);
+      final batch = candidates.sublist(start, end);
+      final speeds = await Future.wait<double>(
+        batch.map((source) async {
+          try {
+            final info = await getStreamInfo(source.episodes.first);
+            debugPrint('获取到的流信息: $info');
+            final speed = info['downloadSpeed'] as double? ?? 0.0;
+            final latency = info['latency'] as int? ?? 0;
+            final res = info['resolution'] as Map<String, int>? ?? const {};
+
+            final speedStr = speed > 1024
+                ? '${(speed / 1024).toStringAsFixed(1)} MB/s'
+                : '${speed.toStringAsFixed(1)} KB/s';
+            final quality = _getQualityLabel(res['height'] ?? 0);
+            allSourcesSpeed['${source.source}_${source.id}'] = {
+              'quality': quality,
+              'loadSpeed': speedStr,
+              'pingTime': '${latency}ms',
+            };
+            return speed;
+          } catch (_) {
+            allSourcesSpeed['${source.source}_${source.id}'] = {
+              'quality': '未知',
+              'loadSpeed': '超时',
+              'pingTime': '---',
+            };
+            return 0.0;
+          }
+        }),
+      );
+
+      for (var i = 0; i < batch.length; i++) {
+        final speed = speeds[i];
+        if (speed <= 0) continue;
+
+        validCount++;
+        if (speed > maxSpeed) {
+          maxSpeed = speed;
+          bestSource = batch[i];
+        }
+
+        if (validCount >= positiveLimit) {
+          break;
+        }
+      }
+    }
 
     return {
       'bestSource': bestSource ?? allSources.first,
@@ -198,47 +235,66 @@ class M3U8Service {
     Function(String sourceId, Map<String, dynamic> speedData) callback, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    // 限制最大并发数，避免资源占用过高
-    final sourcesToTest = allSources.take(10).toList();
-    final List<Future<void>> tasks = [];
+    final sourcesToTest =
+        allSources.where((source) => source.episodes.isNotEmpty).toList();
+    final tasks = sourcesToTest
+        .map<Future<void> Function()>(
+          (source) => () async {
+            try {
+              // 获取流核心信息
+              final info =
+                  await getStreamInfo(source.episodes.first).timeout(timeout);
 
-    for (var source in sourcesToTest) {
-      tasks.add(() async {
-        if (source.episodes.isEmpty) return;
+              final speed = info['downloadSpeed'] as double? ?? 0.0;
+              final latency = info['latency'] as int? ?? 0;
+              final res = info['resolution'] as Map<String, int>?;
 
-        try {
-          // 获取流核心信息
-          final info = await getStreamInfo(source.episodes.first).timeout(timeout);
-          
-          final speed = info['downloadSpeed'] as double;
-          final latency = info['latency'] as int;
-          final res = info['resolution'] as Map<String, int>?;
+              final speedStr = speed > 1024
+                  ? '${(speed / 1024).toStringAsFixed(1)} MB/s'
+                  : '${speed.toStringAsFixed(1)} KB/s';
 
-          final speedStr = speed > 1024
-              ? '${(speed / 1024).toStringAsFixed(1)} MB/s'
-              : '${speed.toStringAsFixed(1)} KB/s';
+              final quality = _getQualityLabel(res?['height'] ?? 0);
+              callback('${source.source}_${source.id}', {
+                'quality': quality,
+                'loadSpeed': speedStr,
+                'pingTime': '${latency}ms',
+              });
+            } catch (_) {
+              callback('${source.source}_${source.id}', {
+                'quality': '未知',
+                'loadSpeed': '超时',
+                'pingTime': '---',
+              });
+            }
+          },
+        )
+        .toList();
 
-          final quality = _getQualityLabel(res?['height'] ?? 0);
+    await _runTasksWithConcurrency(
+      tasks,
+      maxConcurrency: panelSpeedTestConcurrency,
+    );
+  }
 
-          final speedData = {
-            'quality': quality,
-            'loadSpeed': speedStr,
-            'pingTime': '${latency}ms',
-          };
+  Future<void> _runTasksWithConcurrency(
+    List<Future<void> Function()> tasks, {
+    required int maxConcurrency,
+  }) async {
+    if (tasks.isEmpty) return;
 
-          callback('${source.source}_${source.id}', speedData);
-        } catch (e) {
-          // 超时或失败返回空结果
-          callback('${source.source}_${source.id}', {
-            'quality': '未知',
-            'loadSpeed': '超时',
-            'pingTime': '---',
-          });
-        }
-      }());
+    final workerCount = math.max(1, math.min(maxConcurrency, tasks.length));
+    var index = 0;
+
+    Future<void> worker() async {
+      while (true) {
+        if (index >= tasks.length) return;
+        final task = tasks[index];
+        index++;
+        await task();
+      }
     }
 
-    await Future.wait(tasks);
+    await Future.wait(List.generate(workerCount, (_) => worker()));
   }
 
   /// 获取M3U8流的片段URL列表
@@ -256,18 +312,18 @@ class M3U8Service {
   List<String> _parseSegmentsFromContent(String content, String baseUrl) {
     final lines = content.split('\n').map((line) => line.trim()).toList();
     final segments = <String>[];
-    
+
     for (final line in lines) {
       // 跳过注释和空行
       if (line.startsWith('#') || line.isEmpty) {
         continue;
       }
-      
+
       // 这应该是一个片段URL
       final absoluteUrl = _resolveUrl(line, baseUrl);
       segments.add(absoluteUrl);
     }
-    
+
     return segments;
   }
 
@@ -276,7 +332,7 @@ class M3U8Service {
     if (url.startsWith('http')) {
       return url;
     }
-    
+
     final uri = Uri.parse(baseUrl);
     return uri.resolve(url).toString();
   }
@@ -295,23 +351,23 @@ class M3U8Service {
   /// 测量下载速度 (KB/s)
   Future<double> _measureDownloadSpeed(List<String> segments) async {
     if (segments.isEmpty) return 0.0;
-    
+
     // 下载第一个片段来测速
     final url = segments.first;
     final stopwatch = Stopwatch()..start();
-    
+
     try {
       final response = await _dio.get<List<int>>(
         url,
         options: Options(responseType: ResponseType.bytes),
       );
-      
+
       final elapsedSeconds = stopwatch.elapsedMilliseconds / 1000.0;
       if (elapsedSeconds == 0) return 0.0;
-      
+
       final bytes = response.data?.length ?? 0;
       final speedKBps = (bytes / 1024.0) / elapsedSeconds;
-      
+
       return speedKBps;
     } catch (e) {
       return 0.0;
@@ -323,10 +379,10 @@ class M3U8Service {
     try {
       final response = await _dio.get(url);
       final content = response.data as String;
-      
+
       final regExp = RegExp(r'RESOLUTION=(\d+)x(\d+)');
       final match = regExp.firstMatch(content);
-      
+
       if (match != null) {
         return {
           'width': int.parse(match.group(1)!),
