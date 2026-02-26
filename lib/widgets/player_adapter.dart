@@ -304,6 +304,18 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final bool adFilterEnabled;
   final bool seekBoostEnabled;
 
+  /// 进度拖放搜索预热并行性（代码可配置）
+  static const int defaultSeekWarmupConcurrency = 6;
+  static int seekWarmupConcurrency = defaultSeekWarmupConcurrency;
+
+  /// 每次搜索需要预热多少个接近目标的片段
+  static const int defaultSeekWarmupSegmentCount = 12;
+  static int seekWarmupSegmentCount = defaultSeekWarmupSegmentCount;
+
+  /// 每个预热请求的最大读取字节数
+  static const int defaultSeekWarmupReadBytes = 1024 * 1024;
+  static int seekWarmupReadBytes = defaultSeekWarmupReadBytes;
+
   final StreamController<bool> _playingController =
       StreamController<bool>.broadcast();
   final StreamController<Duration> _positionController =
@@ -545,6 +557,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
     final seekBoostEnabledJs = seekBoostEnabled ? 'true' : 'false';
+    final seekWarmupConcurrencyJs =
+        seekWarmupConcurrency < 1 ? 1 : seekWarmupConcurrency;
+    final seekWarmupSegmentCountJs =
+        seekWarmupSegmentCount < 1 ? 1 : seekWarmupSegmentCount;
+    final seekWarmupReadBytesJs =
+        seekWarmupReadBytes < 65536 ? 65536 : seekWarmupReadBytes;
 
     // 如果有缓存内容，则注入内联脚本；否则使用 CDN 链接
     final hlsJsTag = (_hlsJsContent != null && _hlsJsContent!.isNotEmpty)
@@ -575,6 +593,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var startTime = $startSeconds;
     var adFilterEnabled = $adFilterEnabledJs;
     var seekBoostEnabled = $seekBoostEnabledJs;
+    var seekWarmupConcurrency = $seekWarmupConcurrencyJs;
+    var seekWarmupSegmentCount = $seekWarmupSegmentCountJs;
+    var seekWarmupReadBytes = $seekWarmupReadBytesJs;
+    var seekWarmupControllers = [];
+    var seekWarmupToken = 0;
 
     // 如果是通过 CDN 加载的，尝试获取源码并回传给 Flutter 缓存
     var hlsScript = document.getElementById('hls-script');
@@ -643,6 +666,162 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
     }
 
+    function removeWarmupController(controller) {
+      if (!controller) return;
+      var idx = seekWarmupControllers.indexOf(controller);
+      if (idx >= 0) {
+        seekWarmupControllers.splice(idx, 1);
+      }
+    }
+
+    function cancelSeekWarmup() {
+      seekWarmupToken++;
+      for (var i = 0; i < seekWarmupControllers.length; i++) {
+        try {
+          seekWarmupControllers[i].abort();
+        } catch (_) {}
+      }
+      seekWarmupControllers = [];
+    }
+
+    function getActiveLevelDetails() {
+      if (!window.hlsInstance) return null;
+      var hls = window.hlsInstance;
+      var levelIndex = -1;
+
+      if (typeof hls.currentLevel === 'number' && hls.currentLevel >= 0) {
+        levelIndex = hls.currentLevel;
+      } else if (typeof hls.nextAutoLevel === 'number' && hls.nextAutoLevel >= 0) {
+        levelIndex = hls.nextAutoLevel;
+      }
+
+      if (levelIndex < 0 || !hls.levels || !hls.levels[levelIndex]) {
+        return null;
+      }
+
+      var level = hls.levels[levelIndex];
+      if (!level || !level.details || !level.details.fragments) {
+        return null;
+      }
+
+      return level.details;
+    }
+
+    function collectWarmupUrls(targetSeconds) {
+      var details = getActiveLevelDetails();
+      if (!details || !details.fragments || details.fragments.length === 0) {
+        return [];
+      }
+
+      var fragments = details.fragments;
+      var startIndex = 0;
+      for (var i = 0; i < fragments.length; i++) {
+        var frag = fragments[i];
+        var fragStart = Number(frag.start) || 0;
+        var fragDuration = Number(frag.duration) || 0;
+        var fragEnd = fragStart + Math.max(0.1, fragDuration);
+        if (targetSeconds < fragEnd) {
+          startIndex = i;
+          break;
+        }
+        if (i === fragments.length - 1) {
+          startIndex = i;
+        }
+      }
+
+      var urls = [];
+      var maxCount = Math.max(1, seekWarmupSegmentCount);
+      for (var j = startIndex; j < fragments.length && urls.length < maxCount; j++) {
+        var nextUrl = fragments[j] && fragments[j].url;
+        if (nextUrl && urls.indexOf(nextUrl) < 0) {
+          urls.push(nextUrl);
+        }
+      }
+      return urls;
+    }
+
+    function warmupByConcurrentFetch(targetSeconds) {
+      if (!seekBoostEnabled || !window.hlsInstance) return;
+
+      var urls = collectWarmupUrls(targetSeconds);
+      if (!urls.length) return;
+
+      cancelSeekWarmup();
+      var token = seekWarmupToken;
+      var queue = urls.slice();
+      var active = 0;
+      var maxConcurrency = Math.max(1, seekWarmupConcurrency);
+      var maxReadBytes = Math.max(65536, seekWarmupReadBytes);
+
+      function runNext() {
+        if (token !== seekWarmupToken) return;
+
+        while (active < maxConcurrency && queue.length > 0) {
+          let nextUrl = queue.shift();
+          if (!nextUrl) {
+            continue;
+          }
+          active++;
+
+          let controller = null;
+          try {
+            if (typeof AbortController !== 'undefined') {
+              controller = new AbortController();
+              seekWarmupControllers.push(controller);
+            }
+          } catch (_) {}
+
+          let options = {
+            method: 'GET',
+            cache: 'force-cache',
+          };
+          if (controller && controller.signal) {
+            options.signal = controller.signal;
+          }
+
+          const task = fetch(nextUrl, options).then(function(response) {
+            if (!response || !response.body || !response.body.getReader) {
+              return;
+            }
+
+            var reader = response.body.getReader();
+            var readBytes = 0;
+
+            function readChunk() {
+              return reader.read().then(function(result) {
+                if (!result || result.done) {
+                  return;
+                }
+
+                if (result.value && result.value.byteLength) {
+                  readBytes += result.value.byteLength;
+                }
+
+                if (readBytes >= maxReadBytes) {
+                  try {
+                    reader.cancel();
+                  } catch (_) {}
+                  return;
+                }
+
+                return readChunk();
+              });
+            }
+
+            return readChunk().catch(function() {});
+          }).catch(function() {});
+
+          task.then(function() {
+            removeWarmupController(controller);
+            active--;
+            runNext();
+          });
+        }
+      }
+
+      runNext();
+    }
+
     function fastSeekTo(targetSeconds) {
       if (!player) return;
       var sec = Math.max(0, Number(targetSeconds) || 0);
@@ -668,6 +847,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           window.hlsInstance.startLoad(sec);
         }
       } catch (e) {}
+
+      warmupByConcurrentFetch(sec);
 
       sendEvent('timeupdate', { currentTime: sec });
     }
