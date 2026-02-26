@@ -879,11 +879,33 @@ class _PlayerScreenState extends State<PlayerScreen>
     updateLoadingMessage('正在为您搜索最佳播放源...');
     updateLoadingProgress(0.3);
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
+    final resumePreferredSource = currentSource;
+    final resumePreferredId = currentID;
+    var hasPrimedDetail = false;
 
     final searchJob = fetchSourcesData(
       (searchTitle.isNotEmpty) ? searchTitle : videoTitle,
       onIncrementalResults: (newResults) {
-        if (mounted) setState(() => allSources = newResults);
+        if (mounted) {
+          setState(() => allSources = newResults);
+        } else {
+          allSources = newResults;
+        }
+
+        // Prime first candidate detail so recommends can appear early.
+        if (!hasPrimedDetail && newResults.isNotEmpty) {
+          hasPrimedDetail = true;
+          currentDetail = newResults.first;
+          setInfosByDetail(currentDetail!);
+
+          if (mounted && _isLoading) {
+            setState(() {
+              _isLoading = false;
+              _showSwitchLoadingOverlay = true;
+              _switchLoadingMessage = '\u89c6\u9891\u52a0\u8f7d\u4e2d...';
+            });
+          }
+        }
       },
       allowEarlyReturn: !preferSpeedTest,
     );
@@ -904,10 +926,13 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 3. 💡 核心筛选逻辑
     // 优先尝试匹配继续观看的特定源
-    if (currentSource.isNotEmpty && currentID.isNotEmpty) {
-      final target = allSources.where(
-          (source) => source.source == currentSource && source.id == currentID);
+    var matchedResumeTarget = false;
+    if (resumePreferredSource.isNotEmpty && resumePreferredId.isNotEmpty) {
+      final target = allSources.where((source) =>
+          source.source == resumePreferredSource &&
+          source.id == resumePreferredId);
       if (target.isNotEmpty) {
+        matchedResumeTarget = true;
         currentDetail = target.first;
         debugPrint('成功匹配到历史播放源: ${currentDetail!.sourceName}');
       }
@@ -915,7 +940,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 4. 💡 兜底与优选逻辑
     // 如果没有找到历史源，或者当前是直接搜索进入，或者需要强制优选
-    if (currentDetail == null || needPrefer) {
+    if (currentDetail == null || needPrefer || !matchedResumeTarget) {
       if (preferSpeedTest) {
         updateLoadingMessage('正在优选最佳播放源...');
         updateLoadingProgress(0.66);
