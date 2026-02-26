@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/download_task.dart';
@@ -32,6 +33,12 @@ class PlayerDownloadPanel extends StatefulWidget {
 
 class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
     with SingleTickerProviderStateMixin {
+  // PC 端紧凑模式下，3.2 会导致卡片过矮，这里单独调大高度
+  static const double _compactChildAspectRatioPC = 2.0;
+  static const double _compactChildAspectRatioDefault = 3.2;
+  static const double _normalChildAspectRatio = 2.0;
+  static const double _maxEpisodeGridCardWidth = 150.0;
+
   final Set<int> _selectedIndices = {};
   int _selectedGroupIndex = 0;
   late AnimationController _animController;
@@ -122,12 +129,21 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
     final RenderBox gridBox =
         _gridKey.currentContext!.findRenderObject() as RenderBox;
-    final crossAxisCount = widget.isCompact ? 4 : 3;
+    final crossAxisCount =
+        _resolveEpisodeGridCrossAxisCount(gridBox.size.width);
     final mainAxisSpacing = 8.0;
-    final childAspectRatio = widget.isCompact ? 3.2 : 2.0;
+    final crossAxisSpacing = 8.0;
+    final horizontalPadding = 24.0;
+    final childAspectRatio = widget.isCompact
+        ? (DeviceUtils.isPC()
+            ? _compactChildAspectRatioPC
+            : _compactChildAspectRatioDefault)
+        : _normalChildAspectRatio;
 
     // 计算宽度和高度（需要减去横向 padding 24，因为左右各 12）
-    final itemWidth = (gridBox.size.width - 24.0 - (crossAxisCount - 1) * 8.0) /
+    final itemWidth = (gridBox.size.width -
+            horizontalPadding -
+            (crossAxisCount - 1) * crossAxisSpacing) /
         crossAxisCount;
     final itemHeight = itemWidth / childAspectRatio;
 
@@ -139,6 +155,17 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
+  }
+
+  int _resolveEpisodeGridCrossAxisCount(double gridWidth) {
+    final baseCount = widget.isCompact ? 4 : 3;
+    const spacing = 8.0;
+    const horizontalPadding = 24.0;
+    final usableWidth = math.max(0.0, gridWidth - horizontalPadding);
+    final dynamicCount =
+        ((usableWidth + spacing) / (_maxEpisodeGridCardWidth + spacing))
+            .floor();
+    return math.max(baseCount, math.max(1, dynamicCount));
   }
 
   Widget _buildDownloadingAnimation() {
@@ -409,228 +436,242 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
           // 集数选择列表
           Expanded(
-            child: GridView.builder(
-              key: _gridKey,
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: widget.isCompact ? 4 : 3,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: widget.isCompact ? 3.2 : 2,
-              ),
-              itemCount: (widget.episodes.length > 50)
-                  ? (((_selectedGroupIndex + 1) * 50)
-                          .clamp(0, widget.episodes.length) -
-                      (_selectedGroupIndex * 50))
-                  : widget.episodes.length,
-              itemBuilder: (context, index) {
-                final actualIndex = (widget.episodes.length > 50)
-                    ? (_selectedGroupIndex * 50 + index)
-                    : index;
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final crossAxisCount =
+                    _resolveEpisodeGridCrossAxisCount(constraints.maxWidth);
+                final childAspectRatio = widget.isCompact
+                    ? (DeviceUtils.isPC()
+                        ? _compactChildAspectRatioPC
+                        : _compactChildAspectRatioDefault)
+                    : _normalChildAspectRatio;
 
-                final downloadService = context.watch<DownloadService>();
-                final isSelected = _selectedIndices.contains(actualIndex);
-                // 💡 新增：是否是当前播放集
-                final isCurrentPlaying =
-                    actualIndex == widget.currentEpisodeIndex;
-
-                String title = '';
-                if (widget.episodesTitles.isNotEmpty &&
-                    actualIndex < widget.episodesTitles.length) {
-                  title = widget.episodesTitles[actualIndex];
-                } else {
-                  title = '第${actualIndex + 1}集';
-                }
-
-                // 判断状态
-
-                final taskId = "${widget.title}_$title".hashCode.toString();
-
-                final task = downloadService.tasks.firstWhere(
-                  (t) => t.id == taskId,
-                  orElse: () => DownloadTask(
-                    id: '',
-                    url: '',
-                    title: '',
-                    subtitle: '',
-                    episodeIndex: 0,
-                    cover: '',
-                    savePath: '',
-                    createdAt: DateTime.now(),
+                return GridView.builder(
+                  key: _gridKey,
+                  controller: _scrollController,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: childAspectRatio,
                   ),
-                );
+                  itemCount: (widget.episodes.length > 50)
+                      ? (((_selectedGroupIndex + 1) * 50)
+                              .clamp(0, widget.episodes.length) -
+                          (_selectedGroupIndex * 50))
+                      : widget.episodes.length,
+                  itemBuilder: (context, index) {
+                    final actualIndex = (widget.episodes.length > 50)
+                        ? (_selectedGroupIndex * 50 + index)
+                        : index;
 
-                final isDownloaded = task.id.isNotEmpty &&
-                    task.status == DownloadStatus.completed;
+                    final downloadService = context.watch<DownloadService>();
+                    final isSelected = _selectedIndices.contains(actualIndex);
+                    // 💡 新增：是否是当前播放集
+                    final isCurrentPlaying =
+                        actualIndex == widget.currentEpisodeIndex;
 
-                final isDownloading = task.id.isNotEmpty &&
-                    task.status == DownloadStatus.downloading;
-
-                final bool isInQueue = task.id.isNotEmpty &&
-                    task.status != DownloadStatus.completed;
-
-                // 只要是正在下载、已下载或者用户当前勾选的，都显示选中样式
-
-                final bool isEffectivelySelected =
-                    isSelected || isDownloaded || isInQueue;
-
-                return GestureDetector(
-                  onTap: () {
-                    if (isDownloaded) {
-                      // 已经下载完成：弹出删除确认
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('删除缓存'),
-                          content: Text('确定要删除 "$title" 的本地缓存吗？'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('取消'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _selectedIndices.remove(actualIndex);
-                                });
-                                downloadService.deleteTask(taskId);
-                                Navigator.pop(ctx);
-                              },
-                              child: const Text('删除',
-                                  style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      );
-                    } else if (isInQueue) {
-                      // 正在下载或排队中：弹出取消下载确认
-                      final int progress = (task.progress * 100).toInt();
-
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('取消下载'),
-                          content: Text('该视频已下载 $progress%，是否取消下载？'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('继续下载'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                setState(() {
-                                  _selectedIndices.remove(actualIndex);
-                                });
-                                downloadService.deleteTask(taskId);
-                                Navigator.pop(ctx);
-                              },
-                              child: const Text('取消下载',
-                                  style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      );
+                    String title = '';
+                    if (widget.episodesTitles.isNotEmpty &&
+                        actualIndex < widget.episodesTitles.length) {
+                      title = widget.episodesTitles[actualIndex];
                     } else {
-                      _toggleSelection(actualIndex);
+                      title = '第${actualIndex + 1}集';
                     }
-                  },
-                  child: Stack(
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        height: double.infinity,
-                        decoration: BoxDecoration(
-                          // 💡 优化：手动选中颜色正常，仅播放颜色变淡
-                          color: isEffectivelySelected
-                              ? Colors.green.withOpacity(0.2)
-                              : (isCurrentPlaying
-                                  ? Colors.green.withOpacity(0.08)
-                                  : (isDarkMode
-                                      ? Colors.white10
-                                      : Colors.black.withOpacity(0.05))),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isEffectivelySelected
-                                ? Colors.green
-                                : (isCurrentPlaying
-                                    ? Colors.green.withOpacity(0.4)
-                                    : Colors.transparent),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: Text(
-                              title,
-                              style: TextStyle(
-                                color:
-                                    (isEffectivelySelected || isCurrentPlaying)
+
+                    // 判断状态
+
+                    final taskId = "${widget.title}_$title".hashCode.toString();
+
+                    final task = downloadService.tasks.firstWhere(
+                      (t) => t.id == taskId,
+                      orElse: () => DownloadTask(
+                        id: '',
+                        url: '',
+                        title: '',
+                        subtitle: '',
+                        episodeIndex: 0,
+                        cover: '',
+                        savePath: '',
+                        createdAt: DateTime.now(),
+                      ),
+                    );
+
+                    final isDownloaded = task.id.isNotEmpty &&
+                        task.status == DownloadStatus.completed;
+
+                    final isDownloading = task.id.isNotEmpty &&
+                        task.status == DownloadStatus.downloading;
+
+                    final bool isInQueue = task.id.isNotEmpty &&
+                        task.status != DownloadStatus.completed;
+
+                    // 只要是正在下载、已下载或者用户当前勾选的，都显示选中样式
+
+                    final bool isEffectivelySelected =
+                        isSelected || isDownloaded || isInQueue;
+
+                    return GestureDetector(
+                      onTap: () {
+                        if (isDownloaded) {
+                          // 已经下载完成：弹出删除确认
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('删除缓存'),
+                              content: Text('确定要删除 "$title" 的本地缓存吗？'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('取消'),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedIndices.remove(actualIndex);
+                                    });
+                                    downloadService.deleteTask(taskId);
+                                    Navigator.pop(ctx);
+                                  },
+                                  child: const Text('删除',
+                                      style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                        } else if (isInQueue) {
+                          // 正在下载或排队中：弹出取消下载确认
+                          final int progress = (task.progress * 100).toInt();
+
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('取消下载'),
+                              content: Text('该视频已下载 $progress%，是否取消下载？'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('继续下载'),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _selectedIndices.remove(actualIndex);
+                                    });
+                                    downloadService.deleteTask(taskId);
+                                    Navigator.pop(ctx);
+                                  },
+                                  child: const Text('取消下载',
+                                      style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                        } else {
+                          _toggleSelection(actualIndex);
+                        }
+                      },
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            decoration: BoxDecoration(
+                              // 💡 优化：手动选中颜色正常，仅播放颜色变淡
+                              color: isEffectivelySelected
+                                  ? Colors.green.withOpacity(0.2)
+                                  : (isCurrentPlaying
+                                      ? Colors.green.withOpacity(0.08)
+                                      : (isDarkMode
+                                          ? Colors.white10
+                                          : Colors.black.withOpacity(0.05))),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isEffectivelySelected
+                                    ? Colors.green
+                                    : (isCurrentPlaying
+                                        ? Colors.green.withOpacity(0.4)
+                                        : Colors.transparent),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Center(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: Text(
+                                  title,
+                                  style: TextStyle(
+                                    color: (isEffectivelySelected ||
+                                            isCurrentPlaying)
                                         ? Colors.green
                                         : textColor,
-                                fontSize: 13,
-                                fontWeight: isCurrentPlaying
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ),
-                      // 💡 新增：正在播放标记
-                      if (isCurrentPlaying)
-                        const Positioned(
-                          top: 3,
-                          right: 5,
-                          child: Text(
-                            '正在播放',
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      if (isDownloaded)
-                        const Positioned(
-                          right: 4,
-                          bottom: 4,
-                          child: Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                            size: 16,
-                          ),
-                        ),
-                      if (isDownloading || (isInQueue && !isDownloaded))
-                        Positioned(
-                          right: 4,
-                          bottom: 4,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              if (isInQueue && !isDownloaded)
-                                Padding(
-                                  padding: const EdgeInsets.only(bottom: 1),
-                                  child: Text(
-                                    '${(task.progress * 100).toInt()}%',
-                                    style: const TextStyle(
-                                      color: Colors.green,
-                                      fontSize: 11,
-                                    ),
+                                    fontSize: 13,
+                                    fontWeight: isCurrentPlaying
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                   ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              if (isDownloading) ...[
-                                _buildDownloadingAnimation(),
-                              ],
-                            ],
+                              ),
+                            ),
                           ),
-                        ),
-                    ],
-                  ),
+                          // 💡 新增：正在播放标记
+                          if (isCurrentPlaying)
+                            const Positioned(
+                              top: 3,
+                              right: 5,
+                              child: Text(
+                                '正在播放',
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          if (isDownloaded)
+                            const Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 16,
+                              ),
+                            ),
+                          if (isDownloading || (isInQueue && !isDownloaded))
+                            Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  if (isInQueue && !isDownloaded)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 1),
+                                      child: Text(
+                                        '${(task.progress * 100).toInt()}%',
+                                        style: const TextStyle(
+                                          color: Colors.green,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  if (isDownloading) ...[
+                                    _buildDownloadingAnimation(),
+                                  ],
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 );
               },
             ),

@@ -43,11 +43,13 @@ class RecommendationSection extends StatefulWidget {
 }
 
 class _RecommendationSectionState extends State<RecommendationSection> {
+  static const double _maxCardWidth = 170.0;
+
   final ScrollController _scrollController = ScrollController();
   bool _showLeftScroll = false;
   bool _showRightScroll = false;
   bool _isHovered = false;
-  
+
   // hover 状态
   bool _isMoreButtonHovered = false;
 
@@ -104,17 +106,19 @@ class _RecommendationSectionState extends State<RecommendationSection> {
 
   void _scrollLeft() {
     if (!_scrollController.hasClients) return;
-    
+
     // 根据可见卡片数动态计算滚动距离
-    final double visibleCards = DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
+    final double visibleCards =
+        DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
     final double screenWidth = MediaQuery.of(context).size.width;
     const double padding = 32.0;
     const double spacing = 12.0;
     final double availableWidth = screenWidth - padding;
-    final double cardWidth = (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
+    final double cardWidth =
+        (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
     // 每次滚动约 5 个卡片的距离
     final double scrollDistance = (cardWidth + spacing) * 5;
-    
+
     _scrollController.animateTo(
       math.max(0, _scrollController.offset - scrollDistance),
       duration: const Duration(milliseconds: 300),
@@ -124,17 +128,19 @@ class _RecommendationSectionState extends State<RecommendationSection> {
 
   void _scrollRight() {
     if (!_scrollController.hasClients) return;
-    
+
     // 根据可见卡片数动态计算滚动距离
-    final double visibleCards = DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
+    final double visibleCards =
+        DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
     final double screenWidth = MediaQuery.of(context).size.width;
     const double padding = 32.0;
     const double spacing = 12.0;
     final double availableWidth = screenWidth - padding;
-    final double cardWidth = (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
+    final double cardWidth =
+        (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
     // 每次滚动约 5 个卡片的距离
     final double scrollDistance = (cardWidth + spacing) * 5;
-    
+
     _scrollController.animateTo(
       math.min(
         _scrollController.position.maxScrollExtent,
@@ -361,7 +367,8 @@ class _RecommendationSectionState extends State<RecommendationSection> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // 根据宽度动态展示卡片数：平板模式 5.75/6.75/7.75，手机模式使用传入的cardCount
-        final double visibleCards = DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
+        final double visibleCards =
+            DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
 
         // 计算卡片宽度
         final double screenWidth = constraints.maxWidth;
@@ -372,7 +379,11 @@ class _RecommendationSectionState extends State<RecommendationSection> {
         const double minCardWidth = 120.0; // 最小卡片宽度
         final double calculatedCardWidth =
             (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
-        final double cardWidth = math.max(calculatedCardWidth, minCardWidth);
+        final double cardWidth =
+            math.max(calculatedCardWidth, minCardWidth).clamp(
+                  minCardWidth,
+                  _maxCardWidth,
+                );
 
         return SizedBox(
           height: (cardWidth * 1.5) + 60, // 增加高度以容纳放大效果
@@ -416,7 +427,8 @@ class _RecommendationSectionState extends State<RecommendationSection> {
     return LayoutBuilder(
       builder: (context, constraints) {
         // 根据宽度动态展示卡片数：平板模式 5.75/6.75/7.75，手机模式使用传入的cardCount
-        final double visibleCards = DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
+        final double visibleCards =
+            DeviceUtils.getHorizontalVisibleCards(context, widget.cardCount);
         final isTablet = DeviceUtils.isTablet(context);
         final int skeletonCount = isTablet ? visibleCards.ceil() : 3; // 骨架卡片数量
 
@@ -429,7 +441,11 @@ class _RecommendationSectionState extends State<RecommendationSection> {
         const double minCardWidth = 120.0; // 最小卡片宽度
         final double calculatedCardWidth =
             (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
-        final double cardWidth = math.max(calculatedCardWidth, minCardWidth);
+        final double cardWidth =
+            math.max(calculatedCardWidth, minCardWidth).clamp(
+                  minCardWidth,
+                  _maxCardWidth,
+                );
 
         return Container(
           height: (cardWidth * 1.5) + 50,

@@ -160,10 +160,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   final ScrollController _episodesScrollController = ScrollController();
   final Map<int, GlobalKey> _episodeCardKeys = {};
   bool _isHoveringEpisodesPager = false;
+  static const double _maxEpisodeCardWidth = 170.0;
 
   // 换源相关状态
   final ScrollController _sourcesScrollController = ScrollController();
   bool _isHoveringSourcesPager = false;
+  static const double _maxSourceCardWidth = 170.0;
 
   // 是否正在关闭页面（用于立即隐藏播放器）
   bool _isClosing = false;
@@ -2785,12 +2787,20 @@ class _PlayerScreenState extends State<PlayerScreen>
         final double screenWidth = constraints.maxWidth;
         final double padding = 16.0;
         final double spacing = 12.0;
-        final crossAxisCount = _isTablet ? 6 : 3;
+        final baseCrossAxisCount = _isTablet ? 6 : 3;
+        const maxItemWidth = 170.0;
+        const minItemWidth = 80.0;
+        final dynamicCrossAxisCount =
+            ((screenWidth - (padding * 2) + spacing) / (maxItemWidth + spacing))
+                .floor();
+        final crossAxisCount = math.max(
+          baseCrossAxisCount,
+          math.max(1, dynamicCrossAxisCount),
+        );
         final double availableWidth =
             screenWidth - (padding * 2) - (spacing * (crossAxisCount - 1));
-        final double minItemWidth = 80.0;
-        final double calculatedItemWidth = availableWidth / crossAxisCount;
-        final double itemWidth = math.max(calculatedItemWidth, minItemWidth);
+        final double itemWidth =
+            (availableWidth / crossAxisCount).clamp(minItemWidth, maxItemWidth);
         final double itemHeight = itemWidth * 2.0;
 
         return Padding(
@@ -3092,7 +3102,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             final horizontalPadding = 32.0; // 左右各16
             final availableWidth = screenWidth - horizontalPadding;
             final cardsPerView = _isTablet ? 6.2 : 3.2;
-            final buttonWidth = (availableWidth / cardsPerView) - 6; // 减去右边距6
+            final rawButtonWidth =
+                (availableWidth / cardsPerView) - 6; // 减去右边距6
+            final buttonWidth =
+                rawButtonWidth.clamp(110.0, _maxEpisodeCardWidth).toDouble();
             final buttonHeight = buttonWidth * 1.8 / 3; // 稍微减少高度
 
             return SizedBox(
@@ -3534,7 +3547,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         final horizontalPadding = 32.0; // 左右各16
         final availableWidth = screenWidth - horizontalPadding;
         final cardsPerView = _isTablet ? 6.2 : 3.2;
-        final cardWidth = (availableWidth / cardsPerView) - 6; // 减去右边距6
+        final rawCardWidth = (availableWidth / cardsPerView) - 6; // 减去右边距6
+        final cardWidth =
+            rawCardWidth.clamp(110.0, _maxSourceCardWidth).toDouble();
         final cardHeight = cardWidth * 1.8 / 3; // 稍微减少高度
 
         return SizedBox(

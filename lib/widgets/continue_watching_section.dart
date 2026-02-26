@@ -43,6 +43,8 @@ class ContinueWatchingSection extends StatefulWidget {
 
 class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
     with TickerProviderStateMixin {
+  static const double _maxCardWidth = 170.0;
+
   List<PlayRecord> _playRecords = [];
   bool _isLoading = true;
   bool _hasError = false;
@@ -423,7 +425,7 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
     final isPC = DeviceUtils.isPC();
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
+      margin: EdgeInsets.only(bottom: DeviceUtils.isPC() ? 32 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -687,8 +689,12 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
         const double minCardWidth = 120.0; // 最小卡片宽度
         final double calculatedCardWidth =
             (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
-        final double cardWidth = math.max(calculatedCardWidth, minCardWidth);
-        final double cardHeight = (cardWidth * 1.5) + 50; // 缓存高度计算
+        final double cardWidth =
+            math.max(calculatedCardWidth, minCardWidth).clamp(
+                  minCardWidth,
+                  _maxCardWidth,
+                );
+        final double cardHeight = (cardWidth * 1.5) + 60; // 为 hover 放大预留空间
 
         return SizedBox(
           height: cardHeight, // 使用缓存的高度
@@ -696,6 +702,7 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
             controller: _scrollController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
+            clipBehavior: Clip.none,
             itemCount: _playRecords.length,
             itemBuilder: (context, index) {
               final playRecord = _playRecords[index];
@@ -741,8 +748,12 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
         const double minCardWidth = 120.0; // 最小卡片宽度
         final double calculatedCardWidth =
             (availableWidth - (spacing * (visibleCards - 1))) / visibleCards;
-        final double cardWidth = math.max(calculatedCardWidth, minCardWidth);
-        final double cardHeight = (cardWidth * 1.5) + 50; // 缓存高度计算
+        final double cardWidth =
+            math.max(calculatedCardWidth, minCardWidth).clamp(
+                  minCardWidth,
+                  _maxCardWidth,
+                );
+        final double cardHeight = (cardWidth * 1.5) + 60; // 与内容区保持一致
 
         return Container(
           height: cardHeight, // 使用缓存的高度
