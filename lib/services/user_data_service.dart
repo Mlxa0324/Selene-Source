@@ -4,50 +4,125 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/search_result.dart';
 
+class SavedUserAccount {
+  final String serverUrl;
+  final String username;
+  final String password;
+  final String cookies;
+  final int updatedAt;
+
+  const SavedUserAccount({
+    required this.serverUrl,
+    required this.username,
+    required this.password,
+    required this.cookies,
+    required this.updatedAt,
+  });
+
+  bool get hasLoginSession => cookies.trim().isNotEmpty;
+
+  String get accountKey =>
+      '${serverUrl.trim().toLowerCase()}|${username.trim().toLowerCase()}';
+
+  Map<String, dynamic> toJson() {
+    return {
+      'serverUrl': serverUrl,
+      'username': username,
+      'password': password,
+      'cookies': cookies,
+      'updatedAt': updatedAt,
+    };
+  }
+
+  factory SavedUserAccount.fromJson(Map<String, dynamic> json) {
+    return SavedUserAccount(
+      serverUrl: (json['serverUrl'] ?? '').toString(),
+      username: (json['username'] ?? '').toString(),
+      password: (json['password'] ?? '').toString(),
+      cookies: (json['cookies'] ?? '').toString(),
+      updatedAt: (json['updatedAt'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  SavedUserAccount copyWith({
+    String? serverUrl,
+    String? username,
+    String? password,
+    String? cookies,
+    int? updatedAt,
+  }) {
+    return SavedUserAccount(
+      serverUrl: serverUrl ?? this.serverUrl,
+      username: username ?? this.username,
+      password: password ?? this.password,
+      cookies: cookies ?? this.cookies,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+}
+
 class UserDataService {
   // --- 登录与身份验证相关 ---
   /// 服务器地址 Key
   static const String _serverUrlKey = 'server_url';
+
   /// 用户名 Key
   static const String _usernameKey = 'username';
+
   /// 密码 Key
   static const String _passwordKey = 'password';
+
   /// 登录 Cookies Key
   static const String _cookiesKey = 'cookies';
+  static const String _savedAccountsKey = 'saved_user_accounts_v1';
 
   // --- 应用全局配置相关 ---
   /// 豆瓣数据源设置 Key
   static const String _doubanDataSourceKey = 'douban_data_source';
+
   /// 豆瓣图片源设置 Key
   static const String _doubanImageSourceKey = 'douban_image_source';
+
   /// M3U8 代理 URL Key
   static const String _m3u8ProxyUrlKey = 'm3u8_proxy_url';
+
   /// 是否开启优选测速 Key
   static const String _preferSpeedTestKey = 'prefer_speed_test';
+
   /// 是否开启本地搜索 Key
   static const String _localSearchKey = 'local_search';
+
   /// 是否显示直播入口 Key
   static const String _showLiveKey = 'show_live_v1';
+
   /// 是否处于离线/本地模式 Key
   static const String _isLocalModeKey = 'is_local_mode';
 
   // --- 播放器偏好设置相关 ---
   /// 全局跳过片头时长 Key
   static const String _skipIntroKey = 'skip_intro_duration';
+
   /// 全局跳过片尾时长 Key
   static const String _skipOutroKey = 'skip_outro_duration';
+
   /// 播放器长按倍速设置 Key
   static const String _longPressSpeedKey = 'long_press_speed';
+
   /// 视频画面比例设置 Key
   static const String _videoFitTypeKey = 'video_fit_type';
+
   /// 隐藏控制栏时的进度显示模式 Key
   static const String _progressDisplayModeKey = 'progress_display_mode';
+
   /// 是否显示系统时间 Key
   static const String _showSystemTimeKey = 'show_system_time';
+
   /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
+
   /// WebView 播放器 hls.js 脚本源码缓存 Key
   static const String _hlsJsCacheKey = 'hls_js_cache_v1';
+
   /// 视频特定跳过设置的 Key 前缀
   static const String _videoSkipSettingsPrefix = 'video_skip_v2_';
 
@@ -84,8 +159,11 @@ class UserDataService {
     final key = _getVideoSkipKey(title, year);
     final millisecondsSinceEpoch = DateTime.now().millisecondsSinceEpoch;
     await prefs.setString(
-        key, json.encode({'intro': intro, 'outro': outro, 'time': millisecondsSinceEpoch}));
-    debugPrint("缓存片头片尾，片名：$key, 年份：$year, 数据：{'intro': $intro, 'outro': $outro, 'time': $millisecondsSinceEpoch}");
+        key,
+        json.encode(
+            {'intro': intro, 'outro': outro, 'time': millisecondsSinceEpoch}));
+    debugPrint(
+        "缓存片头片尾，片名：$key, 年份：$year, 数据：{'intro': $intro, 'outro': $outro, 'time': $millisecondsSinceEpoch}");
   }
 
   /// 获取特定视频的跳过设置
@@ -111,10 +189,13 @@ class UserDataService {
   // --- 搜索与业务数据缓存 ---
   /// 搜索源数据持久化缓存 Key
   static const String _sourcesCacheStorageKey = 'sources_data_cache_persistent';
+
   /// 搜索结果内存缓存 Map (Query -> (Results, DateTime))
   static Map<String, (List<SearchResult>, DateTime)> _sourcesDataCache = {};
+
   /// 搜索缓存有效期 (2小时)
   static const Duration _sourcesDataCacheTtl = Duration(seconds: 7200);
+
   /// 搜索缓存是否已从磁盘加载标识
   static bool _isCacheLoaded = false;
 
@@ -128,7 +209,7 @@ class UserDataService {
         final Map<String, dynamic> decoded = json.decode(jsonStr);
         final now = DateTime.now();
         final Map<String, (List<SearchResult>, DateTime)> loadedCache = {};
-        
+
         decoded.forEach((key, value) {
           final time = DateTime.fromMillisecondsSinceEpoch(value['time']);
           if (now.difference(time) < _sourcesDataCacheTtl) {
@@ -151,9 +232,9 @@ class UserDataService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final now = DateTime.now();
-      
-      _sourcesDataCache.removeWhere((key, value) => 
-          now.difference(value.$2) >= _sourcesDataCacheTtl);
+
+      _sourcesDataCache.removeWhere(
+          (key, value) => now.difference(value.$2) >= _sourcesDataCacheTtl);
 
       final Map<String, dynamic> toEncode = {};
       _sourcesDataCache.forEach((key, value) {
@@ -162,7 +243,7 @@ class UserDataService {
           'results': value.$1.map((r) => r.toJson()).toList(),
         };
       });
-      
+
       await prefs.setString(_sourcesCacheStorageKey, json.encode(toEncode));
     } catch (e) {
       debugPrint('保存搜索源持久化缓存失败: $e');
@@ -191,7 +272,8 @@ class UserDataService {
   }
 
   /// 保存搜索结果缓存
-  static Future<void> saveSearchCache(String query, List<SearchResult> results) async {
+  static Future<void> saveSearchCache(
+      String query, List<SearchResult> results) async {
     final cleanQuery = query.trim();
     if (cleanQuery.isEmpty) return;
 
@@ -204,7 +286,8 @@ class UserDataService {
   static void renewSearchCache(String query) {
     final cleanQuery = query.trim();
     if (_sourcesDataCache.containsKey(cleanQuery)) {
-      _sourcesDataCache[cleanQuery] = (_sourcesDataCache[cleanQuery]!.$1, DateTime.now());
+      _sourcesDataCache[cleanQuery] =
+          (_sourcesDataCache[cleanQuery]!.$1, DateTime.now());
       _syncSearchCacheToStorage();
     }
   }
@@ -305,6 +388,110 @@ class UserDataService {
   }
 
   // 保存用户登录信息
+  static String _buildAccountKey(String serverUrl, String username) {
+    return '${serverUrl.trim().toLowerCase()}|${username.trim().toLowerCase()}';
+  }
+
+  static List<SavedUserAccount> _parseSavedAccounts(String? jsonText) {
+    if (jsonText == null || jsonText.trim().isEmpty) {
+      return [];
+    }
+    try {
+      final decoded = json.decode(jsonText);
+      if (decoded is! List) return [];
+      return decoded
+          .whereType<Map>()
+          .map(
+              (item) => SavedUserAccount.fromJson(item.cast<String, dynamic>()))
+          .where((item) =>
+              item.serverUrl.trim().isNotEmpty &&
+              item.username.trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('解析已保存账号失败: $e');
+      return [];
+    }
+  }
+
+  static Future<List<SavedUserAccount>> getSavedAccounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedText = prefs.getString(_savedAccountsKey);
+    final accounts = _parseSavedAccounts(savedText);
+    accounts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return accounts;
+  }
+
+  static Future<void> _saveSavedAccounts(
+    SharedPreferences prefs,
+    List<SavedUserAccount> accounts,
+  ) async {
+    final sorted = [...accounts];
+    sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    await prefs.setString(
+      _savedAccountsKey,
+      json.encode(sorted.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  static Future<void> _upsertSavedAccount({
+    required SharedPreferences prefs,
+    required String serverUrl,
+    required String username,
+    required String password,
+    required String cookies,
+  }) async {
+    final existing = _parseSavedAccounts(prefs.getString(_savedAccountsKey));
+    final targetKey = _buildAccountKey(serverUrl, username);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final updated = <SavedUserAccount>[];
+    var replaced = false;
+
+    for (final item in existing) {
+      if (item.accountKey == targetKey) {
+        replaced = true;
+        updated.add(item.copyWith(
+          serverUrl: serverUrl,
+          username: username,
+          password: password,
+          cookies: cookies,
+          updatedAt: now,
+        ));
+      } else {
+        updated.add(item);
+      }
+    }
+
+    if (!replaced) {
+      updated.add(SavedUserAccount(
+        serverUrl: serverUrl,
+        username: username,
+        password: password,
+        cookies: cookies,
+        updatedAt: now,
+      ));
+    }
+
+    await _saveSavedAccounts(prefs, updated);
+  }
+
+  static Future<void> switchSavedAccount(SavedUserAccount account) async {
+    final prefs = await SharedPreferences.getInstance();
+    await saveUserData(
+      serverUrl: account.serverUrl,
+      username: account.username,
+      password: account.password,
+      cookies: account.cookies,
+    );
+    await saveIsLocalMode(false);
+    await _upsertSavedAccount(
+      prefs: prefs,
+      serverUrl: account.serverUrl,
+      username: account.username,
+      password: account.password,
+      cookies: account.cookies,
+    );
+  }
+
   static Future<void> saveUserData({
     required String serverUrl,
     required String username,
@@ -316,6 +503,13 @@ class UserDataService {
     await prefs.setString(_usernameKey, username);
     await prefs.setString(_passwordKey, password);
     await prefs.setString(_cookiesKey, cookies);
+    await _upsertSavedAccount(
+      prefs: prefs,
+      serverUrl: serverUrl,
+      username: username,
+      password: password,
+      cookies: cookies,
+    );
   }
 
   // 获取服务器地址
@@ -351,17 +545,38 @@ class UserDataService {
   // 清除用户数据
   static Future<void> clearUserData() async {
     final prefs = await SharedPreferences.getInstance();
+    final currentServerUrl = prefs.getString(_serverUrlKey) ?? '';
+    final currentUsername = prefs.getString(_usernameKey) ?? '';
+    await clearPasswordAndCookies();
     await prefs.remove(_serverUrlKey);
     await prefs.remove(_usernameKey);
-    await prefs.remove(_passwordKey);
-    await prefs.remove(_cookiesKey);
+    if (currentServerUrl.isNotEmpty && currentUsername.isNotEmpty) {
+      await _upsertSavedAccount(
+        prefs: prefs,
+        serverUrl: currentServerUrl,
+        username: currentUsername,
+        password: '',
+        cookies: '',
+      );
+    }
   }
 
   // 只清除密码和cookies，保留服务器地址和用户名
   static Future<void> clearPasswordAndCookies() async {
     final prefs = await SharedPreferences.getInstance();
+    final currentServerUrl = prefs.getString(_serverUrlKey) ?? '';
+    final currentUsername = prefs.getString(_usernameKey) ?? '';
     await prefs.remove(_passwordKey);
     await prefs.remove(_cookiesKey);
+    if (currentServerUrl.isNotEmpty && currentUsername.isNotEmpty) {
+      await _upsertSavedAccount(
+        prefs: prefs,
+        serverUrl: currentServerUrl,
+        username: currentUsername,
+        password: '',
+        cookies: '',
+      );
+    }
   }
 
   // 获取所有用户数据
@@ -380,13 +595,13 @@ class UserDataService {
     final serverUrl = await getServerUrl();
     final username = await getUsername();
     final password = await getPassword();
-    
-    return serverUrl != null && 
-           serverUrl.isNotEmpty && 
-           username != null && 
-           username.isNotEmpty && 
-           password != null && 
-           password.isNotEmpty;
+
+    return serverUrl != null &&
+        serverUrl.isNotEmpty &&
+        username != null &&
+        username.isNotEmpty &&
+        password != null &&
+        password.isNotEmpty;
   }
 
   // 保存豆瓣数据源设置（存储key值）
@@ -409,7 +624,8 @@ class UserDataService {
   }
 
   // 保存豆瓣图片源设置（存储key值）
-  static Future<void> saveDoubanImageSource(String imageSourceDisplayName) async {
+  static Future<void> saveDoubanImageSource(
+      String imageSourceDisplayName) async {
     final prefs = await SharedPreferences.getInstance();
     final key = _getDoubanImageSourceKeyFromDisplayName(imageSourceDisplayName);
     await prefs.setString(_doubanImageSourceKey, key);
@@ -553,7 +769,7 @@ class UserDataService {
     _isLocalModeCache = value; // 缓存到内存
     return value;
   }
-  
+
   // 同步获取本地模式设置（从内存缓存读取）
   static bool getIsLocalModeSync() {
     return _isLocalModeCache ?? false;

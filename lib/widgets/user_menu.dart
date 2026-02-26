@@ -12,6 +12,7 @@ import '../services/live_service.dart';
 import '../services/version_service.dart';
 import '../services/danmaku_service.dart';
 import '../screens/download_screen.dart';
+import '../screens/home_screen.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import 'update_dialog.dart';
@@ -31,6 +32,7 @@ class UserMenu extends StatefulWidget {
 }
 
 class _UserMenuState extends State<UserMenu> {
+  String _serverUrl = '';
   String? _username;
   String _role = 'user';
   String _doubanDataSource = '直连';
@@ -44,6 +46,8 @@ class _UserMenuState extends State<UserMenu> {
   bool _adFilterEnabled = false;
   bool _showLive = false;
   bool _showSettings = false;
+  bool _isSwitchingAccount = false;
+  List<SavedUserAccount> _savedAccounts = const [];
 
   @override
   void initState() {
@@ -63,6 +67,7 @@ class _UserMenuState extends State<UserMenu> {
 
   Future<void> _loadUserInfo() async {
     final isLocalMode = await UserDataService.getIsLocalMode();
+    final serverUrl = await UserDataService.getServerUrl();
     final username = await UserDataService.getUsername();
     final cookies = await UserDataService.getCookies();
     final doubanDataSource =
@@ -75,10 +80,12 @@ class _UserMenuState extends State<UserMenu> {
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
     final showLive = await UserDataService.getShowLive();
+    final savedAccounts = await UserDataService.getSavedAccounts();
 
     if (mounted) {
       setState(() {
         _isLocalMode = isLocalMode;
+        _serverUrl = serverUrl ?? '';
         _username = username;
         _role = _parseRoleFromCookies(cookies);
         _doubanDataSource = doubanDataSource;
@@ -89,6 +96,7 @@ class _UserMenuState extends State<UserMenu> {
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
         _showLive = showLive;
+        _savedAccounts = savedAccounts;
       });
     }
   }
@@ -159,6 +167,204 @@ class _UserMenuState extends State<UserMenu> {
         (route) => false,
       );
     }
+  }
+
+  Future<void> _clearRuntimeCachesForAccountSwitch() async {
+    LiveService.clearAllCache();
+    PageCacheService().clearAllCache();
+    ApiService.clearSourcesDataCache();
+    await DanmakuService().clearAllManualMatches();
+    DanmakuService().clearSearchCache();
+  }
+
+  Future<void> _switchToSavedAccount(SavedUserAccount account) async {
+    if (_isSwitchingAccount) return;
+    if (!mounted) return;
+
+    final currentServer = await UserDataService.getServerUrl();
+    final currentUser = await UserDataService.getUsername();
+    final sameAccount =
+        currentServer == account.serverUrl && currentUser == account.username;
+    if (sameAccount) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前已是该账号')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSwitchingAccount = true);
+    try {
+      await _clearRuntimeCachesForAccountSwitch();
+      await UserDataService.switchSavedAccount(account);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已切换到 ${account.username}')),
+      );
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('切换账号失败: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSwitchingAccount = false);
+      }
+    }
+  }
+
+  String _accountSubtitle(SavedUserAccount account) {
+    final uri = Uri.tryParse(account.serverUrl);
+    final host = (uri?.host ?? account.serverUrl).trim();
+    return host.isEmpty ? account.serverUrl : host;
+  }
+
+  Future<void> _goLoginNewAccount() async {
+    if (_isSwitchingAccount) return;
+    await _clearRuntimeCachesForAccountSwitch();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  void _showSwitchAccountDialog() {
+    final activeKey =
+        '${_serverUrl.trim().toLowerCase()}|${(_username ?? '').trim().toLowerCase()}';
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            '切换用户',
+            style: FontUtils.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: widget.isDarkMode
+                  ? const Color(0xFFffffff)
+                  : const Color(0xFF1f2937),
+            ),
+          ),
+          backgroundColor:
+              widget.isDarkMode ? const Color(0xFF2c2c2c) : Colors.white,
+          content: SizedBox(
+            width: 320,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: _savedAccounts.isEmpty
+                          ? [
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                child: Text(
+                                  '暂无已登录账号',
+                                  style: FontUtils.poppins(
+                                    fontSize: 14,
+                                    color: widget.isDarkMode
+                                        ? const Color(0xFF9ca3af)
+                                        : const Color(0xFF6b7280),
+                                  ),
+                                ),
+                              ),
+                            ]
+                          : _savedAccounts.map((account) {
+                              final key = account.accountKey;
+                              final isActive = key == activeKey;
+                              final canSwitch =
+                                  account.cookies.trim().isNotEmpty &&
+                                      !isActive;
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  LucideIcons.userRound,
+                                  color: canSwitch
+                                      ? const Color(0xFF10b981)
+                                      : (widget.isDarkMode
+                                          ? const Color(0xFF9ca3af)
+                                          : const Color(0xFF6b7280)),
+                                ),
+                                title: Text(
+                                  account.username,
+                                  style: FontUtils.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: widget.isDarkMode
+                                        ? const Color(0xFFffffff)
+                                        : const Color(0xFF1f2937),
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  _accountSubtitle(account),
+                                  style: FontUtils.poppins(
+                                    fontSize: 12,
+                                    color: widget.isDarkMode
+                                        ? const Color(0xFF9ca3af)
+                                        : const Color(0xFF6b7280),
+                                  ),
+                                ),
+                                trailing: isActive
+                                    ? const Icon(
+                                        LucideIcons.check,
+                                        size: 18,
+                                        color: Color(0xFF10b981),
+                                      )
+                                    : (!account.hasLoginSession
+                                        ? Text(
+                                            '需重登',
+                                            style: FontUtils.poppins(
+                                              fontSize: 11,
+                                              color: const Color(0xFFef4444),
+                                            ),
+                                          )
+                                        : null),
+                                onTap: canSwitch
+                                    ? () async {
+                                        Navigator.of(dialogContext).pop();
+                                        await _switchToSavedAccount(account);
+                                      }
+                                    : null,
+                              );
+                            }).toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _isSwitchingAccount
+                        ? null
+                        : () {
+                            Navigator.of(dialogContext).pop();
+                            _goLoginNewAccount();
+                          },
+                    icon: const Icon(LucideIcons.userPlus, size: 16),
+                    label: Text(
+                      '登录新用户',
+                      style: FontUtils.poppins(fontSize: 14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _handleClearDoubanCache() async {
@@ -895,6 +1101,43 @@ class _UserMenuState extends State<UserMenu> {
                     const SizedBox(width: 8),
                     _buildRoleTag(),
                   ],
+                ),
+              if (!_isLocalMode) const SizedBox(height: 12),
+              if (!_isLocalMode)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed:
+                        _isSwitchingAccount ? null : _showSwitchAccountDialog,
+                    icon: Icon(
+                      LucideIcons.users,
+                      size: 16,
+                      color: widget.isDarkMode
+                          ? const Color(0xFFd1d5db)
+                          : const Color(0xFF374151),
+                    ),
+                    label: Text(
+                      _isSwitchingAccount ? '切换中...' : '切换用户',
+                      style: FontUtils.poppins(
+                        fontSize: 13,
+                        color: widget.isDarkMode
+                            ? const Color(0xFFd1d5db)
+                            : const Color(0xFF374151),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: widget.isDarkMode
+                            ? const Color(0xFF4b5563)
+                            : const Color(0xFFd1d5db),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                  ),
                 ),
             ],
           ),
