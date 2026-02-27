@@ -212,6 +212,12 @@ class VideoPlayerWidgetController {
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     with WidgetsBindingObserver {
+  static const Duration _shortDramaPipPreFullscreenDelay =
+      Duration(milliseconds: 420);
+  static const Duration _shortDramaPipPreStartDelay =
+      Duration(milliseconds: 180);
+  static const Duration _pipRetryDelay = Duration(milliseconds: 480);
+
   PlayerAdapter? _adapter;
   bool _isInitialized = false;
   bool _hasCompleted = false;
@@ -234,6 +240,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _controlsVisible = true;
   bool _isFullscreen = false; // 💡 新增：记录内部全屏状态
   String _lastDanmakuOverlayTrace = '';
+  final GlobalKey _videoRenderAreaKey = GlobalKey();
   late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
   final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey =
@@ -289,24 +296,74 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     setState(fn);
   }
 
+  ({int aspectX, int aspectY, int preferredWidth, int preferredHeight})
+      _resolvePipLayout() {
+    var usePortrait = widget.isShortDrama;
+    final width = _adapter?.state.width ?? 0;
+    final height = _adapter?.state.height ?? 0;
+
+    if (!usePortrait && width > 0 && height > 0) {
+      usePortrait = height > width;
+    }
+
+    if (usePortrait) {
+      return (
+        aspectX: 9,
+        aspectY: 16,
+        preferredWidth: 270,
+        preferredHeight: 480,
+      );
+    }
+
+    return (
+      aspectX: 16,
+      aspectY: 9,
+      preferredWidth: 480,
+      preferredHeight: 270,
+    );
+  }
+
+  ({int left, int top, int right, int bottom})? _resolvePipSourceRect() {
+    if (!Platform.isAndroid) return null;
+
+    final renderContext = _videoRenderAreaKey.currentContext;
+    if (renderContext == null) return null;
+    final renderObject = renderContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return null;
+    }
+
+    final size = renderObject.size;
+    if (size.width <= 0 || size.height <= 0) {
+      return null;
+    }
+
+    final offset = renderObject.localToGlobal(Offset.zero);
+    final dpr = MediaQuery.maybeOf(renderContext)?.devicePixelRatio ??
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+
+    final left = (offset.dx * dpr).round();
+    final top = (offset.dy * dpr).round();
+    final right = ((offset.dx + size.width) * dpr).round();
+    final bottom = ((offset.dy + size.height) * dpr).round();
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+
+    return (
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+    );
+  }
+
   void _configurePipAutoEnter(bool enabled) {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return;
     }
 
-    unawaited(_pip
-        .setup(PipOptions(
-      autoEnterEnabled: enabled,
-      aspectRatioX: 16,
-      aspectRatioY: 9,
-      preferredContentWidth: 480,
-      preferredContentHeight: 270,
-      controlStyle: 2,
-    ))
-        .catchError((error) {
-      debugPrint('[PiP] setup_skip: $error');
-      return false;
-    }));
+    unawaited(_setupPip(autoEnterEnabled: enabled));
   }
 
   @override
@@ -319,7 +376,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
     _initializePlayer();
-    _setupPip();
+    unawaited(_setupPip());
     _registerPipObserver();
     widget.onControllerCreated?.call(VideoPlayerWidgetController._(this));
   }
@@ -718,32 +775,29 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _exitWebFullscreenCallback?.call();
   }
 
-  void _setupPip() {
+  Future<void> _setupPip({bool autoEnterEnabled = true}) async {
     if (!Platform.isAndroid && !Platform.isIOS) {
       return;
     }
 
-    // 💡 优化：智能检测视频比例
-    double aspectX = 16;
-    double aspectY = 9;
-
-    final size = _adapter?.state;
-    if (size != null && size.width > 0 && size.height > 0) {
-      if (size.height > size.width) {
-        // 竖屏视频比例适配
-        aspectX = 9;
-        aspectY = 16;
-      }
+    final layout = _resolvePipLayout();
+    final sourceRect = _resolvePipSourceRect();
+    try {
+      await _pip.setup(PipOptions(
+        autoEnterEnabled: autoEnterEnabled,
+        aspectRatioX: layout.aspectX,
+        aspectRatioY: layout.aspectY,
+        sourceRectHintLeft: sourceRect?.left,
+        sourceRectHintTop: sourceRect?.top,
+        sourceRectHintRight: sourceRect?.right,
+        sourceRectHintBottom: sourceRect?.bottom,
+        preferredContentWidth: layout.preferredWidth,
+        preferredContentHeight: layout.preferredHeight,
+        controlStyle: 2,
+      ));
+    } catch (error) {
+      debugPrint('[PiP] setup_skip: $error');
     }
-
-    _pip.setup(PipOptions(
-      autoEnterEnabled: true,
-      aspectRatioX: aspectX.toInt(),
-      aspectRatioY: aspectY.toInt(),
-      preferredContentWidth: aspectX == 9 ? 270 : 480,
-      preferredContentHeight: aspectY == 16 ? 480 : 270,
-      controlStyle: 2,
-    ));
   }
 
   void _registerPipObserver() {
@@ -785,18 +839,44 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Future<void> _enterPipMode() async {
     debugPrint('_enterPipMode');
     try {
-      var support = await _pip.isSupported();
+      final support = await _pip.isSupported();
       if (!support) {
         debugPrint('Device does not support PiP!');
         return;
       }
-      // 💡 进入前根据当前视频比例重新设置一次，确保小窗形状正确
-      _setupPip();
+
+      if (widget.isShortDrama && !_isFullscreen) {
+        debugPrint(
+            '\u77ed\u5267\u8fdb\u5165\u5c0f\u7a97\u524d\u5148\u5207\u6362\u5230\u5168\u5c4f\u72b6\u6001');
+        _safeSetState(() => _isFullscreen = true);
+        widget.onFullscreenChanged?.call(true);
+        await WidgetsBinding.instance.endOfFrame;
+        await Future.delayed(_shortDramaPipPreFullscreenDelay);
+        if (!mounted) return;
+      }
+
+      await _setupPip();
       await _adapter?.play();
-      await _pip.start();
+
+      if (widget.isShortDrama) {
+        await Future.delayed(_shortDramaPipPreStartDelay);
+        if (!mounted) return;
+      }
+
+      var started = await _pip.start();
+      if (!started) {
+        debugPrint(
+            'PiP \u9996\u6b21\u8fdb\u5165\u5931\u8d25\uff0c\u91cd\u8bd5\u4e00\u6b21');
+        await Future.delayed(_pipRetryDelay);
+        await _setupPip();
+        started = await _pip.start();
+        if (!started) {
+          debugPrint('PiP \u91cd\u8bd5\u540e\u4ecd\u5931\u8d25');
+        }
+      }
     } catch (e) {
       debugPrint('Failed to enter PiP mode: $e');
-      _setupPip();
+      unawaited(_setupPip());
     }
   }
 
@@ -878,7 +958,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
 
     // 提前构建视频表面
-    final Widget videoSurface = _buildVideoSurface();
+    final Widget videoSurface = KeyedSubtree(
+      key: _videoRenderAreaKey,
+      child: _buildVideoSurface(),
+    );
     final useEmbeddedDesktopControls =
         widget.surface == VideoPlayerSurface.desktop &&
             _adapter is MediaKitAdapter;

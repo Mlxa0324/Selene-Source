@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -327,9 +327,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onSwipeStart(DragStartDetails details) {
     if (_isLocked || widget.live) return;
     _screenSize ??= MediaQuery.of(context).size;
-    
+
     // 💡 优化：横屏全屏时，如果触摸起点在屏幕顶部或底部 40 像素内，视为系统导航操作，直接拦截进度调节
-    if (_isEffectiveFullscreen && (details.globalPosition.dy < 40 || details.globalPosition.dy > (_screenSize!.height - 40))) {
+    if (_isEffectiveFullscreen &&
+        (details.globalPosition.dy < 40 ||
+            details.globalPosition.dy > (_screenSize!.height - 40))) {
       return;
     }
 
@@ -349,7 +351,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       return;
 
     // 💡 优化：横屏全屏时，如果向上或向下滑动的趋势明显（dy 绝对值较大），视为尝试拉出系统栏或进入小窗，停止进度调节
-    if (_isEffectiveFullscreen && details.delta.dy.abs() > 5 && details.delta.dy.abs() > details.delta.dx.abs()) {
+    if (_isEffectiveFullscreen &&
+        details.delta.dy.abs() > 5 &&
+        details.delta.dy.abs() > details.delta.dx.abs()) {
       _onSwipeEnd(DragEndDetails());
       return;
     }
@@ -1467,7 +1471,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                         if (Platform.isAndroid)
                           GestureDetector(
                             onTap: () async {
-                              print('PIP button clicked!');
+                              debugPrint('点击小窗按钮，准备进入画中画');
 
                               _onUserInteraction();
 
@@ -1796,25 +1800,26 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-            onHorizontalDragStart: widget.live
-                ? null
-                : (details) {
-                    // 💡 优化：横屏全屏时，如果触摸点在进度条容器的最顶部或最底部边缘（dy 极小或极大），
-                    // 说明可能是想滑出系统栏，此时忽略拖动起手。
-                    if (details.localPosition.dy < 4 || details.localPosition.dy > 20) return;
+      onHorizontalDragStart: widget.live
+          ? null
+          : (details) {
+              // 💡 优化：横屏全屏时，如果触摸点在进度条容器的最顶部或最底部边缘（dy 极小或极大），
+              // 说明可能是想滑出系统栏，此时忽略拖动起手。
+              if (details.localPosition.dy < 4 || details.localPosition.dy > 20)
+                return;
 
-                    _isDragging = true;
-                    widget.onDragStart?.call();
-                    _updateDrag(details.localPosition.dx, context);
-                  },
-            onHorizontalDragUpdate: widget.live
-                ? null
-                : (details) {
-                    if (_isDragging) {
-                      widget.onDragUpdate?.call();
-                      _updateDrag(details.localPosition.dx, context);
-                    }
-                  },
+              _isDragging = true;
+              widget.onDragStart?.call();
+              _updateDrag(details.localPosition.dx, context);
+            },
+      onHorizontalDragUpdate: widget.live
+          ? null
+          : (details) {
+              if (_isDragging) {
+                widget.onDragUpdate?.call();
+                _updateDrag(details.localPosition.dx, context);
+              }
+            },
       onHorizontalDragEnd: widget.live
           ? null
           : (details) async {
