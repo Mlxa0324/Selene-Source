@@ -216,7 +216,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       Duration(milliseconds: 420);
   static const Duration _shortDramaPipPreStartDelay =
       Duration(milliseconds: 180);
-  static const Duration _pipRetryDelay = Duration(milliseconds: 480);
+  static const Duration _pipRetryDelay = Duration(milliseconds: 360);
 
   PlayerAdapter? _adapter;
   bool _isInitialized = false;
