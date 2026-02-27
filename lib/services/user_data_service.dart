@@ -492,6 +492,25 @@ class UserDataService {
     );
   }
 
+  static Future<void> logoutSavedAccount(SavedUserAccount account) async {
+    final prefs = await SharedPreferences.getInstance();
+    await _upsertSavedAccount(
+      prefs: prefs,
+      serverUrl: account.serverUrl,
+      username: account.username,
+      password: '',
+      cookies: '',
+    );
+
+    final currentServerUrl = prefs.getString(_serverUrlKey) ?? '';
+    final currentUsername = prefs.getString(_usernameKey) ?? '';
+    if (_buildAccountKey(currentServerUrl, currentUsername) ==
+        account.accountKey) {
+      await prefs.remove(_passwordKey);
+      await prefs.remove(_cookiesKey);
+    }
+  }
+
   static Future<void> saveUserData({
     required String serverUrl,
     required String username,

@@ -237,131 +237,209 @@ class _UserMenuState extends State<UserMenu> {
     );
   }
 
+  Future<void> _logoutSavedAccount(
+    SavedUserAccount account,
+    StateSetter dialogSetState,
+  ) async {
+    if (_isSwitchingAccount) return;
+
+    setState(() => _isSwitchingAccount = true);
+    try {
+      await UserDataService.logoutSavedAccount(account);
+      final refreshedAccounts = await UserDataService.getSavedAccounts();
+      if (!mounted) return;
+
+      setState(() => _savedAccounts = refreshedAccounts);
+      dialogSetState(() {});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已登出账号 ${account.username}'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('登出账号失败: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSwitchingAccount = false);
+      }
+    }
+  }
+
   void _showSwitchAccountDialog() {
     final activeKey =
         '${_serverUrl.trim().toLowerCase()}|${(_username ?? '').trim().toLowerCase()}';
     showDialog(
       context: context,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(
-            '切换用户',
-            style: FontUtils.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: widget.isDarkMode
-                  ? const Color(0xFFffffff)
-                  : const Color(0xFF1f2937),
-            ),
-          ),
-          backgroundColor:
-              widget.isDarkMode ? const Color(0xFF2c2c2c) : Colors.white,
-          content: SizedBox(
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 280),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: _savedAccounts.isEmpty
-                          ? [
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                child: Text(
-                                  '暂无已登录账号',
-                                  style: FontUtils.poppins(
-                                    fontSize: 14,
-                                    color: widget.isDarkMode
-                                        ? const Color(0xFF9ca3af)
-                                        : const Color(0xFF6b7280),
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return AlertDialog(
+              title: Text(
+                '切换用户',
+                style: FontUtils.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: widget.isDarkMode
+                      ? const Color(0xFFffffff)
+                      : const Color(0xFF1f2937),
+                ),
+              ),
+              backgroundColor:
+                  widget.isDarkMode ? const Color(0xFF2c2c2c) : Colors.white,
+              content: SizedBox(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: _savedAccounts.isEmpty
+                              ? [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12),
+                                    child: Text(
+                                      '暂无已登录账号',
+                                      style: FontUtils.poppins(
+                                        fontSize: 14,
+                                        color: widget.isDarkMode
+                                            ? const Color(0xFF9ca3af)
+                                            : const Color(0xFF6b7280),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ]
-                          : _savedAccounts.map((account) {
-                              final key = account.accountKey;
-                              final isActive = key == activeKey;
-                              final canSwitch =
-                                  account.cookies.trim().isNotEmpty &&
-                                      !isActive;
-                              return ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: Icon(
-                                  LucideIcons.userRound,
-                                  color: canSwitch
-                                      ? const Color(0xFF10b981)
-                                      : (widget.isDarkMode
-                                          ? const Color(0xFF9ca3af)
-                                          : const Color(0xFF6b7280)),
-                                ),
-                                title: Text(
-                                  account.username,
-                                  style: FontUtils.poppins(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: widget.isDarkMode
-                                        ? const Color(0xFFffffff)
-                                        : const Color(0xFF1f2937),
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  _accountSubtitle(account),
-                                  style: FontUtils.poppins(
-                                    fontSize: 12,
-                                    color: widget.isDarkMode
-                                        ? const Color(0xFF9ca3af)
-                                        : const Color(0xFF6b7280),
-                                  ),
-                                ),
-                                trailing: isActive
-                                    ? const Icon(
-                                        LucideIcons.check,
-                                        size: 18,
-                                        color: Color(0xFF10b981),
-                                      )
-                                    : (!account.hasLoginSession
-                                        ? Text(
-                                            '需重登',
-                                            style: FontUtils.poppins(
-                                              fontSize: 11,
-                                              color: const Color(0xFFef4444),
-                                            ),
+                                ]
+                              : _savedAccounts.map((account) {
+                                  final key = account.accountKey;
+                                  final isActive = key == activeKey;
+                                  final canSwitch = account.hasLoginSession &&
+                                      !isActive &&
+                                      !_isSwitchingAccount;
+                                  final canLogout = account.hasLoginSession &&
+                                      !isActive &&
+                                      !_isSwitchingAccount;
+
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: Icon(
+                                      LucideIcons.userRound,
+                                      color: canSwitch
+                                          ? const Color(0xFF10b981)
+                                          : (widget.isDarkMode
+                                              ? const Color(0xFF9ca3af)
+                                              : const Color(0xFF6b7280)),
+                                    ),
+                                    title: Text(
+                                      account.username,
+                                      style: FontUtils.poppins(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: widget.isDarkMode
+                                            ? const Color(0xFFffffff)
+                                            : const Color(0xFF1f2937),
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      _accountSubtitle(account),
+                                      style: FontUtils.poppins(
+                                        fontSize: 12,
+                                        color: widget.isDarkMode
+                                            ? const Color(0xFF9ca3af)
+                                            : const Color(0xFF6b7280),
+                                      ),
+                                    ),
+                                    trailing: isActive
+                                        ? const Icon(
+                                            LucideIcons.check,
+                                            size: 18,
+                                            color: Color(0xFF10b981),
                                           )
-                                        : null),
-                                onTap: canSwitch
-                                    ? () async {
-                                        Navigator.of(dialogContext).pop();
-                                        await _switchToSavedAccount(account);
-                                      }
-                                    : null,
-                              );
-                            }).toList(),
+                                        : Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (!account.hasLoginSession)
+                                                Text(
+                                                  '需重登',
+                                                  style: FontUtils.poppins(
+                                                    fontSize: 11,
+                                                    color:
+                                                        const Color(0xFFef4444),
+                                                  ),
+                                                ),
+                                              if (canLogout)
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    await _logoutSavedAccount(
+                                                      account,
+                                                      dialogSetState,
+                                                    );
+                                                  },
+                                                  style: TextButton.styleFrom(
+                                                    minimumSize: Size.zero,
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 6,
+                                                    ),
+                                                    tapTargetSize:
+                                                        MaterialTapTargetSize
+                                                            .shrinkWrap,
+                                                  ),
+                                                  child: Text(
+                                                    '登出',
+                                                    style: FontUtils.poppins(
+                                                      fontSize: 12,
+                                                      color: const Color(
+                                                          0xFFef4444),
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                    onTap: canSwitch
+                                        ? () async {
+                                            Navigator.of(dialogContext).pop();
+                                            await _switchToSavedAccount(
+                                                account);
+                                          }
+                                        : null,
+                                  );
+                                }).toList(),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: _isSwitchingAccount
-                        ? null
-                        : () {
-                            Navigator.of(dialogContext).pop();
-                            _goLoginNewAccount();
-                          },
-                    icon: const Icon(LucideIcons.userPlus, size: 16),
-                    label: Text(
-                      '登录新用户',
-                      style: FontUtils.poppins(fontSize: 14),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isSwitchingAccount
+                            ? null
+                            : () {
+                                Navigator.of(dialogContext).pop();
+                                _goLoginNewAccount();
+                              },
+                        icon: const Icon(LucideIcons.userPlus, size: 16),
+                        label: Text(
+                          '登录新用户',
+                          style: FontUtils.poppins(fontSize: 14),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

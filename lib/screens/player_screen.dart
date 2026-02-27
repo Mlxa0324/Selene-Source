@@ -184,6 +184,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _isWebFullscreen = false;
   // 真全屏状态
   bool _isFullscreen = false;
+  bool _isEnteringLandscapeFullscreen = false;
+  int _fullscreenTransitionSerial = 0;
 
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
@@ -1529,28 +1531,42 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  void _onFullscreenChanged(bool isFullscreen) {
+  Future<void> _waitForLandscapeMetrics({
+    Duration timeout = const Duration(milliseconds: 850),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      final view = views.isNotEmpty ? views.first : null;
+      if (view != null) {
+        final size = view.physicalSize;
+        if (size.width > size.height) {
+          return;
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
+  void _onFullscreenChanged(bool isFullscreen) async {
+    final requestId = ++_fullscreenTransitionSerial;
     final prev = _isFullscreen;
     final changed = prev != isFullscreen;
     debugPrint(
-        '[FullscreenTrace] source=player_screen, event=onFullscreenChanged, prev=$prev, next=$isFullscreen, web=$_isWebFullscreen, ep=$_currentDanmakuEpisodeId, list=${_danmakuList.length}');
-
-    setState(() {
-      _isFullscreen = isFullscreen;
-      if (changed && DeviceUtils.isPC()) {
-        // Desktop DanmakuScreen needs a hard refresh after fullscreen resize.
-        _danmakuViewportVersion++;
-      }
-    });
-    if (changed && DeviceUtils.isPC()) {
-      debugPrint(
-          '[DanmakuLayer] viewport_reset: full=$isFullscreen, version=$_danmakuViewportVersion, ep=$_currentDanmakuEpisodeId');
-    }
-
-    // Keep episode list aligned after fullscreen toggle.
-    _scrollToCurrentEpisode();
+        '[FullscreenTrace] source=player_screen, event=onFullscreenChanged, prev=$prev, next=$isFullscreen, web=$_isWebFullscreen, entering=$_isEnteringLandscapeFullscreen, ep=$_currentDanmakuEpisodeId, list=${_danmakuList.length}');
 
     if (DeviceUtils.isPC()) {
+      setState(() {
+        _isFullscreen = isFullscreen;
+        if (changed) {
+          _danmakuViewportVersion++;
+        }
+      });
+      if (changed) {
+        debugPrint(
+            '[DanmakuLayer] viewport_reset: full=$isFullscreen, version=$_danmakuViewportVersion, ep=$_currentDanmakuEpisodeId');
+      }
+      _scrollToCurrentEpisode();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _rebaseDanmakuCursorToCurrentPosition(
@@ -1561,32 +1577,54 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     if (isFullscreen) {
-      // 💡 优化：根据进场时或准备就绪时判断的 _isShortDrama 决定全屏方向
       if (_isShortDrama) {
-        // 竖屏视频/短剧：保持竖屏全屏，并保留状态栏
+        setState(() {
+          _isFullscreen = true;
+          _isEnteringLandscapeFullscreen = false;
+        });
         SystemChrome.setPreferredOrientations([
           DeviceOrientation.portraitUp,
         ]);
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-        debugPrint('全屏模式：短剧/竖屏 (保持竖屏，保留状态栏)');
+        debugPrint(
+            '\u5168\u5c4f\u6a21\u5f0f\uff1a\u77ed\u5267/\u7ad6\u5c4f (\u4fdd\u6301\u7ad6\u5c4f\uff0c\u4fdd\u7559\u72b6\u6001\u680f)');
       } else {
-        // 横屏视频：切换到横屏全屏，使用沉浸模式
+        if (!_isEnteringLandscapeFullscreen) {
+          setState(() {
+            _isEnteringLandscapeFullscreen = true;
+          });
+        }
+
         SystemChrome.setPreferredOrientations([
           DeviceOrientation.landscapeLeft,
           DeviceOrientation.landscapeRight,
         ]);
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        debugPrint('全屏模式：普通剧/横屏 (切换横屏，沉浸模式)');
+
+        await _waitForLandscapeMetrics();
+        if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+        setState(() {
+          _isFullscreen = true;
+          _isEnteringLandscapeFullscreen = false;
+        });
+        debugPrint(
+            '\u5168\u5c4f\u6a21\u5f0f\uff1a\u666e\u901a\u5267/\u6a2a\u5c4f (\u65cb\u8f6c\u7a33\u5b9a\u540e\u5207\u6362\u5168\u5c4f\u5e03\u5c40)');
       }
     } else {
+      setState(() {
+        _isFullscreen = false;
+        _isEnteringLandscapeFullscreen = false;
+      });
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
+
+    _scrollToCurrentEpisode();
   }
 
-  /// 添加视频播放进度监听器
   void _addVideoProgressListener() {
     if (_videoPlayerController != null) {
       // 添加进度监听器
@@ -4920,7 +4958,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       return Stack(
                         children: [
                           // Main content (without player).
-                          if (!_isWebFullscreen)
+                          if (!_isWebFullscreen &&
+                              !_isEnteringLandscapeFullscreen)
                             if (_isTablet && !_isPortraitTablet)
                               // Tablet landscape layout.
                               _buildTabletLandscapeLayout(
@@ -5032,7 +5071,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
     // 如果是真全屏模式，不预留状态栏高度
-    final topOffset = (_isFullscreen) ? 0.0 : (statusBarHeight + macOSPadding);
+    final topOffset = (_isFullscreen || _isEnteringLandscapeFullscreen)
+        ? 0.0
+        : (statusBarHeight + macOSPadding);
 
     if (_isWebFullscreen) {
       // 网页全屏模式：播放器占据整个屏幕（保留顶部安全区域）
@@ -5104,7 +5145,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else {
         // 手机模式
         // 💡 优化：全屏时直接 fill，避免依赖 MediaQuery 的高度计算延迟导致跳变
-        if (_isFullscreen) {
+        if (_isFullscreen || _isEnteringLandscapeFullscreen) {
           return Positioned.fill(
             top: 0,
             child: Container(

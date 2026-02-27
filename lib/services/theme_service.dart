@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'dart:io' show Platform;
 import 'package:macos_window_utils/macos_window_utils.dart';
 
-class ThemeService extends ChangeNotifier {
+class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.system;
+  Brightness _lastPlatformBrightness =
+      WidgetsBinding.instance.platformDispatcher.platformBrightness;
 
   ThemeMode get themeMode => _themeMode;
   bool get isDarkMode {
@@ -15,18 +17,59 @@ class ThemeService extends ChangeNotifier {
   }
 
   ThemeService() {
+    WidgetsBinding.instance.addObserver(this);
     _loadTheme();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    _refreshSystemThemeIfNeeded(force: true);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshSystemThemeIfNeeded();
+    }
+  }
+
+  void _refreshSystemThemeIfNeeded({bool force = false}) {
+    final currentBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final brightnessChanged = currentBrightness != _lastPlatformBrightness;
+    _lastPlatformBrightness = currentBrightness;
+
+    if (_themeMode != ThemeMode.system) {
+      return;
+    }
+
+    if (!force && !brightnessChanged) {
+      return;
+    }
+
+    notifyListeners();
+    _updateMacOSWindowAppearance();
   }
 
   void _loadTheme() async {
     // 每次启动都默认跟随系统主题，不保存用户的手动选择
     _themeMode = ThemeMode.system;
+    _lastPlatformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
     notifyListeners();
     _updateMacOSWindowAppearance();
   }
 
   void setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
+    _lastPlatformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
     // 不再保存到 SharedPreferences，每次启动都重新遵循系统主题
     notifyListeners();
     _updateMacOSWindowAppearance();
