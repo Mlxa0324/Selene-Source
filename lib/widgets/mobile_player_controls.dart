@@ -114,12 +114,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return size.width > size.height || _isFullscreen;
   }
 
-  bool get _isTabletLayout {
-    final size = MediaQuery.maybeOf(context)?.size ?? Size.zero;
-    final shortestSide = size.shortestSide;
-    return shortestSide >= 600;
-  }
-
   bool _isFullscreen = false;
 
   // 💡 电池电量相关状态
@@ -1302,8 +1296,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildBottomControls() {
     final iconSize = _isEffectiveFullscreen ? 28.0 : 24.0;
-    final double playTimeFontSize =
-        (!_isEffectiveFullscreen && _isTabletLayout) ? 17.0 : 14.0;
 
     final iconPadding = EdgeInsets.only(
         left: _isEffectiveFullscreen ? 10 : 8,
@@ -1374,10 +1366,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               padding: iconPadding,
                               child: Text(
                                 currentPlayTime(),
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: playTimeFontSize,
-                                ),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 14),
                               ),
                             ),
                           ),
