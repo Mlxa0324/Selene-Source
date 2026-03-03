@@ -140,7 +140,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   void _initBattery() async {
     try {
-      _batteryLevel = await _battery.batteryLevel;
+      final level = await _battery.batteryLevel;
+      if (level >= 0 && level <= 100) {
+        _batteryLevel = level;
+      }
       _batteryState = await _battery.batteryState;
       if (mounted) setState(() {});
 
@@ -162,6 +165,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _updateBatteryLevel() async {
     try {
       final level = await _battery.batteryLevel;
+      if (level < 0 || level > 100) {
+        return;
+      }
       if (mounted && level != _batteryLevel) {
         setState(() => _batteryLevel = level);
       }
@@ -1119,6 +1125,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Widget _buildBatteryBox() {
     final isCharging = _batteryState == BatteryState.charging ||
         _batteryState == BatteryState.full;
+    final safeBatteryLevel = _batteryLevel.clamp(0, 100).toDouble();
+    final safeWidthFactor = safeBatteryLevel / 100.0;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1146,12 +1154,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               ),
               // 💡 电池进度条
               FractionallySizedBox(
-                widthFactor: _batteryLevel / 100.0,
+                widthFactor: safeWidthFactor,
                 child: Container(
                   decoration: BoxDecoration(
                     color: isCharging
                         ? Colors.green
-                        : (_batteryLevel <= 20 ? Colors.red : Colors.white),
+                        : (safeBatteryLevel <= 20 ? Colors.red : Colors.white),
                     borderRadius: BorderRadius.circular(0.5),
                   ),
                 ),
