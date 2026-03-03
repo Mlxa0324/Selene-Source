@@ -70,6 +70,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool adFilterEnabled;
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
+  final ValueChanged<double>? onPlaybackSpeedChanged; // 播放倍速变化回调
 
   const VideoPlayerWidget({
     super.key,
@@ -126,6 +127,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onCastButtonPressed,
     this.isFavorite,
     this.onFavoriteToggle,
+    this.onPlaybackSpeedChanged,
   });
 
   @override
@@ -719,6 +721,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       }
 
       _playbackSpeed.value = currentSpeed;
+      _notifyPlaybackSpeedChanged(currentSpeed, reason: 'switch_data_source');
       await _adapter!.setRate(currentSpeed);
 
       if (mounted) {
@@ -746,8 +749,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _progressListeners.remove(listener);
   }
 
+  void _notifyPlaybackSpeedChanged(double speed, {required String reason}) {
+    widget.onPlaybackSpeedChanged?.call(speed);
+    debugPrint('播放倍速已更新: $speed, 原因: $reason');
+  }
+
   Future<void> _setPlaybackSpeed(double speed) async {
     _playbackSpeed.value = speed;
+    _notifyPlaybackSpeedChanged(speed, reason: 'set_playback_speed');
     await _adapter?.setRate(speed);
   }
 

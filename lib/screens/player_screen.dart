@@ -186,6 +186,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _isFullscreen = false;
   bool _isEnteringLandscapeFullscreen = false;
   int _fullscreenTransitionSerial = 0;
+  int _sourceSwitchRecordSerial = 0;
 
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
@@ -474,19 +475,62 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     await DanmakuService().saveSettings(settings);
 
-    _danmakuController?.updateOption(DanmakuOption(
+    _refreshDanmakuOptionForPlayback(
+        reason: 'settings_changed', settings: settings);
+  }
+
+  double _resolvePlaybackSpeedForDanmaku([double? speed]) {
+    final raw = speed ?? _videoPlayerController?.playbackSpeed ?? 1.0;
+    if (!raw.isFinite || raw <= 0) return 1.0;
+    return raw;
+  }
+
+  DanmakuOption _buildDanmakuOption(
+    DanmakuSettings settings, {
+    double? playbackSpeed,
+  }) {
+    final speed = _resolvePlaybackSpeedForDanmaku(playbackSpeed);
+    final duration = settings.syncVideoSpeed
+        ? (settings.duration / speed)
+        : settings.duration;
+    return DanmakuOption(
       fontSize: settings.fontSize * settings.scale,
       opacity: settings.opacity,
-      duration: settings.syncVideoSpeed
-          ? (settings.duration / (_videoPlayerController?.playbackSpeed ?? 1.0))
-          : settings.duration,
+      duration: duration,
       hideScroll: settings.hideScroll,
       hideTop: settings.hideTop,
       hideBottom: settings.hideBottom,
       lineHeight: settings.lineSpacing,
       fontWeight: (settings.fontWeight * 4).round().clamp(1, 9),
       massiveMode: !settings.preventOverlap,
-    ));
+    );
+  }
+
+  void _refreshDanmakuOptionForPlayback({
+    required String reason,
+    DanmakuSettings? settings,
+    double? playbackSpeed,
+  }) {
+    final effectiveSettings = settings ?? _danmakuSettings;
+    if (!effectiveSettings.enabled || _danmakuController == null) return;
+
+    final speed = _resolvePlaybackSpeedForDanmaku(playbackSpeed);
+    final option =
+        _buildDanmakuOption(effectiveSettings, playbackSpeed: playbackSpeed);
+    _danmakuController?.updateOption(option);
+
+    if (effectiveSettings.syncVideoSpeed) {
+      final duration = effectiveSettings.duration / speed;
+      debugPrint(
+          '弹幕速度已同步视频倍速: 原因=$reason, 视频倍速=${speed.toStringAsFixed(2)}x, 弹幕时长=${duration.toStringAsFixed(2)}s');
+    }
+  }
+
+  void _onPlaybackSpeedChanged(double speed) {
+    _refreshDanmakuOptionForPlayback(
+      reason: 'playback_speed_changed',
+      playbackSpeed: speed,
+    );
   }
 
   /// 加载弹幕数据
@@ -587,6 +631,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         return;
       }
 
+      _refreshDanmakuOptionForPlayback(reason: 'controller_created');
       _rebaseDanmakuCursorToCurrentPosition(
           reason: 'controller_created', triggerNow: true);
       _syncDanmakuPlaybackState(reason: 'controller_created');
@@ -1548,6 +1593,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  bool _isPhysicalLandscapeNow() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    final view = views.isNotEmpty ? views.first : null;
+    if (view == null) return !_isPortraitTablet;
+    final size = view.physicalSize;
+    return size.width >= size.height;
+  }
+
   void _onFullscreenChanged(bool isFullscreen) async {
     final requestId = ++_fullscreenTransitionSerial;
     final prev = _isFullscreen;
@@ -1616,9 +1669,29 @@ class _PlayerScreenState extends State<PlayerScreen>
         _isFullscreen = false;
         _isEnteringLandscapeFullscreen = false;
       });
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
+      if (_isTablet) {
+        // 平板退出全屏时，按当前物理方向优先恢复，避免被强制切到竖屏。
+        final isLandscapeNow = _isPhysicalLandscapeNow();
+        final orientations = isLandscapeNow
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+                DeviceOrientation.portraitUp,
+                DeviceOrientation.portraitDown,
+              ]
+            : const [
+                DeviceOrientation.portraitUp,
+                DeviceOrientation.portraitDown,
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ];
+        SystemChrome.setPreferredOrientations(orientations);
+        debugPrint('退出全屏：平板按设备方向恢复自动旋转，当前方向=${isLandscapeNow ? '横屏' : '竖屏'}');
+      } else {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.portraitUp,
+        ]);
+      }
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
 
@@ -1927,20 +2000,19 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 刷新源列表
-  void _saveProgressForSwitchedSource({
+  Future<bool> _saveProgressForSwitchedSource({
     required SearchResult newSource,
     required int episodeIndex,
     required int playTime,
     required int totalTime,
-  }) {
-    if (!mounted || playTime < 1) {
-      return;
+  }) async {
+    if (playTime < 1) {
+      return false;
     }
 
     final safeEpisodeNumber = episodeIndex + 1;
-    final safeTotalEpisodes = newSource.episodes.isEmpty
-        ? totalEpisodes
-        : newSource.episodes.length;
+    final safeTotalEpisodes =
+        newSource.episodes.isEmpty ? totalEpisodes : newSource.episodes.length;
     final safeTotalTime = totalTime > playTime ? totalTime : playTime + 1;
     final now = DateTime.now();
 
@@ -1963,25 +2035,30 @@ class _PlayerScreenState extends State<PlayerScreen>
     _lastSavePosition = playTime;
 
     if (widget.localPath != null) {
-      unawaited(LocalModeStorageService.savePlayRecord(playRecord).then((_) {
+      try {
+        await LocalModeStorageService.savePlayRecord(playRecord);
         debugPrint(
             '换源后立即保存本地播放记录: source=${newSource.source}, id=${newSource.id}, 第${safeEpisodeNumber}集, 时间=${playTime}秒');
-      }).catchError((e) {
+        return true;
+      } catch (e) {
         debugPrint('换源后立即保存本地播放记录失败: $e');
-      }));
-      return;
+        return false;
+      }
     }
 
-    unawaited(PageCacheService().savePlayRecord(playRecord, context).then((r) {
+    try {
+      final r = await PageCacheService().savePlayRecord(playRecord, context);
       if (!r.success) {
         debugPrint('换源后立即保存播放记录失败: ${r.errorMessage ?? 'unknown'}');
-        return;
+        return false;
       }
       debugPrint(
           '换源后立即保存播放记录: source=${newSource.source}, id=${newSource.id}, 第${safeEpisodeNumber}集, 时间=${playTime}秒');
-    }).catchError((e) {
+      return true;
+    } catch (e) {
       debugPrint('换源后立即保存播放记录异常: $e');
-    }));
+      return false;
+    }
   }
 
   Future<void> _refreshSources() async {
@@ -2044,15 +2121,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 切换视频源
-  /// 切换视频源
   void _switchSource(SearchResult newSource) async {
     // 如果是同一个源，则不重复处理
     if (currentSource == newSource.source && currentID == newSource.id) {
       return;
     }
+    final switchSerial = ++_sourceSwitchRecordSerial;
 
     // 保存当前播放进度
-    final currentProgress = currentPosition?.inSeconds ?? _lastSavePosition ?? 0;
+    final currentProgress =
+        currentPosition?.inSeconds ?? _lastSavePosition ?? 0;
     final currentTotalDuration = duration?.inSeconds ?? 0;
     final currentEpisode = currentEpisodeIndex;
 
@@ -2100,18 +2178,33 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 重新检查收藏状态
     _checkFavoriteStatus();
 
-    // 开始播放新源
-    _saveProgressForSwitchedSource(
-      newSource: newSource,
-      episodeIndex: currentEpisode,
-      playTime: currentProgress,
-      totalTime: currentTotalDuration,
-    );
-
+    // 先启动新源播放，记录保存与清理在后台串行处理，避免阻塞切源。
     startPlay(currentEpisode, currentProgress);
 
-    // 仅保留当前源的播放记录，清理同剧集其他源记录
-    unawaited(_cleanupOtherSourcePlayRecords(newSource));
+    unawaited(() async {
+      final saved = await _saveProgressForSwitchedSource(
+        newSource: newSource,
+        episodeIndex: currentEpisode,
+        playTime: currentProgress,
+        totalTime: currentTotalDuration,
+      );
+
+      if (!saved) {
+        debugPrint('换源记录保护：新记录保存失败，跳过旧记录清理，避免记录丢失');
+        return;
+      }
+
+      // 只允许最新一次切源执行清理，防止快速切源时旧任务误删。
+      if (!mounted ||
+          switchSerial != _sourceSwitchRecordSerial ||
+          currentSource != newSource.source ||
+          currentID != newSource.id) {
+        debugPrint('换源记录保护：检测到切源任务已过期，跳过旧记录清理');
+        return;
+      }
+
+      await _cleanupOtherSourcePlayRecords(newSource);
+    }());
 
     // 延迟滚动到当前源
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2516,6 +2609,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             onDanmakuToggle: _toggleDanmakuEnabled,
             danmakuSettings: _danmakuSettings,
             onDanmakuSettingsChanged: _applyDanmakuSettings,
+            onPlaybackSpeedChanged: _onPlaybackSpeedChanged,
             forceControlsVisible: _forcePcControlsVisible,
             onSourceChanged: (source) {
               _switchSource(source);
@@ -2546,24 +2640,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                             createdController: (controller) {
                               _handleDanmakuControllerCreated(controller);
                             },
-                            option: DanmakuOption(
-                              fontSize: _danmakuSettings.fontSize *
-                                  _danmakuSettings.scale,
-                              opacity: _danmakuSettings.opacity,
-                              duration: _danmakuSettings.syncVideoSpeed
-                                  ? (_danmakuSettings.duration /
-                                      (_videoPlayerController?.playbackSpeed ??
-                                          1.0))
-                                  : _danmakuSettings.duration,
-                              hideScroll: _danmakuSettings.hideScroll,
-                              hideTop: _danmakuSettings.hideTop,
-                              hideBottom: _danmakuSettings.hideBottom,
-                              lineHeight: _danmakuSettings.lineSpacing,
-                              fontWeight: (_danmakuSettings.fontWeight * 4)
-                                  .round()
-                                  .clamp(1, 9),
-                              massiveMode: !_danmakuSettings.preventOverlap,
-                            ),
+                            option: _buildDanmakuOption(_danmakuSettings),
                           ),
                         ),
                       );
@@ -5024,6 +5101,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         children: [
                           // Main content (without player).
                           if (!_isWebFullscreen &&
+                              !_isFullscreen &&
                               !_isEnteringLandscapeFullscreen)
                             if (_isTablet && !_isPortraitTablet)
                               // Tablet landscape layout.
@@ -5167,6 +5245,15 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
     } else {
       // 非网页全屏模式：根据不同布局计算播放器位置
+      if (_isFullscreen || _isEnteringLandscapeFullscreen) {
+        return Positioned.fill(
+          top: 0,
+          child: Container(
+            color: Colors.black,
+            child: _buildPlayerWidget(),
+          ),
+        );
+      }
       if (_isTablet && !_isPortraitTablet) {
         // 平板横屏模式：播放器在左侧65%区域
         final screenWidth =

@@ -114,6 +114,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return size.width > size.height || _isFullscreen;
   }
 
+  bool get _isTabletLayout {
+    final size = MediaQuery.maybeOf(context)?.size ?? Size.zero;
+    final shortestSide = size.shortestSide;
+    return shortestSide >= 600;
+  }
+
   bool _isFullscreen = false;
 
   // 💡 电池电量相关状态
@@ -557,7 +563,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       await widget.player.pause();
       widget.onPause?.call();
     }
-    if (_isEffectiveFullscreen) {
+    if (_isFullscreen) {
       _exitFullscreen();
       await Future.delayed(const Duration(milliseconds: 250));
     }
@@ -969,9 +975,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 GestureDetector(
                   onTap: () {
                     _onUserInteraction();
-                    if (_isEffectiveFullscreen) {
+                    // 平板横屏普通布局也会命中 _isEffectiveFullscreen，
+                    // 这里必须仅在真实全屏时才执行退出全屏。
+                    if (_isFullscreen) {
                       _exitFullscreen();
                     } else {
+                      debugPrint('播放器返回：非全屏状态，执行页面返回');
                       widget.onBackPressed?.call();
                     }
                   },
@@ -1293,6 +1302,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildBottomControls() {
     final iconSize = _isEffectiveFullscreen ? 28.0 : 24.0;
+    final double playTimeFontSize =
+        (!_isEffectiveFullscreen && _isTabletLayout) ? 16.0 : 17.0;
 
     final iconPadding = EdgeInsets.only(
         left: _isEffectiveFullscreen ? 10 : 8,
@@ -1363,8 +1374,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               padding: iconPadding,
                               child: Text(
                                 currentPlayTime(),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 14),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: playTimeFontSize,
+                                ),
                               ),
                             ),
                           ),
@@ -1500,7 +1513,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                           onTap: () {
                             _onUserInteraction();
 
-                            if (_isEffectiveFullscreen) {
+                            if (_isFullscreen) {
                               _exitFullscreen();
                             } else {
                               _enterFullscreen();
@@ -1510,7 +1523,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                           child: Container(
                             padding: iconPadding,
                             child: Icon(
-                              _isEffectiveFullscreen
+                              _isFullscreen
                                   ? Icons.fullscreen_exit
                                   : Icons.fullscreen,
                               color: Colors.white,
