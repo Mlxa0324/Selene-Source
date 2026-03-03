@@ -1927,6 +1927,63 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 刷新源列表
+  void _saveProgressForSwitchedSource({
+    required SearchResult newSource,
+    required int episodeIndex,
+    required int playTime,
+    required int totalTime,
+  }) {
+    if (!mounted || playTime < 1) {
+      return;
+    }
+
+    final safeEpisodeNumber = episodeIndex + 1;
+    final safeTotalEpisodes = newSource.episodes.isEmpty
+        ? totalEpisodes
+        : newSource.episodes.length;
+    final safeTotalTime = totalTime > playTime ? totalTime : playTime + 1;
+    final now = DateTime.now();
+
+    final playRecord = PlayRecord(
+      id: newSource.id,
+      source: newSource.source,
+      title: newSource.title,
+      sourceName: newSource.sourceName,
+      year: newSource.year,
+      cover: newSource.poster,
+      index: safeEpisodeNumber,
+      totalEpisodes: safeTotalEpisodes,
+      playTime: playTime,
+      totalTime: safeTotalTime,
+      saveTime: now.millisecondsSinceEpoch,
+      searchTitle: searchTitle,
+    );
+
+    _lastSaveTime = now;
+    _lastSavePosition = playTime;
+
+    if (widget.localPath != null) {
+      unawaited(LocalModeStorageService.savePlayRecord(playRecord).then((_) {
+        debugPrint(
+            '换源后立即保存本地播放记录: source=${newSource.source}, id=${newSource.id}, 第${safeEpisodeNumber}集, 时间=${playTime}秒');
+      }).catchError((e) {
+        debugPrint('换源后立即保存本地播放记录失败: $e');
+      }));
+      return;
+    }
+
+    unawaited(PageCacheService().savePlayRecord(playRecord, context).then((r) {
+      if (!r.success) {
+        debugPrint('换源后立即保存播放记录失败: ${r.errorMessage ?? 'unknown'}');
+        return;
+      }
+      debugPrint(
+          '换源后立即保存播放记录: source=${newSource.source}, id=${newSource.id}, 第${safeEpisodeNumber}集, 时间=${playTime}秒');
+    }).catchError((e) {
+      debugPrint('换源后立即保存播放记录异常: $e');
+    }));
+  }
+
   Future<void> _refreshSources() async {
     await _refreshSourcesSpeed();
   }
@@ -1995,7 +2052,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     // 保存当前播放进度
-    final currentProgress = currentPosition?.inSeconds ?? 0;
+    final currentProgress = currentPosition?.inSeconds ?? _lastSavePosition ?? 0;
+    final currentTotalDuration = duration?.inSeconds ?? 0;
     final currentEpisode = currentEpisodeIndex;
 
     setState(() {
@@ -2043,6 +2101,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     _checkFavoriteStatus();
 
     // 开始播放新源
+    _saveProgressForSwitchedSource(
+      newSource: newSource,
+      episodeIndex: currentEpisode,
+      playTime: currentProgress,
+      totalTime: currentTotalDuration,
+    );
+
     startPlay(currentEpisode, currentProgress);
 
     // 仅保留当前源的播放记录，清理同剧集其他源记录
