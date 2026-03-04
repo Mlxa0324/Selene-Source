@@ -187,6 +187,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _isEnteringLandscapeFullscreen = false;
   int _fullscreenTransitionSerial = 0;
   int _sourceSwitchRecordSerial = 0;
+  int _sourceSpeedHydrationSerial = 0;
 
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
@@ -819,6 +820,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initVideoData({bool? isInit}) async {
     // 初始化参数
     initParam(isInit: isInit);
+    _sourceSpeedHydrationSerial++;
+    allSourcesSpeed.clear();
 
     // 💡 优化：如果是换源、选集或离线播放（已有明确目标），则不显示大加载搜源页，直接进入播放逻辑
     // if (currentSource.isNotEmpty && currentID.isNotEmpty || widget.localPath != null) {
@@ -925,66 +928,30 @@ class _PlayerScreenState extends State<PlayerScreen>
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final resumePreferredSource = currentSource;
     final resumePreferredId = currentID;
+    final shouldTryResumeSourceFirst = widget.prefer == 'continue';
+    final shouldWaitForResumeTarget = shouldTryResumeSourceFirst &&
+        resumePreferredSource.isNotEmpty &&
+        resumePreferredId.isNotEmpty;
+    final allowEnterPlayerBeforeSearchComplete =
+        !preferSpeedTest && !shouldWaitForResumeTarget;
     final searchKeyword = (searchTitle.isNotEmpty) ? searchTitle : videoTitle;
     final initFlowStart = DateTime.now();
+    var hasStartedPlayback = false;
+    var matchedResumeTargetInIncremental = false;
     debugPrint(
-        '[续播恢复] 初始化开始: 标题=$videoTitle, 关键词=$searchKeyword, 历史源=${resumePreferredSource.isEmpty ? '无' : '$resumePreferredSource+$resumePreferredId'}, 初始集=${playEpisodeIndex + 1}, 初始进度=${playTime}s, 优选测速=$preferSpeedTest, 强制优选=$needPrefer');
+        '[续播恢复] 初始化开始: 标题=$videoTitle, 关键词=$searchKeyword, 继续观看入口=$shouldTryResumeSourceFirst, 等待历史源=$shouldWaitForResumeTarget, 历史源=${resumePreferredSource.isEmpty ? '无' : '$resumePreferredSource+$resumePreferredId'}, 初始集=${playEpisodeIndex + 1}, 初始进度=${playTime}s, 优选测速=$preferSpeedTest, 强制优选=$needPrefer');
 
-    // 1. 优先尝试恢复“继续观看”保存的指定播放源（source + id）
-    if (resumePreferredSource.isNotEmpty && resumePreferredId.isNotEmpty) {
-      updateLoadingMessage('正在恢复上次播放源...');
-      updateLoadingProgress(0.35);
-      try {
-        final resumeFetchStart = DateTime.now();
-        final resumedDetails =
-            await fetchSourceDetail(resumePreferredSource, resumePreferredId);
-        final resumeFetchCostMs =
-            DateTime.now().difference(resumeFetchStart).inMilliseconds;
-        if (resumedDetails.isNotEmpty) {
-          currentDetail = resumedDetails.first;
-          setInfosByDetail(currentDetail!);
-          allSources = [currentDetail!];
-          debugPrint(
-              '[续播恢复] 指定源恢复成功: source=$resumePreferredSource, id=$resumePreferredId, 源名=${currentDetail!.sourceName}, 集数=${currentDetail!.episodes.length}, 耗时=${resumeFetchCostMs}ms');
-
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-              _showSwitchLoadingOverlay = true;
-              _switchLoadingMessage = '视频加载中...';
-            });
-          }
-
-          _checkFavoriteStatus();
-          debugPrint(
-              '[续播恢复] 直接使用指定源开始播放: source=${currentDetail!.source}, id=${currentDetail!.id}, 集=${playEpisodeIndex + 1}, 时间=${playTime}s');
-          startPlay(playEpisodeIndex, playTime);
-
-          // 后台补全全量播放源列表，去重并保持当前源置顶。
-          unawaited(_hydrateAllSourcesAfterResumeSource(
-            query: searchKeyword,
-            resumeSource: currentDetail!,
-          ));
-          final totalCostMs =
-              DateTime.now().difference(initFlowStart).inMilliseconds;
-          debugPrint('[续播恢复] 初始化完成(指定源路径): 总耗时=${totalCostMs}ms');
-          return;
-        }
-        debugPrint(
-            '[续播恢复] 指定源恢复未命中: source=$resumePreferredSource, id=$resumePreferredId, 耗时=${resumeFetchCostMs}ms，回退全网搜源');
-      } catch (e) {
-        debugPrint(
-            '[续播恢复] 指定源恢复异常: source=$resumePreferredSource, id=$resumePreferredId, 错误=$e');
-      }
+    // 1. 启动全网搜源任务
+    // 继续观看入口：禁用 early return，保证换源列表最终完整，并在增量结果命中历史源后立即起播。
+    if (!shouldTryResumeSourceFirst) {
+      debugPrint('[续播恢复] 非继续观看入口，直接全网搜源');
     }
-
-    // 2. 启动全网搜源任务（指定源恢复失败时兜底）
     updateLoadingMessage('正在为您搜索最佳播放源...');
     updateLoadingProgress(0.3);
     var hasPrimedDetail = false;
     final searchStart = DateTime.now();
     debugPrint(
-        '[续播恢复] 开始全网搜源: 关键词=$searchKeyword, allowEarlyReturn=${!preferSpeedTest}');
+        '[续播恢复] 开始全网搜源: 关键词=$searchKeyword, allowEarlyReturn=${shouldWaitForResumeTarget ? false : !preferSpeedTest}');
 
     final searchJob = fetchSourcesData(
       searchKeyword,
@@ -995,8 +962,38 @@ class _PlayerScreenState extends State<PlayerScreen>
           allSources = newResults;
         }
 
-        // Prime first candidate detail so recommends can appear early.
-        if (!hasPrimedDetail && newResults.isNotEmpty) {
+        // 继续观看入口：仅在命中历史源后才开始播放。
+        if (shouldWaitForResumeTarget &&
+            !matchedResumeTargetInIncremental &&
+            resumePreferredSource.isNotEmpty &&
+            resumePreferredId.isNotEmpty) {
+          final target = newResults.where((source) =>
+              source.source == resumePreferredSource &&
+              source.id == resumePreferredId);
+          if (target.isNotEmpty) {
+            matchedResumeTargetInIncremental = true;
+            currentDetail = target.first;
+            setInfosByDetail(currentDetail!);
+            debugPrint(
+                '[续播恢复] 增量结果命中历史源，立即起播: source=${currentDetail!.source}, id=${currentDetail!.id}, 源名=${currentDetail!.sourceName}, 当前候选数=${newResults.length}');
+
+            if (mounted && _isLoading) {
+              setState(() {
+                _isLoading = false;
+                _showSwitchLoadingOverlay = true;
+                _switchLoadingMessage = '视频加载中...';
+              });
+            }
+            _checkFavoriteStatus();
+            startPlay(playEpisodeIndex, playTime);
+            hasStartedPlayback = true;
+          }
+        }
+
+        // 仅在“未开启优选测速”且“不需要等待历史源”时，允许提前进入播放页。
+        if (!hasPrimedDetail &&
+            newResults.isNotEmpty &&
+            allowEnterPlayerBeforeSearchComplete) {
           hasPrimedDetail = true;
           currentDetail = newResults.first;
           setInfosByDetail(currentDetail!);
@@ -1012,10 +1009,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           }
         }
       },
-      allowEarlyReturn: !preferSpeedTest,
+      allowEarlyReturn:
+          shouldWaitForResumeTarget ? false : !preferSpeedTest,
     );
 
-    // 3. 💡 强制等待 2 秒搜源窗口，确保获取足够多的候选源
+    // 2. 💡 强制等待 2 秒搜源窗口，确保获取足够多的候选源
     await Future.any([
       searchJob,
       Future.delayed(const Duration(seconds: 4)),
@@ -1032,7 +1030,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
-    // 4. 💡 核心筛选逻辑
+    // 3. 💡 核心筛选逻辑
     // 优先尝试匹配继续观看的特定源
     var matchedResumeTarget = false;
     if (resumePreferredSource.isNotEmpty && resumePreferredId.isNotEmpty) {
@@ -1050,7 +1048,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
 
-    // 5. 💡 兜底与优选逻辑
+    // 4. 💡 兜底与优选逻辑
     // 如果没有找到历史源，或者当前是直接搜索进入，或者需要强制优选
     if (currentDetail == null || needPrefer || !matchedResumeTarget) {
       if (preferSpeedTest) {
@@ -1074,8 +1072,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (mounted) {
       setState(() {
         _isLoading = false;
-        _showSwitchLoadingOverlay = true;
-        _switchLoadingMessage = '视频加载中...';
+        if (!hasStartedPlayback) {
+          _showSwitchLoadingOverlay = true;
+          _switchLoadingMessage = '视频加载中...';
+        } else {
+          _showSwitchLoadingOverlay = false;
+        }
       });
     }
 
@@ -1091,64 +1093,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     final totalCostMs = DateTime.now().difference(initFlowStart).inMilliseconds;
     debugPrint(
         '[续播恢复] 初始化完成(全网路径): 最终源=${currentDetail!.source}+${currentDetail!.id}, 集=${playEpisodeIndex + 1}, 时间=${playTime}s, 总耗时=${totalCostMs}ms');
-    startPlay(playEpisodeIndex, playTime);
-  }
-
-  String _sourceDetailKey(SearchResult source) =>
-      '${source.source}+${source.id}';
-
-  List<SearchResult> _mergeSourcesWithResumeFirst(
-    SearchResult resumeSource,
-    List<SearchResult> fetchedSources,
-  ) {
-    final merged = <SearchResult>[resumeSource];
-    final seenKeys = <String>{_sourceDetailKey(resumeSource)};
-
-    for (final source in fetchedSources) {
-      final key = _sourceDetailKey(source);
-      if (seenKeys.add(key)) {
-        merged.add(source);
-      }
+    if (!hasStartedPlayback) {
+      startPlay(playEpisodeIndex, playTime);
     }
-    return merged;
-  }
 
-  Future<void> _hydrateAllSourcesAfterResumeSource({
-    required String query,
-    required SearchResult resumeSource,
-  }) async {
-    try {
-      final hydrateStart = DateTime.now();
-      debugPrint(
-          '[续播恢复] 开始后台补全播放源: 当前源=${resumeSource.source}+${resumeSource.id}, 关键词=$query');
-      // 这里强制拉全量，避免“继续观看”恢复后来源列表过少。
-      final fetched = await fetchSourcesData(query, allowEarlyReturn: false);
-      final hydrateCostMs =
-          DateTime.now().difference(hydrateStart).inMilliseconds;
-      if (fetched.isEmpty) {
-        debugPrint('[续播恢复] 后台补全为空: 耗时=${hydrateCostMs}ms，保留当前恢复源');
-        return;
-      }
-
-      // 用户若已切源，避免旧任务覆盖当前列表。
-      if (currentSource != resumeSource.source ||
-          currentID != resumeSource.id) {
-        debugPrint(
-            '[续播恢复] 后台补全放弃: 用户已切源到=$currentSource+$currentID, 原目标=${resumeSource.source}+${resumeSource.id}');
-        return;
-      }
-
-      final merged = _mergeSourcesWithResumeFirst(resumeSource, fetched);
-      if (mounted) {
-        setState(() => allSources = merged);
-      } else {
-        allSources = merged;
-      }
-      final removedCount = fetched.length + 1 - merged.length;
-      debugPrint(
-          '[续播恢复] 后台补全完成: fetched=${fetched.length}, merged=${merged.length}, 去重移除=$removedCount, 耗时=${hydrateCostMs}ms');
-    } catch (e) {
-      debugPrint('[续播恢复] 后台补全失败: $e');
+    // 开启优选测速时：进入播放后后台补全全量源测速结果，用于换源卡片完整展示。
+    if (preferSpeedTest) {
+      _startBackgroundSourceSpeedHydration();
     }
   }
 
@@ -1271,6 +1222,45 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     return result['bestSource'] as SearchResult;
+  }
+
+  void _startBackgroundSourceSpeedHydration() {
+    if (allSources.isEmpty) return;
+    final serial = ++_sourceSpeedHydrationSerial;
+    final sourcesSnapshot = List<SearchResult>.from(allSources);
+    debugPrint(
+        '[续播恢复] 开始后台补全全量测速: 源数量=${sourcesSnapshot.length}, serial=$serial');
+    unawaited(_hydrateSourceSpeeds(serial, sourcesSnapshot));
+  }
+
+  Future<void> _hydrateSourceSpeeds(
+      int serial, List<SearchResult> sources) async {
+    final m3u8Service = M3U8Service();
+    try {
+      await m3u8Service.testSourcesWithCallback(
+        sources,
+        (String sourceId, Map<String, dynamic> speedData) {
+          if (serial != _sourceSpeedHydrationSerial) return;
+          final parsed = SourceSpeed(
+            quality: speedData['quality'] as String,
+            loadSpeed: speedData['loadSpeed'] as String,
+            pingTime: speedData['pingTime'] as String,
+          );
+          if (mounted) {
+            setState(() {
+              allSourcesSpeed[sourceId] = parsed;
+            });
+          } else {
+            allSourcesSpeed[sourceId] = parsed;
+          }
+        },
+        timeout: const Duration(seconds: 10),
+      );
+      if (serial != _sourceSpeedHydrationSerial) return;
+      debugPrint('[续播恢复] 后台全量测速完成: 结果数=${allSourcesSpeed.length}, serial=$serial');
+    } catch (e) {
+      debugPrint('[续播恢复] 后台全量测速失败: $e, serial=$serial');
+    }
   }
 
   // 处理返回按钮点击
@@ -5037,17 +5027,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         ],
       ),
     );
-  }
-
-  /// 获取视频详情
-  Future<List<SearchResult>> fetchSourceDetail(String source, String id) async {
-    // 检查是否启用本地搜索
-    final isLocalSearch = await UserDataService.getLocalSearch();
-    if (isLocalSearch) {
-      return await SearchService.getDetailSync(source, id);
-    } else {
-      return await ApiService.fetchSourceDetail(source, id);
-    }
   }
 
   /// 搜索视频源数据（带过滤）

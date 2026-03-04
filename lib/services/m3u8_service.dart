@@ -14,9 +14,12 @@ class M3U8Service {
   static const int defaultPanelSpeedTestConcurrency = 10;
   static int panelSpeedTestConcurrency = defaultPanelSpeedTestConcurrency;
 
-  /// 优选测速时，最多选择多少个测速大于 0KB/s 的源参与评估（可在代码中修改）
-  static const int defaultPreferPositiveSpeedLimit = 6;
-  static int preferPositiveSpeedLimit = defaultPreferPositiveSpeedLimit;
+  /// 优选测速时，最多抽样前 N 个候选源参与评估（可在代码中修改）
+  static const int defaultPreferSampleSize = 5;
+  static int preferSampleSize = defaultPreferSampleSize;
+
+  /// 优选测速时，单个源测速超时
+  static const Duration preferSourceTimeout = Duration(seconds: 10);
 
   final Dio _dio = Dio();
 
@@ -157,21 +160,20 @@ class M3U8Service {
     final Map<String, dynamic> allSourcesSpeed = {};
     SearchResult? bestSource = allSources.first;
     double maxSpeed = -1.0;
-    var validCount = 0;
-    final candidates =
-        allSources.where((source) => source.episodes.isNotEmpty).toList();
-    final positiveLimit = math.max(1, preferPositiveSpeedLimit);
+    final candidates = allSources
+        .where((source) => source.episodes.isNotEmpty)
+        .take(math.max(1, preferSampleSize))
+        .toList();
     final concurrency = math.max(1, preferSpeedTestConcurrency);
 
-    for (var start = 0;
-        start < candidates.length && validCount < positiveLimit;
-        start += concurrency) {
+    for (var start = 0; start < candidates.length; start += concurrency) {
       final end = math.min(start + concurrency, candidates.length);
       final batch = candidates.sublist(start, end);
       final speeds = await Future.wait<double>(
         batch.map((source) async {
           try {
-            final info = await getStreamInfo(source.episodes.first);
+            final info = await getStreamInfo(source.episodes.first)
+                .timeout(preferSourceTimeout);
             debugPrint('获取到的流信息: $info');
             final speed = info['downloadSpeed'] as double? ?? 0.0;
             final latency = info['latency'] as int? ?? 0;
@@ -202,14 +204,9 @@ class M3U8Service {
         final speed = speeds[i];
         if (speed <= 0) continue;
 
-        validCount++;
         if (speed > maxSpeed) {
           maxSpeed = speed;
           bestSource = batch[i];
-        }
-
-        if (validCount >= positiveLimit) {
-          break;
         }
       }
     }

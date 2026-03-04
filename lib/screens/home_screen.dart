@@ -271,8 +271,8 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
             // 继续观看组件
             ContinueWatchingSection(
-              onVideoTap: _onVideoTap,
-              onGlobalMenuAction: _onGlobalMenuAction,
+              onVideoTap: _onContinueWatchingTap,
+              onGlobalMenuAction: _onContinueWatchingMenuAction,
               onViewAll: () {
                 // 切换到播放历史标签
                 _onTopTabChanged('播放历史');
@@ -592,6 +592,27 @@ class _HomeScreenState extends State<HomeScreen> {
         year: playRecord.year,
       ),
     );
+  }
+
+  void _onContinueWatchingTap(PlayRecord playRecord) {
+    _navigateToPlayer(
+      PlayerScreen(
+        source: playRecord.source,
+        id: playRecord.id,
+        title: playRecord.title,
+        year: playRecord.year,
+        prefer: 'continue',
+      ),
+    );
+  }
+
+  void _onContinueWatchingMenuAction(
+      PlayRecord playRecord, VideoMenuAction action) {
+    if (action == VideoMenuAction.play) {
+      _onContinueWatchingTap(playRecord);
+      return;
+    }
+    _onGlobalMenuAction(playRecord, action);
   }
 
   /// 处理来自VideoInfo的全局菜单操作
