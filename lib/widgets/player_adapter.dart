@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
@@ -571,7 +572,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   String _buildHtmlContent() {
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
-    final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false';
+    final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false'; // 暂时先关闭该功能
     final seekWarmupConcurrencyJs =
         seekWarmupConcurrency < 1 ? 1 : seekWarmupConcurrency;
     final seekWarmupSegmentCountJs =
@@ -579,10 +580,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     final seekWarmupReadBytesJs =
         seekWarmupReadBytes < 65536 ? 65536 : seekWarmupReadBytes;
 
-    // 如果有缓存内容，则注入内联脚本；否则使用 CDN 链接
+    // 优先注入本地/缓存脚本，避免运行时依赖外部 CDN
     final hlsJsTag = (_hlsJsContent != null && _hlsJsContent!.isNotEmpty)
         ? '<script id="hls-script">$_hlsJsContent</script>'
-        : '<script id="hls-script" src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>';
+        : '<script id="hls-script">console.error("hls.js unavailable");</script>';
 
     return '''
 <!DOCTYPE html>
@@ -613,18 +614,6 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var seekWarmupReadBytes = $seekWarmupReadBytesJs;
     var seekWarmupControllers = [];
     var seekWarmupToken = 0;
-
-    // 如果是通过 CDN 加载的，尝试获取源码并回传给 Flutter 缓存
-    var hlsScript = document.getElementById('hls-script');
-    if (hlsScript && hlsScript.src && window.Hls) {
-       fetch(hlsScript.src)
-         .then(response => response.text())
-         .then(code => {
-            if (window.flutter_inappwebview) {
-              window.flutter_inappwebview.callHandler('saveHlsJs', code);
-            }
-         }).catch(e => console.error('Cache HLS.js failed', e));
-    }
 
     // 原始广告过滤逻辑（仅过滤不连续标记）
     function filterAdsFromM3U8(m3u8Content) {
@@ -980,6 +969,7 @@ class _WebViewPlayer extends StatefulWidget {
 }
 
 class _WebViewPlayerState2 extends State<_WebViewPlayer> {
+  static const String _localHlsAssetPath = 'assets/js/hls.min.js';
   bool _initialized = false;
 
   @override
@@ -989,7 +979,19 @@ class _WebViewPlayerState2 extends State<_WebViewPlayer> {
   }
 
   Future<void> _initHlsCache() async {
-    final cached = await UserDataService.getHlsJsCache();
+    String? cached = await UserDataService.getHlsJsCache();
+    if (cached == null || cached.length < 1000) {
+      try {
+        final localHls = await rootBundle.loadString(_localHlsAssetPath);
+        if (localHls.length > 1000) {
+          cached = localHls;
+          await UserDataService.saveHlsJsCache(localHls);
+          debugPrint('[播放器] 已加载本地 hls.js 资源: $_localHlsAssetPath');
+        }
+      } catch (e) {
+        debugPrint('[播放器] 加载本地 hls.js 失败: $e');
+      }
+    }
     if (mounted) {
       setState(() {
         widget.adapter._hlsJsContent = cached;
