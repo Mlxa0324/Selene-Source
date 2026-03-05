@@ -5,7 +5,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:video_player/video_player.dart' as vp;
-import '../services/user_data_service.dart';
 
 /// A bridge to provide a common interface between media_kit and video_player
 abstract class PlayerAdapter {
@@ -341,7 +340,6 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _videoWidth = 0; // 💡 新增
   double _videoHeight = 0; // 💡 新增
   bool _isDisposed = false;
-  String? _hlsJsContent; // 缓存的 hls.js 源码内容
 
   @override
   late final PlayerAdapterStream stream;
@@ -370,20 +368,6 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         if (args.isEmpty) return;
         final event = args[0] as Map<String, dynamic>;
         _handlePlayerEvent(event);
-      },
-    );
-    // 新增：处理 JS 回传的 hls.js 源码并持久化
-    _controller!.addJavaScriptHandler(
-      handlerName: 'saveHlsJs',
-      callback: (args) {
-        if (args.isNotEmpty && args[0] is String) {
-          final content = args[0] as String;
-          if (content.length > 1000) {
-            // 简单校验
-            _hlsJsContent = content;
-            UserDataService.saveHlsJsCache(content);
-          }
-        }
       },
     );
   }
@@ -580,10 +564,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     final seekWarmupReadBytesJs =
         seekWarmupReadBytes < 65536 ? 65536 : seekWarmupReadBytes;
 
-    // 优先注入本地/缓存脚本，避免运行时依赖外部 CDN
-    final hlsJsTag = (_hlsJsContent != null && _hlsJsContent!.isNotEmpty)
-        ? '<script id="hls-script">$_hlsJsContent</script>'
-        : '<script id="hls-script">console.error("hls.js unavailable");</script>';
+    const hlsJsTag =
+        '<script id="hls-script" src="selene-asset://assets/js/hls.min.js"></script>';
 
     return '''
 <!DOCTYPE html>
@@ -970,33 +952,36 @@ class _WebViewPlayer extends StatefulWidget {
 
 class _WebViewPlayerState2 extends State<_WebViewPlayer> {
   static const String _localHlsAssetPath = 'assets/js/hls.min.js';
-  bool _initialized = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _initHlsCache();
-  }
-
-  Future<void> _initHlsCache() async {
-    String? cached = await UserDataService.getHlsJsCache();
-    if (cached == null || cached.length < 1000) {
-      try {
-        final localHls = await rootBundle.loadString(_localHlsAssetPath);
-        if (localHls.length > 1000) {
-          cached = localHls;
-          await UserDataService.saveHlsJsCache(localHls);
-          debugPrint('[播放器] 已加载本地 hls.js 资源: $_localHlsAssetPath');
-        }
-      } catch (e) {
-        debugPrint('[播放器] 加载本地 hls.js 失败: $e');
+  Future<CustomSchemeResponse?> _handleCustomSchemeRequest(
+    InAppWebViewController controller,
+    WebResourceRequest request,
+  ) async {
+    try {
+      final uri = request.url;
+      if (uri.scheme != 'selene-asset') {
+        return null;
       }
-    }
-    if (mounted) {
-      setState(() {
-        widget.adapter._hlsJsContent = cached;
-        _initialized = true;
-      });
+
+      final joined = '${uri.host}${uri.path}';
+      final normalized =
+          joined.startsWith('/') ? joined.substring(1) : joined;
+      if (normalized != _localHlsAssetPath) {
+        debugPrint('[播放器] 未匹配到本地资源: $normalized');
+        return null;
+      }
+
+      final bytes = (await rootBundle.load(_localHlsAssetPath))
+          .buffer
+          .asUint8List();
+      return CustomSchemeResponse(
+        data: bytes,
+        contentType: 'application/javascript',
+        contentEncoding: 'utf-8',
+      );
+    } catch (e) {
+      debugPrint('[播放器] 读取本地 hls.js 失败: $e');
+      return null;
     }
   }
 
@@ -1013,21 +998,19 @@ class _WebViewPlayerState2 extends State<_WebViewPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
-      return Container(color: Colors.black);
-    }
-
     return InAppWebView(
       initialSettings: InAppWebViewSettings(
         mediaPlaybackRequiresUserGesture: false,
         allowsInlineMediaPlayback: true,
         useHybridComposition: true,
         transparentBackground: true,
+        resourceCustomSchemes: ['selene-asset'],
       ),
       initialData: InAppWebViewInitialData(
         data: widget.adapter._buildHtmlContent(),
         baseUrl: WebUri('https://localhost'),
       ),
+      onLoadResourceWithCustomScheme: _handleCustomSchemeRequest,
       onWebViewCreated: (controller) {
         widget.adapter._setController(controller);
       },
