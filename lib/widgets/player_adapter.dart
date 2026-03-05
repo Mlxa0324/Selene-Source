@@ -305,15 +305,15 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final bool seekBoostEnabled;
 
   /// 进度拖放搜索预热并行性（代码可配置）
-  static const int defaultSeekWarmupConcurrency = 6;
+  static const int defaultSeekWarmupConcurrency = 2;
   static int seekWarmupConcurrency = defaultSeekWarmupConcurrency;
 
   /// 每次搜索需要预热多少个接近目标的片段
-  static const int defaultSeekWarmupSegmentCount = 12;
+  static const int defaultSeekWarmupSegmentCount = 4;
   static int seekWarmupSegmentCount = defaultSeekWarmupSegmentCount;
 
   /// 每个预热请求的最大读取字节数
-  static const int defaultSeekWarmupReadBytes = 1024 * 1024;
+  static const int defaultSeekWarmupReadBytes = 256 * 1024;
   static int seekWarmupReadBytes = defaultSeekWarmupReadBytes;
 
   final StreamController<bool> _playingController =
@@ -495,7 +495,22 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   Future<void> setRate(double rate) async {
     _rate = rate;
     await _controller?.evaluateJavascript(
-        source: 'player.playbackRate = $rate;');
+      source: '''
+        (function(nextRate) {
+          var p = window.player || document.getElementById('player');
+          if (!p) return;
+          try {
+            p.playbackRate = Number(nextRate) || 1.0;
+          } catch (_) {}
+          try {
+            if ((Number(nextRate) || 1.0) > 1.0 &&
+                typeof window.cancelSeekWarmup === 'function') {
+              window.cancelSeekWarmup();
+            }
+          } catch (_) {}
+        })($rate);
+      ''',
+    );
   }
 
   @override
@@ -683,6 +698,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
       seekWarmupControllers = [];
     }
+    window.cancelSeekWarmup = cancelSeekWarmup;
 
     function getActiveLevelDetails() {
       if (!window.hlsInstance) return null;
@@ -876,7 +892,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       });
 
       // Buffering events
-      player.addEventListener('waiting', function() { sendEvent('buffering', { value: true }); });
+      player.addEventListener('waiting', function() {
+        try { cancelSeekWarmup(); } catch (_) {}
+        sendEvent('buffering', { value: true });
+      });
       player.addEventListener('canplay', function() { sendEvent('buffering', { value: false }); });
       player.addEventListener('playing', function() { sendEvent('buffering', { value: false }); });
       player.addEventListener('seeking', function() { sendEvent('buffering', { value: true }); });
