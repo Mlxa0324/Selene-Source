@@ -571,7 +571,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   String _buildHtmlContent() {
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
-    final seekBoostEnabledJs = seekBoostEnabled ? 'true' : 'false';
+    final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false';
     final seekWarmupConcurrencyJs =
         seekWarmupConcurrency < 1 ? 1 : seekWarmupConcurrency;
     final seekWarmupSegmentCountJs =

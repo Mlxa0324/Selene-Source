@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:selene/widgets/player_sources_panel.dart';
@@ -219,6 +220,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   static const Duration _shortDramaPipPreStartDelay =
       Duration(milliseconds: 180);
   static const Duration _pipRetryDelay = Duration(milliseconds: 360);
+  static const MethodChannel _pipControlChannel =
+      MethodChannel('org.moontechlab.selene/pip_controls');
 
   PlayerAdapter? _adapter;
   bool _isInitialized = false;
@@ -238,6 +241,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   VoidCallback? _exitWebFullscreenCallback;
   final Pip _pip = Pip();
   bool _isPipMode = false;
+  bool _lastKnownPlaying = false;
   late VideoFitType _currentFitType;
   bool _controlsVisible = true;
   bool _isFullscreen = false; // 💡 新增：记录内部全屏状态
@@ -368,6 +372,85 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     unawaited(_setupPip(autoEnterEnabled: enabled));
   }
 
+  bool _hasPreviousEpisode() {
+    final index = widget.currentEpisodeIndex ?? 0;
+    return index > 0;
+  }
+
+  bool _hasNextEpisode() {
+    final total = widget.totalEpisodes;
+    final index = widget.currentEpisodeIndex ?? 0;
+    if (total != null && total > 0) {
+      return index < total - 1;
+    }
+    return !widget.isLastEpisode;
+  }
+
+  Future<void> _pushPipActionsState({required String reason}) async {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    try {
+      final isPlaying = _adapter?.state.playing ?? _lastKnownPlaying;
+      await _pipControlChannel.invokeMethod('updatePipActions', {
+        'isPlaying': isPlaying,
+        'hasPrevious': _hasPreviousEpisode(),
+        'hasNext': _hasNextEpisode(),
+      });
+      debugPrint(
+          '[PiP控制] 已同步动作状态: 播放=$isPlaying, 上一集=${_hasPreviousEpisode()}, 下一集=${_hasNextEpisode()}, 原因=$reason');
+    } catch (error) {
+      debugPrint('[PiP控制] 同步动作状态失败: $error, 原因=$reason');
+    }
+  }
+
+  void _bindPipControlChannel() {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    _pipControlChannel.setMethodCallHandler((call) async {
+      if (call.method != 'onPipAction') {
+        return;
+      }
+      final arguments = call.arguments;
+      if (arguments is! Map) {
+        return;
+      }
+      final action = arguments['action']?.toString() ?? '';
+      await _handlePipAction(action);
+    });
+  }
+
+  Future<void> _handlePipAction(String action) async {
+    switch (action) {
+      case 'previous':
+        if (_hasPreviousEpisode()) {
+          debugPrint('[PiP控制] 点击上一集');
+          widget.onPreviousEpisode?.call();
+        }
+        break;
+      case 'toggle_play_pause':
+        final playing = _adapter?.state.playing ?? false;
+        debugPrint('[PiP控制] 点击${playing ? '暂停' : '播放'}');
+        if (playing) {
+          await _adapter?.pause();
+        } else {
+          await _adapter?.play();
+        }
+        break;
+      case 'next':
+        if (_hasNextEpisode()) {
+          debugPrint('[PiP控制] 点击下一集');
+          widget.onNextEpisode?.call();
+        }
+        break;
+      default:
+        debugPrint('[PiP控制] 收到未知动作: $action');
+        break;
+    }
+    unawaited(_pushPipActionsState(reason: 'handle_pip_action'));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -380,6 +463,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _initializePlayer();
     unawaited(_setupPip());
     _registerPipObserver();
+    _bindPipControlChannel();
+    unawaited(_pushPipActionsState(reason: 'init_state'));
     widget.onControllerCreated?.call(VideoPlayerWidgetController._(this));
   }
 
@@ -394,6 +479,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
     if (widget.url != oldWidget.url && widget.url != null) {
       unawaited(_updateDataSource(widget.url!));
+    }
+
+    if (widget.currentEpisodeIndex != oldWidget.currentEpisodeIndex ||
+        widget.totalEpisodes != oldWidget.totalEpisodes ||
+        widget.isLastEpisode != oldWidget.isLastEpisode) {
+      unawaited(_pushPipActionsState(reason: 'episode_info_changed'));
     }
 
     // 💡 优化：当集数从外部改变时（如点击选集），同步 PageView
@@ -559,6 +650,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     _playingSubscription = _adapter!.stream.playing.listen((playing) {
       if (!mounted) return;
+      _lastKnownPlaying = playing;
       if (!playing) {
         widget.onPause?.call();
         _safeSetState(() {
@@ -569,6 +661,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         widget.onPlay?.call();
         _configurePipAutoEnter(true);
       }
+      unawaited(_pushPipActionsState(reason: 'playing_changed'));
     });
 
     if (!widget.live) {
@@ -866,6 +959,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
       await _setupPip();
       await _adapter?.play();
+      _lastKnownPlaying = true;
+      await _pushPipActionsState(reason: 'before_start_pip');
 
       if (widget.isShortDrama) {
         await Future.delayed(_shortDramaPipPreStartDelay);
@@ -948,6 +1043,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (Platform.isAndroid || Platform.isIOS) {
       _pip.unregisterStateChangedObserver();
       _pip.dispose();
+    }
+    if (Platform.isAndroid) {
+      _pipControlChannel.setMethodCallHandler(null);
     }
     _shortDramaPageController.dispose();
     _disposePlayer();
