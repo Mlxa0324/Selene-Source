@@ -163,8 +163,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       _hasMore = false;
       _isLoadingVideos = false;
       _isLoadingMore = false;
-      _showCategoryLoadingPlaceholders = false;
-      _categoryLoadingPlaceholderCount = 0;
+      _clearCategoryLoadingPlaceholders();
     });
 
     if (sourceKey == 'auto') {
@@ -181,7 +180,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     }
 
     final requestSourceKey = _currentSource;
-    final requestSourceCacheKey = _buildSourceCacheKey(requestSourceKey);
+    final requestSourceCacheKey = requestSourceKey;
     final cachedCategories = _categoryCache[requestSourceCacheKey];
     if (cachedCategories != null) {
       final preferredCategoryId = cachedCategories.any(
@@ -262,8 +261,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
           _page = 1;
           _hasMore = false;
           _showBackToTop = false;
-          _showCategoryLoadingPlaceholders = placeholderCountBeforeReset > 0;
-          _categoryLoadingPlaceholderCount = placeholderCountBeforeReset;
+          _setCategoryLoadingPlaceholders(placeholderCountBeforeReset);
         });
 
         final remaining = _minCategorySkeletonDuration - resetStopwatch!.elapsed;
@@ -287,10 +285,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _updateBackToTopVisibility();
           if (_showCategoryLoadingPlaceholders) {
-            setState(() {
-              _showCategoryLoadingPlaceholders = false;
-              _categoryLoadingPlaceholderCount = 0;
-            });
+            setState(_clearCategoryLoadingPlaceholders);
           }
         });
         return;
@@ -302,8 +297,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         _page = 1;
         _hasMore = false;
         _showBackToTop = false;
-        _showCategoryLoadingPlaceholders = placeholderCountBeforeReset > 0;
-        _categoryLoadingPlaceholderCount = placeholderCountBeforeReset;
+        _setCategoryLoadingPlaceholders(placeholderCountBeforeReset);
       });
     } else {
       if (_isLoadingMore || !_hasMore || _videos.length >= _maxGridItems) {
@@ -373,10 +367,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _updateBackToTopVisibility();
           if (_showCategoryLoadingPlaceholders) {
-            setState(() {
-              _showCategoryLoadingPlaceholders = false;
-              _categoryLoadingPlaceholderCount = 0;
-            });
+            setState(_clearCategoryLoadingPlaceholders);
           }
         });
       }
@@ -392,10 +383,18 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     }
   }
 
-  String _buildSourceCacheKey(String sourceKey) => sourceKey;
-
   String _buildVideoCacheKey(String sourceKey, String categoryId) =>
       '$sourceKey::$categoryId';
+
+  void _setCategoryLoadingPlaceholders(int count) {
+    _showCategoryLoadingPlaceholders = count > 0;
+    _categoryLoadingPlaceholderCount = count;
+  }
+
+  void _clearCategoryLoadingPlaceholders() {
+    _showCategoryLoadingPlaceholders = false;
+    _categoryLoadingPlaceholderCount = 0;
+  }
 
   bool get _shouldShowBackToTop =>
       _videos.length >= _showBackToTopVideoCount && _showBackToTop;
@@ -1319,7 +1318,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         _showCategoryLoadingPlaceholders && _categoryLoadingPlaceholderCount > 0;
 
     if (_currentSource == 'auto') {
-      return _buildEmptyCard(cardColor, isDarkMode, '请选择具体源后开始浏览。');
+      return _buildEmptyCard(Colors.transparent, isDarkMode, '请选择具体源后开始浏览。');
     }
     if (isListLoading && _videos.isEmpty && !hasGridPlaceholders) {
       return _buildLoadingSkeletonSection(cardColor, isDarkMode);
@@ -1578,7 +1577,6 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
 
   Widget _buildSkeletonCard(double width, bool isDarkMode) {
     final posterHeight = width * 1.5;
-    final chipColor = isDarkMode ? const Color(0xFF101513) : const Color(0xFFF2F7F3);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -1610,30 +1608,6 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       child: Text(
         message,
         style: const TextStyle(color: Color(0xFFdc2626), fontSize: 13),
-      ),
-    );
-  }
-
-  Widget _buildLoadingCard(Color cardColor, Color accent, String text) {
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: accent),
-            ),
-            const SizedBox(width: 12),
-            Text(text),
-          ],
-        ),
       ),
     );
   }
