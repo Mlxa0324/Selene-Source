@@ -102,6 +102,7 @@ class UserDataService {
   static const String _sourceBrowserCurrentSourceKey =
       'source_browser_current_source_v1';
 
+
   /// 是否处于离线/本地模式 Key
   static const String _isLocalModeKey = 'is_local_mode';
 

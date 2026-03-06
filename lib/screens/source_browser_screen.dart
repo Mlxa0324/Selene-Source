@@ -11,6 +11,8 @@ import '../services/theme_service.dart';
 import '../services/user_data_service.dart';
 import '../utils/device_utils.dart';
 import '../widgets/video_card.dart';
+import '../widgets/pulsing_dots_indicator.dart';
+import '../widgets/shimmer_effect.dart';
 import 'player_screen.dart';
 
 class SourceBrowserScreen extends StatefulWidget {
@@ -20,10 +22,13 @@ class SourceBrowserScreen extends StatefulWidget {
   State<SourceBrowserScreen> createState() => _SourceBrowserScreenState();
 }
 
-class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
+class _SourceBrowserScreenState extends State<SourceBrowserScreen>
+    with AutomaticKeepAliveClientMixin<SourceBrowserScreen> {
   static const int _maxGridItems = 540;
   static const int _showBackToTopVideoCount = 18;
   static const double _showBackToTopOffset = 480;
+  static const Duration _minCategorySkeletonDuration =
+      Duration(milliseconds: 180);
 
   // Mobile compact layout config.
   static const bool _mobileCompactMode = true;
@@ -39,7 +44,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
   static final Map<String, _SourceBrowserVideoCacheEntry> _videoCache = {};
 
   final ScrollController _scrollController = ScrollController();
+  final ScrollController _categoryScrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, GlobalKey> _categoryItemKeys = {};
+  final GlobalKey _categoryViewportKey = GlobalKey();
 
   List<SearchResource> _sources = const [];
   List<SourceBrowserCategory> _categories = const [];
@@ -60,6 +68,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
   int _page = 1;
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
@@ -74,6 +85,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
 
   @override
   void dispose() {
+    _categoryScrollController.dispose();
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -136,12 +148,14 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
     }
 
     if (!mounted) return;
+    final shouldKeepCurrentCategory =
+        forceReload && _currentSource == sourceKey && _selectedCategoryId.isNotEmpty;
     setState(() {
       _currentSource = sourceKey;
       _categoryError = '';
       _videos = const [];
       _categories = const [];
-      _selectedCategoryId = '';
+      _selectedCategoryId = shouldKeepCurrentCategory ? _selectedCategoryId : '';
       _showBackToTop = false;
       _hasMore = false;
       _isLoadingVideos = false;
@@ -165,7 +179,13 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
     final requestSourceCacheKey = _buildSourceCacheKey(requestSourceKey);
     final cachedCategories = _categoryCache[requestSourceCacheKey];
     if (cachedCategories != null) {
-      final nextCategoryId = cachedCategories.isNotEmpty ? cachedCategories.first.id : '';
+      final preferredCategoryId = cachedCategories.any(
+              (category) => category.id == _selectedCategoryId)
+          ? _selectedCategoryId
+          : '';
+      final nextCategoryId = preferredCategoryId.isNotEmpty
+          ? preferredCategoryId
+          : (cachedCategories.isNotEmpty ? cachedCategories.first.id : '');
       if (!mounted || _currentSource != requestSourceKey) return;
       setState(() {
         _categoryError = '';
@@ -173,6 +193,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
         _categories = cachedCategories;
         _selectedCategoryId = nextCategoryId;
       });
+      _scheduleEnsureSelectedCategoryVisible(animated: false);
       if (nextCategoryId.isNotEmpty) {
         await _loadVideos(reset: true);
       }
@@ -185,7 +206,13 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
     });
     try {
       final categories = await SourceBrowserService.fetchCategories(source);
-      final nextCategoryId = categories.isNotEmpty ? categories.first.id : '';
+      final preferredCategoryId = categories.any(
+              (category) => category.id == _selectedCategoryId)
+          ? _selectedCategoryId
+          : '';
+      final nextCategoryId = preferredCategoryId.isNotEmpty
+          ? preferredCategoryId
+          : (categories.isNotEmpty ? categories.first.id : '');
       _categoryCache[requestSourceCacheKey] = categories;
       if (!mounted || _currentSource != requestSourceKey) return;
       setState(() {
@@ -193,6 +220,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
         _selectedCategoryId = nextCategoryId;
         _isLoadingCategories = false;
       });
+      _scheduleEnsureSelectedCategoryVisible(animated: false);
       if (nextCategoryId.isNotEmpty) {
         await _loadVideos(reset: true);
       }
@@ -216,9 +244,25 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
     final requestVideoCacheKey =
         _buildVideoCacheKey(requestSourceKey, requestCategoryId);
 
+    final resetStopwatch = reset ? Stopwatch() : null;
+
     if (reset) {
       final cachedEntry = _videoCache[requestVideoCacheKey];
       if (cachedEntry != null) {
+        setState(() {
+          _isLoadingVideos = true;
+          _isLoadingMore = false;
+          _categoryError = '';
+          _page = 1;
+          _hasMore = false;
+          _showBackToTop = false;
+        });
+
+        final remaining = _minCategorySkeletonDuration - resetStopwatch!.elapsed;
+        if (!remaining.isNegative && remaining > Duration.zero) {
+          await Future.delayed(remaining);
+        }
+
         if (!mounted ||
             _currentSource != requestSourceKey ||
             _selectedCategoryId != requestCategoryId) {
@@ -241,7 +285,6 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
       setState(() {
         _isLoadingVideos = true;
         _categoryError = '';
-        _videos = const [];
         _page = 1;
         _hasMore = false;
         _showBackToTop = false;
@@ -262,6 +305,14 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
         categoryId: requestCategoryId,
         page: requestPage,
       );
+
+      if (resetStopwatch != null) {
+        final remaining = _minCategorySkeletonDuration - resetStopwatch.elapsed;
+        if (!remaining.isNegative && remaining > Duration.zero) {
+          await Future.delayed(remaining);
+        }
+      }
+
       if (!mounted ||
           _currentSource != requestSourceKey ||
           _selectedCategoryId != requestCategoryId) {
@@ -409,10 +460,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Consumer<ThemeService>(
       builder: (context, themeService, child) {
         final isDarkMode = themeService.isDarkMode;
-        final background = Theme.of(context).scaffoldBackgroundColor;
         final cardColor = isDarkMode ? const Color(0xFF171d1a) : Colors.white;
         const accent = Color(0xFF27ae60);
         final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
@@ -421,46 +472,44 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
         final topPadding = isDesktopStyle ? 16.0 : 12.0;
         final sectionGap = isDesktopStyle ? 16.0 : _mobileCompactSectionGap;
 
-        return Container(
-          color: background,
-          child: Stack(
-            children: [
-              RefreshIndicator(
-                color: accent,
-                onRefresh: _loadSources,
-                child: ListView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(horizontalPadding, topPadding, horizontalPadding, 28),
-                  children: [
-                    if (isDesktopStyle) ...[
-                      _buildHeader(cardColor, isDarkMode, accent),
-                      SizedBox(height: sectionGap),
-                      _buildSourceSection(cardColor, isDarkMode, accent),
-                      SizedBox(height: sectionGap),
-                      _buildCategorySection(cardColor, isDarkMode, accent),
-                    ] else ...[
-                      _buildMobileSummarySection(cardColor, isDarkMode, accent),
-                    ],
+        return Stack(
+          children: [
+            RefreshIndicator(
+              color: accent,
+              onRefresh: _loadSources,
+              child: ListView(
+                key: const PageStorageKey<String>('source_browser_list'),
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(horizontalPadding, topPadding, horizontalPadding, 28),
+                children: [
+                  if (isDesktopStyle) ...[
+                    _buildHeader(cardColor, isDarkMode, accent),
                     SizedBox(height: sectionGap),
-                    _buildContentSection(cardColor, isDarkMode, accent),
+                    _buildSourceSection(cardColor, isDarkMode, accent),
+                    SizedBox(height: sectionGap),
+                    _buildCategorySection(cardColor, isDarkMode, accent),
+                  ] else ...[
+                    _buildMobileSummarySection(cardColor, isDarkMode, accent),
                   ],
+                  SizedBox(height: sectionGap),
+                  _buildContentSection(cardColor, isDarkMode, accent),
+                ],
+              ),
+            ),
+            if (_shouldShowBackToTop)
+              Positioned(
+                right: isDesktopStyle ? 24 : 16,
+                bottom: isDesktopStyle ? 24 : 18,
+                child: FloatingActionButton.small(
+                  heroTag: 'source_browser_back_to_top',
+                  backgroundColor: accent,
+                  foregroundColor: Colors.white,
+                  onPressed: _scrollToTop,
+                  child: const Icon(LucideIcons.chevronUp, size: 20),
                 ),
               ),
-              if (_shouldShowBackToTop)
-                Positioned(
-                  right: isDesktopStyle ? 24 : 16,
-                  bottom: isDesktopStyle ? 24 : 18,
-                  child: FloatingActionButton.small(
-                    heroTag: 'source_browser_back_to_top',
-                    backgroundColor: accent,
-                    foregroundColor: Colors.white,
-                    onPressed: _scrollToTop,
-                    child: const Icon(LucideIcons.chevronUp, size: 20),
-                  ),
-                ),
-            ],
-          ),
+          ],
         );
       },
     );
@@ -631,7 +680,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
   Widget _buildMobileSummarySection(
       Color cardColor, bool isDarkMode, Color accent) {
     return Container(
-      padding: EdgeInsets.all(_mobileCompactMode ? 14 : 16),
+      padding: EdgeInsets.fromLTRB(
+        _mobileCompactMode ? 14 : 16,
+        _mobileCompactMode ? 14 : 16,
+        _mobileCompactMode ? 14 : 16,
+        _mobileCompactMode ? 10 : 16,
+      ),
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(_mobileCompactCardRadius),
@@ -713,26 +767,50 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
                   ),
                 )
               else if (_currentSource != 'auto' && _categories.isNotEmpty)
-                InkWell(
-                  borderRadius: BorderRadius.circular(999),
-                  onTap: () => _showCategoryPickerSheet(accent, isDarkMode),
-                  child: Container(
-                    width: _mobileCompactMode ? 30 : 34,
-                    height: _mobileCompactMode ? 30 : 34,
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () =>
+                          _scheduleEnsureSelectedCategoryVisible(animated: true),
+                      child: Container(
+                        width: _mobileCompactMode ? 30 : 34,
+                        height: _mobileCompactMode ? 30 : 34,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.my_location_rounded,
+                          size: _mobileCompactMode ? 16 : 18,
+                          color: accent,
+                        ),
+                      ),
                     ),
-                    child: Icon(
-                      LucideIcons.ellipsis,
-                      size: _mobileCompactMode ? 16 : 18,
-                      color: accent,
+                    const SizedBox(width: 8),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () => _showCategoryPickerSheet(accent, isDarkMode),
+                      child: Container(
+                        width: _mobileCompactMode ? 30 : 34,
+                        height: _mobileCompactMode ? 30 : 34,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          LucideIcons.ellipsis,
+                          size: _mobileCompactMode ? 16 : 18,
+                          color: accent,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
             ],
           ),
-          SizedBox(height: _mobileCompactHeaderSpacing),
+          SizedBox(height: _mobileCompactMode ? 8 : _mobileCompactHeaderSpacing),
           if (_currentSource == 'auto')
             Text(
               '请先选择具体源。',
@@ -755,24 +833,31 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
             )
           else
             SizedBox(
+              key: _categoryViewportKey,
               height: _mobileCompactMode ? 36 : 42,
-              child: ListView.separated(
+              child: SingleChildScrollView(
+                controller: _categoryScrollController,
                 scrollDirection: Axis.horizontal,
-                itemCount: _categories.length,
-                separatorBuilder: (_, __) =>
-                    SizedBox(width: _mobileCompactMode ? 8 : 10),
-                itemBuilder: (context, index) {
-                  final category = _categories[index];
-                  final selected = _selectedCategoryId == category.id;
-                  return _buildSourceChip(
-                    label: category.name,
-                    selected: selected,
-                    accent: accent,
-                    isDarkMode: isDarkMode,
-                    compact: true,
-                    onTap: () => _selectCategory(category.id),
-                  );
-                },
+                child: Row(
+                  children: [
+                    for (int index = 0; index < _categories.length; index++) ...[
+                      if (index > 0)
+                        SizedBox(width: _mobileCompactMode ? 8 : 10),
+                      KeyedSubtree(
+                        key: _getCategoryItemKey(_categories[index].id),
+                        child: _buildSourceChip(
+                          label: _categories[index].name,
+                          selected: _selectedCategoryId == _categories[index].id,
+                          accent: accent,
+                          isDarkMode: isDarkMode,
+                          compact: true,
+                          animated: false,
+                          onTap: () => _selectCategory(_categories[index].id),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           if (_categoryError.isNotEmpty) ...[
@@ -786,14 +871,60 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
 
   Future<void> _selectCategory(String categoryId) async {
     if (_selectedCategoryId == categoryId) return;
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
-    }
     setState(() {
       _selectedCategoryId = categoryId;
       _showBackToTop = false;
     });
+    _scheduleEnsureSelectedCategoryVisible(animated: true);
     await _loadVideos(reset: true);
+  }
+
+  GlobalKey _getCategoryItemKey(String categoryId) {
+    return _categoryItemKeys.putIfAbsent(categoryId, GlobalKey.new);
+  }
+
+  void _scheduleEnsureSelectedCategoryVisible({required bool animated}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollSelectedCategoryIntoView(animated: animated);
+    });
+  }
+
+  void _scrollSelectedCategoryIntoView({required bool animated}) {
+    if (!mounted ||
+        _selectedCategoryId.isEmpty ||
+        !_categoryScrollController.hasClients) {
+      return;
+    }
+
+    final targetContext = _categoryItemKeys[_selectedCategoryId]?.currentContext;
+    final viewportContext = _categoryViewportKey.currentContext;
+    if (targetContext == null || viewportContext == null) return;
+
+    final targetBox = targetContext.findRenderObject() as RenderBox?;
+    final viewportBox = viewportContext.findRenderObject() as RenderBox?;
+    if (targetBox == null || viewportBox == null) return;
+
+    final targetOffset =
+        targetBox.localToGlobal(Offset.zero, ancestor: viewportBox).dx;
+    final targetWidth = targetBox.size.width;
+    final viewportWidth = viewportBox.size.width;
+    final desiredOffset = _categoryScrollController.offset +
+        targetOffset -
+        (viewportWidth - targetWidth) / 2;
+    final clampedOffset = desiredOffset.clamp(
+      0.0,
+      _categoryScrollController.position.maxScrollExtent,
+    );
+
+    if (animated) {
+      _categoryScrollController.animateTo(
+        clampedOffset,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _categoryScrollController.jumpTo(clampedOffset);
+    }
   }
 
   Future<void> _showCategoryPickerSheet(Color accent, bool isDarkMode) async {
@@ -833,22 +964,29 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _categories.map((category) {
-                    return _buildSourceChip(
-                      label: category.name,
-                      selected: _selectedCategoryId == category.id,
-                      accent: accent,
-                      isDarkMode: isDarkMode,
-                      compact: true,
-                      onTap: () async {
-                        Navigator.of(context).pop();
-                        await _selectCategory(category.id);
-                      },
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: constraints.maxWidth >= 320
+                          ? WrapAlignment.spaceBetween
+                          : WrapAlignment.start,
+                      children: _categories.map((category) {
+                        return _buildSourceChip(
+                          label: category.name,
+                          selected: _selectedCategoryId == category.id,
+                          accent: accent,
+                          isDarkMode: isDarkMode,
+                          compact: true,
+                          onTap: () async {
+                            Navigator.of(context).pop();
+                            await _selectCategory(category.id);
+                          },
+                        );
+                      }).toList(),
                     );
-                  }).toList(),
+                  },
                 ),
               ],
             ),
@@ -1121,14 +1259,14 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
     if (_currentSource == 'auto') {
       return _buildEmptyCard(cardColor, isDarkMode, '请选择具体源后开始浏览。');
     }
+    if (_isLoadingCategories || _isLoadingVideos) {
+      return _buildLoadingSkeletonSection(cardColor, isDarkMode);
+    }
     if (_selectedCategoryId.isEmpty && !_isLoadingCategories) {
       return _buildEmptyCard(cardColor, isDarkMode, '当前分类为空，暂时无法展示内容。');
     }
-    if (_isLoadingVideos) {
-      return _buildLoadingCard(cardColor, accent, '正在拉取分类内容...');
-    }
     if (_videos.isEmpty) {
-      return _buildEmptyCard(cardColor, isDarkMode, '该分类暂无可展示内容。');
+      return _buildNoContentState(Colors.transparent, isDarkMode);
     }
 
     final content = Column(
@@ -1194,37 +1332,15 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
             );
           },
         ),
-        const SizedBox(height: 18),
-        Center(
-          child: FilledButton.tonal(
-            onPressed: (_hasMore && !_isLoadingMore)
-                ? () => _loadVideos(reset: false)
-                : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: accent.withValues(alpha: 0.14),
-              foregroundColor: accent,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: _isLoadingMore
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: accent),
-                      ),
-                      const SizedBox(width: 10),
-                      const Text('加载中...'),
-                    ],
-                  )
-                : Text(
-                    _hasMore
-                        ? '加载更多'
-                        : (_videos.length >= _maxGridItems ? '已达性能上限' : '已到底部'),
-                  ),
-          ),
-        ),
+        if (_isLoadingMore)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(0, 8, 0, 8),
+            child: PulsingDotsIndicator(),
+          )
+        else if (!_hasMore && _videos.isNotEmpty)
+          _buildEndOfListIndicator(isDarkMode)
+        else
+          const SizedBox(height: 24),
       ],
     );
 
@@ -1249,6 +1365,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
     required bool isDarkMode,
     required VoidCallback onTap,
     bool compact = false,
+    bool animated = true,
   }) {
     final horizontalPadding = compact
         ? _mobileCompactChipHorizontalPadding
@@ -1262,7 +1379,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
       borderRadius: BorderRadius.circular(999),
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+        duration: animated ? const Duration(milliseconds: 180) : Duration.zero,
         padding: EdgeInsets.symmetric(
           horizontal: horizontalPadding,
           vertical: verticalPadding,
@@ -1287,6 +1404,125 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildEndOfListIndicator(bool isDarkMode) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 2,
+            decoration: BoxDecoration(
+              color: isDarkMode
+                  ? Colors.white.withValues(alpha: 0.3)
+                  : Colors.grey.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(1),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '已经到底啦~',
+            style: TextStyle(
+              fontSize: 14,
+              color: isDarkMode
+                  ? Colors.white.withValues(alpha: 0.6)
+                  : Colors.grey[600],
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '共 ${_videos.length} 条内容${_videos.length >= _maxGridItems ? '（已达渲染上限）' : ''}',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDarkMode
+                  ? Colors.white.withValues(alpha: 0.4)
+                  : Colors.grey[500],
+              fontWeight: FontWeight.w300,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingSkeletonSection(Color cardColor, bool isDarkMode) {
+    final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
+
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        int crossAxisCount = 3;
+        if (width >= 1200) {
+          crossAxisCount = 6;
+        } else if (width >= 900) {
+          crossAxisCount = 5;
+        } else if (width >= 700) {
+          crossAxisCount = 4;
+        }
+
+        final spacing =
+            width >= 700 ? 18.0 : (_mobileCompactMode ? 8.0 : 10.0);
+        final mainSpacing =
+            width >= 700 ? 18.0 : (_mobileCompactMode ? 14.0 : 18.0);
+        final cardWidth =
+            (width - spacing * (crossAxisCount - 1)) / crossAxisCount;
+        final skeletonCount = width >= 700 ? crossAxisCount * 2 : 6;
+
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: skeletonCount,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: spacing,
+            mainAxisSpacing: mainSpacing,
+            childAspectRatio: 0.46,
+          ),
+          itemBuilder: (context, index) {
+            return _buildSkeletonCard(cardWidth, isDarkMode);
+          },
+        );
+      },
+    );
+
+    if (!isDesktopStyle) {
+      return content;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: content,
+    );
+  }
+
+  Widget _buildSkeletonCard(double width, bool isDarkMode) {
+    final posterHeight = width * 1.5;
+    final chipColor = isDarkMode ? const Color(0xFF101513) : const Color(0xFFF2F7F3);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        ShimmerEffect(
+          width: width,
+          height: posterHeight,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        const SizedBox(height: 6),
+        ShimmerEffect(
+          width: width * 0.78,
+          height: 15,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ],
     );
   }
 
@@ -1346,6 +1582,49 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen> {
                 ? Colors.white.withValues(alpha: 0.68)
                 : const Color(0xFF5f6f67),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoContentState(Color cardColor, bool isDarkMode) {
+    return Container(
+      height: 220,
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.movie_filter_outlined,
+              size: 80,
+              color: Color(0xFFbdc3c7),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              '暂无内容',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+                color: isDarkMode
+                    ? Colors.white.withValues(alpha: 0.72)
+                    : const Color(0xFF7f8c8d),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '当前分类下没有可展示内容',
+              style: TextStyle(
+                fontSize: 14,
+                color: isDarkMode
+                    ? Colors.white.withValues(alpha: 0.48)
+                    : const Color(0xFF95a5a6),
+              ),
+            ),
+          ],
         ),
       ),
     );

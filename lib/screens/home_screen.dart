@@ -577,7 +577,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              const SearchScreen(),
+          const SearchScreen(),
           transitionDuration: Duration.zero, // 无打开动画
           reverseTransitionDuration: Duration.zero, // 无关闭动画
         ),
@@ -680,19 +680,19 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         break;
       case VideoMenuAction.favorite:
-        // 收藏
+      // 收藏
         _handleFavorite(playRecord);
         break;
       case VideoMenuAction.unfavorite:
-        // 取消收藏
+      // 取消收藏
         _handleUnfavorite(playRecord);
         break;
       case VideoMenuAction.deleteRecord:
-        // 删除记录
+      // 删除记录
         _deletePlayRecord(playRecord);
         break;
       case VideoMenuAction.doubanDetail:
-        // 豆瓣详情 - 已在组件内部处理URL跳转
+      // 豆瓣详情 - 已在组件内部处理URL跳转
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -709,7 +709,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         break;
       case VideoMenuAction.bangumiDetail:
-        // Bangumi详情 - 已在组件内部处理URL跳转
+      // Bangumi详情 - 已在组件内部处理URL跳转
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
