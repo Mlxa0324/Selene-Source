@@ -773,7 +773,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                     InkWell(
                       borderRadius: BorderRadius.circular(999),
                       onTap: () =>
-                          _scheduleEnsureSelectedCategoryVisible(animated: true),
+                          _scheduleEnsureSelectedCategoryVisible(
+                            animated: true,
+                            preferCenter: true,
+                          ),
                       child: Container(
                         width: _mobileCompactMode ? 30 : 34,
                         height: _mobileCompactMode ? 30 : 34,
@@ -832,33 +835,38 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
               ),
             )
           else
-            SizedBox(
-              key: _categoryViewportKey,
-              height: _mobileCompactMode ? 36 : 42,
-              child: SingleChildScrollView(
-                controller: _categoryScrollController,
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (int index = 0; index < _categories.length; index++) ...[
-                      if (index > 0)
-                        SizedBox(width: _mobileCompactMode ? 8 : 10),
-                      KeyedSubtree(
-                        key: _getCategoryItemKey(_categories[index].id),
-                        child: _buildSourceChip(
-                          label: _categories[index].name,
-                          selected: _selectedCategoryId == _categories[index].id,
-                          accent: accent,
-                          isDarkMode: isDarkMode,
-                          compact: true,
-                          animated: false,
-                          onTap: () => _selectCategory(_categories[index].id),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+            Builder(
+              builder: (context) {
+                _scheduleEnsureSelectedCategoryVisible(animated: false);
+                return SizedBox(
+                  key: _categoryViewportKey,
+                  height: _mobileCompactMode ? 36 : 42,
+                  child: SingleChildScrollView(
+                    controller: _categoryScrollController,
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (int index = 0; index < _categories.length; index++) ...[
+                          if (index > 0)
+                            SizedBox(width: _mobileCompactMode ? 8 : 10),
+                          KeyedSubtree(
+                            key: _getCategoryItemKey(_categories[index].id),
+                            child: _buildSourceChip(
+                              label: _categories[index].name,
+                              selected: _selectedCategoryId == _categories[index].id,
+                              accent: accent,
+                              isDarkMode: isDarkMode,
+                              compact: true,
+                              animated: false,
+                              onTap: () => _selectCategory(_categories[index].id),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           if (_categoryError.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -875,7 +883,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       _selectedCategoryId = categoryId;
       _showBackToTop = false;
     });
-    _scheduleEnsureSelectedCategoryVisible(animated: true);
+    _scheduleEnsureSelectedCategoryVisible(
+      animated: true,
+      preferCenter: true,
+    );
     await _loadVideos(reset: true);
   }
 
@@ -883,13 +894,22 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     return _categoryItemKeys.putIfAbsent(categoryId, GlobalKey.new);
   }
 
-  void _scheduleEnsureSelectedCategoryVisible({required bool animated}) {
+  void _scheduleEnsureSelectedCategoryVisible({
+    required bool animated,
+    bool preferCenter = false,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollSelectedCategoryIntoView(animated: animated);
+      _scrollSelectedCategoryIntoView(
+        animated: animated,
+        preferCenter: preferCenter,
+      );
     });
   }
 
-  void _scrollSelectedCategoryIntoView({required bool animated}) {
+  void _scrollSelectedCategoryIntoView({
+    required bool animated,
+    bool preferCenter = false,
+  }) {
     if (!mounted ||
         _selectedCategoryId.isEmpty ||
         !_categoryScrollController.hasClients) {
@@ -908,13 +928,29 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         targetBox.localToGlobal(Offset.zero, ancestor: viewportBox).dx;
     final targetWidth = targetBox.size.width;
     final viewportWidth = viewportBox.size.width;
-    final desiredOffset = _categoryScrollController.offset +
-        targetOffset -
-        (viewportWidth - targetWidth) / 2;
+    const viewportPadding = 12.0;
+    final currentOffset = _categoryScrollController.offset;
+    final targetRight = targetOffset + targetWidth;
+
+    if (!preferCenter &&
+        targetOffset >= viewportPadding &&
+        targetRight <= viewportWidth - viewportPadding) {
+      return;
+    }
+
+    final desiredOffset = preferCenter
+        ? currentOffset + targetOffset - (viewportWidth - targetWidth) / 2
+        : (targetOffset < viewportPadding
+              ? currentOffset + targetOffset - viewportPadding
+              : currentOffset + targetRight - viewportWidth + viewportPadding);
     final clampedOffset = desiredOffset.clamp(
       0.0,
       _categoryScrollController.position.maxScrollExtent,
     );
+
+    if ((clampedOffset - currentOffset).abs() < 0.5) {
+      return;
+    }
 
     if (animated) {
       _categoryScrollController.animateTo(
