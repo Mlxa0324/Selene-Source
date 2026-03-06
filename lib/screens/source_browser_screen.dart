@@ -244,7 +244,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     final requestVideoCacheKey =
         _buildVideoCacheKey(requestSourceKey, requestCategoryId);
 
-    final resetStopwatch = reset ? Stopwatch() : null;
+    final resetStopwatch = reset ? (Stopwatch()..start()) : null;
 
     if (reset) {
       final cachedEntry = _videoCache[requestVideoCacheKey];
