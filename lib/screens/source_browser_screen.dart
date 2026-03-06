@@ -889,6 +889,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 );
               },
             ),
+          SizedBox(height: _mobileCompactMode ? 8 : _mobileCompactHeaderSpacing),
           if (_categoryError.isNotEmpty) ...[
             const SizedBox(height: 10),
             _buildErrorBox(_categoryError),
@@ -1314,20 +1315,21 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
   Widget _buildContentSection(Color cardColor, bool isDarkMode, Color accent) {
     final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
     final isListLoading = _isLoadingCategories || _isLoadingVideos;
+    const Color transparent = Colors.transparent;
     final hasGridPlaceholders =
         _showCategoryLoadingPlaceholders && _categoryLoadingPlaceholderCount > 0;
 
     if (_currentSource == 'auto') {
-      return _buildEmptyCard(Colors.transparent, isDarkMode, '请选择具体源后开始浏览。');
+      return _buildEmptyCard(transparent, isDarkMode, '请选择具体源后开始浏览。');
     }
     if (isListLoading && _videos.isEmpty && !hasGridPlaceholders) {
       return _buildLoadingSkeletonSection(cardColor, isDarkMode);
     }
     if (_selectedCategoryId.isEmpty && !_isLoadingCategories) {
-      return _buildEmptyCard(cardColor, isDarkMode, '当前分类为空，暂时无法展示内容。');
+      return _buildEmptyCard(transparent, isDarkMode, '当前分类为空，暂时无法展示内容。');
     }
     if (_videos.isEmpty && !hasGridPlaceholders) {
-      return _buildNoContentState(Colors.transparent, isDarkMode);
+      return _buildNoContentState(transparent, isDarkMode);
     }
 
     final content = Column(
