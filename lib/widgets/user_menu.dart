@@ -45,6 +45,7 @@ class _UserMenuState extends State<UserMenu> {
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
   bool _showLive = false;
+  bool _showSourceBrowser = false;
   bool _showSettings = false;
   bool _isSwitchingAccount = false;
   List<SavedUserAccount> _savedAccounts = const [];
@@ -80,6 +81,7 @@ class _UserMenuState extends State<UserMenu> {
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
     final showLive = await UserDataService.getShowLive();
+    final showSourceBrowser = await UserDataService.getShowSourceBrowser();
     final savedAccounts = await UserDataService.getSavedAccounts();
 
     if (mounted) {
@@ -96,6 +98,7 @@ class _UserMenuState extends State<UserMenu> {
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
         _showLive = showLive;
+        _showSourceBrowser = showSourceBrowser;
         _savedAccounts = savedAccounts;
       });
     }
@@ -1582,6 +1585,15 @@ class _UserMenuState extends State<UserMenu> {
                     setState(() => _showLive = value);
                   },
                   icon: LucideIcons.tv,
+                ),
+                _buildToggleOption(
+                  title: '显示源浏览器入口',
+                  value: _showSourceBrowser,
+                  onChanged: (value) async {
+                    await UserDataService.saveShowSourceBrowser(value);
+                    setState(() => _showSourceBrowser = value);
+                  },
+                  icon: LucideIcons.globe,
                 ),
                 if (!_isLocalMode)
                   _buildToggleOption(

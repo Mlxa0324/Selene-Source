@@ -20,12 +20,14 @@ import '../utils/font_utils.dart';
 import '../services/page_cache_service.dart';
 import '../services/version_service.dart';
 import '../widgets/update_dialog.dart';
+import '../services/user_data_service.dart';
 import 'movie_screen.dart';
 import 'tv_screen.dart';
 import 'anime_screen.dart';
 import 'show_screen.dart';
 import 'player_screen.dart';
 import 'live_screen.dart';
+import 'source_browser_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -40,6 +42,8 @@ class _HomeScreenState extends State<HomeScreen> {
   late PageController _pageController;
   late PageController _bottomNavPageController;
   bool _isOffline = false;
+  bool _showLive = false;
+  bool _showSourceBrowser = false;
 
   @override
   void initState() {
@@ -50,8 +54,30 @@ class _HomeScreenState extends State<HomeScreen> {
     _bottomNavPageController = PageController(initialPage: 0);
     // 检查网络状态并刷新缓存
     _initNetworkAndCache();
+    _loadBottomNavFeatures();
     // 检查应用更新
     _checkForUpdates();
+  }
+
+  Future<void> _loadBottomNavFeatures() async {
+    final showLive = await UserDataService.getShowLive();
+    final showSourceBrowser = await UserDataService.getShowSourceBrowser();
+    final pageCount = 5 + (showLive ? 1 : 0) + (showSourceBrowser ? 1 : 0);
+    final targetIndex = _currentBottomNavIndex >= pageCount
+        ? pageCount - 1
+        : _currentBottomNavIndex;
+    if (!mounted) return;
+    setState(() {
+      _showLive = showLive;
+      _showSourceBrowser = showSourceBrowser;
+      _currentBottomNavIndex = targetIndex < 0 ? 0 : targetIndex;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_bottomNavPageController.hasClients) return;
+      if (_bottomNavPageController.page?.round() != _currentBottomNavIndex) {
+        _bottomNavPageController.jumpToPage(_currentBottomNavIndex);
+      }
+    });
   }
 
   /// 初始化网络状态和缓存
@@ -446,6 +472,7 @@ class _HomeScreenState extends State<HomeScreen> {
       content: _buildBottomNavPageView(),
       currentBottomNavIndex: _currentBottomNavIndex,
       onBottomNavChanged: _onBottomNavChanged,
+      onMenuSettingsChanged: _loadBottomNavFeatures,
       selectedTopTab: _selectedTopTab,
       onTopTabChanged: _onTopTabChanged,
       onHomeTap: _onHomeTap,
@@ -456,6 +483,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 构建底栏 PageView，支持左右滑动切换
   Widget _buildBottomNavPageView() {
+    final pages = <Widget>[
+      _buildHomeContentWithPageView(),
+      const MovieScreen(),
+      const TvScreen(),
+      const AnimeScreen(),
+      const ShowScreen(),
+      if (_showLive) const LiveScreen(),
+      if (_showSourceBrowser) const SourceBrowserScreen(),
+    ];
+
     return PageView(
       controller: _bottomNavPageController,
       onPageChanged: (index) {
@@ -465,14 +502,7 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         }
       },
-      children: [
-        _buildHomeContentWithPageView(),
-        const MovieScreen(),
-        const TvScreen(),
-        const AnimeScreen(),
-        const ShowScreen(),
-        const LiveScreen(),
-      ],
+      children: pages,
     );
   }
 

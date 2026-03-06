@@ -29,6 +29,7 @@ class MainLayout extends StatefulWidget {
   final Function(String)? onSearchSubmitted;
   final VoidCallback? onClearSearch;
   final bool showBottomNav;
+  final VoidCallback? onMenuSettingsChanged;
 
   const MainLayout({
     super.key,
@@ -48,6 +49,7 @@ class MainLayout extends StatefulWidget {
     this.onSearchSubmitted,
     this.onClearSearch,
     this.showBottomNav = true,
+    this.onMenuSettingsChanged,
   });
 
   @override
@@ -58,6 +60,7 @@ class _MainLayoutState extends State<MainLayout> {
   bool _isSearchButtonPressed = false;
   bool _showUserMenu = false;
   bool _showLive = false;
+  bool _showSourceBrowser = false;
 
   // 用于跟踪底部导航栏按钮的 hover 状态
   int? _hoveredNavIndex;
@@ -65,14 +68,16 @@ class _MainLayoutState extends State<MainLayout> {
   @override
   void initState() {
     super.initState();
-    _loadShowLive();
+    _loadNavFeatureToggles();
   }
 
-  Future<void> _loadShowLive() async {
+  Future<void> _loadNavFeatureToggles() async {
     final showLive = await UserDataService.getShowLive();
+    final showSourceBrowser = await UserDataService.getShowSourceBrowser();
     if (mounted) {
       setState(() {
         _showLive = showLive;
+        _showSourceBrowser = showSourceBrowser;
       });
     }
   }
@@ -360,8 +365,8 @@ class _MainLayoutState extends State<MainLayout> {
                               setState(() {
                                 _showUserMenu = false;
                               });
-                              // 关闭菜单时重新加载直播显示状态
-                              _loadShowLive();
+                              _loadNavFeatureToggles();
+                              widget.onMenuSettingsChanged?.call();
                             },
                           ),              ],
             ),
@@ -939,6 +944,9 @@ class _MainLayoutState extends State<MainLayout> {
     // 如果开启了显示直播，则添加直播项
     if (_showLive) {
       navItems.add({'icon': LucideIcons.radio, 'label': '直播'});
+    }
+    if (_showSourceBrowser) {
+      navItems.add({'icon': LucideIcons.globe, 'label': '源浏览'});
     }
 
     final isTablet = DeviceUtils.isTablet(context);

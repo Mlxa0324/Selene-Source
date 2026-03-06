@@ -95,6 +95,13 @@ class UserDataService {
   /// 是否显示直播入口 Key
   static const String _showLiveKey = 'show_live_v1';
 
+  /// 是否显示源浏览器入口 Key
+  static const String _showSourceBrowserKey = 'show_source_browser_v1';
+
+  /// 源浏览器当前选中的数据源 Key
+  static const String _sourceBrowserCurrentSourceKey =
+      'source_browser_current_source_v1';
+
   /// 是否处于离线/本地模式 Key
   static const String _isLocalModeKey = 'is_local_mode';
 
@@ -772,6 +779,31 @@ class UserDataService {
   static Future<bool> getShowLive() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_showLiveKey) ?? false;
+  }
+
+  // 保存源浏览器显示设置
+  static Future<void> saveShowSourceBrowser(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showSourceBrowserKey, enabled);
+  }
+
+  // 获取源浏览器显示设置（默认为 false）
+  static Future<bool> getShowSourceBrowser() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_showSourceBrowserKey) ?? false;
+  }
+
+  // 保存源浏览器当前数据源
+  static Future<void> saveSourceBrowserCurrentSource(String sourceKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+        _sourceBrowserCurrentSourceKey, sourceKey.trim().isEmpty ? 'auto' : sourceKey);
+  }
+
+  // 获取源浏览器当前数据源
+  static Future<String> getSourceBrowserCurrentSource() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_sourceBrowserCurrentSourceKey) ?? 'auto';
   }
 
   // 保存本地模式设置
