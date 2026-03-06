@@ -177,7 +177,16 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   @override
   void didUpdateWidget(covariant MobilePlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 褰?PIP 妯″紡鍋滄鏃讹紝鏄剧ず鎺у埗鏍?
+    if (!oldWidget.isPipMode && widget.isPipMode) {
+      _hideTimer?.cancel();
+      if (_controlsVisible) {
+        setState(() => _controlsVisible = false);
+        widget.onControlsVisibilityChanged(false);
+      }
+      return;
+    }
+
+    // 退出 PIP 模式时，恢复显示控制栏
     if (oldWidget.isPipMode && !widget.isPipMode) {
       setState(() => _controlsVisible = true);
       widget.onControlsVisibilityChanged(true);
@@ -202,6 +211,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _listenPlayerStreams() {
     _subscriptions.add(widget.player.stream.playing.listen((playing) {
       if (!mounted) return;
+      if (widget.isPipMode) {
+        _hideTimer?.cancel();
+        if (_controlsVisible) {
+          setState(() => _controlsVisible = false);
+          widget.onControlsVisibilityChanged(false);
+        }
+        return;
+      }
       if (playing && _controlsVisible) {
         _startHideTimer();
       }
@@ -268,6 +285,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   void _startHideTimer() {
     _hideTimer?.cancel();
+    if (widget.isPipMode) {
+      if (_controlsVisible) {
+        setState(() => _controlsVisible = false);
+        widget.onControlsVisibilityChanged(false);
+      }
+      return;
+    }
     if (_isPlaying) {
       _hideTimer = Timer(const Duration(seconds: 3), () {
         if (mounted) {
@@ -289,6 +313,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onUserInteraction() {
+    if (widget.isPipMode) {
+      if (_controlsVisible) {
+        setState(() => _controlsVisible = false);
+        widget.onControlsVisibilityChanged(false);
+      }
+      _hideTimer?.cancel();
+      return;
+    }
     if (!_controlsVisible) {
       setState(() => _controlsVisible = true);
       widget.onControlsVisibilityChanged(true);
@@ -297,6 +329,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _toggleControlsVisibility() {
+    if (widget.isPipMode) {
+      if (_controlsVisible) {
+        setState(() => _controlsVisible = false);
+        widget.onControlsVisibilityChanged(false);
+      }
+      _hideTimer?.cancel();
+      return;
+    }
     if (_isLocked) {
       setState(() => _controlsVisible = !_controlsVisible);
       if (_controlsVisible) {
