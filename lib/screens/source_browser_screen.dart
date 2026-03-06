@@ -59,6 +59,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
   bool _isLoadingMore = false;
   bool _hasMore = false;
   bool _showBackToTop = false;
+  bool _showCategoryLoadingPlaceholders = false;
+
+  int _categoryLoadingPlaceholderCount = 0;
 
   String _sourceError = '';
   String _categoryError = '';
@@ -160,6 +163,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       _hasMore = false;
       _isLoadingVideos = false;
       _isLoadingMore = false;
+      _showCategoryLoadingPlaceholders = false;
+      _categoryLoadingPlaceholderCount = 0;
     });
 
     if (sourceKey == 'auto') {
@@ -243,6 +248,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     final requestCategoryId = _selectedCategoryId;
     final requestVideoCacheKey =
         _buildVideoCacheKey(requestSourceKey, requestCategoryId);
+    final placeholderCountBeforeReset = _videos.length;
 
     final resetStopwatch = reset ? (Stopwatch()..start()) : null;
 
@@ -256,6 +262,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
           _page = 1;
           _hasMore = false;
           _showBackToTop = false;
+          _showCategoryLoadingPlaceholders = placeholderCountBeforeReset > 0;
+          _categoryLoadingPlaceholderCount = placeholderCountBeforeReset;
         });
 
         final remaining = _minCategorySkeletonDuration - resetStopwatch!.elapsed;
@@ -278,6 +286,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _updateBackToTopVisibility();
+          if (_showCategoryLoadingPlaceholders) {
+            setState(() {
+              _showCategoryLoadingPlaceholders = false;
+              _categoryLoadingPlaceholderCount = 0;
+            });
+          }
         });
         return;
       }
@@ -288,6 +302,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         _page = 1;
         _hasMore = false;
         _showBackToTop = false;
+        _showCategoryLoadingPlaceholders = placeholderCountBeforeReset > 0;
+        _categoryLoadingPlaceholderCount = placeholderCountBeforeReset;
       });
     } else {
       if (_isLoadingMore || !_hasMore || _videos.length >= _maxGridItems) {
@@ -356,6 +372,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _updateBackToTopVisibility();
+          if (_showCategoryLoadingPlaceholders) {
+            setState(() {
+              _showCategoryLoadingPlaceholders = false;
+              _categoryLoadingPlaceholderCount = 0;
+            });
+          }
         });
       }
     }
@@ -1292,16 +1314,20 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
 
   Widget _buildContentSection(Color cardColor, bool isDarkMode, Color accent) {
     final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
+    final isListLoading = _isLoadingCategories || _isLoadingVideos;
+    final hasGridPlaceholders =
+        _showCategoryLoadingPlaceholders && _categoryLoadingPlaceholderCount > 0;
+
     if (_currentSource == 'auto') {
       return _buildEmptyCard(cardColor, isDarkMode, '请选择具体源后开始浏览。');
     }
-    if (_isLoadingCategories || _isLoadingVideos) {
+    if (isListLoading && _videos.isEmpty && !hasGridPlaceholders) {
       return _buildLoadingSkeletonSection(cardColor, isDarkMode);
     }
     if (_selectedCategoryId.isEmpty && !_isLoadingCategories) {
       return _buildEmptyCard(cardColor, isDarkMode, '当前分类为空，暂时无法展示内容。');
     }
-    if (_videos.isEmpty) {
+    if (_videos.isEmpty && !hasGridPlaceholders) {
       return _buildNoContentState(Colors.transparent, isDarkMode);
     }
 
@@ -1345,11 +1371,16 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
             final mainSpacing = width >= 700 ? 18.0 : (_mobileCompactMode ? 14.0 : 18.0);
             final cardWidth =
                 (width - spacing * (crossAxisCount - 1)) / crossAxisCount;
+            final gridItemCount = hasGridPlaceholders
+                ? (_categoryLoadingPlaceholderCount > _videos.length
+                    ? _categoryLoadingPlaceholderCount
+                    : _videos.length)
+                : _videos.length;
 
             return GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: _videos.length,
+              itemCount: gridItemCount,
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: crossAxisCount,
                 crossAxisSpacing: spacing,
@@ -1357,6 +1388,11 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 childAspectRatio: 0.46,
               ),
               itemBuilder: (context, index) {
+                final shouldShowSkeleton = hasGridPlaceholders &&
+                    (_isLoadingVideos || index >= _videos.length);
+                if (shouldShowSkeleton) {
+                  return _buildSkeletonCard(cardWidth, isDarkMode);
+                }
                 final item = _videos[index];
                 return VideoCard(
                   videoInfo: _toVideoInfo(item),
@@ -1373,7 +1409,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
             padding: EdgeInsets.fromLTRB(0, 8, 0, 8),
             child: PulsingDotsIndicator(),
           )
-        else if (!_hasMore && _videos.isNotEmpty)
+        else if (!_hasMore && _videos.isNotEmpty && !isListLoading && !hasGridPlaceholders)
           _buildEndOfListIndicator(isDarkMode)
         else
           const SizedBox(height: 24),
