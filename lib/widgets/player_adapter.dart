@@ -517,7 +517,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           var isSpeedingUp = targetRate > previousRate + 0.01;
           var isSlowingDown = targetRate + 0.01 < previousRate;
           var shouldStabilizeRollback =
-              shouldStabilize && isSlowingDown && targetRate <= 1.25;
+              shouldStabilize &&
+              isSlowingDown &&
+              targetRate <= 1.05 &&
+              previousRate >= 1.75;
           var stabilizationToken = (window.__rateStabilizationToken || 0) + 1;
           window.__rateStabilizationToken = stabilizationToken;
           var suppressionMs = isIOS ? (targetRate > 1.0 ? 420 : 320) : 0;
@@ -575,26 +578,26 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
             observePlaybackProgress();
             var readyState = Number(p.readyState) || 0;
-            if (p.seeking || readyState < 3) {
+            if (p.seeking || readyState < 4) {
               return;
             }
             var now = Number(p.currentTime) || 0;
             var rollbackGap = anchorTime - now;
-            if (rollbackGap < 0.45) {
+            if (rollbackGap < 0.60) {
               return;
             }
-            if (furthestTime > anchorTime + 0.12) {
+            if (furthestTime > anchorTime + 0.06) {
               return;
             }
-            var desired = Math.max(anchorTime + 0.02, now + 0.01);
+            var desired = Math.max(anchorTime + 0.015, now + 0.008);
             try {
               p.currentTime = desired;
             } catch (_) {}
           }
 
-          setTimeout(observePlaybackProgress, 180);
-          setTimeout(observePlaybackProgress, 360);
-          setTimeout(softlyRestoreProgress, 620);
+          setTimeout(observePlaybackProgress, 220);
+          setTimeout(observePlaybackProgress, 460);
+          setTimeout(softlyRestoreProgress, 820);
         })($rate);
       ''',
     );
