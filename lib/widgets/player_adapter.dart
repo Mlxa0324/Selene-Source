@@ -534,19 +534,6 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
           } catch (_) {}
           try {
-            if (isIOS) {
-              if (!window.__iosPitchConfigured) {
-                if ('preservesPitch' in p) {
-                  p.preservesPitch = true;
-                }
-                if ('webkitPreservesPitch' in p) {
-                  p.webkitPreservesPitch = true;
-                }
-                window.__iosPitchConfigured = true;
-              }
-            }
-          } catch (_) {}
-          try {
             p.playbackRate = targetRate;
           } catch (_) {}
 
@@ -944,6 +931,27 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     }
 
     window.fastSeekTo = fastSeekTo;
+    window.__iosPitchConfigured = false;
+
+    function configureIOSPlaybackDefaults() {
+      if (!player || window.__iosPitchConfigured) {
+        return;
+      }
+      var ua = navigator.userAgent || '';
+      var isIOS = /iPad|iPhone|iPod/.test(ua);
+      if (!isIOS) {
+        return;
+      }
+      try {
+        if ('preservesPitch' in player) {
+          player.preservesPitch = true;
+        }
+        if ('webkitPreservesPitch' in player) {
+          player.webkitPreservesPitch = true;
+        }
+        window.__iosPitchConfigured = true;
+      } catch (_) {}
+    }
 
     window.__rateChangeBufferingSuppressedUntil = 0;
     window.__bufferingFallbackTimer = null;
@@ -994,6 +1002,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     window.beginRateChangeBufferingSuppression = beginRateChangeBufferingSuppression;
 
     if (player) {
+      configureIOSPlaybackDefaults();
       player.addEventListener('play', function() { sendEvent('play'); });
       player.addEventListener('pause', function() { sendEvent('pause'); });
       player.addEventListener('ended', function() { sendEvent('ended'); });
