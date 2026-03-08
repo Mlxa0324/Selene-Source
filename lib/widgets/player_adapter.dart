@@ -519,8 +519,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           var shouldStabilizeRollback =
               shouldStabilize &&
               isSlowingDown &&
-              targetRate <= 1.05 &&
-              previousRate >= 1.75;
+              targetRate <= 1.01 &&
+              previousRate >= 1.90;
           var stabilizationToken = (window.__rateStabilizationToken || 0) + 1;
           window.__rateStabilizationToken = stabilizationToken;
           var suppressionMs = isIOS ? (targetRate > 1.0 ? 420 : 320) : 0;
@@ -583,21 +583,21 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
             var now = Number(p.currentTime) || 0;
             var rollbackGap = anchorTime - now;
-            if (rollbackGap < 0.60) {
+            if (rollbackGap < 0.72) {
               return;
             }
-            if (furthestTime > anchorTime + 0.06) {
+            if (furthestTime > anchorTime + 0.03) {
               return;
             }
-            var desired = Math.max(anchorTime + 0.015, now + 0.008);
+            var desired = Math.max(anchorTime + 0.012, now + 0.006);
             try {
               p.currentTime = desired;
             } catch (_) {}
           }
 
-          setTimeout(observePlaybackProgress, 220);
-          setTimeout(observePlaybackProgress, 460);
-          setTimeout(softlyRestoreProgress, 820);
+          setTimeout(observePlaybackProgress, 260);
+          setTimeout(observePlaybackProgress, 560);
+          setTimeout(softlyRestoreProgress, 980);
         })($rate);
       ''',
     );
