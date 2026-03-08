@@ -1308,10 +1308,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       child: Center(
         child: AnimatedOpacity(
           opacity:
-              (!_isLocked && (!_isPlaying || _controlsVisible)) ? 1.0 : 0.0,
+              (!widget.isPipMode && !_isLocked && (!_isPlaying || _controlsVisible))
+                  ? 1.0
+                  : 0.0,
           duration: const Duration(milliseconds: 200),
           child: IgnorePointer(
-            ignoring: _isLocked || (_isPlaying && !_controlsVisible),
+            ignoring:
+                widget.isPipMode || _isLocked || (_isPlaying && !_controlsVisible),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
