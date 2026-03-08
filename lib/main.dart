@@ -10,6 +10,7 @@ import 'services/douban_cache_service.dart';
 import 'services/local_mode_storage_service.dart';
 import 'services/subscription_service.dart';
 import 'services/download_service.dart';
+import 'config/player_backend_config.dart';
 import 'dart:io' show Platform;
 import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:media_kit/media_kit.dart';
@@ -18,8 +19,9 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 💡 优化：仅在 PC 端初始化 media_kit (因为 Android/iOS 已改用 video_player)
-  if (Platform.isWindows || Platform.isMacOS) {
+  // 按当前平台实际播放后端初始化 media_kit。
+  // 现在 iOS 在线播放也允许通过代码开关切到 media_kit。
+  if (PlayerBackendConfig.shouldInitializeMediaKit) {
     MediaKit.ensureInitialized();
   }
 

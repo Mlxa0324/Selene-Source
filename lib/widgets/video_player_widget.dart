@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:selene/widgets/player_sources_panel.dart';
 import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
+import '../config/player_backend_config.dart';
 import '../models/search_result.dart';
 import '../models/danmaku_model.dart';
 import 'mobile_player_controls.dart';
@@ -251,6 +252,50 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
   final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey =
       GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
+
+  bool get _useMobileNetworkMediaKit {
+    if (widget.isLocal) {
+      return false;
+    }
+    if (!(Platform.isAndroid || Platform.isIOS)) {
+      return false;
+    }
+    return PlayerBackendConfig.useMediaKitForMobileNetworkPlayback;
+  }
+
+  MediaKitAdapter _createMediaKitAdapter() {
+    final player = mk.Player(
+      configuration: const mk.PlayerConfiguration(
+        bufferSize: 32 * 1024 * 1024,
+        ready: null,
+      ),
+    );
+    return MediaKitAdapter(player);
+  }
+
+  WebViewPlayerAdapter _createWebViewPlayerAdapter({
+    required String url,
+    Duration? startAt,
+    required String logReason,
+  }) {
+    debugPrint(logReason);
+    return WebViewPlayerAdapter(
+      url: url,
+      headers: _currentHeaders,
+      startAt: startAt,
+      adFilterEnabled: widget.adFilterEnabled,
+      seekBoostEnabled: !widget.isLocal,
+      onReady: () {
+        debugPrint('VideoPlayerWidget: WebView ready');
+        if (mounted) {
+          _safeSetState(() {
+            _isLoadingVideo = false;
+          });
+          widget.onReady?.call();
+        }
+      },
+    );
+  }
 
   bool _isDesktopFullscreenState(mkv.VideoState? state) {
     if (widget.surface != VideoPlayerSurface.desktop) return false;
@@ -504,7 +549,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
 
     if (Platform.isAndroid || Platform.isIOS) {
-      // 本地播放使用原生适配器，在线播放使用 WebView 适配器
+      // 移动端：本地播放走 video_player；在线播放可通过代码开关切换 media_kit / WebView。
       if (_currentUrl != null) {
         if (widget.isLocal) {
           debugPrint('VideoPlayerWidget: 使用 VideoPlayerAdapter 播放本地文件');
@@ -521,26 +566,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
               _adapter!.play();
             }
           });
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
+        } else if (_useMobileNetworkMediaKit) {
+          debugPrint('VideoPlayerWidget: 移动端使用 MediaKitAdapter 播放网络流');
+          _adapter = _createMediaKitAdapter();
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
+          await _openCurrentMedia();
         } else {
-          debugPrint('VideoPlayerWidget: 使用 WebViewPlayerAdapter 播放网络流');
-          _adapter = WebViewPlayerAdapter(
+          _adapter = _createWebViewPlayerAdapter(
             url: _currentUrl!,
-            headers: _currentHeaders,
-            adFilterEnabled: widget.adFilterEnabled,
-            seekBoostEnabled: true,
-            onReady: () {
-              debugPrint('VideoPlayerWidget: WebView ready (init)');
-              if (mounted) {
-                _safeSetState(() {
-                  _isLoadingVideo = false;
-                });
-                widget.onReady?.call();
-              }
-            },
+            logReason: 'VideoPlayerWidget: 移动端使用 WebViewPlayerAdapter 播放网络流',
           );
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
         }
-        _setupPlayerListeners();
-        _adapter?.updateVideoFit(_getBoxFit());
       }
       _safeSetState(() {
         _isInitialized = true;
@@ -550,36 +591,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           (Platform.isWindows || Platform.isMacOS) && !widget.isLocal;
 
       if (useDesktopWebView && _currentUrl != null) {
-        debugPrint('VideoPlayerWidget: 桌面端使用 WebViewPlayerAdapter 播放网络流');
         _safeSetState(() {
           _isLoadingVideo = true;
         });
-        _adapter = WebViewPlayerAdapter(
+        _adapter = _createWebViewPlayerAdapter(
           url: _currentUrl!,
-          headers: _currentHeaders,
-          adFilterEnabled: widget.adFilterEnabled,
-          seekBoostEnabled: true,
-          onReady: () {
-            debugPrint('VideoPlayerWidget: WebView ready (desktop init)');
-            if (mounted) {
-              _safeSetState(() {
-                _isLoadingVideo = false;
-              });
-              widget.onReady?.call();
-            }
-          },
+          logReason: 'VideoPlayerWidget: 桌面端使用 WebViewPlayerAdapter 播放网络流',
         );
         _setupPlayerListeners();
         _adapter?.updateVideoFit(_getBoxFit());
       } else {
         // Linux 与桌面本地文件继续使用 media_kit
-        final player = mk.Player(
-          configuration: const mk.PlayerConfiguration(
-            bufferSize: 32 * 1024 * 1024,
-            ready: null,
-          ),
-        );
-        _adapter = MediaKitAdapter(player);
+        _adapter = _createMediaKitAdapter();
         _setupPlayerListeners();
         if (_currentUrl != null) {
           await _openCurrentMedia();
@@ -743,6 +766,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
           play: true,
         );
+      } else if (_useMobileNetworkMediaKit && !widget.isLocal) {
+        final oldAdapter = _adapter;
+        _adapter = _createMediaKitAdapter();
+        _setupPlayerListeners();
+        _adapter?.updateVideoFit(_getBoxFit());
+        await _openCurrentMedia(startAt: startAt);
+        unawaited(oldAdapter?.dispose());
       } else if (widget.isLocal) {
         // 处理本地文件切换
         final oldAdapter = _adapter;
@@ -792,21 +822,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       } else if (_adapter is WebViewPlayerAdapter) {
         // For WebView player, recreate with new URL
         final oldAdapter = _adapter;
-        _adapter = WebViewPlayerAdapter(
+        _adapter = _createWebViewPlayerAdapter(
           url: url,
-          headers: _currentHeaders,
           startAt: startAt,
-          adFilterEnabled: widget.adFilterEnabled,
-          seekBoostEnabled: !widget.isLocal,
-          onReady: () {
-            debugPrint('VideoPlayerWidget: WebView ready (update)');
-            if (mounted) {
-              _safeSetState(() {
-                _isLoadingVideo = false;
-              });
-              widget.onReady?.call();
-            }
-          },
+          logReason: 'VideoPlayerWidget: WebViewPlayerAdapter 切换数据源',
         );
         _setupPlayerListeners();
         _adapter?.updateVideoFit(_getBoxFit());
