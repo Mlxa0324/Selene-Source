@@ -263,6 +263,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return PlayerBackendConfig.useMediaKitForMobileNetworkPlayback;
   }
 
+  bool _canUseMediaKitForUrl(String? url) {
+    if (url == null || url.isEmpty) {
+      return false;
+    }
+    final uri = Uri.tryParse(url);
+    final scheme = uri?.scheme.toLowerCase();
+    return scheme == 'http' || scheme == 'https' || scheme == 'file';
+  }
+
   MediaKitAdapter _createMediaKitAdapter() {
     final player = mk.Player(
       configuration: const mk.PlayerConfiguration(
@@ -578,7 +587,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           });
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
-        } else if (_useMobileNetworkMediaKit) {
+        } else if (_useMobileNetworkMediaKit &&
+            _canUseMediaKitForUrl(_currentUrl)) {
           debugPrint('VideoPlayerWidget: 移动端使用 MediaKitAdapter 播放网络流');
           _adapter = _createMediaKitAdapter();
           _setupPlayerListeners();
@@ -587,7 +597,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         } else {
           _adapter = _createWebViewPlayerAdapter(
             url: _currentUrl!,
-            logReason: 'VideoPlayerWidget: 移动端使用 WebViewPlayerAdapter 播放网络流',
+            logReason:
+                'VideoPlayerWidget: 移动端使用 WebViewPlayerAdapter 播放网络流(含 MediaKit 不支持的 URL)',
           );
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
@@ -765,8 +776,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     try {
       final currentSpeed = _adapter!.state.rate;
+      final canUseMediaKitForUrl =
+          _useMobileNetworkMediaKit && !widget.isLocal && _canUseMediaKitForUrl(url);
 
-      if (_adapter is MediaKitAdapter) {
+      if (_adapter is MediaKitAdapter && canUseMediaKitForUrl) {
         final player = (_adapter as MediaKitAdapter).player;
         await player.open(
           mk.Media(
@@ -776,7 +789,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
           play: true,
         );
-      } else if (_useMobileNetworkMediaKit && !widget.isLocal) {
+      } else if (canUseMediaKitForUrl) {
         final oldAdapter = _adapter;
         _adapter = _createMediaKitAdapter();
         _setupPlayerListeners();
@@ -829,7 +842,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
         // Clean up old one after switching to minimize gap
         unawaited(oldAdapter?.dispose());
-      } else if (_adapter is WebViewPlayerAdapter) {
+      } else {
         // For WebView player, recreate with new URL
         final oldAdapter = _adapter;
         _adapter = _createWebViewPlayerAdapter(

@@ -1580,6 +1580,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  Future<VideoPlayerWidgetController?> _waitForVideoPlayerController({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (mounted &&
+        _videoPlayerController == null &&
+        DateTime.now().isBefore(deadline)) {
+      await Future.delayed(const Duration(milliseconds: 16));
+    }
+    return _videoPlayerController;
+  }
+
   /// 动态更新视频数据源
   Future<void> updateVideoUrl(String newUrl, {Duration? startAt}) async {
     debugPrint("updateVideoUrl start: $newUrl, startAt: $startAt");
@@ -1636,9 +1648,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else {
         // 本地播放
         debugPrint("调用播放器 updateDataSource");
+        final playerController =
+            _videoPlayerController ?? await _waitForVideoPlayerController();
+        if (playerController == null) {
+          throw StateError('video controller not ready');
+        }
         // 增加超时保护，防止 updateDataSource 内部卡死
-        await _videoPlayerController
-            ?.updateDataSource(finalUrl, startAt: startAt)
+        await playerController
+            .updateDataSource(finalUrl, startAt: startAt)
             .timeout(const Duration(seconds: 15), onTimeout: () {
           debugPrint("updateDataSource 调用超时");
         });
