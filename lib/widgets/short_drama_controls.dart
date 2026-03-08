@@ -420,10 +420,6 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         onTap: _handleTap,
         // 💡 移除 onVerticalDragEnd，交给 PageView 处理
         onLongPressStart: (details) {
-          if (Platform.isIOS) {
-            _showSettingsDialog();
-            return;
-          }
           final screenWidth = MediaQuery.of(context).size.width;
           final x = details.localPosition.dx;
           // 💡 优化：将两侧倍速感应区域从 15% 扩大到 20%

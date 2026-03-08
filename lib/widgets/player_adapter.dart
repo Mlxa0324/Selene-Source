@@ -484,15 +484,54 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         (function(nextRate) {
           var p = window.player || document.getElementById('player');
           if (!p) return;
+          var targetRate = Number(nextRate) || 1.0;
+          var ua = navigator.userAgent || '';
+          var isIOS = /iPad|iPhone|iPod/.test(ua);
+          var anchorTime = Number(p.currentTime) || 0;
+          var shouldStabilize = isIOS && !p.paused;
           try {
-            p.playbackRate = Number(nextRate) || 1.0;
+            p.defaultPlaybackRate = targetRate;
           } catch (_) {}
           try {
-            if ((Number(nextRate) || 1.0) > 1.0 &&
+            p.playbackRate = targetRate;
+          } catch (_) {}
+          try {
+            if (targetRate > 1.0 &&
                 typeof window.cancelSeekWarmup === 'function') {
               window.cancelSeekWarmup();
             }
           } catch (_) {}
+
+          if (!shouldStabilize) {
+            return;
+          }
+
+          var correctionSec = targetRate > 1.0 ? 0.08 : 0.05;
+          var minExpected = anchorTime + 0.015;
+          function stabilizePlaybackRateJump() {
+            if (!p) return;
+            var now = Number(p.currentTime) || 0;
+            var desired = Math.max(now, anchorTime + correctionSec);
+            if (now + 0.03 < anchorTime || now < minExpected) {
+              try {
+                if (typeof p.fastSeek === 'function') {
+                  p.fastSeek(desired);
+                } else {
+                  p.currentTime = desired;
+                }
+                sendEvent('timeupdate', { currentTime: desired });
+              } catch (_) {
+                try {
+                  p.currentTime = desired;
+                  sendEvent('timeupdate', { currentTime: desired });
+                } catch (_) {}
+              }
+            }
+          }
+
+          setTimeout(stabilizePlaybackRateJump, 0);
+          setTimeout(stabilizePlaybackRateJump, 40);
+          setTimeout(stabilizePlaybackRateJump, 120);
         })($rate);
       ''',
     );

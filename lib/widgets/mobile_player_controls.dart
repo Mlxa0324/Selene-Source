@@ -377,13 +377,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
 
     if (Platform.isIOS) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_isLongPressing) return;
-        if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() < 0.01) {
-          return;
-        }
+      if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() >= 0.01) {
         unawaited(widget.player.setRate(_effectiveLongPressSpeed));
-      });
+      }
       return;
     }
 
@@ -403,10 +399,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
 
     if (Platform.isIOS) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _isLongPressing) return;
-        unawaited(widget.player.setRate(restoreSpeed));
-      });
+      unawaited(widget.player.setRate(restoreSpeed));
       return;
     }
 
@@ -847,17 +840,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Widget _buildGestureLayer() {
     final GestureLongPressStartCallback? handleLongPressStart =
-        Platform.isIOS ? null : _onLongPressStart;
-    final GestureLongPressEndCallback? handleLongPressEnd =
-        Platform.isIOS ? null : _onLongPressEnd;
-    final GestureLongPressCancelCallback? handleLongPressCancel =
-        Platform.isIOS
-            ? null
-            : () {
-                if (_isLongPressing) {
-                  _onLongPressEnd(const LongPressEndDetails());
-                }
-              };
+        _onLongPressStart;
+    final GestureLongPressEndCallback? handleLongPressEnd = _onLongPressEnd;
+    final GestureLongPressCancelCallback? handleLongPressCancel = () {
+      if (_isLongPressing) {
+        _onLongPressEnd(const LongPressEndDetails());
+      }
+    };
 
     return Positioned.fill(
       child: Row(
