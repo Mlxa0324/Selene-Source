@@ -1363,7 +1363,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildBottomControls() {
-    final iconSize = _isEffectiveFullscreen ? 28.0 : 24.0;
+    final iconSize = _isEffectiveFullscreen ? 26.0 : 24.0;
 
     final iconPadding = EdgeInsets.only(
         left: _isEffectiveFullscreen ? 10 : 8,
