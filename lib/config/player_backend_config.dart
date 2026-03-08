@@ -10,9 +10,9 @@ class PlayerBackendConfig {
 
   // 手动开关：iOS 在线播放后端。
   // 可选：MobileNetworkPlayerBackend.mediaKit / MobileNetworkPlayerBackend.webView
-  // 当前默认切到 media_kit，优先保证 iOS 高倍速与 PiP 等原生播放能力。
+  // 当前默认切到 webView
   static const MobileNetworkPlayerBackend iosNetworkBackend =
-      MobileNetworkPlayerBackend.mediaKit;
+      MobileNetworkPlayerBackend.webView;
 
   // 手动开关：Android 在线播放后端。
   // 目前默认仍保持 WebView，避免影响现有行为。
