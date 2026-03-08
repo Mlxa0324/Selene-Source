@@ -286,6 +286,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   bool get _isPlaying => widget.player.state.playing;
 
+  double get _effectiveLongPressSpeed {
+    return Platform.isIOS
+        ? widget.longPressSpeed.clamp(1.0, 2.0).toDouble()
+        : widget.longPressSpeed;
+  }
+
   Duration get _position => widget.player.state.position;
 
   Duration get _duration => widget.player.state.duration;
@@ -373,15 +379,15 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     if (Platform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_isLongPressing) return;
-        if ((widget.longPressSpeed - _originalPlaybackSpeed).abs() < 0.01) {
+        if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() < 0.01) {
           return;
         }
-        unawaited(widget.player.setRate(widget.longPressSpeed));
+        unawaited(widget.player.setRate(_effectiveLongPressSpeed));
       });
       return;
     }
 
-    unawaited(widget.onSetSpeed(widget.longPressSpeed));
+    unawaited(widget.onSetSpeed(_effectiveLongPressSpeed));
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
@@ -676,7 +682,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Future<void> _showSpeedDialog() async {
-    final speeds = [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
+    final speeds = Platform.isIOS
+        ? [0.5, 0.75, 1.0, 1.5, 2.0]
+        : [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
     final currentSpeed = widget.playbackSpeedListenable.value;
     final screenHeight = MediaQuery.of(context).size.height;
     final result = await showModalBottomSheet<double>(
@@ -838,6 +846,19 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildGestureLayer() {
+    final GestureLongPressStartCallback? handleLongPressStart =
+        Platform.isIOS ? null : _onLongPressStart;
+    final GestureLongPressEndCallback? handleLongPressEnd =
+        Platform.isIOS ? null : _onLongPressEnd;
+    final GestureLongPressCancelCallback? handleLongPressCancel =
+        Platform.isIOS
+            ? null
+            : () {
+                if (_isLongPressing) {
+                  _onLongPressEnd(const LongPressEndDetails());
+                }
+              };
+
     return Positioned.fill(
       child: Row(
         children: [
@@ -847,13 +868,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               child: GestureDetector(
                 onTap: _toggleControlsVisibility,
                 onDoubleTap: _togglePlayPause,
-                onLongPressStart: _onLongPressStart,
-                onLongPressEnd: _onLongPressEnd,
-                onLongPressCancel: () {
-                  if (_isLongPressing) {
-                    _onLongPressEnd(const LongPressEndDetails());
-                  }
-                },
+                onLongPressStart: handleLongPressStart,
+                onLongPressEnd: handleLongPressEnd,
+                onLongPressCancel: handleLongPressCancel,
                 onHorizontalDragStart: _onSwipeStart,
                 onHorizontalDragUpdate: _onSwipeUpdate,
                 onHorizontalDragEnd: _onSwipeEnd,
@@ -868,13 +885,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             child: GestureDetector(
               onTap: _toggleControlsVisibility,
               onDoubleTap: _togglePlayPause,
-              onLongPressStart: _onLongPressStart,
-              onLongPressEnd: _onLongPressEnd,
-              onLongPressCancel: () {
-                if (_isLongPressing) {
-                  _onLongPressEnd(const LongPressEndDetails());
-                }
-              },
+              onLongPressStart: handleLongPressStart,
+              onLongPressEnd: handleLongPressEnd,
+              onLongPressCancel: handleLongPressCancel,
               onHorizontalDragStart: _onSwipeStart,
               onHorizontalDragUpdate: _onSwipeUpdate,
               onHorizontalDragEnd: _onSwipeEnd,
@@ -887,13 +900,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               child: GestureDetector(
                 onTap: _toggleControlsVisibility,
                 onDoubleTap: _togglePlayPause,
-                onLongPressStart: _onLongPressStart,
-                onLongPressEnd: _onLongPressEnd,
-                onLongPressCancel: () {
-                  if (_isLongPressing) {
-                    _onLongPressEnd(const LongPressEndDetails());
-                  }
-                },
+                onLongPressStart: handleLongPressStart,
+                onLongPressEnd: handleLongPressEnd,
+                onLongPressCancel: handleLongPressCancel,
                 onHorizontalDragStart: _onSwipeStart,
                 onHorizontalDragUpdate: _onSwipeUpdate,
                 onHorizontalDragEnd: _onSwipeEnd,
@@ -1749,7 +1758,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '${widget.longPressSpeed}x 播放中',
+                        '${_effectiveLongPressSpeed}x 播放中',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,

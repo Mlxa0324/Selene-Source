@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import '../utils/device_utils.dart';
 
@@ -56,6 +58,7 @@ class PlayerSettingsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    final isIOS = Platform.isIOS;
     final backgroundColor = isDarkMode
         ? Colors.black.withOpacity(0.85)
         : Colors.white.withOpacity(0.95);
@@ -108,12 +111,12 @@ class PlayerSettingsPanel extends StatelessWidget {
 
                   const SizedBox(height: 20),
 
-                  // 长按倍速
-                  _buildSectionHeader('长按倍速', subTextColor),
-                  const SizedBox(height: 10),
-                  _buildLongPressSpeedSelector(isDarkMode),
-
-                  const SizedBox(height: 20),
+                  if (!isIOS) ...[
+                    _buildSectionHeader('长按倍速', subTextColor),
+                    const SizedBox(height: 10),
+                    _buildLongPressSpeedSelector(isDarkMode),
+                    const SizedBox(height: 20),
+                  ],
 
                   // 自动跳过
                   _buildSectionHeader('自动跳过', subTextColor),
@@ -333,7 +336,7 @@ class PlayerSettingsPanel extends StatelessWidget {
   }
 
   Widget _buildLongPressSpeedSelector(bool isDarkMode) {
-    final speeds = [2.0, 2.5, 3.0];
+    final speeds = Platform.isIOS ? [2.0] : [2.0, 2.5, 3.0];
 
     return Wrap(
       spacing: 8,

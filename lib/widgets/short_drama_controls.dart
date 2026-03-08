@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'danmaku_control_icons.dart';
@@ -418,6 +420,10 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         onTap: _handleTap,
         // 💡 移除 onVerticalDragEnd，交给 PageView 处理
         onLongPressStart: (details) {
+          if (Platform.isIOS) {
+            _showSettingsDialog();
+            return;
+          }
           final screenWidth = MediaQuery.of(context).size.width;
           final x = details.localPosition.dx;
           // 💡 优化：将两侧倍速感应区域从 15% 扩大到 20%
@@ -717,7 +723,9 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final speeds = [0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+    final speeds = Platform.isIOS
+        ? [0.75, 1.0, 1.25, 1.5, 2.0]
+        : [0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
     
     // 💡 颜色适配逻辑
     final bool isDark = widget.isDarkMode;

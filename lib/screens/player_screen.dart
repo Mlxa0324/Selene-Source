@@ -407,8 +407,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
 
     if (mounted) {
+      final effectiveLongPressSpeed = Platform.isIOS ? 2.0 : speed;
       setState(() {
-        _longPressSpeed = speed;
+        _longPressSpeed = effectiveLongPressSpeed;
         _currentFitType = VideoFitType
             .values[fitIndex.clamp(0, VideoFitType.values.length - 1)];
         _progressMode = ProgressDisplayMode.values[
