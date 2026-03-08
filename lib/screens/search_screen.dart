@@ -826,47 +826,48 @@ class _SearchScreenState extends State<SearchScreen>
                       }
 
                       return Stack(
-                        clipBehavior: Clip.none, // 允许子组件超出边界
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: backgroundColor,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: borderColor,
-                                width: 1,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6, right: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: backgroundColor,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: borderColor,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    history,
+                                    style: FontUtils.poppins(
+                                      fontSize: 14,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                  if (isDeleting) ...[
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.delete_outline,
+                                      size: 16,
+                                      color: textColor,
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  history,
-                                  style: FontUtils.poppins(
-                                    fontSize: 14,
-                                    color: textColor,
-                                  ),
-                                ),
-                                if (isDeleting) ...[
-                                  const SizedBox(width: 8),
-                                  Icon(
-                                    Icons.delete_outline,
-                                    size: 16,
-                                    color: textColor,
-                                  ),
-                                ],
-                              ],
-                            ),
                           ),
-                          // PC 端 hover 时显示的删除按钮
-                          if (DeviceUtils.isPC() && isHovered && !isDeleting)
+                          if (!isDeleting)
                             Positioned(
-                              top: -6,
-                              right: -6,
+                              top: 3,
+                              right: 3,
                               child: MouseRegion(
                                 cursor: SystemMouseCursors.click,
                                 onEnter: (_) {
@@ -884,25 +885,32 @@ class _SearchScreenState extends State<SearchScreen>
                                     _deleteSearchHistory(history);
                                   },
                                   child: Container(
-                                    width: 18,
-                                    height: 18,
+                                    width: 15,
+                                    height: 15,
                                     decoration: BoxDecoration(
                                       color: _hoveredDeleteButton == history
-                                          ? const Color(0xFFe74c3c) // hover 时红色
-                                          : const Color(0xFF95a5a6), // 默认灰色
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.2),
-                                          blurRadius: 2,
-                                          offset: const Offset(0, 1),
-                                        ),
-                                      ],
+                                          ? const Color(0xFFe74c3c)
+                                          : themeService.isDarkMode
+                                              ? const Color(0xFF3a3a3a)
+                                              : const Color(0xFFdfe3e6),
+                                      borderRadius: BorderRadius.circular(5),
+                                      border: Border.all(
+                                        color: _hoveredDeleteButton == history
+                                            ? const Color(0xFFe74c3c)
+                                            : themeService.isDarkMode
+                                                ? const Color(0xFF4a4a4a)
+                                                : const Color(0xFFc7cdd1),
+                                        width: 0.5,
+                                      ),
                                     ),
-                                    child: const Icon(
+                                    child: Icon(
                                       Icons.close,
                                       size: 12,
-                                      color: Colors.white,
+                                      color: _hoveredDeleteButton == history
+                                          ? Colors.white
+                                          : themeService.isDarkMode
+                                              ? const Color(0xFFd8d8d8)
+                                              : const Color(0xFF6b7780),
                                     ),
                                   ),
                                 ),
