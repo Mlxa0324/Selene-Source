@@ -1055,16 +1055,17 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                 ),
                               ),
                             ),
-                          if (widget.onDanmakuToggle != null)
+                          if (widget.onDanmakuMatchButtonPressed != null)
                             HoverButton(
                               onTap: () {
                                 _onUserInteraction();
-                                widget.onDanmakuToggle
-                                    ?.call(!widget.isDanmakuEnabled);
+                                widget.onDanmakuMatchButtonPressed
+                                    ?.call(context);
                               },
-                              child: DanmakuToggleIcon(
-                                enabled: widget.isDanmakuEnabled,
-                                size: effectiveFullscreen ? 24 : 22,
+                              child: Icon(
+                                Icons.search,
+                                color: Colors.white,
+                                size: effectiveFullscreen ? 22 : 20,
                               ),
                             ),
                           if (widget.onDanmakuSettingsChanged != null)
@@ -1119,17 +1120,16 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                 ),
                               ),
                             ),
-                          if (widget.onDanmakuMatchButtonPressed != null)
+                          if (widget.onDanmakuToggle != null)
                             HoverButton(
                               onTap: () {
                                 _onUserInteraction();
-                                widget.onDanmakuMatchButtonPressed
-                                    ?.call(context);
+                                widget.onDanmakuToggle
+                                    ?.call(!widget.isDanmakuEnabled);
                               },
-                              child: Icon(
-                                Icons.search,
-                                color: Colors.white,
-                                size: effectiveFullscreen ? 22 : 20,
+                              child: DanmakuToggleIcon(
+                                enabled: widget.isDanmakuEnabled,
+                                size: effectiveFullscreen ? 25 : 23,
                               ),
                             ),
                           if (widget.live) const Spacer(),

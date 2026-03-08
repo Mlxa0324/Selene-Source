@@ -1340,7 +1340,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildDanmakuToggleButton(EdgeInsets padding) {
-    final buttonSize = _isEffectiveFullscreen ? 24.0 : 22.0;
+    final buttonSize = _isEffectiveFullscreen ? 26.0 : 22.0;
 
     return GestureDetector(
       onTap: () {
@@ -1442,10 +1442,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
                         if (widget.live) const Spacer(),
 
-                        if (_isEffectiveFullscreen &&
-                            widget.onDanmakuToggle != null)
-                          _buildDanmakuToggleButton(iconPadding),
-
                         // 手动匹配弹幕按钮（仅在横屏时显示）：
 
                         if (_isEffectiveFullscreen &&
@@ -1466,6 +1462,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
+
+                        if (_isEffectiveFullscreen &&
+                            widget.onDanmakuToggle != null)
+                          _buildDanmakuToggleButton(iconPadding),
 
                         // 弹幕设置按钮（仅在横屏时显示）：
 
