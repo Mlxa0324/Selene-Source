@@ -3010,11 +3010,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     BuildContext context,
     Widget child, {
     VoidCallback? onTap,
-    double width = 96,
+    double width = 72,
     AlignmentGeometry alignment = Alignment.centerRight,
   }) {
+    // final bool shouldExpandTapWidth =
+    //     Platform.isIOS && !DeviceUtils.isTablet(context);
     final bool shouldExpandTapWidth =
-        Platform.isIOS && !DeviceUtils.isTablet(context);
+         !DeviceUtils.isTablet(context);
     if (!shouldExpandTapWidth) {
       return child;
     }
@@ -3167,6 +3169,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     _wrapCompactActionTapTarget(
                       context,
                       onTap: _showDetailsPanel,
+                      width: 72,
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
@@ -3560,6 +3563,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _wrapCompactActionTapTarget(
                 context,
                 onTap: _showEpisodesPanel,
+                width: 50,
                 alignment: Alignment.centerLeft,
                 _HoverButton(
                   onTap: _showEpisodesPanel,
@@ -3567,7 +3571,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Transform.translate(
-                        offset: const Offset(0, -1.2),
+                        offset: const Offset(0, 0),
                         child: Text(
                           '展开',
                           style: theme.textTheme.bodyMedium?.copyWith(
@@ -3578,7 +3582,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 4),
                       Icon(
                         Icons.arrow_forward_ios,
                         size: 14,
@@ -3992,6 +3996,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _wrapCompactActionTapTarget(
                 context,
                 onTap: _showSourcesPanel,
+                width: 50,
                 alignment: Alignment.centerLeft,
                 _HoverButton(
                   onTap: _showSourcesPanel,
@@ -3999,7 +4004,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Transform.translate(
-                        offset: const Offset(0, -1.2),
+                        offset: const Offset(0, 0),
                         child: Text(
                           '展开',
                           style: theme.textTheme.bodyMedium?.copyWith(

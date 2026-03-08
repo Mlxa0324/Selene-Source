@@ -92,6 +92,7 @@ class MobilePlayerControls extends StatefulWidget {
 
 class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   final List<StreamSubscription> _subscriptions = [];
+  final ValueNotifier<bool> _longPressingNotifier = ValueNotifier<bool>(false);
   Timer? _hideTimer;
   bool _controlsVisible = true;
   bool _isLongPressing = false;
@@ -278,6 +279,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     _volumeHideTimer?.cancel();
     _brightnessHideTimer?.cancel();
     _timeUpdateTimer?.cancel();
+    _longPressingNotifier.dispose();
     VolumeController.instance.showSystemUI = true;
     super.dispose();
   }
@@ -363,9 +365,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onLongPressStart(LongPressStartDetails details) {
     if (widget.live || !_isPlaying) return;
     _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
-    setState(() {
-      _isLongPressing = true;
-    });
+    _isLongPressing = true;
+    if (!_longPressingNotifier.value) {
+      _longPressingNotifier.value = true;
+    }
 
     if (Platform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -384,7 +387,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onLongPressEnd(LongPressEndDetails details) {
     if (!_isLongPressing || widget.live) return;
     final restoreSpeed = _originalPlaybackSpeed;
-    setState(() => _isLongPressing = false);
+    _isLongPressing = false;
+    if (_longPressingNotifier.value) {
+      _longPressingNotifier.value = false;
+    }
+
+    if ((restoreSpeed - widget.longPressSpeed).abs() < 0.01) {
+      return;
+    }
 
     if (Platform.isIOS) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -760,7 +770,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         _buildCenterPlayPause(),
         _buildProgressBar(),
         _buildBottomControls(),
-        if (_isLongPressing) _buildLongPressIndicator(), // 锁定状态下也显示倍速指示器
+        _buildLongPressIndicator(), // 锁定状态下也显示倍速指示器
         if (_isSeekingViaSwipe || _isDraggingProgressBar)
           _buildProgressIndicator(), // 💡 新增：拖动进度时显示中心提示
         if (_isEffectiveFullscreen && _showBrightnessIndicator && !_isLocked)
@@ -1709,37 +1719,50 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       top: 10, // 往下移动一点，避免挡住刘海或状态栏
       left: 0,
       right: 0,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
-            borderRadius: BorderRadius.circular(20), // 圆角药丸形状
-            border: Border.all(
-              color: Colors.white.withOpacity(0.2),
-              width: 0.5,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.fast_forward_rounded,
-                color: Colors.white,
-                size: 16,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${widget.longPressSpeed}x 播放中',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _longPressingNotifier,
+        builder: (context, isLongPressing, _) {
+          return IgnorePointer(
+            ignoring: !isLongPressing,
+            child: AnimatedOpacity(
+              opacity: isLongPressing ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 120),
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(20), // 圆角药丸形状
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.fast_forward_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${widget.longPressSpeed}x 播放中',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
