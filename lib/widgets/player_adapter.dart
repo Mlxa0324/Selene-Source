@@ -523,7 +523,19 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
           } catch (_) {}
           try {
-            p.defaultPlaybackRate = targetRate;
+            if (!isIOS) {
+              p.defaultPlaybackRate = targetRate;
+            }
+          } catch (_) {}
+          try {
+            if (isIOS) {
+              if ('preservesPitch' in p) {
+                p.preservesPitch = false;
+              }
+              if ('webkitPreservesPitch' in p) {
+                p.webkitPreservesPitch = false;
+              }
+            }
           } catch (_) {}
           try {
             p.playbackRate = targetRate;
@@ -557,20 +569,24 @@ class WebViewPlayerAdapter implements PlayerAdapter {
               return;
             }
             observePlaybackProgress();
-            var now = Number(p.currentTime) || 0;
-            var rollbackGap = anchorTime - now;
-            if (rollbackGap < 0.18) {
+            var readyState = Number(p.readyState) || 0;
+            if (p.seeking || readyState < 2) {
               return;
             }
-            var desired = Math.max(anchorTime + 0.02, furthestTime + 0.01);
+            var now = Number(p.currentTime) || 0;
+            var rollbackGap = anchorTime - now;
+            if (rollbackGap < 0.28) {
+              return;
+            }
+            var desired = Math.max(anchorTime + 0.03, furthestTime + 0.015);
             try {
               p.currentTime = desired;
             } catch (_) {}
           }
 
-          setTimeout(observePlaybackProgress, 60);
-          setTimeout(observePlaybackProgress, 140);
-          setTimeout(softlyRestoreProgress, 220);
+          setTimeout(observePlaybackProgress, 90);
+          setTimeout(observePlaybackProgress, 190);
+          setTimeout(softlyRestoreProgress, 320);
         })($rate);
       ''',
     );
