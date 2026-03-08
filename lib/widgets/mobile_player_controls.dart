@@ -591,6 +591,27 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
   }
 
+  Future<void> _seekByRelative(Duration delta) async {
+    if (widget.live) return;
+
+    _onUserInteraction();
+
+    final currentPosition = _dragPosition ?? _position;
+    final duration = _duration;
+    final targetMs = currentPosition.inMilliseconds + delta.inMilliseconds;
+
+    int clampedMs = targetMs < 0 ? 0 : targetMs;
+    if (duration > Duration.zero && clampedMs > duration.inMilliseconds) {
+      clampedMs = duration.inMilliseconds;
+    }
+
+    final target = Duration(milliseconds: clampedMs);
+    setState(() {
+      _dragPosition = target;
+    });
+    await widget.player.seek(target);
+  }
+
   void _enterFullscreen() {
     // 💡 优化：移除 media_kit 内部的全屏逻辑，避免与 PlayerScreen 的自定义旋转逻辑竞争导致跳变
     // if (widget.state != null) {
@@ -1278,6 +1299,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildCenterPlayPause() {
+    final playPauseSize = _isEffectiveFullscreen ? 64.0 : 48.0;
+    final seekIconSize = _isEffectiveFullscreen ? 36.0 : 26.0;
+    final seekTapSize = _isEffectiveFullscreen ? 58.0 : 50.0;
+    final horizontalGap = _isEffectiveFullscreen ? 80.0 : 30.0;
+
     return Positioned.fill(
       child: Center(
         child: AnimatedOpacity(
@@ -1286,13 +1312,57 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
           duration: const Duration(milliseconds: 200),
           child: IgnorePointer(
             ignoring: _isLocked || (_isPlaying && !_controlsVisible),
-            child: GestureDetector(
-              onTap: _togglePlayPause,
-              child: Icon(
-                _isPlaying ? Icons.pause : Icons.play_arrow,
-                color: Colors.white,
-                size: _isEffectiveFullscreen ? 64 : 48,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!widget.live)
+                  GestureDetector(
+                    onTap: () => _seekByRelative(const Duration(seconds: -10)),
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: seekTapSize,
+                      height: seekTapSize,
+                      child: Center(
+                        child: ReplayTenIcon(
+                          size: seekIconSize,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!widget.live) SizedBox(width: horizontalGap),
+                GestureDetector(
+                  onTap: _togglePlayPause,
+                  behavior: HitTestBehavior.opaque,
+                  child: SizedBox(
+                    width: playPauseSize + 8,
+                    height: playPauseSize + 8,
+                    child: Center(
+                      child: Icon(
+                        _isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.white,
+                        size: playPauseSize,
+                      ),
+                    ),
+                  ),
+                ),
+                if (!widget.live) SizedBox(width: horizontalGap),
+                if (!widget.live)
+                  GestureDetector(
+                    onTap: () => _seekByRelative(const Duration(seconds: 10)),
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: seekTapSize,
+                      height: seekTapSize,
+                      child: Center(
+                        child: ForwardTenIcon(
+                          size: seekIconSize,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),

@@ -359,10 +359,12 @@ class ShortDramaControlsState extends State<ShortDramaControls>
           Navigator.pop(context);
           widget.onCastPressed?.call();
         },
-        onPipPressed: () {
-          Navigator.pop(context);
-          widget.onPipPressed?.call();
-        },
+        onPipPressed: widget.onPipPressed == null
+            ? null
+            : () {
+                Navigator.pop(context);
+                widget.onPipPressed?.call();
+              },
       ),
     );
   }
@@ -691,7 +693,7 @@ class _ShortDramaSettingsSheet extends StatefulWidget {
   final VoidCallback onDownloadPressed;
   final VoidCallback onFavoriteToggle;
   final VoidCallback onCastPressed;
-  final VoidCallback onPipPressed;
+  final VoidCallback? onPipPressed;
 
   const _ShortDramaSettingsSheet({
     required this.isDarkMode,
@@ -702,7 +704,7 @@ class _ShortDramaSettingsSheet extends StatefulWidget {
     required this.onDownloadPressed,
     required this.onFavoriteToggle,
     required this.onCastPressed,
-    required this.onPipPressed,
+    this.onPipPressed,
     this.isFavorite,
   });
 
@@ -749,7 +751,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
               ),
               _buildActionButton(LucideIcons.monitorPlay, '投屏', iconColor: iconBtnColor, labelColor: subColor, onTap: widget.onCastPressed),
               _buildActionButton(LucideIcons.download, '下载', iconColor: iconBtnColor, labelColor: subColor, onTap: widget.onDownloadPressed),
-              _buildActionButton(LucideIcons.pictureInPicture2, '小窗', iconColor: iconBtnColor, labelColor: subColor, onTap: widget.onPipPressed),
+              if (widget.onPipPressed != null)
+                _buildActionButton(LucideIcons.pictureInPicture2, '小窗', iconColor: iconBtnColor, labelColor: subColor, onTap: widget.onPipPressed),
             ],
           ),
           const SizedBox(height: 20), // 💡 缩小间距 (32 -> 20)

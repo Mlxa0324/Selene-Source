@@ -37,7 +37,7 @@ jobs:
       - name: Build Apple unsigned artifacts
         run: |
           chmod +x build.sh
-          ./build.sh --apple-only
+          ./build.sh --ios-only
         shell: bash
 
       - name: Show dist files

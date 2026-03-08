@@ -297,6 +297,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     );
   }
 
+  bool get _isPipDisabledForCurrentPlayback {
+    if (!Platform.isIOS || widget.isLocal) {
+      return false;
+    }
+    return _adapter is WebViewPlayerAdapter || !_useMobileNetworkMediaKit;
+  }
+
   bool _isDesktopFullscreenState(mkv.VideoState? state) {
     if (widget.surface != VideoPlayerSurface.desktop) return false;
     try {
@@ -411,6 +418,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   void _configurePipAutoEnter(bool enabled) {
     if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+    if (_isPipDisabledForCurrentPlayback) {
       return;
     }
 
@@ -900,12 +910,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (!Platform.isAndroid && !Platform.isIOS) {
       return;
     }
+    if (_isPipDisabledForCurrentPlayback) {
+      debugPrint('[PiP] skip: iOS WebView 播放禁用 PiP');
+      return;
+    }
 
     final layout = _resolvePipLayout();
     final sourceRect = _resolvePipSourceRect();
+    final effectiveAutoEnterEnabled = Platform.isIOS ? false : autoEnterEnabled;
     try {
       await _pip.setup(PipOptions(
-        autoEnterEnabled: autoEnterEnabled,
+        autoEnterEnabled: effectiveAutoEnterEnabled,
         aspectRatioX: layout.aspectX,
         aspectRatioY: layout.aspectY,
         sourceRectHintLeft: sourceRect?.left,
@@ -923,6 +938,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   void _registerPipObserver() {
     if (!Platform.isAndroid && !Platform.isIOS) {
+      return;
+    }
+    if (_isPipDisabledForCurrentPlayback) {
       return;
     }
     _pip.registerStateChangedObserver(PipStateChangedObserver(
@@ -959,6 +977,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   Future<void> _enterPipMode() async {
     debugPrint('_enterPipMode');
+    if (_isPipDisabledForCurrentPlayback) {
+      debugPrint('[PiP] blocked: iOS WebView 播放不支持 PiP');
+      return;
+    }
     try {
       final support = await _pip.isSupported();
       if (!support) {
@@ -1374,7 +1396,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             isFavorite: widget.isFavorite,
             onFavoriteToggle: widget.onFavoriteToggle,
             onCastPressed: widget.onCastButtonPressed,
-            onPipPressed: _enterPipMode,
+            onPipPressed: _isPipDisabledForCurrentPlayback ? null : _enterPipMode,
             isPipMode: _isPipMode, // 💡 传给短剧控制层
             onEpisodeTap: (index) {
               widget.onEpisodeChanged?.call(index);

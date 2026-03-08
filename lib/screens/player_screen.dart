@@ -3006,6 +3006,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  Widget _wrapCompactActionTapTarget(
+    BuildContext context,
+    Widget child, {
+    double width = 96,
+  }) {
+    final bool shouldExpandTapWidth =
+        Platform.isIOS && !DeviceUtils.isTablet(context);
+    if (!shouldExpandTapWidth) {
+      return child;
+    }
+
+    return SizedBox(
+      width: width,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: child,
+      ),
+    );
+  }
+
   /// 构建视频详情展示区域
   Widget _buildVideoDetailSection(ThemeData theme) {
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -3136,39 +3156,43 @@ class _PlayerScreenState extends State<PlayerScreen>
 
                   // 详情按钮（平板横屏模式下不显示）
                   if (!(_isTablet && !_isPortraitTablet))
-                    GestureDetector(
-                      onTap: () {
-                        _showDetailsPanel();
-                      },
-                      child: Stack(
-                        children: [
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '详情',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: isDarkMode
-                                      ? Colors.grey[400]
-                                      : Colors.grey[600],
-                                  fontWeight: FontWeight.w300,
+                    _wrapCompactActionTapTarget(
+                      context,
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          _showDetailsPanel();
+                        },
+                        child: Stack(
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '详情',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: isDarkMode
+                                        ? Colors.grey[400]
+                                        : Colors.grey[600],
+                                    fontWeight: FontWeight.w300,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 18),
-                            ],
-                          ),
-                          Positioned(
-                            right: 0,
-                            top: 4,
-                            child: Icon(
-                              Icons.arrow_forward_ios,
-                              size: 14,
-                              color: isDarkMode
-                                  ? Colors.grey[400]
-                                  : Colors.grey[600],
+                                const SizedBox(width: 18),
+                              ],
                             ),
-                          ),
-                        ],
+                            Positioned(
+                              right: 0,
+                              top: 4,
+                              child: Icon(
+                                Icons.arrow_forward_ios,
+                                size: 14,
+                                color: isDarkMode
+                                    ? Colors.grey[400]
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -3506,26 +3530,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                 offset: const Offset(0, 3.5),
                 child: _HoverButton(
                   onTap: _scrollToCurrentEpisode,
-                  child: Container(
+                  child: SizedBox(
                     width: 18,
                     height: 18,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
+                    child: Center(
+                      child: Icon(
+                        Icons.my_location_rounded,
+                        size: 21,
                         color:
                             isDarkMode ? Colors.grey[400]! : Colors.grey[600]!,
-                        width: 1,
-                      ),
-                    ),
-                    child: Center(
-                      child: Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color:
-                              isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                        ),
                       ),
                     ),
                   ),
@@ -3535,29 +3548,34 @@ class _PlayerScreenState extends State<PlayerScreen>
               const SizedBox(width: 20),
 
               // 展开按钮
-              _HoverButton(
-                onTap: _showEpisodesPanel,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Transform.translate(
-                      offset: const Offset(0, -1.2),
-                      child: Text(
-                        '展开',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color:
-                              isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                          fontWeight: FontWeight.w300,
+              _wrapCompactActionTapTarget(
+                context,
+                _HoverButton(
+                  onTap: _showEpisodesPanel,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Transform.translate(
+                        offset: const Offset(0, -1.2),
+                        child: Text(
+                          '展开',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: isDarkMode
+                                ? Colors.grey[400]
+                                : Colors.grey[600],
+                            fontWeight: FontWeight.w300,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      size: 14,
-                      color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                    ),
-                  ],
+                      const SizedBox(width: 10),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 14,
+                        color:
+                            isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -3918,7 +3936,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
               // 刷新按钮
               Transform.translate(
-                offset: const Offset(0, 2.6),
+                offset: const Offset(0, 4),
                 child: _HoverButton(
                   onTap: _isRefreshing ? null : _refreshSourcesSpeed,
                   enabled: !_isRefreshing,
@@ -3926,7 +3944,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     turns: _refreshAnimationController,
                     child: Icon(
                       Icons.refresh,
-                      size: 21,
+                      size: 22,
                       color: _isRefreshing
                           ? Colors.green
                           : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
@@ -3942,26 +3960,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                 offset: const Offset(0, 3.5),
                 child: _HoverButton(
                   onTap: _scrollToCurrentSource,
-                  child: Container(
+                  child: SizedBox(
                     width: 18,
                     height: 18,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
+                    child: Center(
+                      child: Icon(
+                        Icons.my_location_rounded,
+                        size: 21,
                         color:
                             isDarkMode ? Colors.grey[400]! : Colors.grey[600]!,
-                        width: 1,
-                      ),
-                    ),
-                    child: Center(
-                      child: Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color:
-                              isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                        ),
                       ),
                     ),
                   ),
@@ -3971,29 +3978,34 @@ class _PlayerScreenState extends State<PlayerScreen>
               const SizedBox(width: 20),
 
               // 展开按钮
-              _HoverButton(
-                onTap: _showSourcesPanel,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Transform.translate(
-                      offset: const Offset(0, -1.2),
-                      child: Text(
-                        '展开',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color:
-                              isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                          fontWeight: FontWeight.w300,
+              _wrapCompactActionTapTarget(
+                context,
+                _HoverButton(
+                  onTap: _showSourcesPanel,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Transform.translate(
+                        offset: const Offset(0, -1.2),
+                        child: Text(
+                          '展开',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: isDarkMode
+                                ? Colors.grey[400]
+                                : Colors.grey[600],
+                            fontWeight: FontWeight.w300,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      size: 14,
-                      color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 14,
+                        color:
+                            isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
