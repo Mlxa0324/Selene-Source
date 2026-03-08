@@ -521,8 +521,6 @@ class WebViewPlayerAdapter implements PlayerAdapter {
               isSlowingDown &&
               targetRate <= 1.01 &&
               previousRate >= 1.90;
-          var stabilizationToken = (window.__rateStabilizationToken || 0) + 1;
-          window.__rateStabilizationToken = stabilizationToken;
           var suppressionMs = isIOS ? (targetRate > 1.0 ? 420 : 320) : 0;
           try {
             if (suppressionMs > 0 &&
@@ -537,27 +535,27 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           } catch (_) {}
           try {
             if (isIOS) {
-              if ('preservesPitch' in p) {
-                p.preservesPitch = true;
-              }
-              if ('webkitPreservesPitch' in p) {
-                p.webkitPreservesPitch = true;
+              if (!window.__iosPitchConfigured) {
+                if ('preservesPitch' in p) {
+                  p.preservesPitch = true;
+                }
+                if ('webkitPreservesPitch' in p) {
+                  p.webkitPreservesPitch = true;
+                }
+                window.__iosPitchConfigured = true;
               }
             }
           } catch (_) {}
           try {
             p.playbackRate = targetRate;
           } catch (_) {}
-          try {
-            if (targetRate > 1.0 &&
-                typeof window.cancelSeekWarmup === 'function') {
-              window.cancelSeekWarmup();
-            }
-          } catch (_) {}
 
           if (!shouldStabilizeRollback) {
             return;
           }
+
+          var stabilizationToken = (window.__rateStabilizationToken || 0) + 1;
+          window.__rateStabilizationToken = stabilizationToken;
 
           var furthestTime = anchorTime;
           function observePlaybackProgress() {
