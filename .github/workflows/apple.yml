@@ -1,0 +1,54 @@
+name: Build Apple Unsigned
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build_apple:
+    runs-on: macos-latest
+    name: Build Apple Unsigned
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version from pubspec.yaml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | tr -d ' ')
+          VERSION=$(echo "$VERSION" | cut -d'+' -f1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+        shell: bash
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          cache: true
+
+      - name: Build Apple unsigned artifacts
+        run: |
+          chmod +x build.sh
+          ./build.sh --apple-only
+        shell: bash
+
+      - name: Show dist files
+        run: |
+          ls -lh dist/
+        shell: bash
+
+      - name: Upload Apple artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apple-unsigned-${{ steps.get_version.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
