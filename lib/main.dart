@@ -22,7 +22,11 @@ void main() async {
   // 按当前平台实际播放后端初始化 media_kit。
   // 现在 iOS 在线播放也允许通过代码开关切到 media_kit。
   if (PlayerBackendConfig.shouldInitializeMediaKit) {
-    MediaKit.ensureInitialized();
+    try {
+      MediaKit.ensureInitialized();
+    } catch (e) {
+      debugPrint('MediaKit ensureInitialized error: $e');
+    }
   }
 
   // 初始化下载服务
