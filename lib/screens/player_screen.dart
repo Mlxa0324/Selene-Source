@@ -1013,11 +1013,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 '[续播恢复] 增量结果命中历史源，立即起播: source=${currentDetail!.source}, id=${currentDetail!.id}, 源名=${currentDetail!.sourceName}, 当前候选数=${newResults.length}');
 
             if (mounted && _isLoading) {
-              setState(() {
-                _isLoading = false;
-                _showSwitchLoadingOverlay = true;
-                _switchLoadingMessage = '视频加载中...';
-              });
+              _showVideoStartupLoadingOverlay();
             }
             _checkFavoriteStatus();
             startPlay(playEpisodeIndex, playTime);
@@ -1036,11 +1032,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               '[续播恢复] 增量首个候选源: source=${currentDetail!.source}, id=${currentDetail!.id}, 源名=${currentDetail!.sourceName}, 当前候选数=${newResults.length}');
 
           if (mounted && _isLoading) {
-            setState(() {
-              _isLoading = false;
-              _showSwitchLoadingOverlay = true;
-              _switchLoadingMessage = '\u89c6\u9891\u52a0\u8f7d\u4e2d...';
-            });
+            _showVideoStartupLoadingOverlay();
           }
         }
       },
@@ -1105,15 +1097,20 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 💡 优化：设置完详情后，立即关闭全局加载状态，避免闪烁
     if (mounted) {
-      setState(() {
-        _isLoading = false;
-        if (!hasStartedPlayback) {
-          _showSwitchLoadingOverlay = true;
-          _switchLoadingMessage = '视频加载中...';
-        } else {
-          _showSwitchLoadingOverlay = false;
-        }
-      });
+      if (!hasStartedPlayback) {
+        _showVideoStartupLoadingOverlay();
+      } else {
+        setState(() {
+          if (_isEnteringLandscapeFullscreen) {
+            _isLoading = true;
+            _showSwitchLoadingOverlay = false;
+            _loadingMessage = '视频加载中...';
+          } else {
+            _isLoading = false;
+            _showSwitchLoadingOverlay = false;
+          }
+        });
+      }
     }
 
     // 检查收藏状态
@@ -1559,6 +1556,25 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  void _showVideoStartupLoadingOverlay() {
+    if (!mounted) return;
+
+    setState(() {
+      _loadingMessage = '视频加载中...';
+      _loadingProgress = _loadingProgress < 0.85 ? 0.85 : _loadingProgress;
+      _loadingEmoji = '🎬';
+
+      if (_isEnteringLandscapeFullscreen) {
+        _isLoading = true;
+        _showSwitchLoadingOverlay = false;
+      } else {
+        _isLoading = false;
+        _showSwitchLoadingOverlay = true;
+        _switchLoadingMessage = '视频加载中...';
+      }
+    });
+  }
+
   /// 动态更新视频数据源
   Future<void> updateVideoUrl(String newUrl, {Duration? startAt}) async {
     debugPrint("updateVideoUrl start: $newUrl, startAt: $startAt");
@@ -1568,10 +1584,11 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 设置一个新的超时计时器，如果 20 秒后还没 Ready，强制关闭
     _loadingTimeoutTimer = Timer(const Duration(seconds: 15), () {
-      if (mounted && _showSwitchLoadingOverlay) {
+      if (mounted && (_showSwitchLoadingOverlay || _isLoading)) {
         debugPrint("播放器准备超时，强制关闭加载蒙版");
         setState(() {
           _showSwitchLoadingOverlay = false;
+          _isLoading = false;
         });
         _showToast('加载超时，请尝试换源或重新播放');
       }
@@ -2839,7 +2856,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           message: _switchLoadingMessage,
           animationController: _switchLoadingAnimationController,
           onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
-          isFullscreen: _isFullscreen, // 💡 传入全屏状态
+          isFullscreen: _isFullscreen,
         ),
       ],
     );

@@ -1966,8 +1966,10 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
             builder: (context, constraints) {
               final progressWidth = constraints.maxWidth;
               final progressValue = value.clamp(0.0, 1.0);
-              final thumbPosition = (progressValue * progressWidth)
-                  .clamp(8.0, progressWidth - 8.0);
+              final thumbMin = progressWidth <= 16 ? progressWidth / 2 : 8.0;
+              final thumbMax = progressWidth <= 16 ? thumbMin : progressWidth - 8.0;
+              final thumbPosition =
+                  (progressValue * progressWidth).clamp(thumbMin, thumbMax);
               return Stack(
                 clipBehavior: Clip.none,
                 children: [
