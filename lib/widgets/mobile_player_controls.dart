@@ -362,17 +362,39 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   void _onLongPressStart(LongPressStartDetails details) {
     if (widget.live || !_isPlaying) return;
+    _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
     setState(() {
       _isLongPressing = true;
-      _originalPlaybackSpeed = widget.playbackSpeedListenable.value;
     });
-    widget.onSetSpeed(widget.longPressSpeed);
+
+    if (Platform.isIOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_isLongPressing) return;
+        if ((widget.longPressSpeed - _originalPlaybackSpeed).abs() < 0.01) {
+          return;
+        }
+        unawaited(widget.player.setRate(widget.longPressSpeed));
+      });
+      return;
+    }
+
+    unawaited(widget.onSetSpeed(widget.longPressSpeed));
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
     if (!_isLongPressing || widget.live) return;
-    widget.onSetSpeed(_originalPlaybackSpeed);
+    final restoreSpeed = _originalPlaybackSpeed;
     setState(() => _isLongPressing = false);
+
+    if (Platform.isIOS) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _isLongPressing) return;
+        unawaited(widget.player.setRate(restoreSpeed));
+      });
+      return;
+    }
+
+    unawaited(widget.onSetSpeed(restoreSpeed));
   }
 
   void _onSwipeStart(DragStartDetails details) {

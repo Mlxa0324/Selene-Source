@@ -1346,6 +1346,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     Navigator.of(context).pop();
   }
 
+  void _onSystemGesturePop() {
+    _videoPlayerController?.pause();
+    _isClosing = true;
+  }
+
   // 退出网页全屏
   void _exitWebFullscreen() {
     if (!DeviceUtils.isPC()) {
@@ -1821,10 +1826,16 @@ class _PlayerScreenState extends State<PlayerScreen>
           });
         }
 
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ]);
+        final fullscreenOrientations = Platform.isIOS && !_isTablet
+            ? const [
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ];
+
+        SystemChrome.setPreferredOrientations(fullscreenOrientations);
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
         await _waitForLandscapeMetrics();
@@ -5220,9 +5231,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     final isDarkMode = theme.brightness == Brightness.dark;
 
     return PopScope(
-      canPop: false,
+      canPop: Platform.isIOS && !_isCasting,
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
+        if (didPop) {
+          _onSystemGesturePop();
+          return;
+        }
         _onBackPressed();
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
