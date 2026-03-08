@@ -509,10 +509,13 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           var p = window.player || document.getElementById('player');
           if (!p) return;
           var targetRate = Number(nextRate) || 1.0;
+          var previousRate = Number(p.playbackRate) || 1.0;
           var ua = navigator.userAgent || '';
           var isIOS = /iPad|iPhone|iPod/.test(ua);
           var anchorTime = Number(p.currentTime) || 0;
           var shouldStabilize = isIOS && !p.paused;
+          var isSpeedingUp = targetRate > previousRate + 0.01;
+          var isSlowingDown = targetRate + 0.01 < previousRate;
           var stabilizationToken = (window.__rateStabilizationToken || 0) + 1;
           window.__rateStabilizationToken = stabilizationToken;
           var suppressionMs = isIOS ? (targetRate > 1.0 ? 420 : 320) : 0;
@@ -530,10 +533,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           try {
             if (isIOS) {
               if ('preservesPitch' in p) {
-                p.preservesPitch = false;
+                p.preservesPitch = true;
               }
               if ('webkitPreservesPitch' in p) {
-                p.webkitPreservesPitch = false;
+                p.webkitPreservesPitch = true;
               }
             }
           } catch (_) {}
@@ -547,7 +550,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
           } catch (_) {}
 
-          if (!shouldStabilize) {
+          if (!shouldStabilize || isSpeedingUp) {
             return;
           }
 
@@ -575,18 +578,21 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
             var now = Number(p.currentTime) || 0;
             var rollbackGap = anchorTime - now;
-            if (rollbackGap < 0.28) {
+            if (rollbackGap < (isSlowingDown ? 0.32 : 0.28)) {
               return;
             }
-            var desired = Math.max(anchorTime + 0.03, furthestTime + 0.015);
+            var desired = Math.max(
+              anchorTime + (isSlowingDown ? 0.04 : 0.03),
+              furthestTime + (isSlowingDown ? 0.02 : 0.015)
+            );
             try {
               p.currentTime = desired;
             } catch (_) {}
           }
 
-          setTimeout(observePlaybackProgress, 90);
-          setTimeout(observePlaybackProgress, 190);
-          setTimeout(softlyRestoreProgress, 320);
+          setTimeout(observePlaybackProgress, isSlowingDown ? 120 : 90);
+          setTimeout(observePlaybackProgress, isSlowingDown ? 240 : 190);
+          setTimeout(softlyRestoreProgress, isSlowingDown ? 420 : 320);
         })($rate);
       ''',
     );

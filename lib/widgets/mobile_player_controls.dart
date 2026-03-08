@@ -288,9 +288,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   bool get _isPlaying => widget.player.state.playing;
 
   double get _effectiveLongPressSpeed {
-    return Platform.isIOS
-        ? widget.longPressSpeed.clamp(1.0, 2.0).toDouble()
-        : widget.longPressSpeed;
+    return widget.longPressSpeed;
   }
 
   Duration get _position => widget.player.state.position;
@@ -676,9 +674,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Future<void> _showSpeedDialog() async {
-    final speeds = Platform.isIOS
-        ? [0.5, 0.75, 1.0, 1.5, 2.0]
-        : [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
+    final speeds = [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0];
     final currentSpeed = widget.playbackSpeedListenable.value;
     final screenHeight = MediaQuery.of(context).size.height;
     final result = await showModalBottomSheet<double>(

@@ -877,9 +877,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   Future<void> _setPlaybackSpeed(double speed) async {
-    final normalizedSpeed = Platform.isIOS
-        ? speed.clamp(0.5, 2.0).toDouble()
-        : speed;
+    final normalizedSpeed = speed;
     _playbackSpeed.value = normalizedSpeed;
     _notifyPlaybackSpeedChanged(normalizedSpeed, reason: 'set_playback_speed');
     await _adapter?.setRate(normalizedSpeed);
