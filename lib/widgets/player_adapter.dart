@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -340,6 +341,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _videoWidth = 0; // 💡 新增
   double _videoHeight = 0; // 💡 新增
   bool _isDisposed = false;
+  int _suppressTransientBufferingUntilMs = 0;
 
   @override
   late final PlayerAdapterStream stream;
@@ -358,6 +360,19 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   }) {
     stream = _WebViewPlayerStream(this);
     state = _WebViewPlayerState(this);
+  }
+
+  void _suppressTransientBuffering(Duration duration) {
+    final nextUntil =
+        DateTime.now().millisecondsSinceEpoch + duration.inMilliseconds;
+    if (nextUntil > _suppressTransientBufferingUntilMs) {
+      _suppressTransientBufferingUntilMs = nextUntil;
+    }
+  }
+
+  bool get _isSuppressingTransientBuffering {
+    return DateTime.now().millisecondsSinceEpoch <
+        _suppressTransientBufferingUntilMs;
   }
 
   void _setController(InAppWebViewController controller) {
@@ -418,7 +433,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         }
         break;
       case 'buffering':
-        _buffering = event['value'] as bool? ?? false;
+        final nextBuffering = event['value'] as bool? ?? false;
+        if (nextBuffering && _isSuppressingTransientBuffering) {
+          break;
+        }
+        _buffering = nextBuffering;
         if (!_bufferingController.isClosed) {
           _bufferingController.add(_buffering);
         }
@@ -479,6 +498,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   @override
   Future<void> setRate(double rate) async {
     _rate = rate;
+    if (Platform.isIOS) {
+      _suppressTransientBuffering(
+        Duration(milliseconds: rate > 1.0 ? 420 : 320),
+      );
+    }
     await _controller?.evaluateJavascript(
       source: '''
         (function(nextRate) {
@@ -489,6 +513,15 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           var isIOS = /iPad|iPhone|iPod/.test(ua);
           var anchorTime = Number(p.currentTime) || 0;
           var shouldStabilize = isIOS && !p.paused;
+          var stabilizationToken = (window.__rateStabilizationToken || 0) + 1;
+          window.__rateStabilizationToken = stabilizationToken;
+          var suppressionMs = isIOS ? (targetRate > 1.0 ? 420 : 320) : 0;
+          try {
+            if (suppressionMs > 0 &&
+                typeof window.beginRateChangeBufferingSuppression === 'function') {
+              window.beginRateChangeBufferingSuppression(suppressionMs);
+            }
+          } catch (_) {}
           try {
             p.defaultPlaybackRate = targetRate;
           } catch (_) {}
@@ -506,32 +539,38 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             return;
           }
 
-          var correctionSec = targetRate > 1.0 ? 0.08 : 0.05;
-          var minExpected = anchorTime + 0.015;
-          function stabilizePlaybackRateJump() {
-            if (!p) return;
+          var furthestTime = anchorTime;
+          function observePlaybackProgress() {
+            if (!p || window.__rateStabilizationToken !== stabilizationToken) {
+              return;
+            }
             var now = Number(p.currentTime) || 0;
-            var desired = Math.max(now, anchorTime + correctionSec);
-            if (now + 0.03 < anchorTime || now < minExpected) {
-              try {
-                if (typeof p.fastSeek === 'function') {
-                  p.fastSeek(desired);
-                } else {
-                  p.currentTime = desired;
-                }
-                sendEvent('timeupdate', { currentTime: desired });
-              } catch (_) {
-                try {
-                  p.currentTime = desired;
-                  sendEvent('timeupdate', { currentTime: desired });
-                } catch (_) {}
-              }
+            if (now > furthestTime) {
+              furthestTime = now;
             }
           }
 
-          setTimeout(stabilizePlaybackRateJump, 0);
-          setTimeout(stabilizePlaybackRateJump, 40);
-          setTimeout(stabilizePlaybackRateJump, 120);
+          function softlyRestoreProgress() {
+            if (!p ||
+                window.__rateStabilizationToken !== stabilizationToken ||
+                p.paused) {
+              return;
+            }
+            observePlaybackProgress();
+            var now = Number(p.currentTime) || 0;
+            var rollbackGap = anchorTime - now;
+            if (rollbackGap < 0.18) {
+              return;
+            }
+            var desired = Math.max(anchorTime + 0.02, furthestTime + 0.01);
+            try {
+              p.currentTime = desired;
+            } catch (_) {}
+          }
+
+          setTimeout(observePlaybackProgress, 60);
+          setTimeout(observePlaybackProgress, 140);
+          setTimeout(softlyRestoreProgress, 220);
         })($rate);
       ''',
     );
@@ -881,6 +920,54 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
     window.fastSeekTo = fastSeekTo;
 
+    window.__rateChangeBufferingSuppressedUntil = 0;
+    window.__bufferingFallbackTimer = null;
+
+    function clearBufferingFallbackTimer() {
+      if (window.__bufferingFallbackTimer) {
+        clearTimeout(window.__bufferingFallbackTimer);
+        window.__bufferingFallbackTimer = null;
+      }
+    }
+
+    function beginRateChangeBufferingSuppression(durationMs) {
+      var ms = Math.max(0, Number(durationMs) || 0);
+      var nextUntil = Date.now() + ms;
+      window.__rateChangeBufferingSuppressedUntil = Math.max(
+        window.__rateChangeBufferingSuppressedUntil || 0,
+        nextUntil
+      );
+    }
+
+    function shouldSuppressTransientBuffering() {
+      return Date.now() < (window.__rateChangeBufferingSuppressedUntil || 0);
+    }
+
+    function emitBufferingTrue() {
+      if (!shouldSuppressTransientBuffering()) {
+        sendEvent('buffering', { value: true });
+        return;
+      }
+
+      clearBufferingFallbackTimer();
+      var remaining = Math.max(
+        0,
+        (window.__rateChangeBufferingSuppressedUntil || 0) - Date.now()
+      );
+      window.__bufferingFallbackTimer = setTimeout(function() {
+        window.__bufferingFallbackTimer = null;
+        if (!player || player.paused) {
+          return;
+        }
+        var readyState = Number(player.readyState) || 0;
+        if (player.seeking || readyState < 3) {
+          sendEvent('buffering', { value: true });
+        }
+      }, remaining + 16);
+    }
+
+    window.beginRateChangeBufferingSuppression = beginRateChangeBufferingSuppression;
+
     if (player) {
       player.addEventListener('play', function() { sendEvent('play'); });
       player.addEventListener('pause', function() { sendEvent('pause'); });
@@ -904,12 +991,21 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       // Buffering events
       player.addEventListener('waiting', function() {
         try { cancelSeekWarmup(); } catch (_) {}
-        sendEvent('buffering', { value: true });
+        emitBufferingTrue();
       });
-      player.addEventListener('canplay', function() { sendEvent('buffering', { value: false }); });
-      player.addEventListener('playing', function() { sendEvent('buffering', { value: false }); });
-      player.addEventListener('seeking', function() { sendEvent('buffering', { value: true }); });
+      player.addEventListener('canplay', function() {
+        clearBufferingFallbackTimer();
+        sendEvent('buffering', { value: false });
+      });
+      player.addEventListener('playing', function() {
+        clearBufferingFallbackTimer();
+        sendEvent('buffering', { value: false });
+      });
+      player.addEventListener('seeking', function() {
+        emitBufferingTrue();
+      });
       player.addEventListener('seeked', function() {
+        clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
         sendEvent('timeupdate', { currentTime: player.currentTime });
       });
