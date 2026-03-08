@@ -1592,6 +1592,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     return _videoPlayerController;
   }
 
+  String _formatPlaybackError(Object error) {
+    if (error is TimeoutException) {
+      return '播放器加载超时';
+    }
+
+    var message = error.toString().trim();
+    message = message.replaceFirst(RegExp(r'^[A-Za-z_<>]+:?\s*'), '');
+    message = message.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    if (message.isEmpty) {
+      message = '未知异常';
+    }
+
+    const maxLength = 72;
+    if (message.length > maxLength) {
+      message = '${message.substring(0, maxLength)}...';
+    }
+    return message;
+  }
+
   /// 动态更新视频数据源
   Future<void> updateVideoUrl(String newUrl, {Duration? startAt}) async {
     debugPrint("updateVideoUrl start: $newUrl, startAt: $startAt");
@@ -1656,19 +1676,21 @@ class _PlayerScreenState extends State<PlayerScreen>
         // 增加超时保护，防止 updateDataSource 内部卡死
         await playerController
             .updateDataSource(finalUrl, startAt: startAt)
-            .timeout(const Duration(seconds: 15), onTimeout: () {
-          debugPrint("updateDataSource 调用超时");
-        });
+            .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw TimeoutException('updateDataSource timeout'),
+        );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('updateVideoUrl 发生异常: $e');
+      debugPrint('$stackTrace');
       if (mounted) {
         setState(() {
           _showSwitchLoadingOverlay = false;
         });
         _loadingTimeoutTimer?.cancel();
       }
-      _showToast('播放失败: 链接解析出错');
+      _showToast('播放失败: ${_formatPlaybackError(e)}');
     }
   }
 

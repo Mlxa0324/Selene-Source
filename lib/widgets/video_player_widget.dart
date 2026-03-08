@@ -662,13 +662,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       _safeSetState(() {
         _hasCompleted = false;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
       debugPrint('VideoPlayerWidget: failed to open media $error');
+      debugPrint('$stackTrace');
       if (mounted) {
         _safeSetState(() {
           _isLoadingVideo = false;
         });
       }
+      rethrow;
     }
   }
 
@@ -864,13 +866,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _hasCompleted = false;
         });
       }
-    } catch (error) {
+    } catch (error, stackTrace) {
       debugPrint('VideoPlayerWidget: error while changing source $error');
+      debugPrint('$stackTrace');
       if (mounted) {
         _safeSetState(() {
           _isLoadingVideo = false;
         });
       }
+      rethrow;
     }
   }
 
