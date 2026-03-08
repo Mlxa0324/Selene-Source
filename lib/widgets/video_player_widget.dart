@@ -273,6 +273,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   MediaKitAdapter _createMediaKitAdapter() {
+    try {
+      mk.MediaKit.ensureInitialized();
+    } catch (error) {
+      debugPrint('VideoPlayerWidget: MediaKit ensureInitialized error $error');
+    }
     final player = mk.Player(
       configuration: const mk.PlayerConfiguration(
         bufferSize: 32 * 1024 * 1024,

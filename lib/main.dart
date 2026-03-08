@@ -10,7 +10,6 @@ import 'services/douban_cache_service.dart';
 import 'services/local_mode_storage_service.dart';
 import 'services/subscription_service.dart';
 import 'services/download_service.dart';
-import 'config/player_backend_config.dart';
 import 'dart:io' show Platform;
 import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:media_kit/media_kit.dart';
@@ -19,14 +18,11 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 按当前平台实际播放后端初始化 media_kit。
-  // 现在 iOS 在线播放也允许通过代码开关切到 media_kit。
-  if (PlayerBackendConfig.shouldInitializeMediaKit) {
-    try {
-      MediaKit.ensureInitialized();
-    } catch (e) {
-      debugPrint('MediaKit ensureInitialized error: $e');
-    }
+  // 统一提前初始化 media_kit，避免运行时按后端切换后遗漏初始化。
+  try {
+    MediaKit.ensureInitialized();
+  } catch (e) {
+    debugPrint('MediaKit ensureInitialized error: $e');
   }
 
   // 初始化下载服务
