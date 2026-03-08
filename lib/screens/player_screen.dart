@@ -3009,7 +3009,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _wrapCompactActionTapTarget(
     BuildContext context,
     Widget child, {
+    VoidCallback? onTap,
     double width = 96,
+    AlignmentGeometry alignment = Alignment.centerRight,
   }) {
     final bool shouldExpandTapWidth =
         Platform.isIOS && !DeviceUtils.isTablet(context);
@@ -3019,9 +3021,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     return SizedBox(
       width: width,
-      child: Align(
-        alignment: Alignment.centerRight,
-        child: child,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: onTap,
+        child: Align(
+          alignment: alignment,
+          child: IgnorePointer(
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -3158,6 +3166,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   if (!(_isTablet && !_isPortraitTablet))
                     _wrapCompactActionTapTarget(
                       context,
+                      onTap: _showDetailsPanel,
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
@@ -3550,6 +3559,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               // 展开按钮
               _wrapCompactActionTapTarget(
                 context,
+                onTap: _showEpisodesPanel,
+                alignment: Alignment.centerLeft,
                 _HoverButton(
                   onTap: _showEpisodesPanel,
                   child: Row(
@@ -3980,6 +3991,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               // 展开按钮
               _wrapCompactActionTapTarget(
                 context,
+                onTap: _showSourcesPanel,
+                alignment: Alignment.centerLeft,
                 _HoverButton(
                   onTap: _showSourcesPanel,
                   child: Row(
