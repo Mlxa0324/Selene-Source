@@ -39,7 +39,7 @@ dependencies:
   
   # 添加用于创建美观UI的依赖
   google_fonts: ^6.2.1
-#  flutter_svg: ^2.0.10+1
+  flutter_svg: ^2.2.3
   http: ^1.2.1
   shared_preferences: ^2.2.3
   lucide_icons_flutter: ^3.1.0

@@ -7,14 +7,12 @@ class DanmakuSettingsPanel extends StatefulWidget {
   final ThemeData theme;
   final DanmakuSettings settings;
   final Function(DanmakuSettings) onSettingsChanged;
-  final Future<void> Function(bool)? onEnabledChanged;
 
   const DanmakuSettingsPanel({
     super.key,
     required this.theme,
     required this.settings,
     required this.onSettingsChanged,
-    this.onEnabledChanged,
   });
 
   @override
@@ -94,16 +92,6 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 8),
-
-                  // 弹幕开关
-                  _buildSectionHeader('弹幕开关', subTextColor),
-                  const SizedBox(height: 12),
-                  _buildSwitchRow('显示弹幕', _settings.enabled, textColor, (v) {
-                    _updateSettings(_settings.copyWith(enabled: v));
-                    widget.onEnabledChanged?.call(v);
-                  }),
-
-                  const SizedBox(height: 24),
 
                   // 显示设置
                   _buildSectionHeader('显示设置', subTextColor),

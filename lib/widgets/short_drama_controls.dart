@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'danmaku_control_icons.dart';
 import 'player_adapter.dart';
 import '../models/search_result.dart';
 import '../widgets/player_episodes_panel.dart';
@@ -783,22 +784,25 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
           ),
           const SizedBox(height: 20), // 💡 缩小间距 (32 -> 20)
           _buildMenuRow(
-            Icons.subtitles,
             '弹幕', 
             titleColor: textColor,
             iconColor: iconBtnColor,
+            leading: DanmakuSettingsIcon(
+              color: iconBtnColor,
+              size: 18,
+            ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(_danmakuEnabled ? '开启' : '关闭', style: TextStyle(color: subColor, fontSize: 13)), // 💡 缩小字号
-                const SizedBox(width: 4), // 💡 缩小间距
-                Transform.scale(
-                  scale: 0.8, // 💡 整体缩小 Switch
-                  child: Switch(
-                    value: _danmakuEnabled, 
-                    onChanged: (v) => setState(() => _danmakuEnabled = v),
-                    activeColor: Colors.green,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, // 💡 移除额外的触摸热区
+                GestureDetector(
+                  onTap: () {
+                    setState(() => _danmakuEnabled = !_danmakuEnabled);
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: DanmakuToggleIcon(
+                    enabled: _danmakuEnabled,
+                    size: 22,
+                    primaryColor: iconBtnColor,
                   ),
                 ),
                 if (_danmakuEnabled) ...[
@@ -818,8 +822,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
           ),
           const SizedBox(height: 4), 
           _buildMenuRow(
-            Icons.search,
             '手动匹配弹幕', 
+            icon: Icons.search,
             titleColor: textColor,
             iconColor: iconBtnColor,
             trailing: Row(
@@ -839,8 +843,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
           ),
           const SizedBox(height: 4), 
           _buildMenuRow(
-            LucideIcons.messageSquareText, 
             '弹幕列表', 
+            icon: LucideIcons.messageSquareText,
             titleColor: textColor,
             iconColor: iconBtnColor,
             trailing: Row(
@@ -878,12 +882,20 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
     );
   }
 
-  Widget _buildMenuRow(IconData icon, String title, {required Widget trailing, Color titleColor = Colors.white, Color iconColor = Colors.white}) {
+  Widget _buildMenuRow(
+    String title, {
+    IconData? icon,
+    Widget? leading,
+    required Widget trailing,
+    Color titleColor = Colors.white,
+    Color iconColor = Colors.white,
+  }) {
     return SizedBox(
       height: 48, // 💡 降低高度 (56 -> 48)
       child: Row(
         children: [
-          Icon(icon, color: iconColor, size: 18), // 💡 缩小图标 (20 -> 18)
+          leading ??
+              Icon(icon, color: iconColor, size: 18), // 💡 缩小图标 (20 -> 18)
           const SizedBox(width: 12),
           Text(title, style: TextStyle(color: titleColor, fontSize: 15)), // 💡 缩小字号 (16 -> 15)
           const Spacer(),

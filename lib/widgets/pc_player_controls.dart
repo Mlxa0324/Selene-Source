@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'dlna_device_dialog.dart';
+import 'danmaku_control_icons.dart';
 import '../models/danmaku_model.dart';
 import 'player_adapter.dart';
 
@@ -1061,32 +1062,9 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                 widget.onDanmakuToggle
                                     ?.call(!widget.isDanmakuEnabled);
                               },
-                              child: Container(
-                                width: effectiveFullscreen ? 26 : 22,
-                                height: effectiveFullscreen ? 26 : 22,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: widget.isDanmakuEnabled
-                                      ? Colors.green.withValues(alpha: 0.2)
-                                      : Colors.transparent,
-                                  border: Border.all(
-                                    color: widget.isDanmakuEnabled
-                                        ? Colors.greenAccent
-                                        : Colors.white54,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  '弹',
-                                  style: TextStyle(
-                                    color: widget.isDanmakuEnabled
-                                        ? Colors.greenAccent
-                                        : Colors.white,
-                                    fontSize: effectiveFullscreen ? 13 : 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
+                              child: DanmakuToggleIcon(
+                                enabled: widget.isDanmakuEnabled,
+                                size: effectiveFullscreen ? 24 : 22,
                               ),
                             ),
                           if (widget.onDanmakuSettingsChanged != null)
@@ -1134,8 +1112,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                                               .withValues(alpha: 0.5),
                                         )
                                       : null,
-                                  child: Icon(
-                                    Icons.tune,
+                                  child: DanmakuSettingsIcon(
                                     color: Colors.white,
                                     size: effectiveFullscreen ? 22 : 20,
                                   ),

@@ -389,6 +389,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     _setKeepScreenOn(true);
   }
 
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshDanmakuOptionForPlayback(reason: 'metrics_changed');
+    });
+  }
+
   /// 加载通用播放设置
   Future<void> _loadPlayerGeneralSettings() async {
     final speed = await UserDataService.getLongPressSpeed();
@@ -467,6 +476,31 @@ class _PlayerScreenState extends State<PlayerScreen>
     _loadDanmaku();
   }
 
+  static const double _portraitDanmakuFontMultiplier = 0.86;
+  static const double _landscapeDanmakuFontMultiplier = 1.0;
+
+  bool _isDanmakuPortraitViewport() {
+    final views = WidgetsBinding.instance.platformDispatcher.views;
+    final view = views.isNotEmpty ? views.first : null;
+    if (view == null) return true;
+
+    final size = view.physicalSize;
+    if (size.isEmpty) return true;
+
+    return size.height >= size.width;
+  }
+
+  DanmakuSettings _resolveRenderDanmakuSettings([DanmakuSettings? settings]) {
+    final baseSettings = settings ?? _danmakuSettings;
+    final orientationMultiplier = _isDanmakuPortraitViewport()
+        ? _portraitDanmakuFontMultiplier
+        : _landscapeDanmakuFontMultiplier;
+
+    return baseSettings.copyWith(
+      fontSize: baseSettings.fontSize * orientationMultiplier,
+    );
+  }
+
   Future<void> _applyDanmakuSettings(DanmakuSettings settings) async {
     if (mounted) {
       setState(() => _danmakuSettings = settings);
@@ -512,16 +546,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     DanmakuSettings? settings,
     double? playbackSpeed,
   }) {
-    final effectiveSettings = settings ?? _danmakuSettings;
-    if (!effectiveSettings.enabled || _danmakuController == null) return;
+    final baseSettings = settings ?? _danmakuSettings;
+    final effectiveSettings = _resolveRenderDanmakuSettings(baseSettings);
+    if (!baseSettings.enabled || _danmakuController == null) return;
 
     final speed = _resolvePlaybackSpeedForDanmaku(playbackSpeed);
     final option =
         _buildDanmakuOption(effectiveSettings, playbackSpeed: playbackSpeed);
     _danmakuController?.updateOption(option);
 
-    if (effectiveSettings.syncVideoSpeed) {
-      final duration = effectiveSettings.duration / speed;
+    if (baseSettings.syncVideoSpeed) {
+      final duration = baseSettings.duration / speed;
       debugPrint(
           '弹幕速度已同步视频倍速: 原因=$reason, 视频倍速=${speed.toStringAsFixed(2)}x, 弹幕时长=${duration.toStringAsFixed(2)}s');
     }
@@ -1745,6 +1780,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _rebaseDanmakuCursorToCurrentPosition(
             reason: 'fullscreen_changed', triggerNow: true);
         _syncDanmakuPlaybackState(reason: 'fullscreen_changed');
+        _refreshDanmakuOptionForPlayback(reason: 'fullscreen_changed');
       });
       return;
     }
@@ -1816,6 +1852,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     _scrollToCurrentEpisode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refreshDanmakuOptionForPlayback(reason: 'fullscreen_changed');
+    });
   }
 
   void _addVideoProgressListener() {
@@ -2702,6 +2742,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 _rebaseDanmakuCursorToCurrentPosition(
                     reason: 'web_fullscreen_changed', triggerNow: true);
                 _syncDanmakuPlaybackState(reason: 'web_fullscreen_changed');
+                _refreshDanmakuOptionForPlayback(
+                    reason: 'web_fullscreen_changed');
               });
             },
             onFullscreenChanged: _onFullscreenChanged,
@@ -2760,7 +2802,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                             createdController: (controller) {
                               _handleDanmakuControllerCreated(controller);
                             },
-                            option: _buildDanmakuOption(_danmakuSettings),
+                            option: _buildDanmakuOption(
+                              _resolveRenderDanmakuSettings(),
+                            ),
                           ),
                         ),
                       );
@@ -4646,7 +4690,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 _applyDanmakuSettings(settings);
                 dialogSetState(() {});
               },
-              onEnabledChanged: _toggleDanmakuEnabled,
             ),
           );
         }),
@@ -4677,7 +4720,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                     _applyDanmakuSettings(settings);
                     dialogSetState(() {});
                   },
-                  onEnabledChanged: _toggleDanmakuEnabled,
                 );
               },
             ),

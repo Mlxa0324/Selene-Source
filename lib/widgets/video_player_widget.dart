@@ -1409,6 +1409,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onSettingsButtonPressed: widget.onSettingsButtonPressed,
         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
         onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+        isDanmakuEnabled: widget.isDanmakuEnabled,
+        onDanmakuToggle: widget.onDanmakuToggle,
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,

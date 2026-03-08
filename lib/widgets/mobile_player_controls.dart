@@ -7,6 +7,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 import 'dlna_device_dialog.dart';
+import 'danmaku_control_icons.dart';
 import 'player_settings_panel.dart';
 import 'player_adapter.dart';
 
@@ -41,6 +42,8 @@ class MobilePlayerControls extends StatefulWidget {
   final void Function(BuildContext context)? onSettingsButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
+  final bool isDanmakuEnabled;
+  final void Function(bool enabled)? onDanmakuToggle;
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
@@ -76,6 +79,8 @@ class MobilePlayerControls extends StatefulWidget {
     this.onSettingsButtonPressed,
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
+    this.isDanmakuEnabled = false,
+    this.onDanmakuToggle,
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.time,
     this.showSystemTime = true,
@@ -1334,6 +1339,29 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return '${_formatDuration(position)} / ${_formatDuration(duration)}';
   }
 
+  Widget _buildDanmakuToggleButton(EdgeInsets padding) {
+    final buttonSize = _isEffectiveFullscreen ? 24.0 : 22.0;
+
+    return GestureDetector(
+      onTap: () {
+        _onUserInteraction();
+        widget.onDanmakuToggle?.call(!widget.isDanmakuEnabled);
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: padding,
+        child: SizedBox(
+          width: buttonSize,
+          height: buttonSize,
+          child: DanmakuToggleIcon(
+            enabled: widget.isDanmakuEnabled,
+            size: buttonSize,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBottomControls() {
     final iconSize = _isEffectiveFullscreen ? 28.0 : 24.0;
 
@@ -1414,6 +1442,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
                         if (widget.live) const Spacer(),
 
+                        if (_isEffectiveFullscreen &&
+                            widget.onDanmakuToggle != null)
+                          _buildDanmakuToggleButton(iconPadding),
+
                         // 手动匹配弹幕按钮（仅在横屏时显示）：
 
                         if (_isEffectiveFullscreen &&
@@ -1448,8 +1480,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                             behavior: HitTestBehavior.opaque,
                             child: Container(
                               padding: iconPadding,
-                              child: Icon(
-                                Icons.subtitles,
+                              child: DanmakuSettingsIcon(
                                 color: Colors.white,
                                 size: iconSize,
                               ),
@@ -1500,6 +1531,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               ),
                             ),
                           ),
+
+                        if (!widget.live)
+                          if (!_isEffectiveFullscreen &&
+                              widget.onDanmakuToggle != null)
+                            _buildDanmakuToggleButton(iconPadding),
 
                         if (!widget.live)
                           GestureDetector(
