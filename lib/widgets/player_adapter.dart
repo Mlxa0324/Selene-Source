@@ -576,6 +576,30 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
           } catch (_) {}
           try {
+            if (isIOS &&
+                typeof window.setIOSPitchPreservation === 'function') {
+              var beforePitchEnabled = window.__iosPitchEnabled !== false;
+              var nextPitchEnabled = null;
+              if (targetRate >= 1.90 && previousRequestedRate < 1.90) {
+                window.__iosPitchBeforeBoost = beforePitchEnabled;
+                nextPitchEnabled = false;
+              } else if (previousRequestedRate >= 1.90 && targetRate < 1.90) {
+                nextPitchEnabled = window.__iosPitchBeforeBoost !== false;
+              }
+              if (nextPitchEnabled !== null &&
+                  window.setIOSPitchPreservation(nextPitchEnabled, p) &&
+                  beforePitchEnabled !== (window.__iosPitchEnabled !== false) &&
+                  typeof window.emitPlayerDebug === 'function') {
+                window.emitPlayerDebug(
+                  '保音调' +
+                  (window.__iosPitchEnabled !== false ? '恢复' : '关闭') +
+                  ' req' + previousRequestedRate.toFixed(2) +
+                  '->' + targetRate.toFixed(2)
+                );
+              }
+            }
+          } catch (_) {}
+          try {
             p.playbackRate = targetRate;
           } catch (_) {}
           if (isIOS &&
@@ -1216,25 +1240,41 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
     window.fastSeekTo = fastSeekTo;
     window.__iosPitchConfigured = false;
+    window.__iosPitchEnabled = true;
+    window.__iosPitchBeforeBoost = true;
 
-    function configureIOSPlaybackDefaults() {
-      if (!player || window.__iosPitchConfigured) {
-        return;
+    function setIOSPitchPreservation(enabled, currentPlayer) {
+      var p = currentPlayer || window.player || document.getElementById('player');
+      if (!p) {
+        return false;
       }
       var ua = navigator.userAgent || '';
       var isIOS = /iPad|iPhone|iPod/.test(ua);
       if (!isIOS) {
-        return;
+        return false;
       }
+      var desired = enabled !== false;
       try {
-        if ('preservesPitch' in player) {
-          player.preservesPitch = true;
+        if ('preservesPitch' in p) {
+          p.preservesPitch = desired;
         }
-        if ('webkitPreservesPitch' in player) {
-          player.webkitPreservesPitch = true;
+        if ('webkitPreservesPitch' in p) {
+          p.webkitPreservesPitch = desired;
         }
         window.__iosPitchConfigured = true;
-      } catch (_) {}
+        window.__iosPitchEnabled = desired;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    window.setIOSPitchPreservation = setIOSPitchPreservation;
+
+    function configureIOSPlaybackDefaults() {
+      if (!player || (window.__iosPitchConfigured && window.__iosPitchEnabled !== false)) {
+        return;
+      }
+      setIOSPitchPreservation(true, player);
     }
 
     window.__rateChangeBufferingSuppressedUntil = 0;
