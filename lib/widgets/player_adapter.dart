@@ -566,6 +566,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           if (isIOS &&
               Math.abs(targetRate - previousRate) >= 0.01 &&
               typeof window.emitPlayerDebug === 'function') {
+            var rateChangeKind = isSpeedingUp ? '按下' : (isSlowingDown ? '松开' : '切换');
             window.__lastRateChangeAt = Date.now();
             window.__lastRateChangeDesc =
                 previousRate.toFixed(2) + 'x->' + targetRate.toFixed(2) + 'x';
@@ -573,6 +574,9 @@ class WebViewPlayerAdapter implements PlayerAdapter {
               '倍速切换 ' + window.__lastRateChangeDesc +
               ' 锚点' + anchorTime.toFixed(2) + 's'
             );
+            if (typeof window.scheduleRateSamples === 'function') {
+              window.scheduleRateSamples(rateChangeKind, anchorTime, p);
+            }
           }
 
           if (!shouldStabilizeRollback) {
@@ -804,6 +808,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     window.__lastPlayerDebugMessage = '';
     window.__lastRateChangeAt = 0;
     window.__lastRateChangeDesc = '';
+    window.__rateDiagnosticToken = 0;
 
     function emitPlayerDebug(message) {
       var text = String(message || '').trim();
@@ -818,6 +823,65 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       sendEvent('debug', { message: text });
     }
     window.emitPlayerDebug = emitPlayerDebug;
+
+    function emitRecentRateEvent(eventName, currentPlayer) {
+      if ((Date.now() - (window.__lastRateChangeAt || 0)) >= 1600 ||
+          typeof window.emitPlayerDebug !== 'function') {
+        return;
+      }
+      var p = currentPlayer || window.player || document.getElementById('player');
+      var now = p ? (Number(p.currentTime) || 0) : 0;
+      var readyState = p ? (Number(p.readyState) || 0) : 0;
+      window.emitPlayerDebug(
+        '倍速后' + eventName + ' ' + (window.__lastRateChangeDesc || '') +
+        ' 当前' + now.toFixed(2) + ' rs' + readyState
+      );
+    }
+
+    function emitRateSample(label, anchorTime, currentPlayer) {
+      if (typeof window.emitPlayerDebug !== 'function') {
+        return;
+      }
+      var p = currentPlayer || window.player || document.getElementById('player');
+      if (!p) {
+        return;
+      }
+      var now = Number(p.currentTime) || 0;
+      var readyState = Number(p.readyState) || 0;
+      var currentRate = Number(p.playbackRate) || 0;
+      window.emitPlayerDebug(
+        label + ' 当前' + now.toFixed(2) +
+        ' 差' + (now - anchorTime).toFixed(2) +
+        ' rs' + readyState +
+        ' seek' + (p.seeking ? '1' : '0') +
+        ' pause' + (p.paused ? '1' : '0') +
+        ' rate' + currentRate.toFixed(2)
+      );
+    }
+
+    function scheduleRateSamples(kind, anchorTime, currentPlayer) {
+      if (typeof window.emitPlayerDebug !== 'function') {
+        return;
+      }
+      var token = (window.__rateDiagnosticToken || 0) + 1;
+      window.__rateDiagnosticToken = token;
+      var delays = [80, 180, 320, 520];
+      for (var i = 0; i < delays.length; i++) {
+        (function(index, delay) {
+          setTimeout(function() {
+            if (token !== window.__rateDiagnosticToken) {
+              return;
+            }
+            var p = currentPlayer || window.player || document.getElementById('player');
+            if (!p) {
+              return;
+            }
+            emitRateSample(kind + '采样' + (index + 1), anchorTime, p);
+          }, delay);
+        })(i, delays[i]);
+      }
+    }
+    window.scheduleRateSamples = scheduleRateSamples;
 
     function removeWarmupController(controller) {
       if (!controller) return;
@@ -1101,27 +1165,26 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
       // Buffering events
       player.addEventListener('waiting', function() {
-        if ((Date.now() - (window.__lastRateChangeAt || 0)) < 1600 &&
-            typeof window.emitPlayerDebug === 'function') {
-          window.emitPlayerDebug(
-            '倍速切换后触发 waiting ' + (window.__lastRateChangeDesc || '')
-          );
-        }
+        emitRecentRateEvent('waiting', player);
         try { cancelSeekWarmup(); } catch (_) {}
         emitBufferingTrue();
       });
       player.addEventListener('canplay', function() {
+        emitRecentRateEvent('canplay', player);
         clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
       });
       player.addEventListener('playing', function() {
+        emitRecentRateEvent('playing', player);
         clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
       });
       player.addEventListener('seeking', function() {
+        emitRecentRateEvent('seeking', player);
         emitBufferingTrue();
       });
       player.addEventListener('seeked', function() {
+        emitRecentRateEvent('seeked', player);
         clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
         sendEvent('timeupdate', { currentTime: player.currentTime });
