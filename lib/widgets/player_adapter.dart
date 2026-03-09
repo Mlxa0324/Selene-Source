@@ -592,6 +592,9 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             if (typeof window.scheduleRateSamples === 'function') {
               window.scheduleRateSamples(rateChangeKind, anchorTime, p);
             }
+            if (typeof window.scheduleSeekingRecovery === 'function') {
+              window.scheduleSeekingRecovery(anchorTime, commandId, p);
+            }
           }
 
           if (!shouldStabilizeRollback) {
@@ -622,11 +625,19 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             var readyState = Number(p.readyState) || 0;
             if (p.seeking || readyState < 4) {
               if (typeof window.emitPlayerDebug === 'function') {
+                var recovered = tryRecoverStuckSeeking(
+                  '校正前恢复',
+                  p,
+                  anchorTime,
+                  260
+                );
                 emitRateState(
                   '校正前检查',
                   p,
                   anchorTime,
-                  '未执行 ready=' + readyState + ' seek=' + (p.seeking ? '1' : '0')
+                  (recovered ? '已尝试恢复' : '未执行') +
+                      ' ready=' + readyState +
+                      ' seek=' + (p.seeking ? '1' : '0')
                 );
               }
               return;
@@ -934,6 +945,36 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       emitRateState(label, p, anchorTime);
     }
 
+    function tryRecoverStuckSeeking(label, currentPlayer, fallbackAnchorTime, minElapsedMs) {
+      var context = getRateDebugContext(currentPlayer, fallbackAnchorTime);
+      var p = context.player;
+      if (!p || context.paused) {
+        return false;
+      }
+      if (context.readyState < 4 || !context.seeking) {
+        return false;
+      }
+      if (context.elapsedMs < minElapsedMs) {
+        return false;
+      }
+      if (Math.abs(context.now - context.anchorTime) > 0.08) {
+        return false;
+      }
+      var desired = Math.max(context.anchorTime + 0.01, context.now + 0.01);
+      try {
+        p.currentTime = desired;
+        emitRateState(
+          label,
+          p,
+          fallbackAnchorTime,
+          '执行轻推 -> ' + desired.toFixed(2) + 's'
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
     function scheduleRateSamples(kind, anchorTime, currentPlayer) {
       if (typeof window.emitPlayerDebug !== 'function') {
         return;
@@ -957,6 +998,33 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
     }
     window.scheduleRateSamples = scheduleRateSamples;
+
+    function scheduleSeekingRecovery(anchorTime, commandId, currentPlayer) {
+      if (typeof window.emitPlayerDebug !== 'function') {
+        return;
+      }
+      var delays = [140, 320, 620];
+      for (var i = 0; i < delays.length; i++) {
+        (function(index, delay) {
+          setTimeout(function() {
+            if ((Number(window.__lastRateCommandId) || 0) !== commandId) {
+              return;
+            }
+            var p = currentPlayer || window.player || document.getElementById('player');
+            if (!p) {
+              return;
+            }
+            tryRecoverStuckSeeking(
+              '卡住恢复' + (index + 1),
+              p,
+              anchorTime,
+              delay - 20
+            );
+          }, delay);
+        })(i, delays[i]);
+      }
+    }
+    window.scheduleSeekingRecovery = scheduleSeekingRecovery;
 
     function removeWarmupController(controller) {
       if (!controller) return;
