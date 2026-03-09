@@ -537,17 +537,32 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           if (!p) return;
           var targetRate = Number(nextRate) || 1.0;
           var previousRate = Number(p.playbackRate) || 1.0;
+          var previousRequestedRate = Number(window.__lastRequestedRate);
+          if (!(previousRequestedRate > 0)) {
+            previousRequestedRate = previousRate;
+          }
           var ua = navigator.userAgent || '';
           var isIOS = /iPad|iPhone|iPod/.test(ua);
           var anchorTime = Number(p.currentTime) || 0;
           var shouldStabilize = isIOS && !p.paused;
-          var isSpeedingUp = targetRate > previousRate + 0.01;
-          var isSlowingDown = targetRate + 0.01 < previousRate;
+          var isSpeedingUp = targetRate > previousRequestedRate + 0.01;
+          var isSlowingDown = targetRate + 0.01 < previousRequestedRate;
+          var rateChangeKind = isSpeedingUp ? '按下' : (isSlowingDown ? '松开' : '切换');
+          var commandId = (Number(window.__lastRateCommandId) || 0) + 1;
+          window.__lastRateCommandId = commandId;
+          window.__lastRequestedFromRate = previousRequestedRate;
+          window.__lastRequestedRate = targetRate;
+          window.__lastRateAction = rateChangeKind;
+          window.__lastRateAnchorTime = anchorTime;
+          window.__lastRateEventSeq = 0;
+          window.__lastRateChangeAt = Date.now();
+          window.__lastRateChangeDesc =
+              previousRequestedRate.toFixed(2) + 'x->' + targetRate.toFixed(2) + 'x';
           var shouldStabilizeRollback =
               shouldStabilize &&
               isSlowingDown &&
               targetRate <= 1.01 &&
-              previousRate >= 1.90;
+              previousRequestedRate >= 1.90;
           var suppressionMs = isIOS ? (targetRate > 1.0 ? 420 : 320) : 0;
           try {
             if (suppressionMs > 0 &&
@@ -564,15 +579,15 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             p.playbackRate = targetRate;
           } catch (_) {}
           if (isIOS &&
-              Math.abs(targetRate - previousRate) >= 0.01 &&
+              Math.abs(targetRate - previousRequestedRate) >= 0.01 &&
               typeof window.emitPlayerDebug === 'function') {
-            var rateChangeKind = isSpeedingUp ? '按下' : (isSlowingDown ? '松开' : '切换');
-            window.__lastRateChangeAt = Date.now();
-            window.__lastRateChangeDesc =
-                previousRate.toFixed(2) + 'x->' + targetRate.toFixed(2) + 'x';
             window.emitPlayerDebug(
-              '倍速切换 ' + window.__lastRateChangeDesc +
-              ' 锚点' + anchorTime.toFixed(2) + 's'
+              '倍速请求#' + commandId +
+              ' ' + rateChangeKind +
+              ' req' + previousRequestedRate.toFixed(2) +
+              '->' + targetRate.toFixed(2) +
+              ' act' + previousRate.toFixed(2) +
+              ' 锚' + anchorTime.toFixed(2) + 's'
             );
             if (typeof window.scheduleRateSamples === 'function') {
               window.scheduleRateSamples(rateChangeKind, anchorTime, p);
@@ -606,6 +621,14 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             observePlaybackProgress();
             var readyState = Number(p.readyState) || 0;
             if (p.seeking || readyState < 4) {
+              if (typeof window.emitPlayerDebug === 'function') {
+                emitRateState(
+                  '校正前检查',
+                  p,
+                  anchorTime,
+                  '未执行 ready=' + readyState + ' seek=' + (p.seeking ? '1' : '0')
+                );
+              }
               return;
             }
             var now = Number(p.currentTime) || 0;
@@ -613,8 +636,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             if (rollbackGap >= 0.20 &&
                 rollbackGap < 0.72 &&
                 typeof window.emitPlayerDebug === 'function') {
-              window.emitPlayerDebug(
-                '检测到轻微回退 ' + rollbackGap.toFixed(2) + 's 未校正'
+              emitRateState(
+                '轻微回退',
+                p,
+                anchorTime,
+                'gap=' + rollbackGap.toFixed(2) + 's 未校正'
               );
               return;
             }
@@ -623,9 +649,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
             if (furthestTime > anchorTime + 0.03) {
               if (typeof window.emitPlayerDebug === 'function') {
-                window.emitPlayerDebug(
-                  '检测到回退 ' + rollbackGap.toFixed(2) +
-                  's 但进度已前移，跳过校正'
+                emitRateState(
+                  '回退跳过',
+                  p,
+                  anchorTime,
+                  'gap=' + rollbackGap.toFixed(2) + 's furthest=' + furthestTime.toFixed(2)
                 );
               }
               return;
@@ -634,9 +662,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             try {
               p.currentTime = desired;
               if (typeof window.emitPlayerDebug === 'function') {
-                window.emitPlayerDebug(
-                  '检测到回退 ' + rollbackGap.toFixed(2) +
-                  's 已校正到' + desired.toFixed(2) + 's'
+                emitRateState(
+                  '回退已校正',
+                  p,
+                  anchorTime,
+                  'gap=' + rollbackGap.toFixed(2) + 's -> ' + desired.toFixed(2) + 's'
                 );
               }
             } catch (_) {}
@@ -808,6 +838,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     window.__lastPlayerDebugMessage = '';
     window.__lastRateChangeAt = 0;
     window.__lastRateChangeDesc = '';
+    window.__lastRateCommandId = 0;
+    window.__lastRequestedRate = 1.0;
+    window.__lastRequestedFromRate = 1.0;
+    window.__lastRateAction = '';
+    window.__lastRateAnchorTime = 0;
+    window.__lastRateEventSeq = 0;
     window.__rateDiagnosticToken = 0;
 
     function emitPlayerDebug(message) {
@@ -824,39 +860,78 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     }
     window.emitPlayerDebug = emitPlayerDebug;
 
+    function getRateDebugContext(currentPlayer, fallbackAnchorTime) {
+      var p = currentPlayer || window.player || document.getElementById('player');
+      var reqFrom = Number(window.__lastRequestedFromRate);
+      if (!(reqFrom > 0)) {
+        reqFrom = p ? (Number(p.playbackRate) || 1.0) : 1.0;
+      }
+      var reqTo = Number(window.__lastRequestedRate);
+      if (!(reqTo > 0)) {
+        reqTo = p ? (Number(p.playbackRate) || 1.0) : 1.0;
+      }
+      var anchorTime = Number(window.__lastRateAnchorTime);
+      if (!(anchorTime >= 0)) {
+        anchorTime = Number(fallbackAnchorTime) || 0;
+      }
+      return {
+        player: p,
+        commandId: Number(window.__lastRateCommandId) || 0,
+        action: String(window.__lastRateAction || '切换'),
+        reqFrom: reqFrom,
+        reqTo: reqTo,
+        anchorTime: anchorTime,
+        now: p ? (Number(p.currentTime) || 0) : 0,
+        readyState: p ? (Number(p.readyState) || 0) : 0,
+        actualRate: p ? (Number(p.playbackRate) || 0) : 0,
+        seeking: !!(p && p.seeking),
+        paused: !!(p && p.paused),
+        elapsedMs: Math.max(0, Date.now() - (window.__lastRateChangeAt || 0))
+      };
+    }
+
+    function emitRateState(label, currentPlayer, fallbackAnchorTime, extraText) {
+      if (typeof window.emitPlayerDebug !== 'function') {
+        return;
+      }
+      var context = getRateDebugContext(currentPlayer, fallbackAnchorTime);
+      var message =
+        '#' + context.commandId +
+        ' ' + context.action +
+        ' ' + label +
+        ' req' + context.reqFrom.toFixed(2) + '->' + context.reqTo.toFixed(2) +
+        ' act' + context.actualRate.toFixed(2) +
+        ' +' + context.elapsedMs + 'ms' +
+        ' 当前' + context.now.toFixed(2) +
+        ' 差' + (context.now - context.anchorTime).toFixed(2) +
+        ' rs' + context.readyState +
+        ' seek' + (context.seeking ? '1' : '0') +
+        ' pause' + (context.paused ? '1' : '0');
+      if (extraText) {
+        message += ' ' + extraText;
+      }
+      window.emitPlayerDebug(message);
+    }
+
     function emitRecentRateEvent(eventName, currentPlayer) {
       if ((Date.now() - (window.__lastRateChangeAt || 0)) >= 1600 ||
           typeof window.emitPlayerDebug !== 'function') {
         return;
       }
       var p = currentPlayer || window.player || document.getElementById('player');
-      var now = p ? (Number(p.currentTime) || 0) : 0;
-      var readyState = p ? (Number(p.readyState) || 0) : 0;
-      window.emitPlayerDebug(
-        '倍速后' + eventName + ' ' + (window.__lastRateChangeDesc || '') +
-        ' 当前' + now.toFixed(2) + ' rs' + readyState
+      window.__lastRateEventSeq = (window.__lastRateEventSeq || 0) + 1;
+      emitRateState(
+        '事件' + window.__lastRateEventSeq + ':' + eventName,
+        p
       );
     }
 
     function emitRateSample(label, anchorTime, currentPlayer) {
-      if (typeof window.emitPlayerDebug !== 'function') {
-        return;
-      }
       var p = currentPlayer || window.player || document.getElementById('player');
       if (!p) {
         return;
       }
-      var now = Number(p.currentTime) || 0;
-      var readyState = Number(p.readyState) || 0;
-      var currentRate = Number(p.playbackRate) || 0;
-      window.emitPlayerDebug(
-        label + ' 当前' + now.toFixed(2) +
-        ' 差' + (now - anchorTime).toFixed(2) +
-        ' rs' + readyState +
-        ' seek' + (p.seeking ? '1' : '0') +
-        ' pause' + (p.paused ? '1' : '0') +
-        ' rate' + currentRate.toFixed(2)
-      );
+      emitRateState(label, p, anchorTime);
     }
 
     function scheduleRateSamples(kind, anchorTime, currentPlayer) {
@@ -865,7 +940,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
       var token = (window.__rateDiagnosticToken || 0) + 1;
       window.__rateDiagnosticToken = token;
-      var delays = [80, 180, 320, 520];
+      var delays = [20, 60, 120, 220, 360];
       for (var i = 0; i < delays.length; i++) {
         (function(index, delay) {
           setTimeout(function() {
@@ -876,7 +951,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             if (!p) {
               return;
             }
-            emitRateSample(kind + '采样' + (index + 1), anchorTime, p);
+            emitRateSample('采样' + (index + 1), anchorTime, p);
           }, delay);
         })(i, delays[i]);
       }
@@ -1148,7 +1223,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       player.addEventListener('pause', function() { sendEvent('pause'); });
       player.addEventListener('ended', function() { sendEvent('ended'); });
       player.addEventListener('volumechange', function() { sendEvent('volumechange', { volume: player.volume }); });
-      player.addEventListener('ratechange', function() { sendEvent('ratechange', { rate: player.playbackRate }); });
+      player.addEventListener('ratechange', function() {
+        emitRecentRateEvent('ratechange', player);
+        sendEvent('ratechange', { rate: player.playbackRate });
+      });
       player.addEventListener('timeupdate', function() { sendEvent('timeupdate', { currentTime: player.currentTime }); });
       player.addEventListener('durationchange', function() { sendEvent('durationchange', { duration: player.duration }); });
       
