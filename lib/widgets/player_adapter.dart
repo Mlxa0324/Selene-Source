@@ -619,6 +619,9 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             if (typeof window.scheduleSeekingRecovery === 'function') {
               window.scheduleSeekingRecovery(anchorTime, commandId, p);
             }
+            if (typeof window.scheduleFrozenPlaybackWakeup === 'function') {
+              window.scheduleFrozenPlaybackWakeup(anchorTime, commandId, p);
+            }
           }
 
           if (!shouldStabilizeRollback) {
@@ -999,13 +1002,53 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
     }
 
+    function tryWakeFrozenPlayback(
+      label,
+      currentPlayer,
+      fallbackAnchorTime,
+      minElapsedMs,
+      minProgress
+    ) {
+      var context = getRateDebugContext(currentPlayer, fallbackAnchorTime);
+      var p = context.player;
+      if (!p || context.paused) {
+        return false;
+      }
+      if (context.readyState < 4 || context.seeking) {
+        return false;
+      }
+      if (context.elapsedMs < minElapsedMs) {
+        return false;
+      }
+      var progress = context.now - context.anchorTime;
+      if (progress >= minProgress) {
+        return false;
+      }
+      try {
+        var playResult = p.play();
+        if (playResult && typeof playResult.catch === 'function') {
+          playResult.catch(function() {});
+        }
+        emitRateState(
+          label,
+          p,
+          fallbackAnchorTime,
+          '补play progress=' + progress.toFixed(2) +
+              ' < ' + minProgress.toFixed(2)
+        );
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
     function scheduleRateSamples(kind, anchorTime, currentPlayer) {
       if (typeof window.emitPlayerDebug !== 'function') {
         return;
       }
       var token = (window.__rateDiagnosticToken || 0) + 1;
       window.__rateDiagnosticToken = token;
-      var delays = [20, 60, 120, 220, 360];
+      var delays = [20, 60, 120, 220, 360, 520, 820, 1200];
       for (var i = 0; i < delays.length; i++) {
         (function(index, delay) {
           setTimeout(function() {
@@ -1049,6 +1092,35 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       }
     }
     window.scheduleSeekingRecovery = scheduleSeekingRecovery;
+
+    function scheduleFrozenPlaybackWakeup(anchorTime, commandId, currentPlayer) {
+      var steps = [
+        { delay: 80, minElapsedMs: 60, minProgress: 0.03 },
+        { delay: 180, minElapsedMs: 140, minProgress: 0.08 },
+        { delay: 320, minElapsedMs: 260, minProgress: 0.12 }
+      ];
+      for (var i = 0; i < steps.length; i++) {
+        (function(index, step) {
+          setTimeout(function() {
+            if ((Number(window.__lastRateCommandId) || 0) !== commandId) {
+              return;
+            }
+            var p = currentPlayer || window.player || document.getElementById('player');
+            if (!p) {
+              return;
+            }
+            tryWakeFrozenPlayback(
+              '停表唤醒' + (index + 1),
+              p,
+              anchorTime,
+              step.minElapsedMs,
+              step.minProgress
+            );
+          }, step.delay);
+        })(i, steps[i]);
+      }
+    }
+    window.scheduleFrozenPlaybackWakeup = scheduleFrozenPlaybackWakeup;
 
     function removeWarmupController(controller) {
       if (!controller) return;
