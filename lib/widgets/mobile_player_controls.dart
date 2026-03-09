@@ -48,6 +48,7 @@ class MobilePlayerControls extends StatefulWidget {
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final ValueChanged<String>? onDebugToast;
 
   const MobilePlayerControls({
     super.key,
@@ -85,6 +86,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.time,
     this.showSystemTime = true,
+    this.onDebugToast,
   });
 
   @override
@@ -287,6 +289,20 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   bool get _isPlaying => widget.player.state.playing;
 
+  bool get _shouldShowIOSRateDebugToast {
+    return Platform.isIOS &&
+        !widget.isLocal &&
+        widget.player is WebViewPlayerAdapter &&
+        widget.onDebugToast != null;
+  }
+
+  void _emitIOSRateDebugToast(String message) {
+    if (!_shouldShowIOSRateDebugToast) {
+      return;
+    }
+    widget.onDebugToast?.call(message);
+  }
+
   double get _effectiveLongPressSpeed {
     return widget.longPressSpeed;
   }
@@ -374,6 +390,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     if (!_longPressingNotifier.value) {
       _longPressingNotifier.value = true;
     }
+    _emitIOSRateDebugToast(
+      '长按加速开始 ${_originalPlaybackSpeed.toStringAsFixed(2)}x -> '
+      '${_effectiveLongPressSpeed.toStringAsFixed(2)}x '
+      '${_formatDuration(_position)}',
+    );
 
     if (Platform.isIOS) {
       if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() >= 0.01) {
@@ -392,6 +413,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     if (_longPressingNotifier.value) {
       _longPressingNotifier.value = false;
     }
+    _emitIOSRateDebugToast(
+      '长按加速结束 恢复 ${restoreSpeed.toStringAsFixed(2)}x '
+      '${_formatDuration(_position)}',
+    );
 
     if ((restoreSpeed - widget.longPressSpeed).abs() < 0.01) {
       return;

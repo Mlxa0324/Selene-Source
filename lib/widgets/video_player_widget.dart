@@ -73,6 +73,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
   final ValueChanged<double>? onPlaybackSpeedChanged; // 播放倍速变化回调
+  final ValueChanged<String>? onDebugToast;
 
   const VideoPlayerWidget({
     super.key,
@@ -130,6 +131,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.isFavorite,
     this.onFavoriteToggle,
     this.onPlaybackSpeedChanged,
+    this.onDebugToast,
   });
 
   @override
@@ -299,6 +301,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       startAt: startAt,
       adFilterEnabled: widget.adFilterEnabled,
       seekBoostEnabled: !widget.isLocal,
+      onDebugToast: widget.onDebugToast,
       onReady: () {
         debugPrint('VideoPlayerWidget: WebView ready');
         if (mounted) {
@@ -1475,6 +1478,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
         isDanmakuEnabled: widget.isDanmakuEnabled,
         onDanmakuToggle: widget.onDanmakuToggle,
+        onDebugToast: widget.onDebugToast,
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,

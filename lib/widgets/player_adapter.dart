@@ -349,12 +349,16 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   late final PlayerAdapterState state;
 
   final VoidCallback? onReady;
+  final ValueChanged<String>? onDebugToast;
+  String? _lastDebugToastMessage;
+  int _lastDebugToastAtMs = 0;
 
   WebViewPlayerAdapter({
     required this.url,
     this.headers,
     this.startAt,
     this.onReady,
+    this.onDebugToast,
     this.adFilterEnabled = false,
     this.seekBoostEnabled = false,
   }) {
@@ -373,6 +377,23 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   bool get _isSuppressingTransientBuffering {
     return DateTime.now().millisecondsSinceEpoch <
         _suppressTransientBufferingUntilMs;
+  }
+
+  void _emitDebugToast(String message) {
+    if (!Platform.isIOS || onDebugToast == null) {
+      return;
+    }
+    final trimmed = message.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_lastDebugToastMessage == trimmed && now - _lastDebugToastAtMs < 1500) {
+      return;
+    }
+    _lastDebugToastMessage = trimmed;
+    _lastDebugToastAtMs = now;
+    onDebugToast?.call(trimmed);
   }
 
   void _setController(InAppWebViewController controller) {
@@ -430,6 +451,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         _rate = (event['rate'] as num?)?.toDouble() ?? 1.0;
         if (!_rateController.isClosed) {
           _rateController.add(_rate);
+        }
+        break;
+      case 'debug':
+        final message = (event['message'] as String?)?.trim();
+        if (message != null && message.isNotEmpty) {
+          _emitDebugToast(message);
         }
         break;
       case 'buffering':
@@ -536,6 +563,17 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           try {
             p.playbackRate = targetRate;
           } catch (_) {}
+          if (isIOS &&
+              Math.abs(targetRate - previousRate) >= 0.01 &&
+              typeof window.emitPlayerDebug === 'function') {
+            window.__lastRateChangeAt = Date.now();
+            window.__lastRateChangeDesc =
+                previousRate.toFixed(2) + 'x->' + targetRate.toFixed(2) + 'x';
+            window.emitPlayerDebug(
+              '倍速切换 ' + window.__lastRateChangeDesc +
+              ' 锚点' + anchorTime.toFixed(2) + 's'
+            );
+          }
 
           if (!shouldStabilizeRollback) {
             return;
@@ -568,15 +606,35 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             }
             var now = Number(p.currentTime) || 0;
             var rollbackGap = anchorTime - now;
+            if (rollbackGap >= 0.20 &&
+                rollbackGap < 0.72 &&
+                typeof window.emitPlayerDebug === 'function') {
+              window.emitPlayerDebug(
+                '检测到轻微回退 ' + rollbackGap.toFixed(2) + 's 未校正'
+              );
+              return;
+            }
             if (rollbackGap < 0.72) {
               return;
             }
             if (furthestTime > anchorTime + 0.03) {
+              if (typeof window.emitPlayerDebug === 'function') {
+                window.emitPlayerDebug(
+                  '检测到回退 ' + rollbackGap.toFixed(2) +
+                  's 但进度已前移，跳过校正'
+                );
+              }
               return;
             }
             var desired = Math.max(anchorTime + 0.012, now + 0.006);
             try {
               p.currentTime = desired;
+              if (typeof window.emitPlayerDebug === 'function') {
+                window.emitPlayerDebug(
+                  '检测到回退 ' + rollbackGap.toFixed(2) +
+                  's 已校正到' + desired.toFixed(2) + 's'
+                );
+              }
             } catch (_) {}
           }
 
@@ -741,6 +799,25 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         window.flutter_inappwebview.callHandler('onPlayerEvent', event);
       }
     }
+
+    window.__lastPlayerDebugAt = 0;
+    window.__lastPlayerDebugMessage = '';
+    window.__lastRateChangeAt = 0;
+    window.__lastRateChangeDesc = '';
+
+    function emitPlayerDebug(message) {
+      var text = String(message || '').trim();
+      if (!text) return;
+      var now = Date.now();
+      if (window.__lastPlayerDebugMessage === text &&
+          now - (window.__lastPlayerDebugAt || 0) < 1200) {
+        return;
+      }
+      window.__lastPlayerDebugMessage = text;
+      window.__lastPlayerDebugAt = now;
+      sendEvent('debug', { message: text });
+    }
+    window.emitPlayerDebug = emitPlayerDebug;
 
     function removeWarmupController(controller) {
       if (!controller) return;
@@ -1024,6 +1101,12 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
       // Buffering events
       player.addEventListener('waiting', function() {
+        if ((Date.now() - (window.__lastRateChangeAt || 0)) < 1600 &&
+            typeof window.emitPlayerDebug === 'function') {
+          window.emitPlayerDebug(
+            '倍速切换后触发 waiting ' + (window.__lastRateChangeDesc || '')
+          );
+        }
         try { cancelSeekWarmup(); } catch (_) {}
         emitBufferingTrue();
       });

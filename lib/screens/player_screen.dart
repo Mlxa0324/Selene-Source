@@ -2839,6 +2839,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             danmakuSettings: _danmakuSettings,
             onDanmakuSettingsChanged: _applyDanmakuSettings,
             onPlaybackSpeedChanged: _onPlaybackSpeedChanged,
+            onDebugToast: _showToast,
             forceControlsVisible: _forcePcControlsVisible,
             onSourceChanged: (source) {
               _switchSource(source);
