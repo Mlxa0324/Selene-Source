@@ -31,7 +31,8 @@ class DanmakuService {
   DanmakuService._internal();
 
   /// 获取手动匹配的剧集ID
-  Future<int?> getManualMatch(String source, String id, int episodeIndex) async {
+  Future<int?> getManualMatch(
+      String source, String id, int episodeIndex) async {
     final prefs = await SharedPreferences.getInstance();
     final matchesJson = prefs.getString(_manualMatchKey);
     if (matchesJson == null) return null;
@@ -42,11 +43,12 @@ class DanmakuService {
   }
 
   /// 保存手动匹配的剧集ID
-  Future<void> saveManualMatch(String source, String id, int episodeIndex, int episodeId) async {
+  Future<void> saveManualMatch(
+      String source, String id, int episodeIndex, int episodeId) async {
     final prefs = await SharedPreferences.getInstance();
     final matchesJson = prefs.getString(_manualMatchKey);
     Map<String, dynamic> matches = {};
-    
+
     if (matchesJson != null) {
       matches = jsonDecode(matchesJson);
     }
@@ -146,12 +148,12 @@ class DanmakuService {
 
       if (response.statusCode == 200 && response.data != null) {
         final result = DanmakuSearchResult.fromJson(response.data);
-        
+
         // 存入缓存
         if (result.success) {
           _searchCache[cleanName] = (result, DateTime.now());
         }
-        
+
         return result;
       }
     } catch (e) {
@@ -187,7 +189,8 @@ class DanmakuService {
   /// [title] 影视名
   /// [episodeIndex] 集数索引（从0开始）
   /// [sourceName] 来源名称
-  static String buildFileName(String title, int? episodeIndex, String? sourceName) {
+  static String buildFileName(
+      String title, int? episodeIndex, String? sourceName) {
     final buffer = StringBuffer(title);
     if (episodeIndex != null) {
       buffer.write(' S1E${episodeIndex + 1}');

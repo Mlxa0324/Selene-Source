@@ -7,6 +7,7 @@ class DanmakuMatchPanel extends StatefulWidget {
   final ThemeData theme;
   final String initialQuery;
   final int? currentEpisodeId; // 当前选中的弹幕 ID
+  final int? currentEpisodeCommentCount; // 当前选中弹幕的条数
   final Function(int episodeId) onEpisodeSelected;
   final double? backgroundOpacity;
   final BorderRadius? borderRadiusOverride;
@@ -17,6 +18,7 @@ class DanmakuMatchPanel extends StatefulWidget {
     required this.theme,
     required this.initialQuery,
     this.currentEpisodeId,
+    this.currentEpisodeCommentCount,
     required this.onEpisodeSelected,
     this.backgroundOpacity,
     this.borderRadiusOverride,
@@ -161,7 +163,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       _isLoading = true;
       _errorMessage = null;
       _expansionStates.clear();
-      _itemKeys.clear(); 
+      _itemKeys.clear();
       _tileControllers.clear(); // 💡 搜索时清理控制器缓存
     });
 
@@ -177,8 +179,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           });
           // 如果有当前 ID，自动定位一次
           if (widget.currentEpisodeId != null) {
-             // 延时一点点确保列表已构建
-             WidgetsBinding.instance.addPostFrameCallback((_) => _locateToCurrent());
+            // 延时一点点确保列表已构建
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => _locateToCurrent());
           }
         } else {
           setState(() {
@@ -209,9 +212,11 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode =
-        widget.forceDarkStyle ? true : widget.theme.brightness == Brightness.dark;
-    final backgroundOpacity = widget.backgroundOpacity ?? (isDarkMode ? 0.9 : 0.98);
+    final isDarkMode = widget.forceDarkStyle
+        ? true
+        : widget.theme.brightness == Brightness.dark;
+    final backgroundOpacity =
+        widget.backgroundOpacity ?? (isDarkMode ? 0.9 : 0.98);
     final backgroundColor = isDarkMode
         ? Colors.black.withOpacity(backgroundOpacity)
         : Colors.white.withOpacity(backgroundOpacity);
@@ -220,7 +225,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     final inputColor =
         isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05);
 
-    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final isPortrait =
+        MediaQuery.of(context).orientation == Orientation.portrait;
 
     return Material(
       color: Colors.transparent,
@@ -230,7 +236,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           color: backgroundColor,
           borderRadius: widget.borderRadiusOverride ??
               (isPortrait
-                  ? const BorderRadius.vertical(top: Radius.circular(24)) // 💡 底部弹出时使用顶部圆角
+                  ? const BorderRadius.vertical(
+                      top: Radius.circular(24)) // 💡 底部弹出时使用顶部圆角
                   : const BorderRadius.only(
                       topLeft: Radius.circular(16),
                       bottomLeft: Radius.circular(16),
@@ -245,216 +252,237 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
         ),
         child: Column(
           children: [
-          // 标题栏
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 8, 4), // 💡 压缩上下边距 (16/8 -> 10/4)
-            child: Row(
-              children: [
-                Text(
-                  '手动匹配弹幕',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 16, // 💡 略微缩小字号
-                    fontWeight: FontWeight.bold,
+            // 标题栏
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                  20, 10, 8, 4), // 💡 压缩上下边距 (16/8 -> 10/4)
+              child: Row(
+                children: [
+                  Text(
+                    '手动匹配弹幕',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 16, // 💡 略微缩小字号
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                // 收起按钮
-                if (_searchResults.isNotEmpty)
-                  IconButton(
-                    visualDensity: VisualDensity.compact, // 💡 紧凑模式
-                    tooltip: '收起所有结果',
-                    icon: Icon(Icons.unfold_less, color: textColor.withOpacity(0.7), size: 18),
-                    onPressed: _collapseAll,
-                  ),
-                // 定位按钮
-                if (widget.currentEpisodeId != null && _searchResults.isNotEmpty)
+                  const Spacer(),
+                  // 收起按钮
+                  if (_searchResults.isNotEmpty)
+                    IconButton(
+                      visualDensity: VisualDensity.compact, // 💡 紧凑模式
+                      tooltip: '收起所有结果',
+                      icon: Icon(Icons.unfold_less,
+                          color: textColor.withOpacity(0.7), size: 18),
+                      onPressed: _collapseAll,
+                    ),
+                  // 定位按钮
+                  if (widget.currentEpisodeId != null &&
+                      _searchResults.isNotEmpty)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '定位到当前弹幕',
+                      icon: const Icon(Icons.location_searching,
+                          color: Colors.green, size: 18),
+                      onPressed: _locateToCurrent,
+                    ),
+                  // 排序切换按钮
                   IconButton(
                     visualDensity: VisualDensity.compact,
-                    tooltip: '定位到当前弹幕',
-                    icon: const Icon(Icons.location_searching, color: Colors.green, size: 18),
-                    onPressed: _locateToCurrent,
+                    tooltip: _isDescending ? '当前：年份倒序' : '当前：年份正序',
+                    icon: Icon(
+                      _isDescending ? Icons.arrow_downward : Icons.arrow_upward,
+                      color: textColor.withOpacity(0.7),
+                      size: 18,
+                    ),
+                    onPressed: _toggleSort,
                   ),
-                // 排序切换按钮
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  tooltip: _isDescending ? '当前：年份倒序' : '当前：年份正序',
-                  icon: Icon(
-                    _isDescending ? Icons.arrow_downward : Icons.arrow_upward,
-                    color: textColor.withOpacity(0.7),
-                    size: 18,
+                  // 关闭按钮
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.close,
+                        color: textColor.withOpacity(0.7), size: 20),
+                    onPressed: () => Navigator.pop(context),
                   ),
-                  onPressed: _toggleSort,
-                ),
-                // 关闭按钮
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(Icons.close,
-                      color: textColor.withOpacity(0.7), size: 20),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-
-          // 搜索框区域
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Container(
-              height: 38, // 💡 降低高度 (42 -> 38)
-              margin: const EdgeInsets.only(bottom: 12), // 💡 缩小下方间距 (16 -> 12)
-              decoration: BoxDecoration(
-                color: inputColor,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: textColor.withOpacity(0.05), width: 1),
-              ),
-              child: TextField(
-                controller: _searchController,
-                style: TextStyle(color: textColor, fontSize: 13), // 💡 缩小字号
-                textAlignVertical: TextAlignVertical.center,
-                decoration: InputDecoration(
-                  hintText: '输入作品名称搜索',
-                  hintStyle: TextStyle(color: subTextColor, fontSize: 13),
-                  prefixIcon:
-                      Icon(Icons.search, color: subTextColor, size: 17),
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                  suffixIcon: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.send,
-                        color: Colors.green, size: 17),
-                    onPressed: _onSearch,
-                  ),
-                ),
-                onSubmitted: (_) => _onSearch(),
+                ],
               ),
             ),
-          ),
 
-          // 可滚动区域 - 使用 ListView.builder 优化性能
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                        color: Colors.green, strokeWidth: 2))
-                : _errorMessage != null
-                    ? Center(
-                        child: Text(_errorMessage!,
-                            style: TextStyle(color: textColor.withOpacity(0.5))))
-                    : _searchResults.isEmpty
-                        ? Center(
-                            child: Text('未找到相关弹幕',
-                                style: TextStyle(color: subTextColor)))
-                                                : ListView.builder(
-                                                    controller: _scrollController,
-                                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                    itemCount: _searchResults.length,
-                                                    itemExtent: null, // 高度自适应
-                                                    cacheExtent: 1000, // 增加预渲染区域减少闪烁
-                                                    itemBuilder: (context, index) {
-                                                      final anime = _searchResults[index];
-                                                      return _buildAnimeItem(
-                                                        anime,
-                                                        isDarkMode,
-                                                        textColor,
-                                                        subTextColor,
-                                                      );
-                                                    },
-                                                  ),
-                                  ),
-                                  const SizedBox(height: 16),
+            // 搜索框区域
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                height: 38, // 💡 降低高度 (42 -> 38)
+                margin:
+                    const EdgeInsets.only(bottom: 12), // 💡 缩小下方间距 (16 -> 12)
+                decoration: BoxDecoration(
+                  color: inputColor,
+                  borderRadius: BorderRadius.circular(8),
+                  border:
+                      Border.all(color: textColor.withOpacity(0.05), width: 1),
+                ),
+                child: TextField(
+                  controller: _searchController,
+                  style: TextStyle(color: textColor, fontSize: 13), // 💡 缩小字号
+                  textAlignVertical: TextAlignVertical.center,
+                  decoration: InputDecoration(
+                    hintText: '输入作品名称搜索',
+                    hintStyle: TextStyle(color: subTextColor, fontSize: 13),
+                    prefixIcon:
+                        Icon(Icons.search, color: subTextColor, size: 17),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    suffixIcon: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon:
+                          const Icon(Icons.send, color: Colors.green, size: 17),
+                      onPressed: _onSearch,
+                    ),
+                  ),
+                  onSubmitted: (_) => _onSearch(),
+                ),
+              ),
+            ),
+
+            // 可滚动区域 - 使用 ListView.builder 优化性能
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                          color: Colors.green, strokeWidth: 2))
+                  : _errorMessage != null
+                      ? Center(
+                          child: Text(_errorMessage!,
+                              style:
+                                  TextStyle(color: textColor.withOpacity(0.5))))
+                      : _searchResults.isEmpty
+                          ? Center(
+                              child: Text('未找到相关弹幕',
+                                  style: TextStyle(color: subTextColor)))
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: _searchResults.length,
+                              itemExtent: null, // 高度自适应
+                              cacheExtent: 1000, // 增加预渲染区域减少闪烁
+                              itemBuilder: (context, index) {
+                                final anime = _searchResults[index];
+                                return _buildAnimeItem(
+                                  anime,
+                                  isDarkMode,
+                                  textColor,
+                                  subTextColor,
+                                );
+                              },
+                            ),
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
     );
-                          }
-                        
+  }
+
   Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
       Color textColor, Color subTextColor) {
-                            bool hasSelected = _selectedAnimeId == anime.animeId &&
-                                anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
-                        
-                            // 💡 核心：为每个动画项绑定一个持久的控制器
-                            final controller = _tileControllers.putIfAbsent(
-                              anime.animeId, 
-                              () => ExpansionTileController()
-                            );
-                        
-                            return Container(
-                              key: ValueKey('anime_${anime.animeId}'), // 💡 增加 Key 增加稳定性
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                color: textColor.withOpacity(0.03),
-                                borderRadius: BorderRadius.circular(8),
-                                border: hasSelected
-                                    ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
-                                    : null,
-                              ),
-                              child: Stack(
-                                children: [
-                                  if (hasSelected)
-                                    Positioned(
-                                      left: 0,
-                                      top: 12,
-                                      bottom: 12,
-                                      child: Container(
-                                        width: 3,
-                                        decoration: BoxDecoration(
-                                          color: Colors.green,
-                                          borderRadius: BorderRadius.circular(2),
-                                        ),
-                                      ),
-                                    ),
-                                  Theme(
-                                    data: widget.theme.copyWith(dividerColor: Colors.transparent),
-                                    child: ExpansionTile(
-                                      controller: controller, // 💡 绑定控制器
-                                      key: PageStorageKey('tile_${anime.animeId}'), // 💡 使用 PageStorageKey 保持滚动后的状态
-                                      initiallyExpanded: _expansionStates[anime.animeId] ?? false,
-                                      onExpansionChanged: (expanded) {
-                                        // 💡 实时同步数据状态
-                                        setState(() {
-                                          _expansionStates[anime.animeId] = expanded;
-                                        });
-                                      },
-                                      tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                      title: Text(
-                                        anime.animeTitle,
-                                        style: TextStyle(
-                                            color: textColor, 
-                                            fontSize: 14,
-                                            fontWeight: hasSelected ? FontWeight.w600 : FontWeight.normal),
-                                      ),
-                                      subtitle: Text(
-                                        '${anime.typeDescription} • ${anime.episodes.length}个结果',
-                                        style: TextStyle(color: subTextColor, fontSize: 11),
-                                      ),
-                                      iconColor: textColor.withOpacity(0.5),
-                                      collapsedIconColor: textColor.withOpacity(0.5),
-                                      childrenPadding: EdgeInsets.zero,
-                                      children: [
-                                        ...anime.episodes.map((ep) => _buildEpisodeItem(anime.animeId, ep, textColor)),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                        
-                          Widget _buildEpisodeItem(int animeId, DanmakuSearchEpisode episode, Color textColor) {
-                            bool isSelected = _selectedAnimeId == animeId &&
-                                episode.episodeId == widget.currentEpisodeId;
-                            
-                            // 💡 复合 Key 生成
-                            final compositeKey = '${animeId}_${episode.episodeId}';
-                            final key = _itemKeys.putIfAbsent(compositeKey, () => GlobalKey());
-                        
-                            return Material(
-                              key: key, 
-                              color: Colors.transparent,      child: InkWell(
+    bool hasSelected = _selectedAnimeId == anime.animeId &&
+        anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
+
+    // 💡 核心：为每个动画项绑定一个持久的控制器
+    final controller = _tileControllers.putIfAbsent(
+        anime.animeId, () => ExpansionTileController());
+
+    return Container(
+      key: ValueKey('anime_${anime.animeId}'), // 💡 增加 Key 增加稳定性
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: textColor.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(8),
+        border: hasSelected
+            ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
+            : null,
+      ),
+      child: Stack(
+        children: [
+          if (hasSelected)
+            Positioned(
+              left: 0,
+              top: 12,
+              bottom: 12,
+              child: Container(
+                width: 3,
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          Theme(
+            data: widget.theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              controller: controller, // 💡 绑定控制器
+              key: PageStorageKey(
+                  'tile_${anime.animeId}'), // 💡 使用 PageStorageKey 保持滚动后的状态
+              initiallyExpanded: _expansionStates[anime.animeId] ?? false,
+              onExpansionChanged: (expanded) {
+                // 💡 实时同步数据状态
+                setState(() {
+                  _expansionStates[anime.animeId] = expanded;
+                });
+              },
+              tilePadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              title: Text(
+                anime.animeTitle,
+                style: TextStyle(
+                    color: textColor,
+                    fontSize: 14,
+                    fontWeight:
+                        hasSelected ? FontWeight.w600 : FontWeight.normal),
+              ),
+              subtitle: Text(
+                '${anime.typeDescription} • ${anime.episodes.length}个结果',
+                style: TextStyle(color: subTextColor, fontSize: 11),
+              ),
+              iconColor: textColor.withOpacity(0.5),
+              collapsedIconColor: textColor.withOpacity(0.5),
+              childrenPadding: EdgeInsets.zero,
+              children: [
+                ...anime.episodes.map((ep) => _buildEpisodeItem(
+                      anime.animeId,
+                      ep,
+                      textColor,
+                      subTextColor,
+                    )),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEpisodeItem(
+    int animeId,
+    DanmakuSearchEpisode episode,
+    Color textColor,
+    Color subTextColor,
+  ) {
+    bool isSelected = _selectedAnimeId == animeId &&
+        episode.episodeId == widget.currentEpisodeId;
+    final selectedCommentCount =
+        isSelected ? widget.currentEpisodeCommentCount : null;
+
+    // 💡 复合 Key 生成
+    final compositeKey = '${animeId}_${episode.episodeId}';
+    final key = _itemKeys.putIfAbsent(compositeKey, () => GlobalKey());
+
+    return Material(
+      key: key,
+      color: Colors.transparent,
+      child: InkWell(
         onTap: () {
           setState(() {
             _selectedAnimeId = animeId;
@@ -477,12 +505,26 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 child: Text(
                   episode.episodeTitle,
                   style: TextStyle(
-                    color: isSelected ? Colors.green : textColor.withOpacity(0.7), 
+                    color:
+                        isSelected ? Colors.green : textColor.withOpacity(0.7),
                     fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
               ),
+              if ((selectedCommentCount ?? 0) > 0) ...[
+                Text(
+                  '${selectedCommentCount}条',
+                  style: TextStyle(
+                    color: isSelected ? Colors.green : subTextColor,
+                    fontSize: 12,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               if (isSelected)
                 const Icon(Icons.check_circle, color: Colors.green, size: 14),
             ],

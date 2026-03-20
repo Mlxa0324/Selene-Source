@@ -233,6 +233,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 💡 关键：为 VideoPlayerWidget 增加专门的全局 Key，确保其在层级移动时不会销毁重建
   final GlobalKey _videoPlayerWidgetKey = GlobalKey();
 
+  int? get _currentDanmakuCommentCount {
+    if (_currentDanmakuEpisodeId == null || _danmakuList.isEmpty) {
+      return null;
+    }
+    return _danmakuList.length;
+  }
+
   String _getLocalRecordId(int episodeIndex) {
     final ids = widget.localEpisodeIds;
     if (ids != null && episodeIndex >= 0 && episodeIndex < ids.length) {
@@ -4624,6 +4631,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               theme: theme,
               initialQuery: videoTitle,
               currentEpisodeId: _currentDanmakuEpisodeId,
+              currentEpisodeCommentCount: _currentDanmakuCommentCount,
               onEpisodeSelected: (episodeId) {
                 Navigator.pop(context);
                 _loadDanmakuById(episodeId);
@@ -4658,6 +4666,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     theme: theme,
                     initialQuery: videoTitle,
                     currentEpisodeId: _currentDanmakuEpisodeId,
+                    currentEpisodeCommentCount: _currentDanmakuCommentCount,
                     onEpisodeSelected: (episodeId) {
                       Navigator.pop(dialogContext);
                       _loadDanmakuById(episodeId);
@@ -4696,6 +4705,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               theme: theme,
               initialQuery: videoTitle,
               currentEpisodeId: _currentDanmakuEpisodeId,
+              currentEpisodeCommentCount: _currentDanmakuCommentCount,
               onEpisodeSelected: (episodeId) {
                 Navigator.pop(dialogContext);
                 _loadDanmakuById(episodeId);

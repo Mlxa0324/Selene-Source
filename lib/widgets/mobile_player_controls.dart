@@ -1386,8 +1386,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildProgressBar() {
+    final isIOSTabletNonFullscreen =
+        Platform.isIOS && DeviceUtils.isTablet(context) && !_isFullscreen;
+
     return Positioned(
-      bottom: _isEffectiveFullscreen ? 58.0 : 42.0,
+      bottom: isIOSTabletNonFullscreen
+          ? 50.0
+          : (_isEffectiveFullscreen ? 58.0 : 42.0),
       left: 0,
       right: 0,
       child: AnimatedOpacity(
@@ -1475,26 +1480,33 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Widget _buildBottomControls() {
     final isIOSTabletNonFullscreen =
         Platform.isIOS && DeviceUtils.isTablet(context) && !_isFullscreen;
-    final leadingIconSize = _isEffectiveFullscreen ? 26.0 : 24.0;
+    final leadingIconSize = isIOSTabletNonFullscreen
+        ? 33.0
+        : (_isEffectiveFullscreen ? 26.0 : 24.0);
     final actionIconSize = isIOSTabletNonFullscreen
-        ? (_isEffectiveFullscreen ? 30.0 : 26.0)
+        ? (_isEffectiveFullscreen ? 34.0 : 31.0)
         : leadingIconSize;
     final emphasizedActionIconSize = isIOSTabletNonFullscreen
-        ? (_isEffectiveFullscreen ? 34.0 : 30.0)
+        ? (_isEffectiveFullscreen ? 36.0 : 34.0)
         : (_isEffectiveFullscreen ? 30.0 : 24.0);
     final fullscreenIconSize = isIOSTabletNonFullscreen
-        ? (_isEffectiveFullscreen ? 36.0 : 30.0)
+        ? (_isEffectiveFullscreen ? 38.0 : 36.0)
         : (_isEffectiveFullscreen ? 32.0 : 26.0);
     final danmakuToggleIconSize = isIOSTabletNonFullscreen
-        ? (_isEffectiveFullscreen ? 30.0 : 26.0)
+        ? (_isEffectiveFullscreen ? 32.0 : 30.0)
         : (_isEffectiveFullscreen ? 26.0 : 22.0);
 
-    final iconPadding = EdgeInsets.only(
-        left: _isEffectiveFullscreen ? 10 : 8,
-        right: _isEffectiveFullscreen ? 10 : 8);
+    final iconPadding = EdgeInsets.fromLTRB(
+      _isEffectiveFullscreen ? 10 : 8,
+      isIOSTabletNonFullscreen ? 10 : 8,
+      _isEffectiveFullscreen ? 10 : 8,
+      isIOSTabletNonFullscreen ? 10 : 8,
+    );
 
     return Positioned(
-      bottom: _isEffectiveFullscreen ? 4.0 : -6.0,
+      bottom: isIOSTabletNonFullscreen
+          ? 2.0
+          : (_isEffectiveFullscreen ? 4.0 : -6.0),
       left: 0,
       right: 0,
       child: AnimatedOpacity(
@@ -1516,9 +1528,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                       : screenWidth,
                   child: Padding(
                     padding: EdgeInsets.only(
-                      left: _isEffectiveFullscreen ? 16.0 : 8.0,
-                      right: _isEffectiveFullscreen ? 16.0 : 8.0,
-                      bottom: _isEffectiveFullscreen ? 8.0 : 8.0,
+                      left: isIOSTabletNonFullscreen
+                          ? 14.0
+                          : (_isEffectiveFullscreen ? 16.0 : 8.0),
+                      right: isIOSTabletNonFullscreen
+                          ? 14.0
+                          : (_isEffectiveFullscreen ? 16.0 : 8.0),
+                      bottom: isIOSTabletNonFullscreen ? 10.0 : 8.0,
                     ),
                     child: Row(
                       children: [
@@ -1526,7 +1542,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                           onTap: _togglePlayPause,
                           behavior: HitTestBehavior.opaque,
                           child: Container(
-                            padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
+                            padding: EdgeInsets.fromLTRB(
+                              8,
+                              isIOSTabletNonFullscreen ? 10 : 8,
+                              0,
+                              isIOSTabletNonFullscreen ? 10 : 8,
+                            ),
                             child: Icon(
                               _isPlaying ? Icons.pause : Icons.play_arrow,
                               color: Colors.white,
@@ -1558,8 +1579,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               padding: iconPadding,
                               child: Text(
                                 currentPlayTime(),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 14),
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize:
+                                      isIOSTabletNonFullscreen ? 17.0 : 14,
+                                ),
                               ),
                             ),
                           ),
@@ -1633,7 +1657,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                                 Icons.list,
                                 color: Colors.white,
                                 size: isIOSTabletNonFullscreen
-                                    ? (_isEffectiveFullscreen ? 36.0 : 30.0)
+                                    ? (_isEffectiveFullscreen ? 40.0 : 36.0)
                                     : (_isEffectiveFullscreen ? 32.0 : 24.0),
                               ),
                             ),
