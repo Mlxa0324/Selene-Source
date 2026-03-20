@@ -391,7 +391,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
       // ListTile 的固定高度（通过 SizedBox 设置）
       const itemHeight = 68.0;
-      
+
       // ListView 的 padding: EdgeInsets.symmetric(vertical: 4)
       const listPadding = 4.0;
 
@@ -439,11 +439,25 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     Navigator.of(context).pop();
   }
 
+  Color _macOSTopBarColor(ThemeData theme) {
+    if (!DeviceUtils.isMacOS()) {
+      return Colors.black;
+    }
+
+    if (theme.brightness == Brightness.dark) {
+      return theme.scaffoldBackgroundColor;
+    }
+
+    return const Color(0xFFe6f3fb);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     final themeService = context.watch<ThemeService>();
+    final topSafeAreaColor =
+        Platform.isMacOS ? _macOSTopBarColor(theme) : Colors.black;
 
     return PopScope(
       canPop: false,
@@ -452,79 +466,78 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         _onBackPressed();
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: Colors.black,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor:
-            isDarkMode ? Colors.black : theme.scaffoldBackgroundColor,
-        systemNavigationBarIconBrightness:
-            isDarkMode ? Brightness.light : Brightness.dark,
-      ),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Container(
-          decoration: BoxDecoration(
-            gradient: isDarkMode
-                ? null
-                : const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Color(0xFFe6f3fb),
-                      Color(0xFFeaf3f7),
-                      Color(0xFFf7f7f3),
-                      Color(0xFFe9ecef),
-                      Color(0xFFdbe3ea),
-                      Color(0xFFd3dde6),
-                    ],
-                    stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
-                  ),
-            color: isDarkMode ? theme.scaffoldBackgroundColor : null,
-          ),
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  // Windows 自定义标题栏
-                  if (Platform.isWindows)
-                    const WindowsTitleBar(),
-                  // 主要内容
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        // 主要内容（不包含播放器）
-                        if (!_isWebFullscreen)
-                          if (_isTablet && !_isPortraitTablet)
-                            _buildTabletLandscapeLayout(theme, themeService)
-                          else if (_isPortraitTablet)
-                            _buildPortraitTabletLayout(theme, themeService)
-                          else
-                            _buildPhoneLayout(theme, themeService),
-                        // 播放器层
-                        _buildPlayerLayer(theme),
+        value: SystemUiOverlayStyle(
+          statusBarColor: Colors.black,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+          systemNavigationBarColor:
+              isDarkMode ? Colors.black : theme.scaffoldBackgroundColor,
+          systemNavigationBarIconBrightness:
+              isDarkMode ? Brightness.light : Brightness.dark,
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: isDarkMode
+                  ? null
+                  : const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFFe6f3fb),
+                        Color(0xFFeaf3f7),
+                        Color(0xFFf7f7f3),
+                        Color(0xFFe9ecef),
+                        Color(0xFFdbe3ea),
+                        Color(0xFFd3dde6),
                       ],
+                      stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                    ),
+              color: isDarkMode ? theme.scaffoldBackgroundColor : null,
+            ),
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    // Windows 自定义标题栏
+                    if (Platform.isWindows) const WindowsTitleBar(),
+                    // 主要内容
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          // 主要内容（不包含播放器）
+                          if (!_isWebFullscreen)
+                            if (_isTablet && !_isPortraitTablet)
+                              _buildTabletLandscapeLayout(theme, themeService)
+                            else if (_isPortraitTablet)
+                              _buildPortraitTabletLayout(theme, themeService)
+                            else
+                              _buildPhoneLayout(theme, themeService),
+                          // 播放器层
+                          _buildPlayerLayer(theme),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                // 状态栏黑色背景（覆盖在最上层）
+                if (!Platform.isWindows)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: MediaQuery.of(context).padding.top,
+                    child: Container(
+                      color: topSafeAreaColor,
                     ),
                   ),
-                ],
-              ),
-              // 状态栏黑色背景（覆盖在最上层）
-              if (!Platform.isWindows)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: MediaQuery.of(context).padding.top,
-                  child: Container(
-                    color: Colors.black,
-                  ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ),
-   );
+    );
   }
 
   /// 构建播放器层
@@ -673,8 +686,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
             : 'AptvPlayer/1.4.10',
       },
       videoTitle: _currentChannel.name,
-      onBackPressed:
-          _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
+      onBackPressed: _isWebFullscreen ? _exitWebFullscreen : _onBackPressed,
       onControllerCreated: (controller) {
         _videoPlayerController = controller;
       },
@@ -706,7 +718,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         // macOS/状态栏黑色背景
         Container(
           height: statusBarHeight + macOSPadding,
-          color: Colors.black,
+          color: _macOSTopBarColor(theme),
         ),
         // 播放器占位
         SizedBox(height: playerHeight),
@@ -738,7 +750,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         // macOS/状态栏黑色背景
         Container(
           height: statusBarHeight + macOSPadding,
-          color: Colors.black,
+          color: _macOSTopBarColor(theme),
         ),
         Expanded(
           child: Row(
@@ -821,7 +833,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         // macOS/状态栏黑色背景
         Container(
           height: statusBarHeight + macOSPadding,
-          color: Colors.black,
+          color: _macOSTopBarColor(theme),
         ),
         // 播放器占位
         SizedBox(height: playerHeight),
@@ -990,72 +1002,72 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
             selectedTileColor: const Color(0xFF27ae60).withOpacity(0.1),
             visualDensity: const VisualDensity(vertical: -1),
             leading: channel.logo.isNotEmpty
-              ? AspectRatio(
-                  aspectRatio: 2.0,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: themeService.isDarkMode
-                          ? const Color(0xFF2a2a2a)
-                          : const Color(0xFFc0c0c0),
-                      borderRadius: BorderRadius.circular(6),
+                ? AspectRatio(
+                    aspectRatio: 2.0,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: themeService.isDarkMode
+                            ? const Color(0xFF2a2a2a)
+                            : const Color(0xFFc0c0c0),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: Image.network(
+                          channel.logo,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.tv,
+                              size: 16,
+                              color: Color(0xFF95a5b0),
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Image.network(
-                        channel.logo,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.tv,
-                            size: 16,
-                            color: Color(0xFF95a5b0),
-                          );
-                        },
+                  )
+                : AspectRatio(
+                    aspectRatio: 2.0,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: themeService.isDarkMode
+                            ? const Color(0xFF2a2a2a)
+                            : const Color(0xFFc0c0c0),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(
+                        Icons.tv,
+                        size: 16,
+                        color: Color(0xFF95a5b0),
                       ),
                     ),
                   ),
-                )
-              : AspectRatio(
-                  aspectRatio: 2.0,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: themeService.isDarkMode
-                          ? const Color(0xFF2a2a2a)
-                          : const Color(0xFFc0c0c0),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(
-                      Icons.tv,
-                      size: 16,
-                      color: Color(0xFF95a5b0),
-                    ),
-                  ),
-                ),
-          title: Text(
-            channel.name,
-            style: FontUtils.poppins(
-              fontSize: 14,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              color: isSelected
-                  ? const Color(0xFF27ae60)
-                  : themeService.isDarkMode
-                      ? Colors.white
-                      : const Color(0xFF2c3e50),
+            title: Text(
+              channel.name,
+              style: FontUtils.poppins(
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                color: isSelected
+                    ? const Color(0xFF27ae60)
+                    : themeService.isDarkMode
+                        ? Colors.white
+                        : const Color(0xFF2c3e50),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          subtitle: Text(
-            channel.group,
-            style: FontUtils.poppins(
-              fontSize: 12,
-              color: themeService.isDarkMode
-                  ? const Color(0xFF999999)
-                  : const Color(0xFF7f8c8d),
+            subtitle: Text(
+              channel.group,
+              style: FontUtils.poppins(
+                fontSize: 12,
+                color: themeService.isDarkMode
+                    ? const Color(0xFF999999)
+                    : const Color(0xFF7f8c8d),
+              ),
             ),
-          ),
-          onTap: () => _switchChannel(channel),
+            onTap: () => _switchChannel(channel),
           ),
         );
       },

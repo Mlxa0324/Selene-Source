@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/search_result.dart';
 import '../utils/device_utils.dart';
+import '../utils/font_utils.dart';
 
 class SourceSpeed {
   String quality = '';
@@ -95,8 +96,8 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
     if (currentIndex == -1) return;
 
     // 计算每个项目的高度
-    final itemHeight = widget.isCompact ? 84.0 : 100.0; 
-    final itemSpacing = widget.isCompact ? 8.0 : 12.0; 
+    final itemHeight = widget.isCompact ? 84.0 : 100.0;
+    final itemSpacing = widget.isCompact ? 8.0 : 12.0;
     final totalItemHeight = itemHeight + itemSpacing;
 
     final targetOffset = currentIndex * totalItemHeight;
@@ -145,8 +146,8 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
     final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
-    final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(opacity) 
+    final backgroundColor = isDarkMode
+        ? Colors.black.withOpacity(opacity)
         : Colors.white.withOpacity(opacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
@@ -161,7 +162,8 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
       child: Column(
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(20, widget.isCompact ? 16 : 20, 8, widget.isCompact ? 4 : 8),
+            padding: EdgeInsets.fromLTRB(
+                20, widget.isCompact ? 16 : 20, 8, widget.isCompact ? 4 : 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -218,11 +220,10 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                     itemCount: widget.sources.length,
                     itemBuilder: (context, index) {
                       final source = widget.sources[index];
-                      final isCurrent =
-                          source.source == widget.currentSource &&
-                              source.id == widget.currentId;
-                      final speedInfo = widget
-                          .sourcesSpeed['${source.source}_${source.id}'];
+                      final isCurrent = source.source == widget.currentSource &&
+                          source.id == widget.currentId;
+                      final speedInfo =
+                          widget.sourcesSpeed['${source.source}_${source.id}'];
 
                       return _SourcePanelItemWithHover(
                         isCurrent: isCurrent,
@@ -231,7 +232,8 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                         speedInfo: speedInfo,
                         theme: widget.theme,
                         isCompact: widget.isCompact,
-                        onTap: isCurrent ? null : () => widget.onSourceTap(source),
+                        onTap:
+                            isCurrent ? null : () => widget.onSourceTap(source),
                       );
                     },
                   ),
@@ -343,7 +345,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
   Widget build(BuildContext context) {
     final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
     final itemHeight = widget.isCompact ? 84.0 : 100.0;
-    
+
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrent)
           ? SystemMouseCursors.click
@@ -367,8 +369,12 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
             color: widget.isCurrent
                 ? Colors.green.withOpacity(0.1)
                 : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.05))
-                    : (widget.isDarkMode ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03))),
+                    ? (widget.isDarkMode
+                        ? Colors.white10
+                        : Colors.black.withOpacity(0.05))
+                    : (widget.isDarkMode
+                        ? Colors.white.withOpacity(0.05)
+                        : Colors.black.withOpacity(0.03))),
             borderRadius: BorderRadius.circular(10),
             border: widget.isCurrent
                 ? Border.all(color: Colors.green, width: 1.5)
@@ -387,8 +393,11 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                       imageUrl: widget.source.poster,
                       fit: BoxFit.cover,
                       errorWidget: (context, url, error) => Container(
-                        color: widget.isDarkMode ? Colors.white10 : Colors.black12,
-                        child: Icon(Icons.movie, size: widget.isCompact ? 20 : 24, color: Colors.grey),
+                        color:
+                            widget.isDarkMode ? Colors.white10 : Colors.black12,
+                        child: Icon(Icons.movie,
+                            size: widget.isCompact ? 20 : 24,
+                            color: Colors.grey),
                       ),
                     ),
                   ),
@@ -415,13 +424,15 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                         children: [
                           Text(
                             widget.source.sourceName,
-                            style: TextStyle(
+                            style: FontUtils.poppins(
                               color: textColor.withOpacity(0.6),
                               fontSize: widget.isCompact ? 12 : 13,
                             ),
                           ),
                           if (widget.source.episodes.length > 1) ...[
-                            Text(' • ', style: TextStyle(color: textColor.withOpacity(0.3))),
+                            Text(' • ',
+                                style: TextStyle(
+                                    color: textColor.withOpacity(0.3))),
                             Text(
                               '${widget.source.episodes.length}集',
                               style: TextStyle(
@@ -441,14 +452,18 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                                 !widget.speedInfo!.loadSpeed.contains('超时'))
                               Text(
                                 widget.speedInfo!.loadSpeed,
-                                style: TextStyle(color: Colors.green, fontSize: widget.isCompact ? 11 : 12),
+                                style: TextStyle(
+                                    color: Colors.green,
+                                    fontSize: widget.isCompact ? 11 : 12),
                               ),
                             const SizedBox(width: 8),
                             if (widget.speedInfo!.pingTime.isNotEmpty &&
                                 !widget.speedInfo!.pingTime.contains('超时'))
                               Text(
                                 widget.speedInfo!.pingTime,
-                                style: TextStyle(color: Colors.orange, fontSize: widget.isCompact ? 11 : 12),
+                                style: TextStyle(
+                                    color: Colors.orange,
+                                    fontSize: widget.isCompact ? 11 : 12),
                               ),
                           ],
                         ),
@@ -460,14 +475,18 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                     widget.speedInfo!.quality.isNotEmpty &&
                     widget.speedInfo!.quality != '未知')
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       widget.speedInfo!.quality,
-                      style: TextStyle(color: Colors.green, fontSize: widget.isCompact ? 10 : 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: Colors.green,
+                          fontSize: widget.isCompact ? 10 : 11,
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
               ],

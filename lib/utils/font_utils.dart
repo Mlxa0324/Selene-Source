@@ -3,6 +3,27 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:io' show Platform;
 
 class FontUtils {
+  static List<String>? get _platformFontFallbacks {
+    if (Platform.isIOS || Platform.isMacOS) {
+      return const [
+        'PingFang SC',
+        'Hiragino Sans GB',
+        'Heiti SC',
+        'Arial Unicode MS',
+      ];
+    }
+
+    // if (Platform.isAndroid) {
+    //   return const [
+    //     'Noto Sans CJK SC',
+    //     'Noto Sans SC',
+    //     'sans-serif',
+    //   ];
+    // }
+
+    return null;
+  }
+
   /// 获取 Poppins 字体样式，Windows 下使用微软雅黑
   static TextStyle poppins({
     double? fontSize,
@@ -31,6 +52,8 @@ class FontUtils {
       letterSpacing: letterSpacing,
       height: height,
       fontStyle: fontStyle,
+    ).copyWith(
+      fontFamilyFallback: _platformFontFallbacks,
     );
   }
 

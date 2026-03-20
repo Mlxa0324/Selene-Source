@@ -62,7 +62,6 @@ class _VideoCardState extends State<VideoCard> {
         final bool shouldShowProgress = _shouldShowProgress();
         final String episodeText =
             shouldShowEpisodeInfo ? _getEpisodeText() : '';
-
         return FutureBuilder<String>(
           future: getImageUrl(widget.videoInfo.cover, widget.videoInfo.source),
           builder: (context, snapshot) {

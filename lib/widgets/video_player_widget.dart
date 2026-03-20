@@ -786,8 +786,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     try {
       final currentSpeed = _adapter!.state.rate;
-      final canUseMediaKitForUrl =
-          _useMobileNetworkMediaKit && !widget.isLocal && _canUseMediaKitForUrl(url);
+      final canUseMediaKitForUrl = _useMobileNetworkMediaKit &&
+          !widget.isLocal &&
+          _canUseMediaKitForUrl(url);
 
       if (_adapter is MediaKitAdapter && canUseMediaKitForUrl) {
         final player = (_adapter as MediaKitAdapter).player;
@@ -1422,7 +1423,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             isFavorite: widget.isFavorite,
             onFavoriteToggle: widget.onFavoriteToggle,
             onCastPressed: widget.onCastButtonPressed,
-            onPipPressed: _isPipDisabledForCurrentPlayback ? null : _enterPipMode,
+            onPipPressed:
+                _isPipDisabledForCurrentPlayback ? null : _enterPipMode,
             isPipMode: _isPipMode, // 💡 传给短剧控制层
             onEpisodeTap: (index) {
               widget.onEpisodeChanged?.call(index);
@@ -1478,7 +1480,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
         isDanmakuEnabled: widget.isDanmakuEnabled,
         onDanmakuToggle: widget.onDanmakuToggle,
-        onDebugToast: widget.onDebugToast,
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,

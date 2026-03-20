@@ -35,6 +35,7 @@ import '../widgets/player_download_panel.dart';
 import '../widgets/windows_title_bar.dart';
 import '../services/danmaku_service.dart';
 import '../models/danmaku_model.dart';
+import '../utils/font_utils.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -569,6 +570,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  Color _macOSTopBarColor(ThemeData theme) {
+    if (!DeviceUtils.isMacOS()) {
+      return Colors.black;
+    }
+
+    if (theme.brightness == Brightness.dark) {
+      return theme.scaffoldBackgroundColor;
+    }
+
+    return const Color(0xFFe6f3fb);
+  }
+
   /// 加载弹幕数据
 
   void _traceDanmakuLayerLayout(BoxConstraints constraints) {
@@ -1036,8 +1049,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           }
         }
       },
-      allowEarlyReturn:
-          shouldWaitForResumeTarget ? false : !preferSpeedTest,
+      allowEarlyReturn: shouldWaitForResumeTarget ? false : !preferSpeedTest,
     );
 
     // 2. 💡 强制等待 2 秒搜源窗口，确保获取足够多的候选源
@@ -1289,7 +1301,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         timeout: const Duration(seconds: 10),
       );
       if (serial != _sourceSpeedHydrationSerial) return;
-      debugPrint('[续播恢复] 后台全量测速完成: 结果数=${allSourcesSpeed.length}, serial=$serial');
+      debugPrint(
+          '[续播恢复] 后台全量测速完成: 结果数=${allSourcesSpeed.length}, serial=$serial');
     } catch (e) {
       debugPrint('[续播恢复] 后台全量测速失败: $e, serial=$serial');
     }
@@ -1677,9 +1690,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         await playerController
             .updateDataSource(finalUrl, startAt: startAt)
             .timeout(
-          const Duration(seconds: 15),
-          onTimeout: () => throw TimeoutException('updateDataSource timeout'),
-        );
+              const Duration(seconds: 15),
+              onTimeout: () =>
+                  throw TimeoutException('updateDataSource timeout'),
+            );
       }
     } catch (e, stackTrace) {
       debugPrint('updateVideoUrl 发生异常: $e');
@@ -2839,7 +2853,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             danmakuSettings: _danmakuSettings,
             onDanmakuSettingsChanged: _applyDanmakuSettings,
             onPlaybackSpeedChanged: _onPlaybackSpeedChanged,
-            onDebugToast: _showToast,
             forceControlsVisible: _forcePcControlsVisible,
             onSourceChanged: (source) {
               _switchSource(source);
@@ -3055,8 +3068,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }) {
     // final bool shouldExpandTapWidth =
     //     Platform.isIOS && !DeviceUtils.isTablet(context);
-    final bool shouldExpandTapWidth =
-         !DeviceUtils.isTablet(context);
+    final bool shouldExpandTapWidth = !DeviceUtils.isTablet(context);
     if (!shouldExpandTapWidth) {
       return child;
     }
@@ -3162,7 +3174,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ),
                     child: Text(
                       currentDetail!.sourceName,
-                      style: theme.textTheme.bodySmall?.copyWith(
+                      style: FontUtils.poppins(
+                        fontSize: theme.textTheme.bodySmall?.fontSize,
+                        fontWeight: theme.textTheme.bodySmall?.fontWeight ??
+                            FontWeight.w400,
                         color: isDarkMode ? Colors.grey[300] : Colors.black87,
                       ),
                     ),
@@ -3626,8 +3641,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       Icon(
                         Icons.arrow_forward_ios,
                         size: 14,
-                        color:
-                            isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                        color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
                       ),
                     ],
                   ),
@@ -4059,8 +4073,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       Icon(
                         Icons.arrow_forward_ios,
                         size: 14,
-                        color:
-                            isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                        color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
                       ),
                     ],
                   ),
@@ -5587,7 +5600,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         Container(
           height: statusBarHeight + macOSPadding,
-          color: Colors.black,
+          color: _macOSTopBarColor(theme),
         ),
         // 播放器占位空间
         SizedBox(height: playerHeight),
@@ -5609,7 +5622,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         Container(
           height: statusBarHeight + macOSPadding,
-          color: Colors.black,
+          color: _macOSTopBarColor(theme),
         ),
         // 播放器占位空间
         SizedBox(height: playerHeight),
@@ -5640,7 +5653,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         Container(
           height: statusBarHeight + macOSPadding,
-          color: Colors.black,
+          color: _macOSTopBarColor(theme),
         ),
         Expanded(
           child: Row(
@@ -6049,7 +6062,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Text(
                     widget.source.sourceName,
-                    style: TextStyle(
+                    style: FontUtils.poppins(
                       color: widget.isCurrentSource
                           ? Colors.green
                           : (widget.isDarkMode ? Colors.white : Colors.black87),
