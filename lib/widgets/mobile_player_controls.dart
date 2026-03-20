@@ -11,6 +11,7 @@ import 'dlna_device_dialog.dart';
 import 'danmaku_control_icons.dart';
 import 'player_settings_panel.dart';
 import 'player_adapter.dart';
+import '../utils/device_utils.dart';
 
 class MobilePlayerControls extends StatefulWidget {
   final PlayerAdapter player;
@@ -1445,8 +1446,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     return '${_formatDuration(position)} / ${_formatDuration(duration)}';
   }
 
-  Widget _buildDanmakuToggleButton(EdgeInsets padding) {
-    final buttonSize = _isEffectiveFullscreen ? 26.0 : 22.0;
+  Widget _buildDanmakuToggleButton(
+    EdgeInsets padding, {
+    double? iconSize,
+  }) {
+    final buttonSize = iconSize ?? (_isEffectiveFullscreen ? 26.0 : 22.0);
 
     return GestureDetector(
       onTap: () {
@@ -1469,7 +1473,21 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildBottomControls() {
-    final iconSize = _isEffectiveFullscreen ? 26.0 : 24.0;
+    final isIOSTabletNonFullscreen =
+        Platform.isIOS && DeviceUtils.isTablet(context) && !_isFullscreen;
+    final leadingIconSize = _isEffectiveFullscreen ? 26.0 : 24.0;
+    final actionIconSize = isIOSTabletNonFullscreen
+        ? (_isEffectiveFullscreen ? 30.0 : 26.0)
+        : leadingIconSize;
+    final emphasizedActionIconSize = isIOSTabletNonFullscreen
+        ? (_isEffectiveFullscreen ? 34.0 : 30.0)
+        : (_isEffectiveFullscreen ? 30.0 : 24.0);
+    final fullscreenIconSize = isIOSTabletNonFullscreen
+        ? (_isEffectiveFullscreen ? 36.0 : 30.0)
+        : (_isEffectiveFullscreen ? 32.0 : 26.0);
+    final danmakuToggleIconSize = isIOSTabletNonFullscreen
+        ? (_isEffectiveFullscreen ? 30.0 : 26.0)
+        : (_isEffectiveFullscreen ? 26.0 : 22.0);
 
     final iconPadding = EdgeInsets.only(
         left: _isEffectiveFullscreen ? 10 : 8,
@@ -1512,7 +1530,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                             child: Icon(
                               _isPlaying ? Icons.pause : Icons.play_arrow,
                               color: Colors.white,
-                              size: iconSize,
+                              size: leadingIconSize,
                             ),
                           ),
                         ),
@@ -1529,7 +1547,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               child: Icon(
                                 Icons.skip_next,
                                 color: Colors.white,
-                                size: iconSize,
+                                size: leadingIconSize,
                               ),
                             ),
                           ),
@@ -1564,14 +1582,17 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               child: Icon(
                                 Icons.search,
                                 color: Colors.white,
-                                size: iconSize,
+                                size: actionIconSize,
                               ),
                             ),
                           ),
 
                         if (_isEffectiveFullscreen &&
                             widget.onDanmakuToggle != null)
-                          _buildDanmakuToggleButton(iconPadding),
+                          _buildDanmakuToggleButton(
+                            iconPadding,
+                            iconSize: danmakuToggleIconSize,
+                          ),
 
                         // 弹幕设置按钮（仅在横屏时显示）：
 
@@ -1588,7 +1609,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               padding: iconPadding,
                               child: DanmakuSettingsIcon(
                                 color: Colors.white,
-                                size: iconSize,
+                                size: actionIconSize,
                               ),
                             ),
                           ),
@@ -1611,7 +1632,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               child: Icon(
                                 Icons.list,
                                 color: Colors.white,
-                                size: _isEffectiveFullscreen ? 32.0 : 24.0,
+                                size: isIOSTabletNonFullscreen
+                                    ? (_isEffectiveFullscreen ? 36.0 : 30.0)
+                                    : (_isEffectiveFullscreen ? 32.0 : 24.0),
                               ),
                             ),
                           ),
@@ -1633,7 +1656,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               child: Icon(
                                 Icons.sync_alt,
                                 color: Colors.white,
-                                size: iconSize,
+                                size: actionIconSize,
                               ),
                             ),
                           ),
@@ -1641,7 +1664,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                         if (!widget.live)
                           if (!_isEffectiveFullscreen &&
                               widget.onDanmakuToggle != null)
-                            _buildDanmakuToggleButton(iconPadding),
+                            _buildDanmakuToggleButton(
+                              iconPadding,
+                              iconSize: danmakuToggleIconSize,
+                            ),
 
                         if (!widget.live)
                           GestureDetector(
@@ -1656,7 +1682,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                               child: Icon(
                                 Icons.speed,
                                 color: Colors.white,
-                                size: _isEffectiveFullscreen ? 30.0 : 24.0,
+                                size: emphasizedActionIconSize,
                               ),
                             ),
                           ),
@@ -1699,7 +1725,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                                   ? Icons.fullscreen_exit
                                   : Icons.fullscreen,
                               color: Colors.white,
-                              size: _isEffectiveFullscreen ? 32.0 : 26.0,
+                              size: fullscreenIconSize,
                             ),
                           ),
                         ),

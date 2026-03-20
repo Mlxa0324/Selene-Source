@@ -16,6 +16,7 @@ class DownloadService extends ChangeNotifier {
   final List<DownloadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   final Map<String, int> _retryCounts = {};
+  final Map<String, Future<String>> _localPlaybackPathResolutions = {};
 
   static const int _maxRetryCount = 3;
 
@@ -68,23 +69,137 @@ class DownloadService extends ChangeNotifier {
 
   Future<bool> _concatSegmentsToTs(DownloadTask task, int totalSegments) async {
     try {
-      final outputFile = File("${task.savePath}/merged.ts");
-      if (await outputFile.exists()) {
-        await outputFile.delete();
-      }
-      final sink = outputFile.openWrite();
+      final segmentFiles = <File>[];
       for (var i = 0; i < totalSegments; i++) {
         final segFile = File("${task.savePath}/seg_$i.ts");
         if (await segFile.exists()) {
-          await sink.addStream(segFile.openRead());
+          segmentFiles.add(segFile);
         }
       }
-      await sink.close();
-      return await outputFile.exists();
+      return await _concatSegmentFilesToTs(task.savePath, segmentFiles);
     } catch (e) {
       debugPrint('合并成 ts 失败: $e');
       return false;
     }
+  }
+
+  Future<bool> _concatSegmentFilesToTs(
+    String savePath,
+    List<File> segmentFiles,
+  ) async {
+    if (segmentFiles.isEmpty) {
+      return false;
+    }
+
+    IOSink? sink;
+    final tempOutputFile = File("$savePath/merged.ts.part");
+    final outputFile = File("$savePath/merged.ts");
+
+    try {
+      if (await tempOutputFile.exists()) {
+        await tempOutputFile.delete();
+      }
+      if (await outputFile.exists()) {
+        await outputFile.delete();
+      }
+
+      sink = tempOutputFile.openWrite();
+      for (final segmentFile in segmentFiles) {
+        await sink.addStream(segmentFile.openRead());
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      if (!await tempOutputFile.exists()) {
+        return false;
+      }
+
+      await tempOutputFile.rename(outputFile.path);
+      return await outputFile.exists();
+    } catch (e) {
+      debugPrint('合并 ts 分片失败: $e');
+      try {
+        await sink?.close();
+      } catch (_) {}
+      if (await tempOutputFile.exists()) {
+        await tempOutputFile.delete();
+      }
+      return false;
+    }
+  }
+
+  Future<List<File>> _listSegmentFiles(String savePath) async {
+    final directory = Directory(savePath);
+    if (!await directory.exists()) {
+      return const <File>[];
+    }
+
+    final files = <File>[];
+    final matcher = RegExp(r'^seg_(\d+)\.ts$');
+
+    await for (final entity in directory.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final name = entity.uri.pathSegments.isNotEmpty
+          ? entity.uri.pathSegments.last
+          : entity.path.split(Platform.pathSeparator).last;
+      if (matcher.hasMatch(name)) {
+        files.add(entity);
+      }
+    }
+
+    files.sort((a, b) {
+      final aName = a.uri.pathSegments.last;
+      final bName = b.uri.pathSegments.last;
+      final aIndex = int.parse(matcher.firstMatch(aName)!.group(1)!);
+      final bIndex = int.parse(matcher.firstMatch(bName)!.group(1)!);
+      return aIndex.compareTo(bIndex);
+    });
+
+    return files;
+  }
+
+  Future<String> resolveOptimizedLocalPlaybackPath(String inputPath) {
+    final normalizedInput = inputPath.trim();
+    if (normalizedInput.isEmpty || normalizedInput.startsWith('http')) {
+      return Future.value(inputPath);
+    }
+
+    final savePath = File(normalizedInput).parent.path;
+    return _localPlaybackPathResolutions.putIfAbsent(savePath, () async {
+      try {
+        final mergedMp4File = File("$savePath/merged.mp4");
+        if (await mergedMp4File.exists() && await mergedMp4File.length() > 0) {
+          return mergedMp4File.path;
+        }
+
+        final mergedTsFile = File("$savePath/merged.ts");
+        if (await mergedTsFile.exists() && await mergedTsFile.length() > 0) {
+          return mergedTsFile.path;
+        }
+
+        if (!normalizedInput.endsWith('index.m3u8')) {
+          return normalizedInput;
+        }
+
+        final segmentFiles = await _listSegmentFiles(savePath);
+        if (segmentFiles.isEmpty) {
+          return normalizedInput;
+        }
+
+        final merged = await _concatSegmentFilesToTs(savePath, segmentFiles);
+        if (merged &&
+            await mergedTsFile.exists() &&
+            await mergedTsFile.length() > 0) {
+          debugPrint('已为本地播放生成 merged.ts: ${mergedTsFile.path}');
+          return mergedTsFile.path;
+        }
+
+        return normalizedInput;
+      } finally {
+        _localPlaybackPathResolutions.remove(savePath);
+      }
+    });
   }
 
   Future<bool> _tryMergeSegmentsToMp4(

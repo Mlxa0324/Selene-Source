@@ -44,6 +44,7 @@ class _UserMenuState extends State<UserMenu> {
   bool _localSearch = false;
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
+  bool _mediaKitPreloadEnabled = true;
   bool _showLive = false;
   bool _showSourceBrowser = false;
   bool _showSettings = false;
@@ -80,6 +81,10 @@ class _UserMenuState extends State<UserMenu> {
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final mediaKitPreloadEnabled =
+        await UserDataService.getMediaKitPreloadEnabled(
+      defaultValue: true,
+    );
     final showLive = await UserDataService.getShowLive();
     final showSourceBrowser = await UserDataService.getShowSourceBrowser();
     final savedAccounts = await UserDataService.getSavedAccounts();
@@ -97,6 +102,7 @@ class _UserMenuState extends State<UserMenu> {
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
+        _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
         _showLive = showLive;
         _showSourceBrowser = showSourceBrowser;
         _savedAccounts = savedAccounts;
@@ -1109,7 +1115,7 @@ class _UserMenuState extends State<UserMenu> {
               onTap: () {}, // 阻止点击菜单内容时关闭
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: 280,
+                width: DeviceUtils.isMacOS() ? 360 : 280,
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
                   color: widget.isDarkMode
@@ -1577,6 +1583,16 @@ class _UserMenuState extends State<UserMenu> {
                   },
                   icon: LucideIcons.shieldCheck,
                 ),
+                if (DeviceUtils.isMacOS())
+                  _buildToggleOption(
+                    title: '预加载（media_kit）',
+                    value: _mediaKitPreloadEnabled,
+                    onChanged: (value) async {
+                      await UserDataService.saveMediaKitPreloadEnabled(value);
+                      setState(() => _mediaKitPreloadEnabled = value);
+                    },
+                    icon: LucideIcons.gauge,
+                  ),
                 _buildToggleOption(
                   title: '显示直播入口',
                   value: _showLive,

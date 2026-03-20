@@ -66,6 +66,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final bool mediaKitPreloadEnabled;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
   final String? videoCover;
@@ -118,6 +119,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
+    this.mediaKitPreloadEnabled = false,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
     this.adFilterEnabled = false,
@@ -269,6 +271,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return Platform.isMacOS;
   }
 
+  int get _mediaKitBufferSize {
+    if (Platform.isMacOS && widget.mediaKitPreloadEnabled) {
+      return 256 * 1024 * 1024;
+    }
+    return 32 * 1024 * 1024;
+  }
+
   bool get _shouldUseIOSLocalMediaKit {
     return Platform.isIOS && widget.isLocal;
   }
@@ -289,8 +298,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       debugPrint('VideoPlayerWidget: MediaKit ensureInitialized error $error');
     }
     final player = mk.Player(
-      configuration: const mk.PlayerConfiguration(
-        bufferSize: 32 * 1024 * 1024,
+      configuration: mk.PlayerConfiguration(
+        bufferSize: _mediaKitBufferSize,
         ready: null,
       ),
     );
@@ -557,6 +566,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (widget.headers != oldWidget.headers && widget.headers != null) {
       _currentHeaders = widget.headers;
     }
+    if (widget.mediaKitPreloadEnabled != oldWidget.mediaKitPreloadEnabled &&
+        _adapter is MediaKitAdapter) {
+      unawaited(_recreateMediaKitAdapterForConfigurationChange());
+    }
     if (widget.url != oldWidget.url && widget.url != null) {
       unawaited(_updateDataSource(widget.url!));
     }
@@ -697,6 +710,43 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         });
       }
       rethrow;
+    }
+  }
+
+  Future<void> _recreateMediaKitAdapterForConfigurationChange() async {
+    if (_playerDisposed || _adapter is! MediaKitAdapter) {
+      return;
+    }
+    if (_currentUrl == null || _currentUrl!.isEmpty) {
+      return;
+    }
+
+    final oldAdapter = _adapter;
+    if (oldAdapter == null) {
+      return;
+    }
+    final currentPosition = oldAdapter.state.position;
+    final currentRate = oldAdapter.state.rate;
+    final wasPlaying = oldAdapter.state.playing;
+
+    debugPrint(
+      'VideoPlayerWidget: 重建 MediaKitAdapter 以应用预加载配置，bufferSize=$_mediaKitBufferSize',
+    );
+
+    _adapter = _createMediaKitAdapter();
+    _setupPlayerListeners();
+    _adapter?.updateVideoFit(_getBoxFit());
+    await _openCurrentMedia(
+      startAt: currentPosition > Duration.zero ? currentPosition : null,
+    );
+    await _adapter!.setRate(currentRate);
+    if (!wasPlaying) {
+      await _adapter!.pause();
+    }
+    unawaited(oldAdapter.dispose());
+
+    if (mounted) {
+      _safeSetState(() {});
     }
   }
 
@@ -1380,6 +1430,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           onDanmakuSettingsChanged: widget.onDanmakuSettingsChanged,
           onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
           onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+          showPreloadProgress:
+              Platform.isMacOS && widget.mediaKitPreloadEnabled,
           forceControlsVisible: widget.forceControlsVisible,
           live: widget.live,
           playbackSpeedListenable: _playbackSpeed,

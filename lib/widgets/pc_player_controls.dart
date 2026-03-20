@@ -87,6 +87,7 @@ class PCPlayerControls extends StatefulWidget {
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final DanmakuSettings danmakuSettings;
   final void Function(DanmakuSettings settings)? onDanmakuSettingsChanged;
+  final bool showPreloadProgress;
 
   const PCPlayerControls({
     super.key,
@@ -124,6 +125,7 @@ class PCPlayerControls extends StatefulWidget {
     this.onDanmakuMatchButtonPressed,
     this.danmakuSettings = const DanmakuSettings(),
     this.onDanmakuSettingsChanged,
+    this.showPreloadProgress = false,
   });
 
   @override
@@ -159,6 +161,186 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   Timer? _volumeMenuHideTimer;
   final FocusNode _focusNode = FocusNode();
   bool? _lastNotifiedFullscreen;
+
+  double _standardActionIconSize(bool effectiveFullscreen) {
+    return effectiveFullscreen ? 28 : 24;
+  }
+
+  double _auxiliaryActionIconSize(bool effectiveFullscreen) {
+    if (Platform.isMacOS) {
+      return _standardActionIconSize(effectiveFullscreen);
+    }
+    return effectiveFullscreen ? 22 : 20;
+  }
+
+  double _danmakuToggleIconSize(bool effectiveFullscreen) {
+    if (Platform.isMacOS) {
+      return _standardActionIconSize(effectiveFullscreen);
+    }
+    return effectiveFullscreen ? 25 : 23;
+  }
+
+  double _trailingActionSpacing(bool effectiveFullscreen) {
+    if (!Platform.isMacOS) return 0;
+    return effectiveFullscreen ? 6 : 0;
+  }
+
+  List<Widget> _buildTrailingActionWidgets(bool effectiveFullscreen) {
+    final widgets = <Widget>[
+      if (!widget.live)
+        MouseRegion(
+          key: _speedButtonKey,
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) {
+            setState(() {
+              _isHoveringSpeedButton = true;
+              _showSpeedMenu = true;
+              _controlsVisible = true;
+            });
+            _hideTimer?.cancel();
+          },
+          onExit: (_) {
+            setState(() {
+              _isHoveringSpeedButton = false;
+            });
+            // 延迟检查是否需要隐藏菜单
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (mounted && !_isHoveringSpeedButton && !_isHoveringSpeedMenu) {
+                setState(() {
+                  _showSpeedMenu = false;
+                });
+                _startHideTimer();
+              }
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: _isHoveringSpeedButton
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey.withValues(alpha: 0.5),
+                  )
+                : null,
+            child: Icon(
+              Icons.speed,
+              color: Colors.white,
+              size: _auxiliaryActionIconSize(effectiveFullscreen),
+            ),
+          ),
+        ),
+      if (widget.onDanmakuMatchButtonPressed != null)
+        HoverButton(
+          onTap: () {
+            _onUserInteraction();
+            widget.onDanmakuMatchButtonPressed?.call(context);
+          },
+          child: Icon(
+            Icons.search,
+            color: Colors.white,
+            size: _auxiliaryActionIconSize(effectiveFullscreen),
+          ),
+        ),
+      if (widget.onDanmakuSettingsChanged != null)
+        MouseRegion(
+          key: _danmakuButtonKey,
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) {
+            setState(() {
+              _isHoveringDanmakuButton = true;
+              _showDanmakuMenu = true;
+              _controlsVisible = true;
+            });
+            _hideTimer?.cancel();
+          },
+          onExit: (_) {
+            setState(() {
+              _isHoveringDanmakuButton = false;
+            });
+            // 延迟检查是否需要隐藏菜单
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (mounted &&
+                  !_isHoveringDanmakuButton &&
+                  !_isHoveringDanmakuMenu) {
+                setState(() {
+                  _showDanmakuMenu = false;
+                });
+                _startHideTimer();
+              }
+            });
+          },
+          child: GestureDetector(
+            onTap: () {
+              _onUserInteraction();
+              setState(() {
+                _showDanmakuMenu = true;
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: _isHoveringDanmakuButton
+                  ? BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey.withValues(alpha: 0.5),
+                    )
+                  : null,
+              child: DanmakuSettingsIcon(
+                color: Colors.white,
+                size: _auxiliaryActionIconSize(effectiveFullscreen),
+              ),
+            ),
+          ),
+        ),
+      if (widget.onDanmakuToggle != null)
+        HoverButton(
+          onTap: () {
+            _onUserInteraction();
+            widget.onDanmakuToggle?.call(!widget.isDanmakuEnabled);
+          },
+          child: DanmakuToggleIcon(
+            enabled: widget.isDanmakuEnabled,
+            size: _danmakuToggleIconSize(effectiveFullscreen),
+          ),
+        ),
+      if (!_isFullscreen)
+        HoverButton(
+          onTap: () {
+            _onUserInteraction();
+            _toggleWebFullscreen();
+          },
+          child: Icon(
+            _isWebFullscreen ? Icons.fullscreen_exit : Icons.fit_screen,
+            color: Colors.white,
+            size: _standardActionIconSize(effectiveFullscreen),
+          ),
+        ),
+      if (!_isWebFullscreen)
+        HoverButton(
+          onTap: () {
+            _onUserInteraction();
+            _toggleFullscreen();
+          },
+          child: Icon(
+            _isFullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+            color: Colors.white,
+            size: _standardActionIconSize(effectiveFullscreen),
+          ),
+        ),
+    ];
+
+    final spacing = _trailingActionSpacing(effectiveFullscreen);
+    if (spacing <= 0 || widgets.length < 2) {
+      return widgets;
+    }
+
+    final spacedWidgets = <Widget>[];
+    for (var i = 0; i < widgets.length; i++) {
+      if (i > 0) {
+        spacedWidgets.add(SizedBox(width: spacing));
+      }
+      spacedWidgets.add(widgets[i]);
+    }
+    return spacedWidgets;
+  }
 
   void _traceFullscreenEvent(
     String event, {
@@ -672,6 +854,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
         effectiveFullscreen ? 16.0 : (Platform.isMacOS ? 12.0 : 8.0);
     final showTopSettingsButton =
         Platform.isMacOS && widget.onSettingsButtonPressed != null;
+    final trailingActionWidgets =
+        _buildTrailingActionWidgets(effectiveFullscreen);
 
     return Focus(
       focusNode: _focusNode,
@@ -896,6 +1080,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                     margin: const EdgeInsets.symmetric(horizontal: 16),
                     child: CustomVideoProgressBar(
                       player: widget.player,
+                      showPreloadProgress: widget.showPreloadProgress,
                       onDragStart: _onSeekStart,
                       onDragEnd: _onSeekEnd,
                       onDragUpdate: () {
@@ -1041,159 +1226,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                             Expanded(
                               child: _buildPositionIndicator(),
                             ),
-                          if (!widget.live)
-                            MouseRegion(
-                              key: _speedButtonKey,
-                              cursor: SystemMouseCursors.click,
-                              onEnter: (_) {
-                                setState(() {
-                                  _isHoveringSpeedButton = true;
-                                  _showSpeedMenu = true;
-                                  _controlsVisible = true;
-                                });
-                                _hideTimer?.cancel();
-                              },
-                              onExit: (_) {
-                                setState(() {
-                                  _isHoveringSpeedButton = false;
-                                });
-                                // 延迟检查是否需要隐藏菜单
-                                Future.delayed(
-                                    const Duration(milliseconds: 100), () {
-                                  if (mounted &&
-                                      !_isHoveringSpeedButton &&
-                                      !_isHoveringSpeedMenu) {
-                                    setState(() {
-                                      _showSpeedMenu = false;
-                                    });
-                                    _startHideTimer();
-                                  }
-                                });
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: _isHoveringSpeedButton
-                                    ? BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color:
-                                            Colors.grey.withValues(alpha: 0.5),
-                                      )
-                                    : null,
-                                child: Icon(
-                                  Icons.speed,
-                                  color: Colors.white,
-                                  size: effectiveFullscreen ? 22 : 20,
-                                ),
-                              ),
-                            ),
-                          if (widget.onDanmakuMatchButtonPressed != null)
-                            HoverButton(
-                              onTap: () {
-                                _onUserInteraction();
-                                widget.onDanmakuMatchButtonPressed
-                                    ?.call(context);
-                              },
-                              child: Icon(
-                                Icons.search,
-                                color: Colors.white,
-                                size: effectiveFullscreen ? 22 : 20,
-                              ),
-                            ),
-                          if (widget.onDanmakuSettingsChanged != null)
-                            MouseRegion(
-                              key: _danmakuButtonKey,
-                              cursor: SystemMouseCursors.click,
-                              onEnter: (_) {
-                                setState(() {
-                                  _isHoveringDanmakuButton = true;
-                                  _showDanmakuMenu = true;
-                                  _controlsVisible = true;
-                                });
-                                _hideTimer?.cancel();
-                              },
-                              onExit: (_) {
-                                setState(() {
-                                  _isHoveringDanmakuButton = false;
-                                });
-                                // 延迟检查是否需要隐藏菜单
-                                Future.delayed(
-                                    const Duration(milliseconds: 100), () {
-                                  if (mounted &&
-                                      !_isHoveringDanmakuButton &&
-                                      !_isHoveringDanmakuMenu) {
-                                    setState(() {
-                                      _showDanmakuMenu = false;
-                                    });
-                                    _startHideTimer();
-                                  }
-                                });
-                              },
-                              child: GestureDetector(
-                                onTap: () {
-                                  _onUserInteraction();
-                                  setState(() {
-                                    _showDanmakuMenu = true;
-                                  });
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: _isHoveringDanmakuButton
-                                      ? BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: Colors.grey
-                                              .withValues(alpha: 0.5),
-                                        )
-                                      : null,
-                                  child: DanmakuSettingsIcon(
-                                    color: Colors.white,
-                                    size: effectiveFullscreen ? 22 : 20,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          if (widget.onDanmakuToggle != null)
-                            HoverButton(
-                              onTap: () {
-                                _onUserInteraction();
-                                widget.onDanmakuToggle
-                                    ?.call(!widget.isDanmakuEnabled);
-                              },
-                              child: DanmakuToggleIcon(
-                                enabled: widget.isDanmakuEnabled,
-                                size: effectiveFullscreen ? 25 : 23,
-                              ),
-                            ),
                           if (widget.live) const Spacer(),
-                          // 网页全屏按钮（仅在非真全屏时显示）
-                          if (!_isFullscreen)
-                            HoverButton(
-                              onTap: () {
-                                _onUserInteraction();
-                                _toggleWebFullscreen();
-                              },
-                              child: Icon(
-                                _isWebFullscreen
-                                    ? Icons.fullscreen_exit
-                                    : Icons.fit_screen,
-                                color: Colors.white,
-                                size: effectiveFullscreen ? 28 : 24,
-                              ),
-                            ),
-                          // 完全全屏按钮（仅在非网页全屏时显示）
-                          if (!_isWebFullscreen)
-                            HoverButton(
-                              onTap: () {
-                                _onUserInteraction();
-                                _toggleFullscreen();
-                              },
-                              child: Icon(
-                                _isFullscreen
-                                    ? Icons.fullscreen_exit
-                                    : Icons.fullscreen,
-                                color: Colors.white,
-                                size: effectiveFullscreen ? 28 : 24,
-                              ),
-                            ),
+                          ...trailingActionWidgets,
                         ],
                       ),
                     ),
@@ -1842,6 +1876,7 @@ class _SpeedMenuItemState extends State<_SpeedMenuItem> {
 
 class CustomVideoProgressBar extends StatefulWidget {
   final PlayerAdapter player;
+  final bool showPreloadProgress;
   final VoidCallback? onDragStart;
   final VoidCallback? onDragEnd;
   final VoidCallback? onDragUpdate;
@@ -1853,6 +1888,7 @@ class CustomVideoProgressBar extends StatefulWidget {
   const CustomVideoProgressBar({
     super.key,
     required this.player,
+    this.showPreloadProgress = false,
     this.onDragStart,
     this.onDragEnd,
     this.onDragUpdate,
@@ -1872,6 +1908,7 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   bool _isHoveringThumb = false;
   bool _isSeeking = false; // 新增：标记是否正在 seek
   StreamSubscription? _positionSubscription;
+  StreamSubscription? _bufferSubscription;
   Timer? _realtimeSeekTimer;
   Duration? _latestRealtimeSeekPosition;
   bool _realtimeSeekInFlight = false;
@@ -1885,11 +1922,19 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
 
   void _bindPositionListener() {
     _positionSubscription?.cancel();
+    _bufferSubscription?.cancel();
     _positionSubscription = widget.player.stream.position.listen((_) {
       if (mounted && !_isDragging && !_isSeeking) {
         setState(() {});
       }
     });
+    if (widget.showPreloadProgress) {
+      _bufferSubscription = widget.player.stream.buffer.listen((_) {
+        if (mounted && !_isDragging && !_isSeeking) {
+          setState(() {});
+        }
+      });
+    }
   }
 
   @override
@@ -1905,6 +1950,7 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   void dispose() {
     _stopRealtimeSeekScheduler(flush: false);
     _positionSubscription?.cancel();
+    _bufferSubscription?.cancel();
     super.dispose();
   }
 
@@ -1959,14 +2005,17 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   Widget build(BuildContext context) {
     final duration = widget.player.state.duration;
     final position = widget.dragPosition ?? widget.player.state.position;
+    final buffer = widget.player.state.buffer;
 
     double value = 0.0;
+    double preloadValue = 0.0;
     if (duration.inMilliseconds > 0) {
       // live 模式下进度固定在最后
       if (widget.live) {
         value = 1.0;
       } else {
         value = position.inMilliseconds / duration.inMilliseconds;
+        preloadValue = buffer.inMilliseconds / duration.inMilliseconds;
       }
     }
 
@@ -2052,6 +2101,7 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
               builder: (context, constraints) {
                 final progressWidth = constraints.maxWidth;
                 final progressValue = value.clamp(0.0, 1.0);
+                final preloadProgressValue = preloadValue.clamp(0.0, 1.0);
                 final thumbPosition = (progressValue * progressWidth)
                     .clamp(8.0, progressWidth - 8.0);
 
@@ -2071,6 +2121,22 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
                         ),
                       ),
                     ),
+                    if (widget.showPreloadProgress &&
+                        preloadProgressValue > progressValue)
+                      Positioned(
+                        left: 0,
+                        top: 9,
+                        child: IgnorePointer(
+                          child: Container(
+                            width: preloadProgressValue * progressWidth,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(3),
+                              color: Colors.white.withValues(alpha: 0.34),
+                            ),
+                          ),
+                        ),
+                      ),
                     // 已播放进度
                     Positioned(
                       left: 0,

@@ -102,7 +102,6 @@ class UserDataService {
   static const String _sourceBrowserCurrentSourceKey =
       'source_browser_current_source_v1';
 
-
   /// 是否处于离线/本地模式 Key
   static const String _isLocalModeKey = 'is_local_mode';
 
@@ -127,6 +126,9 @@ class UserDataService {
 
   /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
+
+  /// macOS media_kit 预加载 Key
+  static const String _mediaKitPreloadEnabledKey = 'media_kit_preload_enabled';
 
   /// WebView 播放器 hls.js 脚本源码缓存 Key
   static const String _hlsJsCacheKey = 'hls_js_cache_v1';
@@ -321,6 +323,20 @@ class UserDataService {
   static Future<bool> getAdFilterEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_adFilterEnabledKey) ?? false;
+  }
+
+  // 保存 macOS media_kit 预加载开关
+  static Future<void> saveMediaKitPreloadEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_mediaKitPreloadEnabledKey, enabled);
+  }
+
+  // 获取 macOS media_kit 预加载开关
+  static Future<bool> getMediaKitPreloadEnabled({
+    bool defaultValue = false,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_mediaKitPreloadEnabledKey) ?? defaultValue;
   }
 
   // 保存长按倍速
@@ -797,8 +813,8 @@ class UserDataService {
   // 保存源浏览器当前数据源
   static Future<void> saveSourceBrowserCurrentSource(String sourceKey) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-        _sourceBrowserCurrentSourceKey, sourceKey.trim().isEmpty ? 'auto' : sourceKey);
+    await prefs.setString(_sourceBrowserCurrentSourceKey,
+        sourceKey.trim().isEmpty ? 'auto' : sourceKey);
   }
 
   // 获取源浏览器当前数据源

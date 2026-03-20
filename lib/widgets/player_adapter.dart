@@ -28,6 +28,7 @@ abstract class PlayerAdapterStream {
   Stream<bool> get playing;
   Stream<Duration> get position;
   Stream<Duration> get duration;
+  Stream<Duration> get buffer;
   Stream<bool> get completed;
   Stream<double> get volume;
   Stream<double> get rate;
@@ -38,6 +39,7 @@ abstract class PlayerAdapterState {
   bool get playing;
   Duration get position;
   Duration get duration;
+  Duration get buffer;
   double get volume;
   double get rate;
   bool get buffering;
@@ -99,6 +101,8 @@ class _MediaKitStream implements PlayerAdapterStream {
   @override
   Stream<Duration> get duration => player.stream.duration;
   @override
+  Stream<Duration> get buffer => player.stream.buffer;
+  @override
   Stream<bool> get completed => player.stream.completed;
   @override
   Stream<double> get volume => player.stream.volume;
@@ -118,6 +122,8 @@ class _MediaKitState implements PlayerAdapterState {
   Duration get position => player.state.position;
   @override
   Duration get duration => player.state.duration;
+  @override
+  Duration get buffer => player.state.buffer;
   @override
   double get volume => player.state.volume;
   @override
@@ -265,6 +271,9 @@ class _VideoPlayerStream implements PlayerAdapterStream {
   @override
   Stream<Duration> get duration => adapter._durationController.stream;
   @override
+  Stream<Duration> get buffer =>
+      const Stream<Duration>.empty().asBroadcastStream();
+  @override
   Stream<bool> get completed => adapter._completedController.stream;
   @override
   Stream<double> get volume => adapter._volumeController.stream;
@@ -284,6 +293,8 @@ class _VideoPlayerState implements PlayerAdapterState {
   Duration get position => adapter.controller.value.position;
   @override
   Duration get duration => adapter.controller.value.duration;
+  @override
+  Duration get buffer => adapter.controller.value.duration;
   @override
   double get volume => adapter.controller.value.volume * 100;
   @override
@@ -1594,6 +1605,9 @@ class _WebViewPlayerStream implements PlayerAdapterStream {
   @override
   Stream<Duration> get duration => adapter._durationController.stream;
   @override
+  Stream<Duration> get buffer =>
+      const Stream<Duration>.empty().asBroadcastStream();
+  @override
   Stream<bool> get completed => adapter._completedController.stream;
   @override
   Stream<double> get volume => adapter._volumeController.stream;
@@ -1613,6 +1627,8 @@ class _WebViewPlayerState implements PlayerAdapterState {
   Duration get position => adapter._position;
   @override
   Duration get duration => adapter._duration;
+  @override
+  Duration get buffer => adapter._duration;
   @override
   double get volume => adapter._volume;
   @override

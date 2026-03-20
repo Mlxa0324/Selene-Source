@@ -21,6 +21,7 @@ import '../models/douban_movie.dart';
 import '../models/play_record.dart';
 import '../services/page_cache_service.dart';
 import '../services/local_mode_storage_service.dart';
+import '../services/download_service.dart';
 import '../widgets/switch_loading_overlay.dart';
 import '../widgets/dlna_player.dart';
 import '../widgets/dlna_device_dialog.dart';
@@ -203,6 +204,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _adFilterEnabled = false; // 是否开启自动去广告
+  bool _mediaKitPreloadEnabled = Platform.isMacOS;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
   bool _isSeeking = false; // 是否正在执行跳转操作
@@ -411,6 +413,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final mediaKitPreloadEnabled =
+        await UserDataService.getMediaKitPreloadEnabled(
+      defaultValue: Platform.isMacOS,
+    );
 
     if (mounted) {
       setState(() {
@@ -421,6 +427,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
         _adFilterEnabled = adFilterEnabled;
+        _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
       });
     }
   }
@@ -1726,6 +1733,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     try {
       String finalUrl = newUrl;
       final bool isLocal = !newUrl.startsWith('http');
+      if (_isOfflinePlayback && isLocal) {
+        final optimizedPath =
+            await DownloadService().resolveOptimizedLocalPlaybackPath(newUrl);
+        if (optimizedPath != newUrl) {
+          debugPrint("本地缓存已切换到更适合 seek 的文件: $optimizedPath");
+        }
+        finalUrl = optimizedPath;
+      }
       // 1. 如果是网络请求，才执行去广告和代理逻辑
       if (!isLocal) {
         // 获取 M3U8 代理 URL (如果没被 Data URI 替换)
@@ -2944,6 +2959,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             longPressSpeed: _longPressSpeed,
             progressMode: _progressMode,
             showSystemTime: _showSystemTime,
+            mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
             danmakuLayer: _danmakuSettings.enabled && !_isClosing
                 ? IgnorePointer(
