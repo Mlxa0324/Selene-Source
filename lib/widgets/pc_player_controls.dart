@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -81,6 +82,7 @@ class PCPlayerControls extends StatefulWidget {
   final bool forceControlsVisible;
   final bool isDanmakuEnabled;
   final void Function(bool enabled)? onDanmakuToggle;
+  final void Function(BuildContext context)? onSettingsButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final DanmakuSettings danmakuSettings;
@@ -117,6 +119,7 @@ class PCPlayerControls extends StatefulWidget {
     this.forceControlsVisible = false,
     this.isDanmakuEnabled = false,
     this.onDanmakuToggle,
+    this.onSettingsButtonPressed,
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
     this.danmakuSettings = const DanmakuSettings(),
@@ -419,8 +422,9 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
   }
 
   void _onSwipeUpdate(DragUpdateDetails details) {
-    if (!mounted || !_isSeekingViaSwipe || _screenSize == null || widget.live)
+    if (!mounted || !_isSeekingViaSwipe || _screenSize == null || widget.live) {
       return;
+    }
 
     final screenWidth = _screenSize!.width;
     final swipeDistance = details.globalPosition.dx - _swipeStartX;
@@ -660,6 +664,14 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
 
     // 使用网页全屏或真全屏的样式
     final effectiveFullscreen = _isWebFullscreen || _isFullscreen;
+    final topControlTop =
+        effectiveFullscreen ? 8.0 : (Platform.isMacOS ? 10.0 : 4.0);
+    final topControlLeft =
+        effectiveFullscreen ? 16.0 : (Platform.isMacOS ? 12.0 : 8.0);
+    final topControlRight =
+        effectiveFullscreen ? 16.0 : (Platform.isMacOS ? 12.0 : 8.0);
+    final showTopSettingsButton =
+        Platform.isMacOS && widget.onSettingsButtonPressed != null;
 
     return Focus(
       focusNode: _focusNode,
@@ -773,8 +785,8 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
             ),
             // 顶部返回按钮
             Positioned(
-              top: effectiveFullscreen ? 8 : 4,
-              left: effectiveFullscreen ? 16.0 : 8.0,
+              top: topControlTop,
+              left: topControlLeft,
               child: AnimatedOpacity(
                 opacity: _controlsVisible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 200),
@@ -802,23 +814,42 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
             ),
             // 顶部投屏按钮
             Positioned(
-              top: effectiveFullscreen ? 8 : 4,
-              right: effectiveFullscreen ? 16.0 : 8.0,
+              top: topControlTop,
+              right: topControlRight,
               child: AnimatedOpacity(
                 opacity: _controlsVisible ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 200),
                 child: IgnorePointer(
                   ignoring: !_controlsVisible,
-                  child: HoverButton(
-                    onTap: () async {
-                      _onUserInteraction();
-                      await _showDLNADialog();
-                    },
-                    child: Icon(
-                      Icons.cast,
-                      color: Colors.white,
-                      size: effectiveFullscreen ? 24 : 20,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showTopSettingsButton) ...[
+                        HoverButton(
+                          onTap: () {
+                            _onUserInteraction();
+                            widget.onSettingsButtonPressed?.call(context);
+                          },
+                          child: Icon(
+                            Icons.settings,
+                            color: Colors.white,
+                            size: effectiveFullscreen ? 24 : 20,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      HoverButton(
+                        onTap: () async {
+                          _onUserInteraction();
+                          await _showDLNADialog();
+                        },
+                        child: Icon(
+                          Icons.cast,
+                          color: Colors.white,
+                          size: effectiveFullscreen ? 24 : 20,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

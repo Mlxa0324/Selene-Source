@@ -1354,6 +1354,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           },
           isDanmakuEnabled: widget.isDanmakuEnabled,
           onDanmakuToggle: widget.onDanmakuToggle,
+          onSettingsButtonPressed: widget.onSettingsButtonPressed,
           danmakuSettings: widget.danmakuSettings,
           onDanmakuSettingsChanged: widget.onDanmakuSettingsChanged,
           onDanmakuButtonPressed: widget.onDanmakuButtonPressed,

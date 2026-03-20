@@ -394,7 +394,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void didChangeMetrics() {
     super.didChangeMetrics();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _isClosing) return;
       _refreshDanmakuOptionForPlayback(reason: 'metrics_changed');
     });
   }
@@ -468,7 +468,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     await DanmakuService().saveSettings(newSettings);
 
     if (!enabled) {
-      _danmakuController?.clear();
+      _runWithDanmakuController(
+        'clear_toggle_disabled',
+        (controller) => controller.clear(),
+      );
       return;
     }
 
@@ -542,6 +545,49 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  bool _isDisposedDanmakuControllerError(Object error) {
+    final message = error.toString();
+    return message.contains('used after being disposed') &&
+        message.contains('ListValueNotifier');
+  }
+
+  void _detachDanmakuController({
+    required String reason,
+    DanmakuController? expected,
+  }) {
+    final controller = _danmakuController;
+    if (controller == null) return;
+    if (expected != null && !identical(controller, expected)) return;
+
+    debugPrint(
+        '[DanmakuLayer] controller_detached: reason=$reason, hash=${identityHashCode(controller)}, ep=$_currentDanmakuEpisodeId, list=${_danmakuList.length}');
+    _danmakuController = null;
+  }
+
+  T? _runWithDanmakuController<T>(
+    String reason,
+    T Function(DanmakuController controller) action,
+  ) {
+    final controller = _danmakuController;
+    if (_isClosing || controller == null) return null;
+
+    try {
+      return action(controller);
+    } catch (error) {
+      if (_isDisposedDanmakuControllerError(error)) {
+        _detachDanmakuController(
+            reason: '${reason}_disposed', expected: controller);
+        return null;
+      }
+      rethrow;
+    }
+  }
+
+  void _beginClosingDanmakuLifecycle(String reason) {
+    _isClosing = true;
+    _detachDanmakuController(reason: reason);
+  }
+
   void _refreshDanmakuOptionForPlayback({
     required String reason,
     DanmakuSettings? settings,
@@ -549,12 +595,17 @@ class _PlayerScreenState extends State<PlayerScreen>
   }) {
     final baseSettings = settings ?? _danmakuSettings;
     final effectiveSettings = _resolveRenderDanmakuSettings(baseSettings);
-    if (!baseSettings.enabled || _danmakuController == null) return;
+    if (_isClosing || !baseSettings.enabled || _danmakuController == null) {
+      return;
+    }
 
     final speed = _resolvePlaybackSpeedForDanmaku(playbackSpeed);
     final option =
         _buildDanmakuOption(effectiveSettings, playbackSpeed: playbackSpeed);
-    _danmakuController?.updateOption(option);
+    _runWithDanmakuController(
+      'update_option_$reason',
+      (controller) => controller.updateOption(option),
+    );
 
     if (baseSettings.syncVideoSpeed) {
       final duration = baseSettings.duration / speed;
@@ -600,7 +651,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     required String reason,
     bool? forcePlaying,
   }) {
-    if (!_danmakuSettings.enabled || _danmakuController == null) return;
+    if (_isClosing || !_danmakuSettings.enabled || _danmakuController == null) {
+      return;
+    }
 
     if (forcePlaying != null) {
       _hasExplicitDanmakuState = true;
@@ -616,9 +669,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     _danmakuShouldPlay = shouldPlay;
 
     if (shouldPlay) {
-      _danmakuController?.resume();
+      _runWithDanmakuController(
+        'resume_$reason',
+        (controller) => controller.resume(),
+      );
     } else {
-      _danmakuController?.pause();
+      _runWithDanmakuController(
+        'pause_$reason',
+        (controller) => controller.pause(),
+      );
     }
 
     final controllerHash = _danmakuController == null
@@ -632,7 +691,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     required String reason,
     bool triggerNow = false,
   }) {
-    if (!_danmakuSettings.enabled || _danmakuController == null) return;
+    if (_isClosing || !_danmakuSettings.enabled || _danmakuController == null) {
+      return;
+    }
     if (_danmakuList.isEmpty) return;
 
     final pos = _videoPlayerController?.currentPosition;
@@ -650,13 +711,17 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!triggerNow) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _isSeeking) return;
+      if (!mounted || _isClosing || _isSeeking) return;
       if (!_danmakuSettings.enabled || _danmakuController == null) return;
       _sendDanmakuByPosition(pos);
     });
   }
 
   void _handleDanmakuControllerCreated(DanmakuController controller) {
+    if (_isClosing) {
+      return;
+    }
+
     final prevHash = _danmakuController == null
         ? 'null'
         : identityHashCode(_danmakuController);
@@ -669,7 +734,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // Avoid pause/resume during DanmakuScreen init build phase.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (!mounted || _isClosing) {
         debugPrint(
             '[DanmakuLayer] controller_postframe_skip: not_mounted, next=$nextHash');
         return;
@@ -768,7 +833,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 根据播放进度发送弹幕
   void _sendDanmakuByPosition(Duration position) {
-    if (_danmakuController == null ||
+    if (_isClosing ||
+        _danmakuController == null ||
         _danmakuList.isEmpty ||
         !_danmakuSettings.enabled ||
         _isSeeking) {
@@ -791,8 +857,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           continue;
         }
 
-        _danmakuController!.addDanmaku(
-          DanmakuService.convertToDanmakuItem(comment),
+        _runWithDanmakuController(
+          'add_danmaku',
+          (controller) => controller.addDanmaku(
+            DanmakuService.convertToDanmakuItem(comment),
+          ),
         );
         _danmakuIndex++;
       } else {
@@ -818,7 +887,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     // 清空当前显示的弹幕
-    _danmakuController?.clear();
+    _runWithDanmakuController(
+      'clear_reset_index',
+      (controller) => controller.clear(),
+    );
   }
 
   /// 设置竖屏方向
@@ -1310,7 +1382,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // 处理返回按钮点击
   void _onBackPressed() async {
-    // 1. 立即停止播放并标记关闭，提升视觉响应速度，减少声音残留感
+    // 1. 立即标记关闭并断开弹幕 controller，避免回退动画期间继续访问已释放的 notifier
+    _beginClosingDanmakuLifecycle('back_pressed');
+    // 2. 停止播放，提升视觉响应速度，减少声音残留感
     _videoPlayerController?.pause();
     setState(() {
       _isClosing = true;
@@ -1360,8 +1434,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _onSystemGesturePop() {
+    _beginClosingDanmakuLifecycle('system_gesture_pop');
     _videoPlayerController?.pause();
-    _isClosing = true;
   }
 
   // 退出网页全屏
@@ -2866,7 +2940,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             progressMode: _progressMode,
             showSystemTime: _showSystemTime,
             adFilterEnabled: _adFilterEnabled,
-            danmakuLayer: _danmakuSettings.enabled
+            danmakuLayer: _danmakuSettings.enabled && !_isClosing
                 ? IgnorePointer(
                     child: LayoutBuilder(builder: (context, constraints) {
                       // 💡 统一按播放器真实高度比例裁剪显示区域
@@ -4468,7 +4542,10 @@ class _PlayerScreenState extends State<PlayerScreen>
           _currentDanmakuEpisodeId = episodeId;
           _isDanmakuLoading = false;
         });
-        _danmakuController?.clear();
+        _runWithDanmakuController(
+          'clear_manual_load',
+          (controller) => controller.clear(),
+        );
 
         // 保存手动匹配关系
         if (currentSource.isNotEmpty && currentID.isNotEmpty) {
@@ -5282,6 +5359,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void dispose() {
     // 从活跃实例列表中移除
     _instances.remove(this);
+    _beginClosingDanmakuLifecycle('dispose');
     _setKeepScreenOn(false);
     // 保存进度
     _saveProgress(force: true, scene: '页面销毁');
