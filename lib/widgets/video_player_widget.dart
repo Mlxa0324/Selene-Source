@@ -265,6 +265,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return PlayerBackendConfig.useMediaKitForMobileNetworkPlayback;
   }
 
+  bool get _shouldUseMacOSMediaKit {
+    return Platform.isMacOS;
+  }
+
   bool _canUseMediaKitForUrl(String? url) {
     if (url == null || url.isEmpty) {
       return false;
@@ -616,8 +620,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _isInitialized = true;
       });
     } else {
-      final useDesktopWebView =
-          (Platform.isWindows || Platform.isMacOS) && !widget.isLocal;
+      final useDesktopWebView = Platform.isWindows && !widget.isLocal;
 
       if (useDesktopWebView && _currentUrl != null) {
         _safeSetState(() {
@@ -630,7 +633,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _setupPlayerListeners();
         _adapter?.updateVideoFit(_getBoxFit());
       } else {
-        // Linux 与桌面本地文件继续使用 media_kit
+        // macOS 与 Linux，以及桌面本地文件统一使用 media_kit
+        if (_shouldUseMacOSMediaKit) {
+          debugPrint('VideoPlayerWidget: macOS 使用 MediaKitAdapter 播放');
+        }
         _adapter = _createMediaKitAdapter();
         _setupPlayerListeners();
         if (_currentUrl != null) {
@@ -786,8 +792,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     try {
       final currentSpeed = _adapter!.state.rate;
-      final canUseMediaKitForUrl = _useMobileNetworkMediaKit &&
-          !widget.isLocal &&
+      final canUseMediaKitForUrl = (_shouldUseMacOSMediaKit ||
+              (_useMobileNetworkMediaKit && !widget.isLocal)) &&
           _canUseMediaKitForUrl(url);
 
       if (_adapter is MediaKitAdapter && canUseMediaKitForUrl) {
@@ -807,7 +813,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _adapter?.updateVideoFit(_getBoxFit());
         await _openCurrentMedia(startAt: startAt);
         unawaited(oldAdapter?.dispose());
-      } else if (widget.isLocal) {
+      } else if (widget.isLocal && !_shouldUseMacOSMediaKit) {
         // 处理本地文件切换
         final oldAdapter = _adapter;
         final newController = vp.VideoPlayerController.file(
