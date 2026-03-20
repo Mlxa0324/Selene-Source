@@ -269,6 +269,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return Platform.isMacOS;
   }
 
+  bool get _shouldUseIOSLocalMediaKit {
+    return Platform.isIOS && widget.isLocal;
+  }
+
   bool _canUseMediaKitForUrl(String? url) {
     if (url == null || url.isEmpty) {
       return false;
@@ -583,22 +587,30 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       // 移动端：本地播放走 video_player；在线播放可通过代码开关切换 media_kit / WebView。
       if (_currentUrl != null) {
         if (widget.isLocal) {
-          debugPrint('VideoPlayerWidget: 使用 VideoPlayerAdapter 播放本地文件');
-          final controller = vp.VideoPlayerController.file(
-            File(_currentUrl!),
-          );
-          _adapter = VideoPlayerAdapter(controller);
-          controller.initialize().then((_) {
-            if (mounted) {
-              _safeSetState(() {
-                _isLoadingVideo = false;
-              });
-              widget.onReady?.call();
-              _adapter!.play();
-            }
-          });
-          _setupPlayerListeners();
-          _adapter?.updateVideoFit(_getBoxFit());
+          if (_shouldUseIOSLocalMediaKit) {
+            debugPrint('VideoPlayerWidget: iOS 本地缓存使用 MediaKitAdapter 播放');
+            _adapter = _createMediaKitAdapter();
+            _setupPlayerListeners();
+            _adapter?.updateVideoFit(_getBoxFit());
+            await _openCurrentMedia();
+          } else {
+            debugPrint('VideoPlayerWidget: 使用 VideoPlayerAdapter 播放本地文件');
+            final controller = vp.VideoPlayerController.file(
+              File(_currentUrl!),
+            );
+            _adapter = VideoPlayerAdapter(controller);
+            controller.initialize().then((_) {
+              if (mounted) {
+                _safeSetState(() {
+                  _isLoadingVideo = false;
+                });
+                widget.onReady?.call();
+                _adapter!.play();
+              }
+            });
+            _setupPlayerListeners();
+            _adapter?.updateVideoFit(_getBoxFit());
+          }
         } else if (_useMobileNetworkMediaKit &&
             _canUseMediaKitForUrl(_currentUrl)) {
           debugPrint('VideoPlayerWidget: 移动端使用 MediaKitAdapter 播放网络流');
@@ -792,9 +804,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     try {
       final currentSpeed = _adapter!.state.rate;
-      final canUseMediaKitForUrl = (_shouldUseMacOSMediaKit ||
-              (_useMobileNetworkMediaKit && !widget.isLocal)) &&
-          _canUseMediaKitForUrl(url);
+      final canUseMediaKitForUrl = _shouldUseMacOSMediaKit ||
+          _shouldUseIOSLocalMediaKit ||
+          ((_useMobileNetworkMediaKit && !widget.isLocal) &&
+              _canUseMediaKitForUrl(url));
 
       if (_adapter is MediaKitAdapter && canUseMediaKitForUrl) {
         final player = (_adapter as MediaKitAdapter).player;
@@ -813,7 +826,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _adapter?.updateVideoFit(_getBoxFit());
         await _openCurrentMedia(startAt: startAt);
         unawaited(oldAdapter?.dispose());
-      } else if (widget.isLocal && !_shouldUseMacOSMediaKit) {
+      } else if (widget.isLocal &&
+          !_shouldUseMacOSMediaKit &&
+          !_shouldUseIOSLocalMediaKit) {
         // 处理本地文件切换
         final oldAdapter = _adapter;
         final newController = vp.VideoPlayerController.file(
@@ -1433,6 +1448,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             onPipPressed:
                 _isPipDisabledForCurrentPlayback ? null : _enterPipMode,
             isPipMode: _isPipMode, // 💡 传给短剧控制层
+            isLocal: widget.isLocal,
             onEpisodeTap: (index) {
               widget.onEpisodeChanged?.call(index);
             },

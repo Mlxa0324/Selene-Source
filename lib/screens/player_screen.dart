@@ -220,6 +220,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _danmakuViewportVersion = 0;
   String _lastDanmakuLayerLayoutTrace = '';
 
+  bool get _isOfflinePlayback {
+    return widget.initialVideoDetail?.source == 'local' ||
+        widget.localPath != null;
+  }
+
   // 播放器的 GlobalKey，用于保持播放器状态
   // final GlobalKey _playerKey = GlobalKey();
 
@@ -955,7 +960,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 统一获取播放记录（离线在线都需要）
     int playEpisodeIndex = widget.initialEpisodeIndex;
     int playTime = 0;
-    if (widget.localPath != null && widget.initialVideoDetail != null) {
+    if (_isOfflinePlayback && widget.initialVideoDetail != null) {
       final localDetail = widget.initialVideoDetail!;
       currentSource = localDetail.source;
       currentID = localDetail.id;
@@ -1009,7 +1014,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     // 如果是离线播放模式
-    if (widget.localPath != null && widget.initialVideoDetail != null) {
+    if (_isOfflinePlayback && widget.initialVideoDetail != null) {
       updateLoadingMessage('正在加载本地缓存...');
       updateLoadingProgress(0.9);
 
@@ -1507,10 +1512,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       final totalEpisodesSnapshot = totalEpisodes;
       final searchTitleSnapshot = searchTitle;
       final sourceNameSnapshot = currentDetail?.sourceName ?? currentSource;
-      final recordIDSnapshot = widget.localPath != null
+      final recordIDSnapshot = _isOfflinePlayback
           ? _getLocalRecordId(currentEpisodeIndexSnapshot)
           : currentIDSnapshot;
-      final recordEpisodeNumber = widget.localPath != null
+      final recordEpisodeNumber = _isOfflinePlayback
           ? _getLocalRecordEpisodeNumber(currentEpisodeIndexSnapshot)
           : currentEpisodeIndexSnapshot + 1;
 
@@ -1531,7 +1536,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
 
       // 如果是本地播放：只保存到本地，不上传云端
-      if (widget.localPath != null) {
+      if (_isOfflinePlayback) {
         LocalModeStorageService.savePlayRecord(playRecord).then((_) {
           debugPrint(
               '保存本地播放进度 [场景: $scene]: source: $currentSourceSnapshot, id: $recordIDSnapshot, 第$recordEpisodeNumber集, 时间: ${playTime}秒');
@@ -2274,7 +2279,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Future<void> _cleanupOtherSourcePlayRecords(SearchResult keepSource) async {
-    if (widget.localPath != null || !mounted) {
+    if (_isOfflinePlayback || !mounted) {
       return;
     }
 
@@ -2349,7 +2354,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _lastSaveTime = now;
     _lastSavePosition = playTime;
 
-    if (widget.localPath != null) {
+    if (_isOfflinePlayback) {
       try {
         await LocalModeStorageService.savePlayRecord(playRecord);
         debugPrint(
@@ -2884,7 +2889,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             allSources: allSources,
             allSourcesSpeed: allSourcesSpeed,
             isShortDrama: _isShortDrama,
-            isLocal: widget.localPath != null,
+            isLocal: _isOfflinePlayback,
             onWebFullscreenChanged: (isWebFullscreen) {
               final prevWeb = _isWebFullscreen;
               debugPrint(
@@ -3200,7 +3205,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                   const SizedBox(width: 12),
                   // 下载按钮 (本地播放时隐藏)
-                  if (widget.localPath == null)
+                  if (!_isOfflinePlayback)
                     GestureDetector(
                       onTap: _showDownloadPanel,
                       child: Icon(
@@ -3209,9 +3214,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                         size: 26,
                       ),
                     ),
-                  if (widget.localPath == null) const SizedBox(width: 16),
+                  if (!_isOfflinePlayback) const SizedBox(width: 16),
                   // 收藏按钮 (本地播放时隐藏)
-                  if (widget.localPath == null)
+                  if (!_isOfflinePlayback)
                     GestureDetector(
                       onTap: _toggleFavorite,
                       child: Icon(
@@ -3369,9 +3374,9 @@ class _PlayerScreenState extends State<PlayerScreen>
             const SizedBox(height: 16),
 
             // 换源区域 (本地播放时隐藏)
-            if (widget.localPath == null) _buildSourcesSection(theme),
+            if (!_isOfflinePlayback) _buildSourcesSection(theme),
 
-            if (widget.localPath == null) const SizedBox(height: 16),
+            if (!_isOfflinePlayback) const SizedBox(height: 16),
 
             // 相关推荐区域
             _buildRecommendsSection(theme),
@@ -4367,7 +4372,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 构建换源列表
   void _showSourcesPanel() {
     // 如果是本地播放，不显示换源面板
-    if (widget.localPath != null) return;
+    if (_isOfflinePlayback) return;
 
     final theme = Theme.of(context);
     final screenHeight = MediaQuery.of(context).size.height;

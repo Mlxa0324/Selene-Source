@@ -287,6 +287,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   bool get _isPlaying => widget.player.state.playing;
 
+  bool get _shouldUseIOSOnlineRateControl {
+    return Platform.isIOS && !widget.isLocal;
+  }
+
   double get _effectiveLongPressSpeed {
     return widget.longPressSpeed;
   }
@@ -375,7 +379,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _longPressingNotifier.value = true;
     }
 
-    if (Platform.isIOS) {
+    if (_shouldUseIOSOnlineRateControl) {
       if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() >= 0.01) {
         unawaited(widget.player.setRate(_effectiveLongPressSpeed));
       }
@@ -397,7 +401,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       return;
     }
 
-    if (Platform.isIOS) {
+    if (_shouldUseIOSOnlineRateControl) {
       unawaited(widget.player.setRate(restoreSpeed));
       return;
     }
