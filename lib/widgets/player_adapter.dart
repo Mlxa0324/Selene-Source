@@ -579,16 +579,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
             if (isIOS &&
                 typeof window.setIOSPitchPreservation === 'function') {
               var beforePitchEnabled = window.__iosPitchEnabled !== false;
-              var nextPitchEnabled = null;
-              if (targetRate >= 1.90 && previousRequestedRate < 1.90) {
-                window.__iosPitchBeforeBoost = beforePitchEnabled;
-                nextPitchEnabled = false;
-              } else if (previousRequestedRate >= 1.90 && targetRate < 1.90) {
-                nextPitchEnabled = window.__iosPitchBeforeBoost !== false;
-              }
-              if (nextPitchEnabled !== null &&
-                  window.setIOSPitchPreservation(nextPitchEnabled, p) &&
-                  beforePitchEnabled !== (window.__iosPitchEnabled !== false) &&
+              var changedPitchState =
+                  window.setIOSPitchPreservation(true, p) &&
+                  beforePitchEnabled !== (window.__iosPitchEnabled !== false);
+              if (changedPitchState &&
                   typeof window.emitPlayerDebug === 'function') {
                 window.emitPlayerDebug(
                   '保音调' +
@@ -1537,16 +1531,14 @@ class _WebViewPlayerState2 extends State<_WebViewPlayer> {
       }
 
       final joined = '${uri.host}${uri.path}';
-      final normalized =
-          joined.startsWith('/') ? joined.substring(1) : joined;
+      final normalized = joined.startsWith('/') ? joined.substring(1) : joined;
       if (normalized != _localHlsAssetPath) {
         debugPrint('[播放器] 未匹配到本地资源: $normalized');
         return null;
       }
 
-      final bytes = (await rootBundle.load(_localHlsAssetPath))
-          .buffer
-          .asUint8List();
+      final bytes =
+          (await rootBundle.load(_localHlsAssetPath)).buffer.asUint8List();
       return CustomSchemeResponse(
         data: bytes,
         contentType: 'application/javascript',
