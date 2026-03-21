@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+
 import '../utils/device_utils.dart';
 
 class PlayerEpisodesPanel extends StatefulWidget {
@@ -9,7 +12,7 @@ class PlayerEpisodesPanel extends StatefulWidget {
   final bool isReversed;
   final Function(int) onEpisodeTap;
   final VoidCallback onToggleOrder;
-  final int crossAxisCount;
+  final int crossAxisCount; // 最大列数
   final double? backgroundOpacity; // 背景不透明度
   final bool isCompact; // 是否紧凑模式
 
@@ -22,7 +25,7 @@ class PlayerEpisodesPanel extends StatefulWidget {
     required this.isReversed,
     required this.onEpisodeTap,
     required this.onToggleOrder,
-    this.crossAxisCount = 2,
+    this.crossAxisCount = 4,
     this.backgroundOpacity,
     this.isCompact = true,
   });
@@ -32,9 +35,12 @@ class PlayerEpisodesPanel extends StatefulWidget {
 }
 
 class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
-  final GlobalKey _gridKey = GlobalKey();
+  static const int _episodesPerGroup = 50;
+
   late final ScrollController _scrollController;
   late final ScrollController _groupScrollController;
+  final Map<int, GlobalKey> _episodeItemKeys = <int, GlobalKey>{};
+
   int _selectedGroupIndex = 0;
   bool _isHoveringGroupPager = false;
 
@@ -44,29 +50,27 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
     _scrollController = ScrollController();
     _groupScrollController = ScrollController();
 
-    // 初始化选中的分组
     _updateSelectedGroup();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        // 给一点点延迟确保布局完成
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (mounted) {
-            _scrollToCurrent();
-            _scrollToCurrentGroup();
-          }
-        });
-      }
+      if (!mounted) return;
+      Future.delayed(const Duration(milliseconds: 80), () {
+        if (!mounted) return;
+        _scrollToCurrent();
+        _scrollToCurrentGroup();
+      });
     });
   }
 
-  void _updateSelectedGroup() {
-    int actualIndex = widget.isReversed
-        ? widget.episodes.length - 1 - widget.currentEpisodeIndex
-        : widget.currentEpisodeIndex;
+  int get _currentActualIndex => widget.isReversed
+      ? widget.episodes.length - 1 - widget.currentEpisodeIndex
+      : widget.currentEpisodeIndex;
 
-    if (widget.episodes.length > 50) {
-      _selectedGroupIndex = (actualIndex / 50).floor();
+  void _updateSelectedGroup() {
+    if (widget.episodes.length > _episodesPerGroup) {
+      _selectedGroupIndex = (_currentActualIndex / _episodesPerGroup).floor();
+    } else {
+      _selectedGroupIndex = 0;
     }
   }
 
@@ -74,13 +78,13 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   void didUpdateWidget(PlayerEpisodesPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.currentEpisodeIndex != widget.currentEpisodeIndex ||
-        oldWidget.isReversed != widget.isReversed) {
+        oldWidget.isReversed != widget.isReversed ||
+        oldWidget.episodes.length != widget.episodes.length) {
       _updateSelectedGroup();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _scrollToCurrent();
-          _scrollToCurrentGroup();
-        }
+        if (!mounted) return;
+        _scrollToCurrent();
+        _scrollToCurrentGroup();
       });
     }
   }
@@ -92,16 +96,47 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
     super.dispose();
   }
 
+  List<_EpisodePanelEntry> _visibleEntries() {
+    final start = widget.episodes.length > _episodesPerGroup
+        ? _selectedGroupIndex * _episodesPerGroup
+        : 0;
+    final end = widget.episodes.length > _episodesPerGroup
+        ? math.min(start + _episodesPerGroup, widget.episodes.length)
+        : widget.episodes.length;
+
+    return List.generate(end - start, (index) {
+      final actualIndex = start + index;
+      final episodeIndex = widget.isReversed
+          ? widget.episodes.length - 1 - actualIndex
+          : actualIndex;
+
+      final episodeTitle = (widget.episodesTitles.isNotEmpty &&
+              episodeIndex < widget.episodesTitles.length)
+          ? widget.episodesTitles[episodeIndex]
+          : '第${episodeIndex + 1}集';
+
+      return _EpisodePanelEntry(
+        actualIndex: actualIndex,
+        episodeIndex: episodeIndex,
+        title: episodeTitle,
+        isCurrentEpisode: episodeIndex == widget.currentEpisodeIndex,
+      );
+    });
+  }
+
+  GlobalKey _keyForEpisode(int actualIndex) {
+    return _episodeItemKeys.putIfAbsent(actualIndex, GlobalKey.new);
+  }
+
   void _scrollToCurrentGroup() {
-    if (!_groupScrollController.hasClients || widget.episodes.length <= 50) {
+    if (!_groupScrollController.hasClients ||
+        widget.episodes.length <= _episodesPerGroup) {
       return;
     }
 
-    // 每个分组按钮宽度大约 80-90 (含 spacing)
     const double approxItemWidth = 85.0;
     final double offset = _selectedGroupIndex * approxItemWidth;
 
-    // 居中滚动或至少确保可见
     _groupScrollController.animateTo(
       offset.clamp(0.0, _groupScrollController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 300),
@@ -125,60 +160,161 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   }
 
   void _scrollToCurrent() {
-    if (_gridKey.currentContext == null || !_scrollController.hasClients) return;
+    final groupStart = widget.episodes.length > _episodesPerGroup
+        ? _selectedGroupIndex * _episodesPerGroup
+        : 0;
+    final groupEnd = widget.episodes.length > _episodesPerGroup
+        ? math.min(groupStart + _episodesPerGroup, widget.episodes.length)
+        : widget.episodes.length;
 
-    final gridBox = _gridKey.currentContext!.findRenderObject() as RenderBox;
-
-    int actualIndex = widget.isReversed
-        ? widget.episodes.length - 1 - widget.currentEpisodeIndex
-        : widget.currentEpisodeIndex;
-
-    // 计算在当前分组内的索引
-    final targetIndexInGroup = (widget.episodes.length > 50)
-        ? actualIndex - (_selectedGroupIndex * 50)
-        : actualIndex;
-
-    // 如果当前集数不在当前选中的分组内，则不执行滚动
-    if (targetIndexInGroup < 0 ||
-        (widget.episodes.length > 50 && targetIndexInGroup >= 50)) {
+    if (_currentActualIndex < groupStart || _currentActualIndex >= groupEnd) {
       return;
     }
 
-    final crossAxisCount = widget.crossAxisCount;
-    final mainAxisSpacing = widget.isCompact ? 8.0 : 12.0;
-    final childAspectRatio = widget.crossAxisCount == 4
-        ? 2.2
-        : (widget.crossAxisCount == 3 ? 2.0 : (widget.isCompact ? 3.0 : 2.5));
+    final targetContext = _episodeItemKeys[_currentActualIndex]?.currentContext;
+    if (targetContext == null) return;
 
-    // 💡 修复：需要减去左右内边距 (16 * 2 = 32)
-    final itemWidth =
-        (gridBox.size.width - 32.0 - (crossAxisCount - 1) * mainAxisSpacing) /
-            crossAxisCount;
-    final itemHeight = itemWidth / childAspectRatio;
+    Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOutCubic,
+      alignment: widget.isCompact ? 0.08 : 0.04,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+    );
+  }
 
-    final row = (targetIndexInGroup / crossAxisCount).floor();
-    
-    // 💡 优化：滚动偏移量加上顶部内边距，并确保当前集显示在顶部
-    const gridTopPadding = 12.0;
-    final offset = gridTopPadding + row * (itemHeight + mainAxisSpacing);
+  _EpisodeGridLayout _resolveGridLayout(
+    BuildContext context,
+    double maxWidth,
+    List<_EpisodePanelEntry> entries,
+  ) {
+    final double spacing = widget.isCompact ? 8.0 : 12.0;
+    final double availableWidth = math.max(120.0, maxWidth - 32.0);
+    final int maxColumns = widget.crossAxisCount.clamp(1, 5);
+    final int minColumns = availableWidth < 260 ? 1 : 2;
+    final TextStyle textStyle = TextStyle(
+      fontSize: widget.isCompact ? 13 : 14,
+      fontWeight: FontWeight.w500,
+      height: widget.isCompact ? 1.25 : 1.3,
+    );
+    final TextDirection textDirection = Directionality.of(context);
+    final double lineHeight =
+        (textStyle.fontSize ?? 14) * (textStyle.height ?? 1.0);
+    const double horizontalPadding = 12.0;
+    final double verticalPadding = widget.isCompact ? 8.0 : 10.0;
 
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        offset.clamp(0.0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
+    _EpisodeGridLayout? fallbackLayout;
+
+    for (int columns = maxColumns; columns >= minColumns; columns--) {
+      final double itemWidth =
+          (availableWidth - (columns - 1) * spacing) / columns;
+      final _EpisodeTextStats stats = _measureTextStats(
+        entries: entries,
+        maxTextWidth: math.max(40.0, itemWidth - horizontalPadding * 2),
+        style: textStyle,
+        textDirection: textDirection,
+      );
+
+      final bool useThreeLines =
+          stats.threeLineRatio > 0.08 || stats.overflowRatio > 0.0;
+      final int displayLines =
+          useThreeLines ? 3 : (stats.multiLineRatio > 0.28 ? 2 : 1);
+      final double itemExtent = verticalPadding * 2 +
+          lineHeight * displayLines +
+          (widget.isCompact ? 10.0 : 12.0);
+
+      fallbackLayout ??= _EpisodeGridLayout(
+        crossAxisCount: columns,
+        spacing: spacing,
+        itemExtent: itemExtent,
+        maxLines: displayLines,
+        textStyle: textStyle,
+        horizontalPadding: horizontalPadding,
+        verticalPadding: verticalPadding,
+      );
+
+      final bool fitsWell =
+          stats.overflowRatio <= 0.1 && stats.threeLineRatio <= 0.24;
+      if (fitsWell) {
+        return _EpisodeGridLayout(
+          crossAxisCount: columns,
+          spacing: spacing,
+          itemExtent: itemExtent,
+          maxLines: displayLines,
+          textStyle: textStyle,
+          horizontalPadding: horizontalPadding,
+          verticalPadding: verticalPadding,
+        );
+      }
+    }
+
+    return fallbackLayout ??
+        _EpisodeGridLayout(
+          crossAxisCount: 1,
+          spacing: spacing,
+          itemExtent: verticalPadding * 2 + lineHeight + 12,
+          maxLines: 1,
+          textStyle: textStyle,
+          horizontalPadding: horizontalPadding,
+          verticalPadding: verticalPadding,
+        );
+  }
+
+  _EpisodeTextStats _measureTextStats({
+    required List<_EpisodePanelEntry> entries,
+    required double maxTextWidth,
+    required TextStyle style,
+    required TextDirection textDirection,
+  }) {
+    if (entries.isEmpty) {
+      return const _EpisodeTextStats(
+        multiLineRatio: 0,
+        threeLineRatio: 0,
+        overflowRatio: 0,
       );
     }
+
+    int multiLineCount = 0;
+    int threeLineCount = 0;
+    int overflowCount = 0;
+
+    for (final entry in entries) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: entry.title, style: style),
+        textDirection: textDirection,
+        maxLines: 4,
+        ellipsis: '…',
+      )..layout(maxWidth: maxTextWidth);
+
+      final int lineCount = painter.computeLineMetrics().length;
+      if (lineCount > 1) {
+        multiLineCount++;
+      }
+      if (lineCount > 2) {
+        threeLineCount++;
+      }
+      if (lineCount > 3 || painter.didExceedMaxLines) {
+        overflowCount++;
+      }
+    }
+
+    final double total = entries.length.toDouble();
+    return _EpisodeTextStats(
+      multiLineRatio: multiLineCount / total,
+      threeLineRatio: threeLineCount / total,
+      overflowRatio: overflowCount / total,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.theme.brightness == Brightness.dark;
     final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
-    final backgroundColor = isDarkMode 
-        ? Colors.black.withOpacity(opacity) 
-        : Colors.white.withOpacity(opacity);
+    final backgroundColor = isDarkMode
+        ? Colors.black.withValues(alpha: opacity)
+        : Colors.white.withValues(alpha: opacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
+    final visibleEntries = _visibleEntries();
 
     return Container(
       decoration: BoxDecoration(
@@ -188,13 +324,17 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                 topLeft: Radius.circular(16),
                 bottomLeft: Radius.circular(16),
               )
-            : const BorderRadius.vertical(top: Radius.circular(24)), // 💡 竖屏底部弹窗显示完整的顶部圆角
+            : const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         children: [
-          // 标题栏
           Padding(
-            padding: EdgeInsets.fromLTRB(20, widget.isCompact ? 16 : 20, 8, widget.isCompact ? 8 : 12),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              widget.isCompact ? 16 : 20,
+              8,
+              widget.isCompact ? 8 : 12,
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -213,9 +353,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
               ],
             ),
           ),
-
-          // 分组选择器
-          if (widget.episodes.length > 50)
+          if (widget.episodes.length > _episodesPerGroup)
             Container(
               height: 40,
               margin: const EdgeInsets.only(bottom: 8),
@@ -236,11 +374,12 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                       controller: _groupScrollController,
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: (widget.episodes.length / 50).ceil(),
+                      itemCount:
+                          (widget.episodes.length / _episodesPerGroup).ceil(),
                       itemBuilder: (context, index) {
-                        final start = index * 50 + 1;
-                        final end =
-                            ((index + 1) * 50).clamp(0, widget.episodes.length);
+                        final start = index * _episodesPerGroup + 1;
+                        final end = ((index + 1) * _episodesPerGroup)
+                            .clamp(0, widget.episodes.length);
                         final isSelected = _selectedGroupIndex == index;
 
                         return Padding(
@@ -249,20 +388,37 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                             label: Text('$start-$end'),
                             selected: isSelected,
                             onSelected: (selected) {
-                              if (selected) {
-                                setState(() {
-                                  _selectedGroupIndex = index;
-                                });
-                              }
+                              if (!selected) return;
+                              setState(() {
+                                _selectedGroupIndex = index;
+                              });
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!mounted || !_scrollController.hasClients) {
+                                  return;
+                                }
+
+                                final currentGroup =
+                                    (_currentActualIndex / _episodesPerGroup)
+                                        .floor();
+                                if (index == currentGroup) {
+                                  _scrollToCurrent();
+                                } else {
+                                  _scrollController.animateTo(
+                                    0,
+                                    duration: const Duration(milliseconds: 240),
+                                    curve: Curves.easeOutCubic,
+                                  );
+                                }
+                              });
                             },
-                            selectedColor: Colors.green.withOpacity(0.2),
+                            selectedColor: Colors.green.withValues(alpha: 0.2),
                             backgroundColor: isDarkMode
                                 ? Colors.white10
-                                : Colors.black.withOpacity(0.05),
+                                : Colors.black.withValues(alpha: 0.05),
                             labelStyle: TextStyle(
                               color: isSelected
                                   ? Colors.green
-                                  : textColor.withOpacity(0.7),
+                                  : textColor.withValues(alpha: 0.7),
                               fontSize: 13,
                               fontWeight: isSelected
                                   ? FontWeight.bold
@@ -271,8 +427,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
-                                color:
-                                    isSelected ? Colors.green : Colors.transparent,
+                                color: isSelected
+                                    ? Colors.green
+                                    : Colors.transparent,
                               ),
                             ),
                             showCheckmark: false,
@@ -308,54 +465,56 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                 ),
               ),
             ),
-
-          // 集数网格
           Expanded(
-            child: GridView.builder(
-              key: _gridKey,
-              controller: _scrollController,
-              padding:
-                  EdgeInsets.fromLTRB(16, 12, 16, widget.isCompact ? 16 : 24),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: widget.crossAxisCount,
-                crossAxisSpacing: widget.isCompact ? 8 : 12,
-                mainAxisSpacing: widget.isCompact ? 8 : 12,
-                childAspectRatio: widget.crossAxisCount == 4
-                    ? 2.2
-                    : (widget.crossAxisCount == 3
-                        ? 2.0
-                        : (widget.isCompact ? 3.0 : 2.5)),
-              ),
-              itemCount: (widget.episodes.length > 50)
-                  ? (((_selectedGroupIndex + 1) * 50)
-                          .clamp(0, widget.episodes.length) -
-                      (_selectedGroupIndex * 50))
-                  : widget.episodes.length,
-              itemBuilder: (context, index) {
-                final actualIndex = (widget.episodes.length > 50)
-                    ? (_selectedGroupIndex * 50 + index)
-                    : index;
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final layout = _resolveGridLayout(
+                    context, constraints.maxWidth, visibleEntries);
 
-                final episodeIndex = widget.isReversed
-                    ? widget.episodes.length - 1 - actualIndex
-                    : actualIndex;
-                final isCurrentEpisode =
-                    episodeIndex == widget.currentEpisodeIndex;
-
-                String episodeTitle = '';
-                if (widget.episodesTitles.isNotEmpty &&
-                    episodeIndex < widget.episodesTitles.length) {
-                  episodeTitle = widget.episodesTitles[episodeIndex];
-                } else {
-                  episodeTitle = '第${episodeIndex + 1}集';
-                }
-
-                return _EpisodePanelItemWithHover(
-                  isCurrentEpisode: isCurrentEpisode,
-                  isDarkMode: isDarkMode,
-                  episodeTitle: episodeTitle,
-                  isCompact: widget.isCompact,
-                  onTap: isCurrentEpisode ? null : () => widget.onEpisodeTap(episodeIndex),
+                return SingleChildScrollView(
+                  controller: _scrollController,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      12,
+                      16,
+                      widget.isCompact ? 16 : 24,
+                    ),
+                    child: AnimatedSize(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.topCenter,
+                      child: GridView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: layout.crossAxisCount,
+                          crossAxisSpacing: layout.spacing,
+                          mainAxisSpacing: layout.spacing,
+                          mainAxisExtent: layout.itemExtent,
+                        ),
+                        children: visibleEntries.map((entry) {
+                          return KeyedSubtree(
+                            key: _keyForEpisode(entry.actualIndex),
+                            child: _EpisodePanelItemWithHover(
+                              isCurrentEpisode: entry.isCurrentEpisode,
+                              isDarkMode: isDarkMode,
+                              episodeTitle: entry.title,
+                              isCompact: widget.isCompact,
+                              maxLines: layout.maxLines,
+                              textStyle: layout.textStyle,
+                              horizontalPadding: layout.horizontalPadding,
+                              verticalPadding: layout.verticalPadding,
+                              onTap: entry.isCurrentEpisode
+                                  ? null
+                                  : () =>
+                                      widget.onEpisodeTap(entry.episodeIndex),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
@@ -380,8 +539,8 @@ class _GroupPagerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor = isDarkMode
-        ? Colors.black.withOpacity(0.35)
-        : Colors.white.withOpacity(0.9);
+        ? Colors.black.withValues(alpha: 0.35)
+        : Colors.white.withValues(alpha: 0.9);
     final borderColor = isDarkMode ? Colors.white24 : Colors.black12;
     final iconColor = isDarkMode ? Colors.white : Colors.black87;
 
@@ -409,13 +568,15 @@ class _GroupPagerButton extends StatelessWidget {
   }
 }
 
-
-/// 带 hover 效果的选集面板项
 class _EpisodePanelItemWithHover extends StatefulWidget {
   final bool isCurrentEpisode;
   final bool isDarkMode;
   final String episodeTitle;
   final bool isCompact;
+  final int maxLines;
+  final TextStyle textStyle;
+  final double horizontalPadding;
+  final double verticalPadding;
   final VoidCallback? onTap;
 
   const _EpisodePanelItemWithHover({
@@ -423,21 +584,31 @@ class _EpisodePanelItemWithHover extends StatefulWidget {
     required this.isDarkMode,
     required this.episodeTitle,
     required this.isCompact,
+    required this.maxLines,
+    required this.textStyle,
+    required this.horizontalPadding,
+    required this.verticalPadding,
     this.onTap,
   });
 
   @override
-  State<_EpisodePanelItemWithHover> createState() => _EpisodePanelItemWithHoverState();
+  State<_EpisodePanelItemWithHover> createState() =>
+      _EpisodePanelItemWithHoverState();
 }
 
-class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> {
+class _EpisodePanelItemWithHoverState
+    extends State<_EpisodePanelItemWithHover> {
   bool _isHovering = false;
 
   @override
   Widget build(BuildContext context) {
+    final Color textColor = widget.isCurrentEpisode
+        ? Colors.green
+        : (widget.isDarkMode ? Colors.white70 : Colors.black87);
+
     return MouseRegion(
-      cursor: (DeviceUtils.isPC() && !widget.isCurrentEpisode) 
-          ? SystemMouseCursors.click 
+      cursor: (DeviceUtils.isPC() && !widget.isCurrentEpisode)
+          ? SystemMouseCursors.click
           : MouseCursor.defer,
       onEnter: (_) {
         if (DeviceUtils.isPC() && !widget.isCurrentEpisode) {
@@ -451,37 +622,40 @@ class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> 
       },
       child: GestureDetector(
         onTap: widget.onTap,
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
             color: widget.isCurrentEpisode
-                ? Colors.green.withOpacity(0.2)
+                ? Colors.green.withValues(alpha: 0.2)
                 : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode 
-                        ? const Color(0xFF1A3D2E)
-                        : const Color(0xFFE8F5E9))
-                    : (widget.isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05))),
-            borderRadius: BorderRadius.circular(8),
+                    ? (widget.isDarkMode
+                ? const Color(0x30E9F4F4)
+                : const Color(0xFFE8F5E9))
+                    : (widget.isDarkMode
+                        ? Colors.white12
+                        : Colors.black.withValues(alpha: 0.05))),
+            borderRadius: BorderRadius.circular(10),
             border: widget.isCurrentEpisode
                 ? Border.all(color: Colors.green, width: 1.5)
                 : null,
           ),
-          child: Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4, vertical: widget.isCompact ? 2 : 6),
-              child: Text(
-                widget.episodeTitle,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: widget.isCurrentEpisode
-                      ? Colors.green
-                      : (widget.isDarkMode
-                          ? Colors.white70
-                          : Colors.black87),
-                  fontWeight: widget.isCurrentEpisode ? FontWeight.bold : FontWeight.normal,
-                  fontSize: widget.isCompact ? 13 : 14,
-                ),
+          alignment: Alignment.center,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: widget.horizontalPadding,
+              vertical: widget.verticalPadding,
+            ),
+            child: Text(
+              widget.episodeTitle,
+              textAlign: TextAlign.center,
+              maxLines: widget.maxLines,
+              overflow: TextOverflow.ellipsis,
+              style: widget.textStyle.copyWith(
+                color: textColor,
+                fontWeight: widget.isCurrentEpisode
+                    ? FontWeight.bold
+                    : FontWeight.normal,
               ),
             ),
           ),
@@ -489,4 +663,50 @@ class _EpisodePanelItemWithHoverState extends State<_EpisodePanelItemWithHover> 
       ),
     );
   }
+}
+
+class _EpisodePanelEntry {
+  final int actualIndex;
+  final int episodeIndex;
+  final String title;
+  final bool isCurrentEpisode;
+
+  const _EpisodePanelEntry({
+    required this.actualIndex,
+    required this.episodeIndex,
+    required this.title,
+    required this.isCurrentEpisode,
+  });
+}
+
+class _EpisodeGridLayout {
+  final int crossAxisCount;
+  final double spacing;
+  final double itemExtent;
+  final int maxLines;
+  final TextStyle textStyle;
+  final double horizontalPadding;
+  final double verticalPadding;
+
+  const _EpisodeGridLayout({
+    required this.crossAxisCount,
+    required this.spacing,
+    required this.itemExtent,
+    required this.maxLines,
+    required this.textStyle,
+    required this.horizontalPadding,
+    required this.verticalPadding,
+  });
+}
+
+class _EpisodeTextStats {
+  final double multiLineRatio;
+  final double threeLineRatio;
+  final double overflowRatio;
+
+  const _EpisodeTextStats({
+    required this.multiLineRatio,
+    required this.threeLineRatio,
+    required this.overflowRatio,
+  });
 }

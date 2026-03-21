@@ -36,7 +36,7 @@ class ShortDramaControls extends StatefulWidget {
   final void Function(SearchResult source)? onSourceTap;
   final Future<void> Function()? onRefreshSources; // 💡 补全缺失的变量
   final void Function(BuildContext context)?
-  onDanmakuButtonPressed; // 💡 补全缺失的变量
+      onDanmakuButtonPressed; // 💡 补全缺失的变量
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
@@ -232,16 +232,16 @@ class ShortDramaControlsState extends State<ShortDramaControls>
               child: PlayerEpisodesPanel(
                 theme: theme,
                 episodes: widget.allSources
-                    ?.where((s) =>
-                s.source == widget.currentSource &&
-                    s.id == widget.currentId)
-                    .firstOrNull
-                    ?.episodes ??
+                        ?.where((s) =>
+                            s.source == widget.currentSource &&
+                            s.id == widget.currentId)
+                        .firstOrNull
+                        ?.episodes ??
                     [],
                 episodesTitles: widget.episodesTitles ?? [],
                 currentEpisodeIndex: widget.currentEpisodeIndex ?? 0,
                 isReversed: false,
-                crossAxisCount: 3,
+                crossAxisCount: 4,
                 backgroundOpacity: 1.0, // 竖屏不透明
                 isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {
@@ -371,9 +371,9 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         onPipPressed: widget.onPipPressed == null
             ? null
             : () {
-          Navigator.pop(context);
-          widget.onPipPressed?.call();
-        },
+                Navigator.pop(context);
+                widget.onPipPressed?.call();
+              },
       ),
     );
   }
@@ -547,7 +547,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
               onTap: _showEpisodesDialog,
               child: Container(
                 padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
@@ -603,7 +603,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         final double barHeight = _isDragging ? 6.0 : (_isPlaying ? 2.0 : 4.5);
         // 💡 颜色同步：根据 MobilePlayerControls，暂停时应显眼
         final Color activeColor =
-        _isPlaying ? Colors.white.withOpacity(0.7) : Colors.red;
+            _isPlaying ? Colors.white.withOpacity(0.7) : Colors.red;
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -615,7 +615,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
               _dragStartLocalX = details.localPosition.dx;
               _dragStartPercent = dur.inMilliseconds > 0
                   ? widget.player.state.position.inMilliseconds /
-                  dur.inMilliseconds
+                      dur.inMilliseconds
                   : 0.0;
               _currentDragPercent = _dragStartPercent;
               _dragPosition = widget.player.state.position;
@@ -645,7 +645,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                   (_dragStartPercent + deltaPercent).clamp(0.0, 1.0);
               _dragPosition = Duration(
                   milliseconds:
-                  (dur.inMilliseconds * _currentDragPercent).round());
+                      (dur.inMilliseconds * _currentDragPercent).round());
             });
           },
           onHorizontalDragEnd: (_) {
@@ -755,7 +755,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
     // 💡 颜色适配逻辑
     final bool isDark = widget.isDarkMode;
     final Color bgColor =
-    isDark ? Colors.black.withOpacity(0.92) : Colors.white;
+        isDark ? Colors.black.withOpacity(0.92) : Colors.white;
     final Color textColor = isDark ? Colors.white : Colors.black87;
     final Color subColor = isDark ? Colors.white54 : Colors.black54;
     final Color itemBgColor = isDark ? Colors.white10 : Colors.grey[200]!;
@@ -770,11 +770,11 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
         boxShadow: isDark
             ? null
             : [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              spreadRadius: 1)
-        ],
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    spreadRadius: 1)
+              ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -806,7 +806,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
           Align(
             alignment: Alignment.centerLeft,
             child:
-            Text('播放倍速', style: TextStyle(color: subColor, fontSize: 13)),
+                Text('播放倍速', style: TextStyle(color: subColor, fontSize: 13)),
           ),
           const SizedBox(height: 8), // 💡 缩小间距 (12 -> 8)
           Row(
@@ -817,7 +817,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                 onTap: () => widget.onSpeedChanged(s),
                 child: Container(
                   padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: isSelected ? Colors.green : itemBgColor,
                     borderRadius: BorderRadius.circular(20),
@@ -863,7 +863,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                         children: [
                           Text('设置',
                               style:
-                              TextStyle(color: Colors.green, fontSize: 13)),
+                                  TextStyle(color: Colors.green, fontSize: 13)),
                           Icon(Icons.chevron_right,
                               color: Colors.green, size: 16),
                         ],
@@ -886,7 +886,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                       children: [
                         Text('搜索',
                             style:
-                            TextStyle(color: Colors.green, fontSize: 13)),
+                                TextStyle(color: Colors.green, fontSize: 13)),
                         Icon(Icons.chevron_right,
                             color: Colors.green, size: 16),
                       ],
@@ -915,8 +915,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
 
   Widget _buildActionButton(IconData icon, String label,
       {VoidCallback? onTap,
-        Color iconColor = Colors.white,
-        Color labelColor = Colors.white70}) {
+      Color iconColor = Colors.white,
+      Color labelColor = Colors.white70}) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -939,13 +939,13 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
   }
 
   Widget _buildMenuRow(
-      String title, {
-        IconData? icon,
-        Widget? leading,
-        required Widget trailing,
-        Color titleColor = Colors.white,
-        Color iconColor = Colors.white,
-      }) {
+    String title, {
+    IconData? icon,
+    Widget? leading,
+    required Widget trailing,
+    Color titleColor = Colors.white,
+    Color iconColor = Colors.white,
+  }) {
     return SizedBox(
       height: 48, // 💡 降低高度 (56 -> 48)
       child: Row(

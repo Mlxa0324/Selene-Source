@@ -3892,8 +3892,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
-    // 确定列数：竖屏平板4列，横屏平板3列，手机2列
-    final crossAxisCount = _isPortraitTablet ? 4 : (_isTablet ? 4 : 3);
+    // 作为最大列数提示，实际列数在面板内部会根据标题长度和面板宽度自适应。
+    final crossAxisCount = _isPortraitTablet ? 5 : 4;
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {
@@ -4982,7 +4982,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 episodesTitles: currentDetail!.episodesTitles,
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
-                crossAxisCount: widget.title.length > 6 ? 2 : 3,
+                crossAxisCount: 4,
                 onEpisodeTap: (index) {
                   Navigator.pop(dialogContext);
                   WidgetsBinding.instance.addPostFrameCallback((_) {
