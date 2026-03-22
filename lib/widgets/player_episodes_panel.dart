@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../utils/device_utils.dart';
 
 class PlayerEpisodesPanel extends StatefulWidget {
+  static const int episodesPerGroup = 50;
+
   final ThemeData theme;
   final List<String> episodes;
   final List<String> episodesTitles;
@@ -30,13 +32,187 @@ class PlayerEpisodesPanel extends StatefulWidget {
     this.isCompact = true,
   });
 
+  static EpisodePanelAdaptiveLayout estimateAdaptiveLayout({
+    required BuildContext context,
+    required List<String> episodes,
+    required List<String> episodesTitles,
+    required double maxWidth,
+    required double maxHeight,
+    bool isCompact = true,
+    double minWidth = 280,
+    double? maxPanelWidth,
+  }) {
+    final titles = List<String>.generate(episodes.length, (index) {
+      if (episodesTitles.isNotEmpty && index < episodesTitles.length) {
+        return episodesTitles[index];
+      }
+      return '第${index + 1}集';
+    });
+
+    final sampledTitles = _sampleTitlesForMeasurement(titles);
+    final spacing = isCompact ? 8.0 : 12.0;
+    const panelHorizontalPadding = 32.0;
+    const horizontalPadding = 12.0;
+    final verticalPadding = isCompact ? 8.0 : 10.0;
+    final textStyle = TextStyle(
+      fontSize: isCompact ? 13 : 14,
+      fontWeight: FontWeight.w500,
+      height: isCompact ? 1.25 : 1.3,
+    );
+    final textDirection = Directionality.of(context);
+    final lineHeight = (textStyle.fontSize ?? 14) * (textStyle.height ?? 1.0);
+
+    double longestTitleWidth = 0;
+    for (final title in sampledTitles) {
+      final painter = TextPainter(
+        text: TextSpan(text: title, style: textStyle),
+        textDirection: textDirection,
+        maxLines: 1,
+      )..layout();
+      longestTitleWidth = math.max(longestTitleWidth, painter.width);
+    }
+
+    final panelMaxWidth = math.max(
+      minWidth,
+      math.min(maxPanelWidth ?? maxWidth, maxWidth),
+    );
+    final panelMinWidth = math.min(panelMaxWidth, minWidth);
+    final targetItemWidth = (longestTitleWidth + horizontalPadding * 2 + 18)
+        .clamp(isCompact ? 92.0 : 102.0, isCompact ? 188.0 : 224.0)
+        .toDouble();
+
+    int desiredColumns;
+    if (titles.length <= 4) {
+      desiredColumns = titles.length.clamp(1, 2).toInt();
+    } else if (titles.length <= 12) {
+      desiredColumns = 3;
+    } else if (titles.length <= 28) {
+      desiredColumns = 4;
+    } else {
+      desiredColumns = 5;
+    }
+
+    if (longestTitleWidth > 120) {
+      desiredColumns = math.max(1, desiredColumns - 1);
+    }
+
+    final preferredWidth = math.min(
+      panelMaxWidth,
+      math.max(
+        panelMinWidth,
+        panelHorizontalPadding +
+            desiredColumns * targetItemWidth +
+            math.max(0, desiredColumns - 1) * spacing,
+      ),
+    );
+
+    final maxColumnsByWidth = math.max(
+      1,
+      ((preferredWidth - panelHorizontalPadding + spacing) /
+              (targetItemWidth + spacing))
+          .floor(),
+    );
+    final maxColumns = math.min(maxColumnsByWidth, 6);
+    final itemWidth = math.max(
+      64.0,
+      (preferredWidth -
+              panelHorizontalPadding -
+              math.max(0, maxColumns - 1) * spacing) /
+          maxColumns,
+    );
+    final textStats = _measureTitleStats(
+      titles: sampledTitles,
+      maxTextWidth: math.max(40.0, itemWidth - horizontalPadding * 2),
+      style: textStyle,
+      textDirection: textDirection,
+    );
+    final useThreeLines =
+        textStats.threeLineRatio > 0.08 || textStats.overflowRatio > 0;
+    final displayLines =
+        useThreeLines ? 3 : (textStats.multiLineRatio > 0.28 ? 2 : 1);
+    final itemExtent = verticalPadding * 2 +
+        lineHeight * displayLines +
+        (isCompact ? 10.0 : 12.0);
+    final visibleCount = math.min(titles.length, episodesPerGroup);
+    final rows = math.max(1, (visibleCount / maxColumns).ceil());
+
+    // 根据文本换行和当前分组内的行数，预估一个更贴近内容的弹框高度。
+    final estimatedHeight = (isCompact ? 66.0 : 76.0) +
+        (titles.length > episodesPerGroup ? 48.0 : 0.0) +
+        (isCompact ? 28.0 : 40.0) +
+        rows * itemExtent +
+        math.max(0, rows - 1) * spacing;
+
+    return EpisodePanelAdaptiveLayout(
+      preferredWidth: preferredWidth,
+      preferredHeight: estimatedHeight
+          .clamp(isCompact ? 220.0 : 260.0, maxHeight)
+          .toDouble(),
+      maxColumns: maxColumns,
+    );
+  }
+
+  static List<String> _sampleTitlesForMeasurement(List<String> titles) {
+    if (titles.length <= 60) {
+      return titles;
+    }
+
+    final sorted = List<String>.from(titles)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return sorted.take(60).toList();
+  }
+
+  static _EpisodeTextStats _measureTitleStats({
+    required List<String> titles,
+    required double maxTextWidth,
+    required TextStyle style,
+    required TextDirection textDirection,
+  }) {
+    if (titles.isEmpty) {
+      return const _EpisodeTextStats(
+        multiLineRatio: 0,
+        threeLineRatio: 0,
+        overflowRatio: 0,
+      );
+    }
+
+    int multiLineCount = 0;
+    int threeLineCount = 0;
+    int overflowCount = 0;
+
+    for (final title in titles) {
+      final painter = TextPainter(
+        text: TextSpan(text: title, style: style),
+        textDirection: textDirection,
+        maxLines: 4,
+        ellipsis: '…',
+      )..layout(maxWidth: maxTextWidth);
+
+      final lineCount = painter.computeLineMetrics().length;
+      if (lineCount > 1) {
+        multiLineCount++;
+      }
+      if (lineCount > 2) {
+        threeLineCount++;
+      }
+      if (lineCount > 3 || painter.didExceedMaxLines) {
+        overflowCount++;
+      }
+    }
+
+    final total = titles.length.toDouble();
+    return _EpisodeTextStats(
+      multiLineRatio: multiLineCount / total,
+      threeLineRatio: threeLineCount / total,
+      overflowRatio: overflowCount / total,
+    );
+  }
+
   @override
   State<PlayerEpisodesPanel> createState() => _PlayerEpisodesPanelState();
 }
 
 class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
-  static const int _episodesPerGroup = 50;
-
   late final ScrollController _scrollController;
   late final ScrollController _groupScrollController;
   final Map<int, GlobalKey> _episodeItemKeys = <int, GlobalKey>{};
@@ -67,8 +243,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
       : widget.currentEpisodeIndex;
 
   void _updateSelectedGroup() {
-    if (widget.episodes.length > _episodesPerGroup) {
-      _selectedGroupIndex = (_currentActualIndex / _episodesPerGroup).floor();
+    if (widget.episodes.length > PlayerEpisodesPanel.episodesPerGroup) {
+      _selectedGroupIndex =
+          (_currentActualIndex / PlayerEpisodesPanel.episodesPerGroup).floor();
     } else {
       _selectedGroupIndex = 0;
     }
@@ -97,11 +274,12 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   }
 
   List<_EpisodePanelEntry> _visibleEntries() {
-    final start = widget.episodes.length > _episodesPerGroup
-        ? _selectedGroupIndex * _episodesPerGroup
+    final start = widget.episodes.length > PlayerEpisodesPanel.episodesPerGroup
+        ? _selectedGroupIndex * PlayerEpisodesPanel.episodesPerGroup
         : 0;
-    final end = widget.episodes.length > _episodesPerGroup
-        ? math.min(start + _episodesPerGroup, widget.episodes.length)
+    final end = widget.episodes.length > PlayerEpisodesPanel.episodesPerGroup
+        ? math.min(start + PlayerEpisodesPanel.episodesPerGroup,
+            widget.episodes.length)
         : widget.episodes.length;
 
     return List.generate(end - start, (index) {
@@ -130,7 +308,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
 
   void _scrollToCurrentGroup() {
     if (!_groupScrollController.hasClients ||
-        widget.episodes.length <= _episodesPerGroup) {
+        widget.episodes.length <= PlayerEpisodesPanel.episodesPerGroup) {
       return;
     }
 
@@ -160,12 +338,17 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   }
 
   void _scrollToCurrent() {
-    final groupStart = widget.episodes.length > _episodesPerGroup
-        ? _selectedGroupIndex * _episodesPerGroup
-        : 0;
-    final groupEnd = widget.episodes.length > _episodesPerGroup
-        ? math.min(groupStart + _episodesPerGroup, widget.episodes.length)
-        : widget.episodes.length;
+    final groupStart =
+        widget.episodes.length > PlayerEpisodesPanel.episodesPerGroup
+            ? _selectedGroupIndex * PlayerEpisodesPanel.episodesPerGroup
+            : 0;
+    final groupEnd =
+        widget.episodes.length > PlayerEpisodesPanel.episodesPerGroup
+            ? math.min(
+                groupStart + PlayerEpisodesPanel.episodesPerGroup,
+                widget.episodes.length,
+              )
+            : widget.episodes.length;
 
     if (_currentActualIndex < groupStart || _currentActualIndex >= groupEnd) {
       return;
@@ -190,7 +373,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   ) {
     final double spacing = widget.isCompact ? 8.0 : 12.0;
     final double availableWidth = math.max(120.0, maxWidth - 32.0);
-    final int maxColumns = widget.crossAxisCount.clamp(1, 5);
+    final int maxColumns = widget.crossAxisCount.clamp(1, 6);
     final int minColumns = availableWidth < 260 ? 1 : 2;
     final TextStyle textStyle = TextStyle(
       fontSize: widget.isCompact ? 13 : 14,
@@ -353,7 +536,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
               ],
             ),
           ),
-          if (widget.episodes.length > _episodesPerGroup)
+          if (widget.episodes.length > PlayerEpisodesPanel.episodesPerGroup)
             Container(
               height: 40,
               margin: const EdgeInsets.only(bottom: 8),
@@ -374,12 +557,15 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                       controller: _groupScrollController,
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount:
-                          (widget.episodes.length / _episodesPerGroup).ceil(),
+                      itemCount: (widget.episodes.length /
+                              PlayerEpisodesPanel.episodesPerGroup)
+                          .ceil(),
                       itemBuilder: (context, index) {
-                        final start = index * _episodesPerGroup + 1;
-                        final end = ((index + 1) * _episodesPerGroup)
-                            .clamp(0, widget.episodes.length);
+                        final start =
+                            index * PlayerEpisodesPanel.episodesPerGroup + 1;
+                        final end =
+                            ((index + 1) * PlayerEpisodesPanel.episodesPerGroup)
+                                .clamp(0, widget.episodes.length);
                         final isSelected = _selectedGroupIndex == index;
 
                         return Padding(
@@ -397,9 +583,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                                   return;
                                 }
 
-                                final currentGroup =
-                                    (_currentActualIndex / _episodesPerGroup)
-                                        .floor();
+                                final currentGroup = (_currentActualIndex /
+                                        PlayerEpisodesPanel.episodesPerGroup)
+                                    .floor();
                                 if (index == currentGroup) {
                                   _scrollToCurrent();
                                 } else {
@@ -630,11 +816,11 @@ class _EpisodePanelItemWithHoverState
                 ? Colors.green.withValues(alpha: 0.2)
                 : (_isHovering && DeviceUtils.isPC()
                     ? (widget.isDarkMode
-                ? const Color(0x30E9F4F4)
-                : const Color(0xFFE8F5E9))
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.05))
                     : (widget.isDarkMode
-                        ? Colors.white12
-                        : Colors.black.withValues(alpha: 0.05))),
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.black.withValues(alpha: 0.03))),
             borderRadius: BorderRadius.circular(10),
             border: widget.isCurrentEpisode
                 ? Border.all(color: Colors.green, width: 1.5)
@@ -708,5 +894,17 @@ class _EpisodeTextStats {
     required this.multiLineRatio,
     required this.threeLineRatio,
     required this.overflowRatio,
+  });
+}
+
+class EpisodePanelAdaptiveLayout {
+  final double preferredWidth;
+  final double preferredHeight;
+  final int maxColumns;
+
+  const EpisodePanelAdaptiveLayout({
+    required this.preferredWidth,
+    required this.preferredHeight,
+    required this.maxColumns,
   });
 }

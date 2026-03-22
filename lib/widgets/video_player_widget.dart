@@ -54,6 +54,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
   final void Function(BuildContext context)? onSettingsButtonPressed;
+  final void Function(BuildContext context)? onSleepTimerButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final bool isDanmakuEnabled;
@@ -73,6 +74,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool adFilterEnabled;
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
+  final bool hasActiveSleepTimer;
   final ValueChanged<double>? onPlaybackSpeedChanged; // 播放倍速变化回调
   final ValueChanged<String>? onDebugToast;
 
@@ -109,6 +111,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onEpisodesButtonPressed,
     this.onSourcesButtonPressed,
     this.onSettingsButtonPressed,
+    this.onSleepTimerButtonPressed,
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
     this.isDanmakuEnabled = false,
@@ -132,6 +135,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onCastButtonPressed,
     this.isFavorite,
     this.onFavoriteToggle,
+    this.hasActiveSleepTimer = false,
     this.onPlaybackSpeedChanged,
     this.onDebugToast,
   });
@@ -1489,6 +1493,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             onSetSpeed: _setPlaybackSpeed,
             onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
             onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+            onSleepTimerButtonPressed: widget.onSleepTimerButtonPressed,
+            hasActiveSleepTimer: widget.hasActiveSleepTimer,
             videoCover: widget.videoCover ?? '',
             currentSource: widget.currentSource,
             currentId: widget.currentId,
@@ -1551,6 +1557,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
         onSourcesButtonPressed: widget.onSourcesButtonPressed,
         onSettingsButtonPressed: widget.onSettingsButtonPressed,
+        onSleepTimerButtonPressed: widget.onSleepTimerButtonPressed,
         onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
         onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
         isDanmakuEnabled: widget.isDanmakuEnabled,
@@ -1558,6 +1565,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,
+        hasActiveSleepTimer: widget.hasActiveSleepTimer,
       );
     }
   }

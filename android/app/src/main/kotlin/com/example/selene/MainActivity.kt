@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
     private val tag = "PipControls"
     private val backgroundChannel = "org.moontechlab.selene/background_download"
     private val pipControlChannelName = "org.moontechlab.selene/pip_controls"
+    private val sleepTimerChannelName = "org.moontechlab.selene/sleep_timer"
 
     private lateinit var pipControlChannel: MethodChannel
     private var pipIsPlaying: Boolean = true
@@ -40,6 +41,24 @@ class MainActivity : FlutterActivity() {
                     "stopForegroundDownloadService" -> {
                         stopForegroundDownloadService()
                         result.success(true)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, sleepTimerChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "closeApp" -> {
+                        runOnUiThread {
+                            result.success(true)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                                finishAndRemoveTask()
+                            } else {
+                                finishAffinity()
+                            }
+                        }
                     }
 
                     else -> result.notImplemented()

@@ -127,6 +127,10 @@ class UserDataService {
   /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
 
+  /// 是否允许息屏播放 Key
+  static const String _screenOffPlaybackEnabledKey =
+      'screen_off_playback_enabled';
+
   /// macOS media_kit 预加载 Key
   static const String _mediaKitPreloadEnabledKey = 'media_kit_preload_enabled';
 
@@ -323,6 +327,18 @@ class UserDataService {
   static Future<bool> getAdFilterEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_adFilterEnabledKey) ?? false;
+  }
+
+  // 保存息屏播放开关
+  static Future<void> saveScreenOffPlaybackEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_screenOffPlaybackEnabledKey, enabled);
+  }
+
+  // 获取息屏播放开关（默认 false）
+  static Future<bool> getScreenOffPlaybackEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_screenOffPlaybackEnabledKey) ?? false;
   }
 
   // 保存 macOS media_kit 预加载开关

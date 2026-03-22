@@ -42,6 +42,7 @@ class MobilePlayerControls extends StatefulWidget {
   final void Function(BuildContext context)? onEpisodesButtonPressed;
   final void Function(BuildContext context)? onSourcesButtonPressed;
   final void Function(BuildContext context)? onSettingsButtonPressed;
+  final void Function(BuildContext context)? onSleepTimerButtonPressed;
   final void Function(BuildContext context)? onDanmakuButtonPressed;
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
   final bool isDanmakuEnabled;
@@ -49,6 +50,7 @@ class MobilePlayerControls extends StatefulWidget {
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final bool hasActiveSleepTimer;
 
   const MobilePlayerControls({
     super.key,
@@ -79,6 +81,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.onEpisodesButtonPressed,
     this.onSourcesButtonPressed,
     this.onSettingsButtonPressed,
+    this.onSleepTimerButtonPressed,
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
     this.isDanmakuEnabled = false,
@@ -86,6 +89,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.time,
     this.showSystemTime = true,
+    this.hasActiveSleepTimer = false,
   });
 
   @override
@@ -1154,6 +1158,24 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
+              if (widget.onSleepTimerButtonPressed != null)
+                GestureDetector(
+                  onTap: () {
+                    _onUserInteraction();
+                    widget.onSleepTimerButtonPressed?.call(context);
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      Icons.timer_outlined,
+                      color: widget.hasActiveSleepTimer
+                          ? Colors.green
+                          : Colors.white,
+                      size: iconSize,
+                    ),
+                  ),
+                ),
               GestureDetector(
                 onTap: () async {
                   _onUserInteraction();

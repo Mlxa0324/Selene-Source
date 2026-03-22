@@ -30,11 +30,13 @@ import '../widgets/player_details_panel.dart';
 import '../widgets/player_episodes_panel.dart';
 import '../widgets/player_sources_panel.dart';
 import '../widgets/player_settings_panel.dart';
+import '../widgets/player_sleep_timer_panel.dart';
 import '../widgets/danmaku_settings_panel.dart';
 import '../widgets/danmaku_match_panel.dart';
 import '../widgets/player_download_panel.dart';
 import '../widgets/windows_title_bar.dart';
 import '../services/danmaku_service.dart';
+import '../services/sleep_timer_service.dart';
 import '../models/danmaku_model.dart';
 import '../utils/font_utils.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
@@ -204,10 +206,14 @@ class _PlayerScreenState extends State<PlayerScreen>
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _adFilterEnabled = false; // 是否开启自动去广告
+  bool _screenOffPlaybackEnabled = false; // 是否允许息屏播放
   bool _mediaKitPreloadEnabled = Platform.isMacOS;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
   bool _isSeeking = false; // 是否正在执行跳转操作
+  Timer? _sleepTimer;
+  DateTime? _sleepTimerDeadline;
+  bool _isHandlingSleepTimer = false;
 
   // 弹幕相关状态
   DanmakuController? _danmakuController;
@@ -420,6 +426,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final screenOffPlaybackEnabled =
+        await UserDataService.getScreenOffPlaybackEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
       defaultValue: Platform.isMacOS,
@@ -434,6 +442,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
         _adFilterEnabled = adFilterEnabled;
+        _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
       });
     }
@@ -1598,13 +1607,22 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     switch (state) {
       case AppLifecycleState.paused:
+        _setKeepScreenOn(false);
+        if (DeviceUtils.isPC()) {
+          break;
+        }
+        if (!_screenOffPlaybackEnabled && !_isCasting) {
+          _videoPlayerController?.pause();
+        }
+        // 应用进入后台前保存进度
+        _saveProgress(force: true, scene: '应用进入后台');
+        break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
         _setKeepScreenOn(false);
         if (DeviceUtils.isPC()) {
           break;
         }
-        // 应用进入后台前保存进度
         _saveProgress(force: true, scene: '应用进入后台');
         break;
       case AppLifecycleState.resumed:
@@ -2182,9 +2200,187 @@ class _PlayerScreenState extends State<PlayerScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(25),
         ),
-        backgroundColor: Colors.black.withOpacity(0.8),
+        backgroundColor: Colors.black.withValues(alpha: 0.8),
         elevation: 0,
       ),
+    );
+  }
+
+  String _formatSleepTimerClock(DateTime deadline) {
+    final hour = deadline.hour.toString().padLeft(2, '0');
+    final minute = deadline.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  String _formatSleepTimerMessage(DateTime deadline) {
+    final now = DateTime.now();
+    final isSameDay = now.year == deadline.year &&
+        now.month == deadline.month &&
+        now.day == deadline.day;
+    final prefix = isSameDay ? '' : '明天 ';
+    return '$prefix${_formatSleepTimerClock(deadline)} ${SleepTimerService.timeoutActionLabel}';
+  }
+
+  void _scheduleSleepTimer(DateTime deadline) {
+    _sleepTimer?.cancel();
+    final delay = deadline.difference(DateTime.now());
+
+    setState(() {
+      _sleepTimerDeadline = deadline;
+    });
+
+    _sleepTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      _handleSleepTimerTriggered,
+    );
+  }
+
+  Future<bool> _setSleepTimerByMinutes(int minutes) async {
+    if (minutes <= 0) {
+      return false;
+    }
+
+    final deadline = DateTime.now().add(Duration(minutes: minutes));
+    _scheduleSleepTimer(deadline);
+    _showToast('设置成功，预计 ${_formatSleepTimerMessage(deadline)}');
+    return true;
+  }
+
+  Future<bool> _setSleepTimerByTimeOfDay(TimeOfDay time) async {
+    final now = DateTime.now();
+    var deadline = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      time.hour,
+      time.minute,
+    );
+
+    if (!deadline.isAfter(now.add(const Duration(seconds: 30)))) {
+      deadline = deadline.add(const Duration(days: 1));
+    }
+
+    _scheduleSleepTimer(deadline);
+    _showToast('设置成功，预计 ${_formatSleepTimerMessage(deadline)}');
+    return true;
+  }
+
+  Future<bool> _cancelSleepTimer({bool showToast = true}) async {
+    if (_sleepTimer == null && _sleepTimerDeadline == null) {
+      return false;
+    }
+
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+
+    if (mounted) {
+      setState(() {
+        _sleepTimerDeadline = null;
+      });
+    } else {
+      _sleepTimerDeadline = null;
+    }
+
+    if (showToast) {
+      _showToast('已取消定时关闭');
+    }
+    return true;
+  }
+
+  Future<void> _handleSleepTimerTriggered() async {
+    if (_isHandlingSleepTimer) {
+      return;
+    }
+
+    _isHandlingSleepTimer = true;
+    await _cancelSleepTimer(showToast: false);
+
+    try {
+      await _setKeepScreenOn(false);
+      _saveProgress(force: true, scene: '定时关闭');
+
+      if (_isCasting && _dlnaDevice != null) {
+        try {
+          _dlnaDevice.stop();
+        } catch (e) {
+          debugPrint('定时关闭时停止投屏失败: $e');
+        }
+      }
+
+      await _videoPlayerController?.pause();
+
+      if (Platform.isAndroid) {
+        final closed = await SleepTimerService.closeApp();
+        if (!closed) {
+          await SystemNavigator.pop();
+        }
+      } else if (mounted) {
+        _showToast('已按计划停止播放');
+      }
+    } catch (e) {
+      debugPrint('执行定时关闭失败: $e');
+    } finally {
+      _isHandlingSleepTimer = false;
+    }
+  }
+
+  void _showSleepTimerPanel(BuildContext panelContext) {
+    final theme = Theme.of(panelContext);
+    final size = MediaQuery.of(panelContext).size;
+    final isLandscape = size.width > size.height;
+    final useSideSheet = isLandscape ||
+        (DeviceUtils.isTablet(panelContext) &&
+            !DeviceUtils.isPortraitTablet(panelContext));
+
+    final panel = PlayerSleepTimerPanel(
+      theme: theme,
+      sideSheet: useSideSheet,
+      scheduledAt: _sleepTimerDeadline,
+      screenOffPlaybackEnabled: _screenOffPlaybackEnabled,
+      canExitApp: SleepTimerService.supportsAppExit,
+      onSetMinutes: _setSleepTimerByMinutes,
+      onSetTimeOfDay: _setSleepTimerByTimeOfDay,
+      onCancelTimer: () => _cancelSleepTimer(),
+    );
+
+    if (useSideSheet) {
+      final panelWidth = math.min(size.width * 0.42, 340.0);
+      final panelHeight = size.height;
+
+      showGeneralDialog(
+        context: panelContext,
+        barrierDismissible: true,
+        barrierLabel: '',
+        barrierColor: Colors.black.withValues(alpha: 0.3),
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (dialogContext, animation, secondaryAnimation) {
+          return _buildSidePanel(
+            context: dialogContext,
+            panelWidth: panelWidth,
+            panelHeight: panelHeight,
+            alignment: Alignment.centerRight,
+            slideBegin: const Offset(1, 0),
+            animation: animation,
+            child: panel,
+          );
+        },
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: panelContext,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.transparent,
+      builder: (context) {
+        final height = math.min(size.height * 0.62, 440.0);
+        return SizedBox(
+          height: height,
+          width: double.infinity,
+          child: panel,
+        );
+      },
     );
   }
 
@@ -2941,6 +3137,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               // 在全屏模式下，使用传入的 context 显示设置面板
               _showSettingsPanelInFullscreen(fullscreenContext);
             },
+            onSleepTimerButtonPressed: (playerContext) {
+              _showSleepTimerPanel(playerContext);
+            },
             onDanmakuButtonPressed: (fullscreenContext) {
               // 在全屏模式下，使用传入的 context 显示弹幕设置面板
               _showDanmakuPanelInFullscreen(fullscreenContext);
@@ -2966,6 +3165,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             longPressSpeed: _longPressSpeed,
             progressMode: _progressMode,
             showSystemTime: _showSystemTime,
+            hasActiveSleepTimer: _sleepTimerDeadline != null,
             mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
             danmakuLayer: _danmakuSettings.enabled && !_isClosing
@@ -3885,22 +4085,47 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
+  EpisodePanelAdaptiveLayout _resolveEpisodesPanelLayout(
+    BuildContext context, {
+    required double maxWidth,
+    required double maxHeight,
+    required bool isCompact,
+    double minWidth = 280,
+  }) {
+    return PlayerEpisodesPanel.estimateAdaptiveLayout(
+      context: context,
+      episodes: currentDetail?.episodes ?? const [],
+      episodesTitles: currentDetail?.episodesTitles ?? const [],
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      isCompact: isCompact,
+      minWidth: minWidth,
+    );
+  }
+
   /// 构建选集底部滑出面板
   void _showEpisodesPanel() {
     final theme = Theme.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-
-    // 作为最大列数提示，实际列数在面板内部会根据标题长度和面板宽度自适应。
-    final crossAxisCount = _isPortraitTablet ? 5 : 4;
+    final tabletSideMaxWidth = math.min(screenWidth * 0.46, 560.0);
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {
-      final panelWidth = _isPortraitTablet ? screenWidth : screenWidth * 0.35;
-      final panelHeight = _isPortraitTablet
-          ? (screenHeight - statusBarHeight) * 0.5
-          : screenHeight;
+      final adaptiveLayout = _resolveEpisodesPanelLayout(
+        context,
+        maxWidth: _isPortraitTablet ? screenWidth : tabletSideMaxWidth,
+        maxHeight: _isPortraitTablet
+            ? (screenHeight - statusBarHeight) * 0.78
+            : screenHeight,
+        isCompact: true,
+        minWidth: _isPortraitTablet ? screenWidth : 300,
+      );
+      final panelWidth =
+          _isPortraitTablet ? screenWidth : adaptiveLayout.preferredWidth;
+      final panelHeight =
+          _isPortraitTablet ? adaptiveLayout.preferredHeight : screenHeight;
       final alignment =
           _isPortraitTablet ? Alignment.bottomCenter : Alignment.centerRight;
       final slideBegin =
@@ -3928,7 +4153,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   episodesTitles: currentDetail!.episodesTitles,
                   currentEpisodeIndex: currentEpisodeIndex,
                   isReversed: _isEpisodesReversed,
-                  crossAxisCount: crossAxisCount,
+                  crossAxisCount: adaptiveLayout.maxColumns,
                   isCompact: true, // 横屏使用紧凑模式
                   onEpisodeTap: (index) {
                     Navigator.pop(context);
@@ -3961,7 +4186,14 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 手机模式：从底部弹出
     final playerHeight = screenWidth / (16 / 9);
-    final panelHeight = screenHeight - statusBarHeight - playerHeight;
+    final maxPanelHeight = screenHeight - statusBarHeight - playerHeight;
+    final adaptiveLayout = _resolveEpisodesPanelLayout(
+      context,
+      maxWidth: screenWidth,
+      maxHeight: maxPanelHeight,
+      isCompact: false,
+      minWidth: screenWidth,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -3972,8 +4204,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
-            return Container(
-              height: panelHeight,
+            return SizedBox(
+              height: adaptiveLayout.preferredHeight,
               width: double.infinity,
               child: PlayerEpisodesPanel(
                 theme: theme,
@@ -3981,7 +4213,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 episodesTitles: currentDetail!.episodesTitles,
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
-                crossAxisCount: crossAxisCount,
+                crossAxisCount: adaptiveLayout.maxColumns,
                 backgroundOpacity: 1.0, // 竖屏不透明
                 isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {
@@ -4956,8 +5188,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
 
+    final adaptiveLayout = _resolveEpisodesPanelLayout(
+      fullscreenContext,
+      maxWidth: math.min(screenWidth * 0.46, 560.0),
+      maxHeight: screenHeight,
+      isCompact: true,
+      minWidth: 300,
+    );
+
     // 全屏模式下从右侧滑入
-    final panelWidth = screenWidth * 0.4;
+    final panelWidth = adaptiveLayout.preferredWidth;
     final panelHeight = screenHeight;
 
     showGeneralDialog(
@@ -4982,7 +5222,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 episodesTitles: currentDetail!.episodesTitles,
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
-                crossAxisCount: 4,
+                crossAxisCount: adaptiveLayout.maxColumns,
                 onEpisodeTap: (index) {
                   Navigator.pop(dialogContext);
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -5392,6 +5632,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _instances.remove(this);
     _beginClosingDanmakuLifecycle('dispose');
     _setKeepScreenOn(false);
+    _sleepTimer?.cancel();
     // 保存进度
     _saveProgress(force: true, scene: '页面销毁');
     // 取消超时计时器
@@ -5471,6 +5712,20 @@ class _PlayerScreenState extends State<PlayerScreen>
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, stackConstraints) {
+                      final inlineEpisodesPanelLayout =
+                          _resolveEpisodesPanelLayout(
+                        context,
+                        maxWidth: math.min(
+                          stackConstraints.maxWidth * 0.48,
+                          540.0,
+                        ),
+                        maxHeight: stackConstraints.maxHeight,
+                        isCompact: true,
+                        minWidth: 280,
+                      );
+                      final inlineEpisodesPanelWidth =
+                          inlineEpisodesPanelLayout.preferredWidth;
+
                       return Stack(
                         children: [
                           // Main content (without player).
@@ -5496,8 +5751,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                               curve: Curves.easeInOut,
                               top: 0,
                               bottom: 0,
-                              right: _isEpisodesPanelVisible ? 0 : -400,
-                              width: 400,
+                              right: _isEpisodesPanelVisible
+                                  ? 0
+                                  : -inlineEpisodesPanelWidth,
+                              width: inlineEpisodesPanelWidth,
                               child: PlayerEpisodesPanel(
                                 theme: theme,
                                 episodes: currentDetail?.episodes ?? [],
@@ -5516,7 +5773,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     _isEpisodesReversed = !_isEpisodesReversed;
                                   });
                                 },
-                                crossAxisCount: 4,
+                                crossAxisCount:
+                                    inlineEpisodesPanelLayout.maxColumns,
                               ),
                             ),
                           // Source panel (slide in from right, phone landscape only).

@@ -38,6 +38,7 @@ class ShortDramaControls extends StatefulWidget {
   final void Function(BuildContext context)?
       onDanmakuButtonPressed; // 💡 补全缺失的变量
   final void Function(BuildContext context)? onDanmakuMatchButtonPressed;
+  final void Function(BuildContext context)? onSleepTimerButtonPressed;
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
   final VoidCallback? onCastPressed; // 💡 新增
@@ -45,6 +46,7 @@ class ShortDramaControls extends StatefulWidget {
   final bool isPipMode; // 💡 新增：小窗模式标记
   final String videoCover;
   final bool isLocal;
+  final bool hasActiveSleepTimer;
 
   const ShortDramaControls({
     super.key,
@@ -74,6 +76,7 @@ class ShortDramaControls extends StatefulWidget {
     this.onRefreshSources,
     this.onDanmakuButtonPressed,
     this.onDanmakuMatchButtonPressed,
+    this.onSleepTimerButtonPressed,
     this.isFavorite,
     this.onFavoriteToggle,
     this.onCastPressed,
@@ -81,6 +84,7 @@ class ShortDramaControls extends StatefulWidget {
     this.isPipMode = false, // 💡 默认非小窗
     required this.videoCover,
     this.isLocal = false,
+    this.hasActiveSleepTimer = false,
   });
 
   @override
@@ -211,11 +215,25 @@ class ShortDramaControlsState extends State<ShortDramaControls>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
+    final currentEpisodes = widget.allSources
+            ?.where((s) =>
+                s.source == widget.currentSource && s.id == widget.currentId)
+            .firstOrNull
+            ?.episodes ??
+        [];
 
     // 手机模式：从底部弹出，预留出上方 16:9 的空间
     final playerHeight = screenWidth / (16 / 9);
-    // 💡 优化：按照要求将高度降低 20%
-    final panelHeight = (screenHeight - statusBarHeight - playerHeight) * 0.8;
+    final maxPanelHeight = screenHeight - statusBarHeight - playerHeight;
+    final adaptiveLayout = PlayerEpisodesPanel.estimateAdaptiveLayout(
+      context: context,
+      episodes: currentEpisodes,
+      episodesTitles: widget.episodesTitles ?? [],
+      maxWidth: screenWidth,
+      maxHeight: maxPanelHeight,
+      isCompact: false,
+      minWidth: screenWidth,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -227,21 +245,15 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter dialogSetState) {
             return SizedBox(
-              height: panelHeight,
+              height: adaptiveLayout.preferredHeight,
               width: double.infinity,
               child: PlayerEpisodesPanel(
                 theme: theme,
-                episodes: widget.allSources
-                        ?.where((s) =>
-                            s.source == widget.currentSource &&
-                            s.id == widget.currentId)
-                        .firstOrNull
-                        ?.episodes ??
-                    [],
+                episodes: currentEpisodes,
                 episodesTitles: widget.episodesTitles ?? [],
                 currentEpisodeIndex: widget.currentEpisodeIndex ?? 0,
                 isReversed: false,
-                crossAxisCount: 4,
+                crossAxisCount: adaptiveLayout.maxColumns,
                 backgroundOpacity: 1.0, // 竖屏不透明
                 isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {
@@ -364,6 +376,12 @@ class ShortDramaControlsState extends State<ShortDramaControls>
           Navigator.pop(context);
           widget.onFavoriteToggle?.call();
         },
+        onSleepTimerPressed: widget.onSleepTimerButtonPressed == null
+            ? null
+            : () {
+                Navigator.pop(context);
+                widget.onSleepTimerButtonPressed?.call(context);
+              },
         onCastPressed: () {
           Navigator.pop(context);
           widget.onCastPressed?.call();
@@ -374,6 +392,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                 Navigator.pop(context);
                 widget.onPipPressed?.call();
               },
+        hasActiveSleepTimer: widget.hasActiveSleepTimer,
       ),
     );
   }
@@ -508,6 +527,11 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (widget.onCastPressed != null)
+                IconButton(
+                  icon: const Icon(Icons.cast, color: Colors.white, size: 22),
+                  onPressed: widget.onCastPressed,
+                ),
             ],
           ),
         ),
@@ -722,7 +746,9 @@ class _ShortDramaSettingsSheet extends StatefulWidget {
   final VoidCallback onDownloadPressed;
   final VoidCallback onFavoriteToggle;
   final VoidCallback onCastPressed;
+  final VoidCallback? onSleepTimerPressed;
   final VoidCallback? onPipPressed;
+  final bool hasActiveSleepTimer;
 
   const _ShortDramaSettingsSheet({
     required this.isDarkMode,
@@ -734,8 +760,10 @@ class _ShortDramaSettingsSheet extends StatefulWidget {
     required this.onDownloadPressed,
     required this.onFavoriteToggle,
     required this.onCastPressed,
+    this.onSleepTimerPressed,
     this.onPipPressed,
     this.isFavorite,
+    this.hasActiveSleepTimer = false,
   });
 
   @override
@@ -787,6 +815,13 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                   iconColor: widget.isFavorite! ? Colors.red : iconBtnColor,
                   labelColor: subColor,
                   onTap: widget.onFavoriteToggle),
+              if (widget.onSleepTimerPressed != null)
+                _buildActionButton(Icons.timer_outlined, '定时',
+                    iconColor: widget.hasActiveSleepTimer
+                        ? Colors.green
+                        : iconBtnColor,
+                    labelColor: subColor,
+                    onTap: widget.onSleepTimerPressed),
               _buildActionButton(LucideIcons.monitorPlay, '投屏',
                   iconColor: iconBtnColor,
                   labelColor: subColor,
