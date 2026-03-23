@@ -206,7 +206,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _adFilterEnabled = false; // 是否开启自动去广告
-  bool _screenOffPlaybackEnabled = false; // 是否允许息屏播放
   bool _mediaKitPreloadEnabled = Platform.isMacOS;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
@@ -426,8 +425,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
-    final screenOffPlaybackEnabled =
-        await UserDataService.getScreenOffPlaybackEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
       defaultValue: Platform.isMacOS,
@@ -442,7 +439,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
         _adFilterEnabled = adFilterEnabled;
-        _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
       });
     }
@@ -1607,22 +1603,13 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     switch (state) {
       case AppLifecycleState.paused:
-        _setKeepScreenOn(false);
-        if (DeviceUtils.isPC()) {
-          break;
-        }
-        if (!_screenOffPlaybackEnabled && !_isCasting) {
-          _videoPlayerController?.pause();
-        }
-        // 应用进入后台前保存进度
-        _saveProgress(force: true, scene: '应用进入后台');
-        break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
         _setKeepScreenOn(false);
         if (DeviceUtils.isPC()) {
           break;
         }
+        // 应用进入后台前保存进度
         _saveProgress(force: true, scene: '应用进入后台');
         break;
       case AppLifecycleState.resumed:
@@ -2336,7 +2323,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       theme: theme,
       sideSheet: useSideSheet,
       scheduledAt: _sleepTimerDeadline,
-      screenOffPlaybackEnabled: _screenOffPlaybackEnabled,
       canExitApp: SleepTimerService.supportsAppExit,
       onSetMinutes: _setSleepTimerByMinutes,
       onSetTimeOfDay: _setSleepTimerByTimeOfDay,
@@ -4085,47 +4071,22 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  EpisodePanelAdaptiveLayout _resolveEpisodesPanelLayout(
-    BuildContext context, {
-    required double maxWidth,
-    required double maxHeight,
-    required bool isCompact,
-    double minWidth = 280,
-  }) {
-    return PlayerEpisodesPanel.estimateAdaptiveLayout(
-      context: context,
-      episodes: currentDetail?.episodes ?? const [],
-      episodesTitles: currentDetail?.episodesTitles ?? const [],
-      maxWidth: maxWidth,
-      maxHeight: maxHeight,
-      isCompact: isCompact,
-      minWidth: minWidth,
-    );
-  }
-
   /// 构建选集底部滑出面板
   void _showEpisodesPanel() {
     final theme = Theme.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    final tabletSideMaxWidth = math.min(screenWidth * 0.46, 560.0);
+
+    // 作为最大列数提示，实际列数在面板内部会根据标题长度和面板宽度自适应。
+    final crossAxisCount = _isPortraitTablet ? 5 : 4;
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {
-      final adaptiveLayout = _resolveEpisodesPanelLayout(
-        context,
-        maxWidth: _isPortraitTablet ? screenWidth : tabletSideMaxWidth,
-        maxHeight: _isPortraitTablet
-            ? (screenHeight - statusBarHeight) * 0.78
-            : screenHeight,
-        isCompact: true,
-        minWidth: _isPortraitTablet ? screenWidth : 300,
-      );
-      final panelWidth =
-          _isPortraitTablet ? screenWidth : adaptiveLayout.preferredWidth;
-      final panelHeight =
-          _isPortraitTablet ? adaptiveLayout.preferredHeight : screenHeight;
+      final panelWidth = _isPortraitTablet ? screenWidth : screenWidth * 0.35;
+      final panelHeight = _isPortraitTablet
+          ? (screenHeight - statusBarHeight) * 0.5
+          : screenHeight;
       final alignment =
           _isPortraitTablet ? Alignment.bottomCenter : Alignment.centerRight;
       final slideBegin =
@@ -4153,7 +4114,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   episodesTitles: currentDetail!.episodesTitles,
                   currentEpisodeIndex: currentEpisodeIndex,
                   isReversed: _isEpisodesReversed,
-                  crossAxisCount: adaptiveLayout.maxColumns,
+                  crossAxisCount: crossAxisCount,
                   isCompact: true, // 横屏使用紧凑模式
                   onEpisodeTap: (index) {
                     Navigator.pop(context);
@@ -4186,14 +4147,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     // 手机模式：从底部弹出
     final playerHeight = screenWidth / (16 / 9);
-    final maxPanelHeight = screenHeight - statusBarHeight - playerHeight;
-    final adaptiveLayout = _resolveEpisodesPanelLayout(
-      context,
-      maxWidth: screenWidth,
-      maxHeight: maxPanelHeight,
-      isCompact: false,
-      minWidth: screenWidth,
-    );
+    final panelHeight = screenHeight - statusBarHeight - playerHeight;
 
     showModalBottomSheet(
       context: context,
@@ -4204,8 +4158,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setState) {
-            return SizedBox(
-              height: adaptiveLayout.preferredHeight,
+            return Container(
+              height: panelHeight,
               width: double.infinity,
               child: PlayerEpisodesPanel(
                 theme: theme,
@@ -4213,7 +4167,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 episodesTitles: currentDetail!.episodesTitles,
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
-                crossAxisCount: adaptiveLayout.maxColumns,
+                crossAxisCount: crossAxisCount,
                 backgroundOpacity: 1.0, // 竖屏不透明
                 isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {
@@ -5188,16 +5142,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
 
-    final adaptiveLayout = _resolveEpisodesPanelLayout(
-      fullscreenContext,
-      maxWidth: math.min(screenWidth * 0.46, 560.0),
-      maxHeight: screenHeight,
-      isCompact: true,
-      minWidth: 300,
-    );
-
     // 全屏模式下从右侧滑入
-    final panelWidth = adaptiveLayout.preferredWidth;
+    final panelWidth = screenWidth * 0.4;
     final panelHeight = screenHeight;
 
     showGeneralDialog(
@@ -5222,7 +5168,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 episodesTitles: currentDetail!.episodesTitles,
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
-                crossAxisCount: adaptiveLayout.maxColumns,
+                crossAxisCount: 4,
                 onEpisodeTap: (index) {
                   Navigator.pop(dialogContext);
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -5712,20 +5658,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, stackConstraints) {
-                      final inlineEpisodesPanelLayout =
-                          _resolveEpisodesPanelLayout(
-                        context,
-                        maxWidth: math.min(
-                          stackConstraints.maxWidth * 0.48,
-                          540.0,
-                        ),
-                        maxHeight: stackConstraints.maxHeight,
-                        isCompact: true,
-                        minWidth: 280,
-                      );
-                      final inlineEpisodesPanelWidth =
-                          inlineEpisodesPanelLayout.preferredWidth;
-
                       return Stack(
                         children: [
                           // Main content (without player).
@@ -5751,10 +5683,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                               curve: Curves.easeInOut,
                               top: 0,
                               bottom: 0,
-                              right: _isEpisodesPanelVisible
-                                  ? 0
-                                  : -inlineEpisodesPanelWidth,
-                              width: inlineEpisodesPanelWidth,
+                              right: _isEpisodesPanelVisible ? 0 : -400,
+                              width: 400,
                               child: PlayerEpisodesPanel(
                                 theme: theme,
                                 episodes: currentDetail?.episodes ?? [],
@@ -5773,8 +5703,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     _isEpisodesReversed = !_isEpisodesReversed;
                                   });
                                 },
-                                crossAxisCount:
-                                    inlineEpisodesPanelLayout.maxColumns,
+                                crossAxisCount: 4,
                               ),
                             ),
                           // Source panel (slide in from right, phone landscape only).

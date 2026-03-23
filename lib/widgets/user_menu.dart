@@ -44,7 +44,6 @@ class _UserMenuState extends State<UserMenu> {
   bool _localSearch = false;
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
-  bool _screenOffPlaybackEnabled = false;
   bool _mediaKitPreloadEnabled = true;
   bool _showLive = false;
   bool _showSourceBrowser = false;
@@ -82,8 +81,6 @@ class _UserMenuState extends State<UserMenu> {
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
-    final screenOffPlaybackEnabled =
-        await UserDataService.getScreenOffPlaybackEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
       defaultValue: true,
@@ -105,7 +102,6 @@ class _UserMenuState extends State<UserMenu> {
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
-        _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
         _showLive = showLive;
         _showSourceBrowser = showSourceBrowser;
@@ -1587,16 +1583,6 @@ class _UserMenuState extends State<UserMenu> {
                   },
                   icon: LucideIcons.shieldCheck,
                 ),
-                if (!DeviceUtils.isPC())
-                  _buildToggleOption(
-                    title: '息屏播放',
-                    value: _screenOffPlaybackEnabled,
-                    onChanged: (value) async {
-                      await UserDataService.saveScreenOffPlaybackEnabled(value);
-                      setState(() => _screenOffPlaybackEnabled = value);
-                    },
-                    icon: LucideIcons.moonStar,
-                  ),
                 if (DeviceUtils.isMacOS())
                   _buildToggleOption(
                     title: '预加载（media_kit）',

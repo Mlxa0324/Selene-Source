@@ -9,9 +9,6 @@ class SleepTimerService {
 
   static bool get supportsAppExit => Platform.isAndroid;
 
-  static bool get supportsScreenOffPlayback =>
-      Platform.isAndroid || Platform.isIOS;
-
   static String get timeoutActionLabel => supportsAppExit ? '退出应用' : '停止播放';
 
   static Future<bool> closeApp() async {

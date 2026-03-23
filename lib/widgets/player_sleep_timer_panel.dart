@@ -5,7 +5,6 @@ class PlayerSleepTimerPanel extends StatefulWidget {
   final ThemeData theme;
   final bool sideSheet;
   final DateTime? scheduledAt;
-  final bool screenOffPlaybackEnabled;
   final bool canExitApp;
   final Future<bool> Function(int minutes) onSetMinutes;
   final Future<bool> Function(TimeOfDay time) onSetTimeOfDay;
@@ -15,7 +14,6 @@ class PlayerSleepTimerPanel extends StatefulWidget {
     super.key,
     required this.theme,
     required this.sideSheet,
-    required this.screenOffPlaybackEnabled,
     required this.canExitApp,
     required this.onSetMinutes,
     required this.onSetTimeOfDay,
@@ -381,26 +379,6 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 20),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: (_isDarkMode ? Colors.white : Colors.black)
-                          .withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      widget.screenOffPlaybackEnabled
-                          ? '已开启息屏播放，锁屏后仍会继续播放，到时会自动${widget.canExitApp ? '退出应用' : '停止播放'}。'
-                          : '当前未开启息屏播放，锁屏后系统可能暂停播放；如需锁屏后仍按时执行，请到应用设置中打开息屏播放。',
-                      style: TextStyle(
-                        color: _subTextColor,
-                        fontSize: 13,
-                        height: 1.4,
-                      ),
-                    ),
                   ),
                 ],
               ),

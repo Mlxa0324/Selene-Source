@@ -215,25 +215,11 @@ class ShortDramaControlsState extends State<ShortDramaControls>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    final currentEpisodes = widget.allSources
-            ?.where((s) =>
-                s.source == widget.currentSource && s.id == widget.currentId)
-            .firstOrNull
-            ?.episodes ??
-        [];
 
     // 手机模式：从底部弹出，预留出上方 16:9 的空间
     final playerHeight = screenWidth / (16 / 9);
-    final maxPanelHeight = screenHeight - statusBarHeight - playerHeight;
-    final adaptiveLayout = PlayerEpisodesPanel.estimateAdaptiveLayout(
-      context: context,
-      episodes: currentEpisodes,
-      episodesTitles: widget.episodesTitles ?? [],
-      maxWidth: screenWidth,
-      maxHeight: maxPanelHeight,
-      isCompact: false,
-      minWidth: screenWidth,
-    );
+    // 💡 优化：按照要求将高度降低 20%
+    final panelHeight = (screenHeight - statusBarHeight - playerHeight) * 0.8;
 
     showModalBottomSheet(
       context: context,
@@ -245,15 +231,21 @@ class ShortDramaControlsState extends State<ShortDramaControls>
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter dialogSetState) {
             return SizedBox(
-              height: adaptiveLayout.preferredHeight,
+              height: panelHeight,
               width: double.infinity,
               child: PlayerEpisodesPanel(
                 theme: theme,
-                episodes: currentEpisodes,
+                episodes: widget.allSources
+                        ?.where((s) =>
+                            s.source == widget.currentSource &&
+                            s.id == widget.currentId)
+                        .firstOrNull
+                        ?.episodes ??
+                    [],
                 episodesTitles: widget.episodesTitles ?? [],
                 currentEpisodeIndex: widget.currentEpisodeIndex ?? 0,
                 isReversed: false,
-                crossAxisCount: adaptiveLayout.maxColumns,
+                crossAxisCount: 4,
                 backgroundOpacity: 1.0, // 竖屏不透明
                 isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {
@@ -527,11 +519,6 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (widget.onCastPressed != null)
-                IconButton(
-                  icon: const Icon(Icons.cast, color: Colors.white, size: 22),
-                  onPressed: widget.onCastPressed,
-                ),
             ],
           ),
         ),
