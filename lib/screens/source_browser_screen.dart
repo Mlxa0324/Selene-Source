@@ -13,6 +13,7 @@ import '../utils/device_utils.dart';
 import '../widgets/video_card.dart';
 import '../widgets/pulsing_dots_indicator.dart';
 import '../widgets/shimmer_effect.dart';
+import 'source_browser_style.dart';
 import 'player_screen.dart';
 
 class SourceBrowserScreen extends StatefulWidget {
@@ -36,9 +37,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
   static const double _mobileCompactSectionGap = _mobileCompactMode ? 0 : 16;
   static const double _mobileCompactCardRadius = _mobileCompactMode ? 18 : 20;
   static const double _mobileCompactChipFontSize = _mobileCompactMode ? 12 : 13;
-  static const double _mobileCompactChipHorizontalPadding = _mobileCompactMode ? 12 : 14;
-  static const double _mobileCompactChipVerticalPadding = _mobileCompactMode ? 8 : 10;
-  static const double _mobileCompactHeaderSpacing = _mobileCompactMode ? 10 : 12;
+  static const double _mobileCompactChipHorizontalPadding =
+      _mobileCompactMode ? 12 : 14;
+  static const double _mobileCompactChipVerticalPadding =
+      _mobileCompactMode ? 8 : 10;
+  static const double _mobileCompactHeaderSpacing =
+      _mobileCompactMode ? 10 : 12;
 
   static final Map<String, List<SourceBrowserCategory>> _categoryCache = {};
   static final Map<String, _SourceBrowserVideoCacheEntry> _videoCache = {};
@@ -111,8 +115,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     try {
       final sources = await SourceBrowserService.getAvailableSources();
       var nextSource = _currentSource;
-      final exists = nextSource == 'auto' ||
-          sources.any((item) => item.key == nextSource);
+      final exists =
+          nextSource == 'auto' || sources.any((item) => item.key == nextSource);
       if (!exists) {
         nextSource = 'auto';
       }
@@ -151,14 +155,16 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     }
 
     if (!mounted) return;
-    final shouldKeepCurrentCategory =
-        forceReload && _currentSource == sourceKey && _selectedCategoryId.isNotEmpty;
+    final shouldKeepCurrentCategory = forceReload &&
+        _currentSource == sourceKey &&
+        _selectedCategoryId.isNotEmpty;
     setState(() {
       _currentSource = sourceKey;
       _categoryError = '';
       _videos = const [];
       _categories = const [];
-      _selectedCategoryId = shouldKeepCurrentCategory ? _selectedCategoryId : '';
+      _selectedCategoryId =
+          shouldKeepCurrentCategory ? _selectedCategoryId : '';
       _showBackToTop = false;
       _hasMore = false;
       _isLoadingVideos = false;
@@ -183,10 +189,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     final requestSourceCacheKey = requestSourceKey;
     final cachedCategories = _categoryCache[requestSourceCacheKey];
     if (cachedCategories != null) {
-      final preferredCategoryId = cachedCategories.any(
-              (category) => category.id == _selectedCategoryId)
-          ? _selectedCategoryId
-          : '';
+      final preferredCategoryId =
+          cachedCategories.any((category) => category.id == _selectedCategoryId)
+              ? _selectedCategoryId
+              : '';
       final nextCategoryId = preferredCategoryId.isNotEmpty
           ? preferredCategoryId
           : (cachedCategories.isNotEmpty ? cachedCategories.first.id : '');
@@ -210,10 +216,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     });
     try {
       final categories = await SourceBrowserService.fetchCategories(source);
-      final preferredCategoryId = categories.any(
-              (category) => category.id == _selectedCategoryId)
-          ? _selectedCategoryId
-          : '';
+      final preferredCategoryId =
+          categories.any((category) => category.id == _selectedCategoryId)
+              ? _selectedCategoryId
+              : '';
       final nextCategoryId = preferredCategoryId.isNotEmpty
           ? preferredCategoryId
           : (categories.isNotEmpty ? categories.first.id : '');
@@ -231,7 +237,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     } catch (e) {
       if (!mounted || _currentSource != requestSourceKey) return;
       setState(() {
-        _categoryError = '???????$e';
+        _categoryError = formatSourceBrowserCategoryError(e);
         _isLoadingCategories = false;
       });
     }
@@ -264,7 +270,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
           _setCategoryLoadingPlaceholders(placeholderCountBeforeReset);
         });
 
-        final remaining = _minCategorySkeletonDuration - resetStopwatch!.elapsed;
+        final remaining =
+            _minCategorySkeletonDuration - resetStopwatch!.elapsed;
         if (!remaining.isNegative && remaining > Duration.zero) {
           await Future.delayed(remaining);
         }
@@ -331,7 +338,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       setState(() {
         final merged = reset
             ? result.videos
-            : [..._videos, ...result.videos].fold<List<SourceBrowserVideo>>([], (acc, item) {
+            : [..._videos, ...result.videos].fold<List<SourceBrowserVideo>>([],
+                (acc, item) {
                 final exists = acc.any((existing) => existing.id == item.id);
                 if (!exists) {
                   acc.add(item);
@@ -354,7 +362,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         return;
       }
       setState(() {
-        _categoryError = '?????????$e';
+        _categoryError = formatSourceBrowserContentError(e);
       });
     } finally {
       if (mounted &&
@@ -485,11 +493,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     return Consumer<ThemeService>(
       builder: (context, themeService, child) {
         final isDarkMode = themeService.isDarkMode;
-        final cardColor = isDarkMode ? const Color(0xFF171d1a) : Colors.white;
         const accent = Color(0xFF27ae60);
-        final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
+        final isDesktopStyle =
+            DeviceUtils.isTablet(context) || DeviceUtils.isPC();
 
-        final horizontalPadding = isDesktopStyle ? 16.0 : _mobileCompactOuterPadding;
+        final horizontalPadding =
+            isDesktopStyle ? 16.0 : _mobileCompactOuterPadding;
         final topPadding = isDesktopStyle ? 16.0 : 12.0;
         final sectionGap = isDesktopStyle ? 16.0 : _mobileCompactSectionGap;
 
@@ -502,19 +511,20 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 key: const PageStorageKey<String>('source_browser_list'),
                 controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(horizontalPadding, topPadding, horizontalPadding, 28),
+                padding: EdgeInsets.fromLTRB(
+                    horizontalPadding, topPadding, horizontalPadding, 28),
                 children: [
                   if (isDesktopStyle) ...[
-                    _buildHeader(cardColor, isDarkMode, accent),
+                    _buildHeader(isDarkMode, accent),
                     SizedBox(height: sectionGap),
-                    _buildSourceSection(cardColor, isDarkMode, accent),
+                    _buildSourceSection(isDarkMode, accent),
                     SizedBox(height: sectionGap),
-                    _buildCategorySection(cardColor, isDarkMode, accent),
+                    _buildCategorySection(isDarkMode, accent),
                   ] else ...[
-                    _buildMobileSummarySection(cardColor, isDarkMode, accent),
+                    _buildMobileSummarySection(isDarkMode, accent),
                   ],
                   SizedBox(height: sectionGap),
-                  _buildContentSection(cardColor, isDarkMode, accent),
+                  _buildContentSection(isDarkMode, accent),
                 ],
               ),
             ),
@@ -536,20 +546,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     );
   }
 
-  Widget _buildHeader(Color cardColor, bool isDarkMode, Color accent) {
+  Widget _buildHeader(bool isDarkMode, Color accent) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: accent.withValues(alpha: 0.18)),
-        boxShadow: [
-          BoxShadow(
-            color: accent.withValues(alpha: 0.08),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
+      decoration: buildSourceBrowserSectionDecoration(
+        isDarkMode: isDarkMode,
+        borderRadius: 24,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -575,15 +577,13 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
-                        color: isDarkMode ? Colors.white : const Color(0xFF1f2d26),
+                        color:
+                            isDarkMode ? Colors.white : const Color(0xFF1f2d26),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '按源查看分类内容，直接进入播放详情。',
-
-
-
                       style: TextStyle(
                         fontSize: 13,
                         color: isDarkMode
@@ -595,7 +595,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 ),
               ),
               IconButton(
-                tooltip: '??',
+                tooltip: sourceBrowserRefreshTooltip,
                 onPressed: _isLoadingSources ? null : _loadSources,
                 icon: _isLoadingSources
                     ? SizedBox(
@@ -625,7 +625,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                       icon: const Icon(Icons.close, size: 18),
                     ),
               filled: true,
-              fillColor: isDarkMode ? const Color(0xFF101513) : const Color(0xFFF2F7F3),
+              fillColor: isDarkMode
+                  ? const Color(0xFF101513)
+                  : const Color(0xFFF2F7F3),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: BorderSide.none,
@@ -637,12 +639,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     );
   }
 
-  Widget _buildSourceSection(Color cardColor, bool isDarkMode, Color accent) {
+  Widget _buildSourceSection(bool isDarkMode, Color accent) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
+      decoration: buildSourceBrowserSectionDecoration(
+        isDarkMode: isDarkMode,
+        borderRadius: 24,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -658,7 +660,6 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
           const SizedBox(height: 6),
           Text(
             '当前：$_currentSourceName · 共 ${_sources.length + 1} 个选项',
-
             style: TextStyle(
               fontSize: 13,
               color: isDarkMode
@@ -698,18 +699,17 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     );
   }
 
-  Widget _buildMobileSummarySection(
-      Color cardColor, bool isDarkMode, Color accent) {
+  Widget _buildMobileSummarySection(bool isDarkMode, Color accent) {
     return Container(
-      padding: EdgeInsets.fromLTRB(
+      padding: const EdgeInsets.fromLTRB(
         _mobileCompactMode ? 14 : 16,
         _mobileCompactMode ? 14 : 16,
         _mobileCompactMode ? 14 : 16,
         _mobileCompactMode ? 10 : 16,
       ),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(_mobileCompactCardRadius),
+      decoration: buildSourceBrowserSectionDecoration(
+        isDarkMode: isDarkMode,
+        borderRadius: _mobileCompactCardRadius,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -738,7 +738,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                       style: TextStyle(
                         fontSize: _mobileCompactMode ? 16 : 17,
                         fontWeight: FontWeight.w700,
-                        color: isDarkMode ? Colors.white : const Color(0xFF1f2d26),
+                        color:
+                            isDarkMode ? Colors.white : const Color(0xFF1f2d26),
                       ),
                     ),
                   ],
@@ -752,21 +753,21 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 style: FilledButton.styleFrom(
                   backgroundColor: accent.withValues(alpha: 0.12),
                   foregroundColor: accent,
-                  padding: EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                     horizontal: _mobileCompactMode ? 12 : 14,
                     vertical: _mobileCompactMode ? 12 : 14,
                   ),
-                  minimumSize: Size(0, _mobileCompactMode ? 42 : 48),
+                  minimumSize: const Size(0, _mobileCompactMode ? 42 : 48),
                 ),
                 icon: const Icon(LucideIcons.panelBottomOpen, size: 18),
-                label: Text(
+                label: const Text(
                   '切换源',
                   style: TextStyle(fontSize: _mobileCompactMode ? 13 : 14),
                 ),
               ),
             ],
           ),
-          SizedBox(height: _mobileCompactMode ? 12 : 14),
+          const SizedBox(height: _mobileCompactMode ? 12 : 14),
           Row(
             children: [
               Text(
@@ -793,11 +794,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                   children: [
                     InkWell(
                       borderRadius: BorderRadius.circular(999),
-                      onTap: () =>
-                          _scheduleEnsureSelectedCategoryVisible(
-                            animated: true,
-                            preferCenter: true,
-                          ),
+                      onTap: () => _scheduleEnsureSelectedCategoryVisible(
+                        animated: true,
+                        preferCenter: true,
+                      ),
                       child: Container(
                         width: _mobileCompactMode ? 30 : 34,
                         height: _mobileCompactMode ? 30 : 34,
@@ -834,7 +834,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 ),
             ],
           ),
-          SizedBox(height: _mobileCompactMode ? 8 : _mobileCompactHeaderSpacing),
+          const SizedBox(
+            height: _mobileCompactMode ? 8 : _mobileCompactHeaderSpacing,
+          ),
           if (_currentSource == 'auto')
             Text(
               '请先选择具体源。',
@@ -867,19 +869,23 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       children: [
-                        for (int index = 0; index < _categories.length; index++) ...[
+                        for (int index = 0;
+                            index < _categories.length;
+                            index++) ...[
                           if (index > 0)
-                            SizedBox(width: _mobileCompactMode ? 8 : 10),
+                            const SizedBox(width: _mobileCompactMode ? 8 : 10),
                           KeyedSubtree(
                             key: _getCategoryItemKey(_categories[index].id),
                             child: _buildSourceChip(
                               label: _categories[index].name,
-                              selected: _selectedCategoryId == _categories[index].id,
+                              selected:
+                                  _selectedCategoryId == _categories[index].id,
                               accent: accent,
                               isDarkMode: isDarkMode,
                               compact: true,
                               animated: false,
-                              onTap: () => _selectCategory(_categories[index].id),
+                              onTap: () =>
+                                  _selectCategory(_categories[index].id),
                             ),
                           ),
                         ],
@@ -889,7 +895,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 );
               },
             ),
-          SizedBox(height: _mobileCompactMode ? 8 : _mobileCompactHeaderSpacing),
+          const SizedBox(
+            height: _mobileCompactMode ? 8 : _mobileCompactHeaderSpacing,
+          ),
           if (_categoryError.isNotEmpty) ...[
             const SizedBox(height: 10),
             _buildErrorBox(_categoryError),
@@ -938,7 +946,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       return;
     }
 
-    final targetContext = _categoryItemKeys[_selectedCategoryId]?.currentContext;
+    final targetContext =
+        _categoryItemKeys[_selectedCategoryId]?.currentContext;
     final viewportContext = _categoryViewportKey.currentContext;
     if (targetContext == null || viewportContext == null) return;
 
@@ -963,8 +972,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     final desiredOffset = preferCenter
         ? currentOffset + targetOffset - (viewportWidth - targetWidth) / 2
         : (targetOffset < viewportPadding
-              ? currentOffset + targetOffset - viewportPadding
-              : currentOffset + targetRight - viewportWidth + viewportPadding);
+            ? currentOffset + targetOffset - viewportPadding
+            : currentOffset + targetRight - viewportWidth + viewportPadding);
     final clampedOffset = desiredOffset.clamp(
       0.0,
       _categoryScrollController.position.maxScrollExtent,
@@ -1014,7 +1023,6 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 const SizedBox(height: 16),
                 Text(
                   '全部分类',
-
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -1088,7 +1096,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
-                          color: isDarkMode ? Colors.white : const Color(0xFF1f2d26),
+                          color: isDarkMode
+                              ? Colors.white
+                              : const Color(0xFF1f2d26),
                         ),
                       ),
                       const Spacer(),
@@ -1110,9 +1120,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: '搜索源名称、Key 或 API 地址',
-                      prefixIcon: Icon(LucideIcons.search, size: 18, color: accent),
+                      prefixIcon:
+                          Icon(LucideIcons.search, size: 18, color: accent),
                       filled: true,
-                      fillColor: isDarkMode ? const Color(0xFF101513) : const Color(0xFFF2F7F3),
+                      fillColor: isDarkMode
+                          ? const Color(0xFF101513)
+                          : const Color(0xFFF2F7F3),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -1190,7 +1203,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                           fontWeight: FontWeight.w700,
                           color: selected
                               ? accent
-                              : (isDarkMode ? Colors.white : const Color(0xFF1f2d26)),
+                              : (isDarkMode
+                                  ? Colors.white
+                                  : const Color(0xFF1f2d26)),
                         ),
                       ),
                       if (subtitle != null && subtitle.isNotEmpty) ...[
@@ -1210,8 +1225,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                     ],
                   ),
                 ),
-                if (selected)
-                  Icon(LucideIcons.check, size: 18, color: accent),
+                if (selected) Icon(LucideIcons.check, size: 18, color: accent),
               ],
             ),
           ),
@@ -1220,12 +1234,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     );
   }
 
-  Widget _buildCategorySection(Color cardColor, bool isDarkMode, Color accent) {
+  Widget _buildCategorySection(bool isDarkMode, Color accent) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
+      decoration: buildSourceBrowserSectionDecoration(
+        isDarkMode: isDarkMode,
+        borderRadius: 24,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1233,7 +1247,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
           Row(
             children: [
               Text(
-                '??',
+                sourceBrowserCategorySectionTitle,
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w700,
@@ -1283,7 +1297,6 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
               style: TextStyle(
                 fontSize: 13,
                 color: isDarkMode
-
                     ? Colors.white.withValues(alpha: 0.68)
                     : const Color(0xFF5f6f67),
               ),
@@ -1312,24 +1325,26 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     );
   }
 
-  Widget _buildContentSection(Color cardColor, bool isDarkMode, Color accent) {
+  Widget _buildContentSection(bool isDarkMode, Color accent) {
     final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
     final isListLoading = _isLoadingCategories || _isLoadingVideos;
-    const Color transparent = Colors.transparent;
-    final hasGridPlaceholders =
-        _showCategoryLoadingPlaceholders && _categoryLoadingPlaceholderCount > 0;
+    final sectionColor = isDesktopStyle
+        ? sourceBrowserSectionBackgroundColor(isDarkMode: isDarkMode)
+        : Colors.transparent;
+    final hasGridPlaceholders = _showCategoryLoadingPlaceholders &&
+        _categoryLoadingPlaceholderCount > 0;
 
     if (_currentSource == 'auto') {
-      return _buildEmptyCard(transparent, isDarkMode, '请选择具体源后开始浏览。');
+      return _buildEmptyCard(sectionColor, isDarkMode, '请选择具体源后开始浏览。');
     }
     if (isListLoading && _videos.isEmpty && !hasGridPlaceholders) {
-      return _buildLoadingSkeletonSection(cardColor, isDarkMode);
+      return _buildLoadingSkeletonSection(isDarkMode);
     }
     if (_selectedCategoryId.isEmpty && !_isLoadingCategories) {
-      return _buildEmptyCard(transparent, isDarkMode, '当前分类为空，暂时无法展示内容。');
+      return _buildEmptyCard(sectionColor, isDarkMode, '当前分类为空，暂时无法展示内容。');
     }
     if (_videos.isEmpty && !hasGridPlaceholders) {
-      return _buildNoContentState(transparent, isDarkMode);
+      return _buildNoContentState(sectionColor, isDarkMode);
     }
 
     final content = Column(
@@ -1359,19 +1374,16 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
-            int crossAxisCount = 3;
-            if (width >= 1200) {
-              crossAxisCount = 6;
-            } else if (width >= 900) {
-              crossAxisCount = 5;
-            } else if (width >= 700) {
-              crossAxisCount = 4;
-            }
-
-            final spacing = width >= 700 ? 18.0 : (_mobileCompactMode ? 8.0 : 10.0);
-            final mainSpacing = width >= 700 ? 18.0 : (_mobileCompactMode ? 14.0 : 18.0);
-            final cardWidth =
-                (width - spacing * (crossAxisCount - 1)) / crossAxisCount;
+            final visibleCards =
+                DeviceUtils.getHorizontalVisibleCards(context, 2.75);
+            const spacing = sourceBrowserCardSpacing;
+            final mainSpacing = width >= 700 ? 18.0 : 16.0;
+            final cardWidth = calculateSourceBrowserCardWidth(
+              availableWidth: width,
+              visibleCards: visibleCards,
+            );
+            final childAspectRatio =
+                calculateSourceBrowserCardAspectRatio(cardWidth);
             final gridItemCount = hasGridPlaceholders
                 ? (_categoryLoadingPlaceholderCount > _videos.length
                     ? _categoryLoadingPlaceholderCount
@@ -1382,11 +1394,11 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: gridItemCount,
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
+              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: cardWidth,
                 crossAxisSpacing: spacing,
                 mainAxisSpacing: mainSpacing,
-                childAspectRatio: 0.46,
+                childAspectRatio: childAspectRatio,
               ),
               itemBuilder: (context, index) {
                 final shouldShowSkeleton = hasGridPlaceholders &&
@@ -1410,7 +1422,10 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
             padding: EdgeInsets.fromLTRB(0, 8, 0, 8),
             child: PulsingDotsIndicator(),
           )
-        else if (!_hasMore && _videos.isNotEmpty && !isListLoading && !hasGridPlaceholders)
+        else if (!_hasMore &&
+            _videos.isNotEmpty &&
+            !isListLoading &&
+            !hasGridPlaceholders)
           _buildEndOfListIndicator(isDarkMode)
         else
           const SizedBox(height: 24),
@@ -1423,9 +1438,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
+      decoration: buildSourceBrowserSectionDecoration(
+        isDarkMode: isDarkMode,
+        borderRadius: 24,
       ),
       child: content,
     );
@@ -1440,12 +1455,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     bool compact = false,
     bool animated = true,
   }) {
-    final horizontalPadding = compact
-        ? _mobileCompactChipHorizontalPadding
-        : 14.0;
-    final verticalPadding = compact
-        ? _mobileCompactChipVerticalPadding
-        : 10.0;
+    final horizontalPadding =
+        compact ? _mobileCompactChipHorizontalPadding : 14.0;
+    final verticalPadding = compact ? _mobileCompactChipVerticalPadding : 10.0;
     final fontSize = compact ? _mobileCompactChipFontSize : 13.0;
 
     return InkWell(
@@ -1460,10 +1472,13 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         decoration: BoxDecoration(
           color: selected
               ? accent.withValues(alpha: 0.16)
-              : (isDarkMode ? const Color(0xFF101513) : const Color(0xFFF2F7F3)),
+              : (isDarkMode
+                  ? const Color(0xFF101513)
+                  : const Color(0xFFF2F7F3)),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? accent.withValues(alpha: 0.45) : Colors.transparent,
+            color:
+                selected ? accent.withValues(alpha: 0.45) : Colors.transparent,
           ),
         ),
         child: Text(
@@ -1473,7 +1488,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
             color: selected
                 ? accent
-                : (isDarkMode ? Colors.white.withValues(alpha: 0.86) : const Color(0xFF38463f)),
+                : (isDarkMode
+                    ? Colors.white.withValues(alpha: 0.86)
+                    : const Color(0xFF38463f)),
           ),
         ),
       ),
@@ -1523,38 +1540,33 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     );
   }
 
-  Widget _buildLoadingSkeletonSection(Color cardColor, bool isDarkMode) {
+  Widget _buildLoadingSkeletonSection(bool isDarkMode) {
     final isDesktopStyle = DeviceUtils.isTablet(context) || DeviceUtils.isPC();
 
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        int crossAxisCount = 3;
-        if (width >= 1200) {
-          crossAxisCount = 6;
-        } else if (width >= 900) {
-          crossAxisCount = 5;
-        } else if (width >= 700) {
-          crossAxisCount = 4;
-        }
-
-        final spacing =
-            width >= 700 ? 18.0 : (_mobileCompactMode ? 8.0 : 10.0);
-        final mainSpacing =
-            width >= 700 ? 18.0 : (_mobileCompactMode ? 14.0 : 18.0);
-        final cardWidth =
-            (width - spacing * (crossAxisCount - 1)) / crossAxisCount;
-        final skeletonCount = width >= 700 ? crossAxisCount * 2 : 6;
+        final visibleCards =
+            DeviceUtils.getHorizontalVisibleCards(context, 2.75);
+        const spacing = sourceBrowserCardSpacing;
+        final mainSpacing = width >= 700 ? 18.0 : 16.0;
+        final cardWidth = calculateSourceBrowserCardWidth(
+          availableWidth: width,
+          visibleCards: visibleCards,
+        );
+        final childAspectRatio =
+            calculateSourceBrowserCardAspectRatio(cardWidth);
+        final skeletonCount = width >= 700 ? visibleCards.ceil() * 2 : 6;
 
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: skeletonCount,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: cardWidth,
             crossAxisSpacing: spacing,
             mainAxisSpacing: mainSpacing,
-            childAspectRatio: 0.46,
+            childAspectRatio: childAspectRatio,
           ),
           itemBuilder: (context, index) {
             return _buildSkeletonCard(cardWidth, isDarkMode);
@@ -1569,9 +1581,9 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
 
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
+      decoration: buildSourceBrowserSectionDecoration(
+        isDarkMode: isDarkMode,
+        borderRadius: 24,
       ),
       child: content,
     );
@@ -1605,7 +1617,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       decoration: BoxDecoration(
         color: const Color(0xFFef4444).withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFef4444).withValues(alpha: 0.28)),
+        border:
+            Border.all(color: const Color(0xFFef4444).withValues(alpha: 0.28)),
       ),
       child: Text(
         message,
@@ -1617,10 +1630,15 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
   Widget _buildEmptyCard(Color cardColor, bool isDarkMode, String text) {
     return Container(
       height: 180,
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-      ),
+      decoration: cardColor == Colors.transparent
+          ? BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(24),
+            )
+          : buildSourceBrowserSectionDecoration(
+              isDarkMode: isDarkMode,
+              borderRadius: 24,
+            ),
       child: Center(
         child: Text(
           text,
@@ -1638,10 +1656,15 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
   Widget _buildNoContentState(Color cardColor, bool isDarkMode) {
     return Container(
       height: 220,
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(24),
-      ),
+      decoration: cardColor == Colors.transparent
+          ? BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(24),
+            )
+          : buildSourceBrowserSectionDecoration(
+              isDarkMode: isDarkMode,
+              borderRadius: 24,
+            ),
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
