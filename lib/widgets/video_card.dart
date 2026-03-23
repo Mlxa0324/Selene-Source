@@ -12,6 +12,13 @@ import '../models/search_result.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 
+bool shouldShowVideoCardSourceLabel(String from) {
+  return from != 'douban' &&
+      from != 'bangumi' &&
+      from != 'agg' &&
+      from != 'source_browser';
+}
+
 /// 视频卡片组件
 class VideoCard extends StatefulWidget {
   final VideoInfo videoInfo;
@@ -539,9 +546,7 @@ class _VideoCardState extends State<VideoCard> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         // 豆瓣模式和Bangumi模式不显示来源信息
-                        if (widget.from != 'douban' &&
-                            widget.from != 'bangumi' &&
-                            widget.from != 'agg') ...[
+                        if (shouldShowVideoCardSourceLabel(widget.from)) ...[
                           const SizedBox(height: 3), // 增加title和sourceName之间的间距
                           // 视频源名称
                           Container(
@@ -708,6 +713,8 @@ class _VideoCardState extends State<VideoCard> {
         return false; // Bangumi模式不显示进度条
       case 'search':
         return false; // 搜索模式不显示进度条
+      case 'source_browser':
+        return false; // 源浏览模式不显示进度条
       case 'agg':
         return false; // 聚合模式不显示进度条
       case 'playrecord':

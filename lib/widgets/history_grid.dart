@@ -6,6 +6,7 @@ import '../widgets/video_card.dart';
 import '../services/page_cache_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
+import '../utils/home_library_grid_layout.dart';
 import 'video_menu_bottom_sheet.dart';
 import 'shimmer_effect.dart';
 
@@ -169,7 +170,10 @@ class _HistoryGridState extends State<HistoryGrid>
           const double minItemWidth = 80.0;
           final double calculatedItemWidth = availableWidth / crossAxisCount;
           final double itemWidth = math.max(calculatedItemWidth, minItemWidth);
-          final double itemHeight = itemWidth * 2.0;
+          final double itemHeight = homeLibraryGridItemHeight(
+            itemWidth: itemWidth,
+            isTablet: isTablet,
+          );
 
           return GridView.builder(
             padding: const EdgeInsets.all(16),
@@ -179,7 +183,8 @@ class _HistoryGridState extends State<HistoryGrid>
               crossAxisCount: crossAxisCount,
               childAspectRatio: itemWidth / itemHeight,
               crossAxisSpacing: spacing,
-              mainAxisSpacing: isTablet ? 0 : 16,
+              mainAxisSpacing:
+                  homeLibraryGridMainAxisSpacing(isTablet: isTablet),
             ),
             itemCount: isTablet ? crossAxisCount * 2 : 6,
             itemBuilder: (context, index) {
@@ -328,7 +333,10 @@ class _HistoryGridState extends State<HistoryGrid>
           const double minItemWidth = 80.0;
           final double calculatedItemWidth = availableWidth / crossAxisCount;
           final double itemWidth = math.max(calculatedItemWidth, minItemWidth);
-          final double itemHeight = itemWidth * 2.0;
+          final double itemHeight = homeLibraryGridItemHeight(
+            itemWidth: itemWidth,
+            isTablet: isTablet,
+          );
 
           return GridView.builder(
             padding: const EdgeInsets.all(16),
@@ -338,7 +346,8 @@ class _HistoryGridState extends State<HistoryGrid>
               crossAxisCount: crossAxisCount,
               childAspectRatio: itemWidth / itemHeight,
               crossAxisSpacing: spacing,
-              mainAxisSpacing: isTablet ? 0 : 16,
+              mainAxisSpacing:
+                  homeLibraryGridMainAxisSpacing(isTablet: isTablet),
             ),
             itemCount: _playRecords.length,
             itemBuilder: (context, index) {

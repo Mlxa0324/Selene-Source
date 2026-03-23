@@ -7,6 +7,7 @@ import '../models/video_info.dart';
 import '../services/page_cache_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
+import '../utils/home_library_grid_layout.dart';
 import 'video_menu_bottom_sheet.dart';
 import 'shimmer_effect.dart';
 
@@ -287,7 +288,10 @@ class _FavoritesGridState extends State<FavoritesGrid>
           const double minItemWidth = 80.0; // 最小项目宽度
           final double calculatedItemWidth = availableWidth / crossAxisCount;
           final double itemWidth = math.max(calculatedItemWidth, minItemWidth);
-          final double itemHeight = itemWidth * 2.0; // 增加高度比例，确保有足够空间避免溢出
+          final double itemHeight = homeLibraryGridItemHeight(
+            itemWidth: itemWidth,
+            isTablet: isTablet,
+          );
 
           return GridView.builder(
             padding: const EdgeInsets.all(16),
@@ -297,7 +301,8 @@ class _FavoritesGridState extends State<FavoritesGrid>
               crossAxisCount: crossAxisCount,
               childAspectRatio: itemWidth / itemHeight, // 精确计算宽高比
               crossAxisSpacing: spacing, // 列间距
-              mainAxisSpacing: isTablet ? 0 : 16, // 行间距
+              mainAxisSpacing:
+                  homeLibraryGridMainAxisSpacing(isTablet: isTablet), // 行间距
             ),
             itemCount: isTablet ? crossAxisCount * 2 : 6, // 平板显示2行，手机显示6个骨架卡片
             itemBuilder: (context, index) {
@@ -451,7 +456,10 @@ class _FavoritesGridState extends State<FavoritesGrid>
           const double minItemWidth = 80.0; // 最小项目宽度
           final double calculatedItemWidth = availableWidth / crossAxisCount;
           final double itemWidth = math.max(calculatedItemWidth, minItemWidth);
-          final double itemHeight = itemWidth * 2.0; // 增加高度比例，确保有足够空间避免溢出
+          final double itemHeight = homeLibraryGridItemHeight(
+            itemWidth: itemWidth,
+            isTablet: isTablet,
+          );
 
           return GridView.builder(
             padding: const EdgeInsets.all(16),
@@ -461,7 +469,8 @@ class _FavoritesGridState extends State<FavoritesGrid>
               crossAxisCount: crossAxisCount,
               childAspectRatio: itemWidth / itemHeight, // 精确计算宽高比
               crossAxisSpacing: spacing, // 列间距
-              mainAxisSpacing: isTablet ? 0 : 16, // 行间距
+              mainAxisSpacing:
+                  homeLibraryGridMainAxisSpacing(isTablet: isTablet), // 行间距
             ),
             itemCount: _favorites.length,
             itemBuilder: (context, index) {

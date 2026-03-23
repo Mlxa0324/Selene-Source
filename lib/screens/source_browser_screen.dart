@@ -1376,14 +1376,12 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
             final width = constraints.maxWidth;
             final visibleCards =
                 DeviceUtils.getHorizontalVisibleCards(context, 2.75);
-            const spacing = sourceBrowserCardSpacing;
-            final mainSpacing = width >= 700 ? 18.0 : 16.0;
-            final cardWidth = calculateSourceBrowserCardWidth(
+            final gridMetrics = calculateSourceBrowserGridMetrics(
               availableWidth: width,
               visibleCards: visibleCards,
             );
-            final childAspectRatio =
-                calculateSourceBrowserCardAspectRatio(cardWidth);
+            const spacing = sourceBrowserCardSpacing;
+            final mainSpacing = width >= 700 ? 18.0 : 16.0;
             final gridItemCount = hasGridPlaceholders
                 ? (_categoryLoadingPlaceholderCount > _videos.length
                     ? _categoryLoadingPlaceholderCount
@@ -1394,23 +1392,23 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: gridItemCount,
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: cardWidth,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: gridMetrics.crossAxisCount,
                 crossAxisSpacing: spacing,
                 mainAxisSpacing: mainSpacing,
-                childAspectRatio: childAspectRatio,
+                childAspectRatio: gridMetrics.childAspectRatio,
               ),
               itemBuilder: (context, index) {
                 final shouldShowSkeleton = hasGridPlaceholders &&
                     (_isLoadingVideos || index >= _videos.length);
                 if (shouldShowSkeleton) {
-                  return _buildSkeletonCard(cardWidth, isDarkMode);
+                  return _buildSkeletonCard(gridMetrics.itemWidth, isDarkMode);
                 }
                 final item = _videos[index];
                 return VideoCard(
                   videoInfo: _toVideoInfo(item),
-                  from: 'search',
-                  cardWidth: cardWidth,
+                  from: 'source_browser',
+                  cardWidth: gridMetrics.itemWidth,
                   onTap: () => _openPlayer(item),
                 );
               },
@@ -1548,28 +1546,26 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         final width = constraints.maxWidth;
         final visibleCards =
             DeviceUtils.getHorizontalVisibleCards(context, 2.75);
-        const spacing = sourceBrowserCardSpacing;
-        final mainSpacing = width >= 700 ? 18.0 : 16.0;
-        final cardWidth = calculateSourceBrowserCardWidth(
+        final gridMetrics = calculateSourceBrowserGridMetrics(
           availableWidth: width,
           visibleCards: visibleCards,
         );
-        final childAspectRatio =
-            calculateSourceBrowserCardAspectRatio(cardWidth);
+        const spacing = sourceBrowserCardSpacing;
+        final mainSpacing = width >= 700 ? 18.0 : 16.0;
         final skeletonCount = width >= 700 ? visibleCards.ceil() * 2 : 6;
 
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           itemCount: skeletonCount,
-          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: cardWidth,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: gridMetrics.crossAxisCount,
             crossAxisSpacing: spacing,
             mainAxisSpacing: mainSpacing,
-            childAspectRatio: childAspectRatio,
+            childAspectRatio: gridMetrics.childAspectRatio,
           ),
           itemBuilder: (context, index) {
-            return _buildSkeletonCard(cardWidth, isDarkMode);
+            return _buildSkeletonCard(gridMetrics.itemWidth, isDarkMode);
           },
         );
       },

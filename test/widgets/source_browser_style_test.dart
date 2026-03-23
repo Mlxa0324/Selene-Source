@@ -66,5 +66,17 @@ void main() {
         equals(170),
       );
     });
+
+    test('derives a concrete grid width that never exceeds the target width',
+        () {
+      final metrics = calculateSourceBrowserGridMetrics(
+        availableWidth: 760,
+        visibleCards: 5.75,
+      );
+
+      expect(metrics.crossAxisCount, equals(6));
+      expect(metrics.itemWidth, closeTo(116.67, 0.01));
+      expect(metrics.itemWidth <= metrics.targetWidth, isTrue);
+    });
   });
 }
