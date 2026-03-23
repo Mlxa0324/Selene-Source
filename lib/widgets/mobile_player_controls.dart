@@ -13,6 +13,18 @@ import 'player_settings_panel.dart';
 import 'player_adapter.dart';
 import '../utils/device_utils.dart';
 
+@visibleForTesting
+bool shouldShowEpisodeSourceButtons({
+  required bool isTabletOrDesktop,
+  required bool isEffectiveFullscreen,
+  required bool isFullscreen,
+}) {
+  if (isTabletOrDesktop) {
+    return isFullscreen;
+  }
+  return isEffectiveFullscreen;
+}
+
 class MobilePlayerControls extends StatefulWidget {
   final PlayerAdapter player;
   final VideoState?
@@ -1502,6 +1514,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Widget _buildBottomControls() {
     final isIOSTabletNonFullscreen =
         Platform.isIOS && DeviceUtils.isTablet(context) && !_isFullscreen;
+    final showEpisodeSourceButtons = shouldShowEpisodeSourceButtons(
+      isTabletOrDesktop: DeviceUtils.isTablet(context),
+      isEffectiveFullscreen: _isEffectiveFullscreen,
+      isFullscreen: _isFullscreen,
+    );
     final leadingIconSize = isIOSTabletNonFullscreen
         ? 33.0
         : (_isEffectiveFullscreen ? 26.0 : 24.0);
@@ -1662,7 +1679,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
                         // 选集按钮（仅在横屏且集数大于1时显示）
 
-                        if (_isEffectiveFullscreen &&
+                        if (showEpisodeSourceButtons &&
                             widget.totalEpisodes != null &&
                             widget.totalEpisodes! > 1 &&
                             widget.onEpisodesButtonPressed != null)
@@ -1687,7 +1704,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
                         // 换源按钮（仅在横屏且非本地播放时显示）：
 
-                        if (_isEffectiveFullscreen &&
+                        if (showEpisodeSourceButtons &&
                             !widget.isLocal &&
                             widget.onSourcesButtonPressed != null)
                           GestureDetector(

@@ -2343,7 +2343,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         barrierDismissible: true,
         barrierLabel: '',
         barrierColor: useSolidBackground
-            ? theme.scaffoldBackgroundColor
+            ? Colors.transparent
             : Colors.black.withValues(alpha: 0.3),
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (dialogContext, animation, secondaryAnimation) {
@@ -2365,9 +2365,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: panelContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: useSolidBackground
-          ? theme.scaffoldBackgroundColor
-          : Colors.transparent,
+      barrierColor: Colors.transparent,
       builder: (context) {
         final height = math.min(size.height * 0.62, 440.0);
         return SizedBox(
@@ -4086,7 +4084,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    final solidBarrierColor = theme.scaffoldBackgroundColor;
 
     // 作为最大列数提示，实际列数在面板内部会根据标题长度和面板宽度自适应。
     final crossAxisCount = _isPortraitTablet ? 5 : 4;
@@ -4106,7 +4103,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         context: context,
         barrierDismissible: true,
         barrierLabel: '',
-        barrierColor: solidBarrierColor,
+        barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
           return _buildSidePanel(
@@ -4164,7 +4161,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: solidBarrierColor,
+      barrierColor: Colors.transparent,
       enableDrag: false,
       builder: (context) {
         return StatefulBuilder(
@@ -4598,7 +4595,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    final solidBarrierColor = theme.scaffoldBackgroundColor;
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {
@@ -4615,7 +4611,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         context: context,
         barrierDismissible: true,
         barrierLabel: '',
-        barrierColor: solidBarrierColor,
+        barrierColor: Colors.transparent,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
           return _buildSidePanel(
@@ -4665,7 +4661,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: solidBarrierColor,
+      barrierColor: Colors.transparent,
       enableDrag: false,
       builder: (context) {
         return StatefulBuilder(
@@ -5014,7 +5010,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       barrierDismissible: true,
       barrierLabel: '',
       barrierColor: useSolidBackground
-          ? theme.scaffoldBackgroundColor
+          ? Colors.transparent
           : Colors.black.withValues(alpha: 0.3),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {

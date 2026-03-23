@@ -339,11 +339,14 @@ class ShortDramaControlsState extends State<ShortDramaControls>
   }
 
   void _showSettingsDialog() {
+    final theme = Theme.of(context);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.transparent,
       builder: (context) => _ShortDramaSettingsSheet(
-        isDarkMode: Theme.of(context).brightness == Brightness.dark,
+        isDarkMode: theme.brightness == Brightness.dark,
         currentSpeed: widget.playbackSpeedListenable.value,
         isLocal: widget.isLocal,
         isFavorite: widget.isFavorite,
@@ -769,8 +772,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
 
     // 💡 颜色适配逻辑
     final bool isDark = widget.isDarkMode;
-    final Color bgColor =
-        isDark ? Colors.black.withOpacity(0.92) : Colors.white;
+    final Color bgColor = isDark ? Colors.black : Colors.white;
     final Color textColor = isDark ? Colors.white : Colors.black87;
     final Color subColor = isDark ? Colors.white54 : Colors.black54;
     final Color itemBgColor = isDark ? Colors.white10 : Colors.grey[200]!;
