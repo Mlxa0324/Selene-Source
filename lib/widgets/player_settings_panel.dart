@@ -19,6 +19,7 @@ enum ProgressDisplayMode {
 /// 播放设置面板
 class PlayerSettingsPanel extends StatelessWidget {
   final ThemeData theme;
+  final double? backgroundOpacity;
   final VideoFitType currentFitType;
   final double currentLongPressSpeed;
   final ProgressDisplayMode progressMode;
@@ -37,6 +38,7 @@ class PlayerSettingsPanel extends StatelessWidget {
   const PlayerSettingsPanel({
     super.key,
     required this.theme,
+    this.backgroundOpacity,
     required this.currentFitType,
     required this.currentLongPressSpeed,
     required this.progressMode,
@@ -56,9 +58,10 @@ class PlayerSettingsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    final opacity = backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode
-        ? Colors.black.withOpacity(0.85)
-        : Colors.white.withOpacity(0.95);
+        ? Colors.black.withValues(alpha: opacity)
+        : Colors.white.withValues(alpha: opacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
 

@@ -2315,6 +2315,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     final theme = Theme.of(panelContext);
     final size = MediaQuery.of(panelContext).size;
     final isLandscape = size.width > size.height;
+    final useSolidBackground = !DeviceUtils.isPC() &&
+        !_isFullscreen &&
+        !_isWebFullscreen &&
+        !_isEnteringLandscapeFullscreen;
     final useSideSheet = isLandscape ||
         (DeviceUtils.isTablet(panelContext) &&
             !DeviceUtils.isPortraitTablet(panelContext));
@@ -2324,6 +2328,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       sideSheet: useSideSheet,
       scheduledAt: _sleepTimerDeadline,
       canExitApp: SleepTimerService.supportsAppExit,
+      backgroundOpacity: useSolidBackground ? 1.0 : null,
       onSetMinutes: _setSleepTimerByMinutes,
       onSetTimeOfDay: _setSleepTimerByTimeOfDay,
       onCancelTimer: () => _cancelSleepTimer(),
@@ -2337,7 +2342,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         context: panelContext,
         barrierDismissible: true,
         barrierLabel: '',
-        barrierColor: Colors.black.withValues(alpha: 0.3),
+        barrierColor: useSolidBackground
+            ? theme.scaffoldBackgroundColor
+            : Colors.black.withValues(alpha: 0.3),
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (dialogContext, animation, secondaryAnimation) {
           return _buildSidePanel(
@@ -2358,7 +2365,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: panelContext,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.transparent,
+      barrierColor: useSolidBackground
+          ? theme.scaffoldBackgroundColor
+          : Colors.transparent,
       builder: (context) {
         final height = math.min(size.height * 0.62, 440.0);
         return SizedBox(
@@ -4077,6 +4086,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
+    final solidBarrierColor = theme.scaffoldBackgroundColor;
 
     // 作为最大列数提示，实际列数在面板内部会根据标题长度和面板宽度自适应。
     final crossAxisCount = _isPortraitTablet ? 5 : 4;
@@ -4096,7 +4106,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         context: context,
         barrierDismissible: true,
         barrierLabel: '',
-        barrierColor: Colors.transparent,
+        barrierColor: solidBarrierColor,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
           return _buildSidePanel(
@@ -4115,6 +4125,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   currentEpisodeIndex: currentEpisodeIndex,
                   isReversed: _isEpisodesReversed,
                   crossAxisCount: crossAxisCount,
+                  backgroundOpacity: 1.0,
                   isCompact: true, // 横屏使用紧凑模式
                   onEpisodeTap: (index) {
                     Navigator.pop(context);
@@ -4153,7 +4164,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.transparent,
+      barrierColor: solidBarrierColor,
       enableDrag: false,
       builder: (context) {
         return StatefulBuilder(
@@ -4587,6 +4598,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
     final statusBarHeight = MediaQuery.of(context).padding.top;
+    final solidBarrierColor = theme.scaffoldBackgroundColor;
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {
@@ -4603,7 +4615,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         context: context,
         barrierDismissible: true,
         barrierLabel: '',
-        barrierColor: Colors.transparent,
+        barrierColor: solidBarrierColor,
         transitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) {
           return _buildSidePanel(
@@ -4621,6 +4633,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   currentSource: currentSource,
                   currentId: currentID,
                   sourcesSpeed: allSourcesSpeed,
+                  backgroundOpacity: 1.0,
                   isCompact: true, // 横屏紧凑模式
                   onSourceTap: (source) {
                     this.setState(() {
@@ -4652,7 +4665,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.transparent,
+      barrierColor: solidBarrierColor,
       enableDrag: false,
       builder: (context) {
         return StatefulBuilder(
@@ -4988,6 +5001,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     final theme = Theme.of(fullscreenContext);
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
+    final useSolidBackground = !DeviceUtils.isPC() &&
+        !_isFullscreen &&
+        !_isWebFullscreen &&
+        !_isEnteringLandscapeFullscreen;
 
     final panelWidth = screenWidth * 0.4;
     final panelHeight = screenHeight;
@@ -4996,7 +5013,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       context: fullscreenContext,
       barrierDismissible: true,
       barrierLabel: '',
-      barrierColor: Colors.black.withValues(alpha: 0.3),
+      barrierColor: useSolidBackground
+          ? theme.scaffoldBackgroundColor
+          : Colors.black.withValues(alpha: 0.3),
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return _buildSidePanel(
@@ -5010,6 +5029,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             builder: (BuildContext context, StateSetter dialogSetState) {
               return PlayerSettingsPanel(
                 theme: theme,
+                backgroundOpacity: useSolidBackground ? 1.0 : null,
                 currentFitType: _currentFitType,
                 currentLongPressSpeed: _longPressSpeed,
                 progressMode: _progressMode,

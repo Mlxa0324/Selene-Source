@@ -6,6 +6,7 @@ class PlayerSleepTimerPanel extends StatefulWidget {
   final bool sideSheet;
   final DateTime? scheduledAt;
   final bool canExitApp;
+  final double? backgroundOpacity;
   final Future<bool> Function(int minutes) onSetMinutes;
   final Future<bool> Function(TimeOfDay time) onSetTimeOfDay;
   final Future<bool> Function() onCancelTimer;
@@ -15,6 +16,7 @@ class PlayerSleepTimerPanel extends StatefulWidget {
     required this.theme,
     required this.sideSheet,
     required this.canExitApp,
+    this.backgroundOpacity,
     required this.onSetMinutes,
     required this.onSetTimeOfDay,
     required this.onCancelTimer,
@@ -38,9 +40,12 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
 
   bool get _isDarkMode => widget.theme.brightness == Brightness.dark;
 
+  double get _backgroundOpacity =>
+      widget.backgroundOpacity ?? (_isDarkMode ? 0.85 : 0.95);
+
   Color get _backgroundColor => _isDarkMode
-      ? Colors.black.withValues(alpha: 0.85)
-      : Colors.white.withValues(alpha: 0.95);
+      ? Colors.black.withValues(alpha: _backgroundOpacity.clamp(0.0, 1.0))
+      : Colors.white.withValues(alpha: _backgroundOpacity.clamp(0.0, 1.0));
 
   Color get _textColor => _isDarkMode ? Colors.white : Colors.black87;
 
