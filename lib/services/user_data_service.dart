@@ -127,6 +127,10 @@ class UserDataService {
   /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
 
+  /// Android 是否允许息屏播放 Key
+  static const String _screenOffPlaybackEnabledKey =
+      'screen_off_playback_enabled_v1';
+
   /// macOS media_kit 预加载 Key
   static const String _mediaKitPreloadEnabledKey = 'media_kit_preload_enabled';
 
@@ -313,6 +317,9 @@ class UserDataService {
   /// 本地模式状态的内存缓存，用于同步读取
   static bool? _isLocalModeCache;
 
+  /// 息屏播放状态的内存缓存，用于同步读取
+  static bool? _screenOffPlaybackEnabledCache;
+
   // 保存去广告开关
   static Future<void> saveAdFilterEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
@@ -323,6 +330,26 @@ class UserDataService {
   static Future<bool> getAdFilterEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_adFilterEnabledKey) ?? false;
+  }
+
+  // 保存 Android 息屏播放开关
+  static Future<void> saveScreenOffPlaybackEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_screenOffPlaybackEnabledKey, enabled);
+    _screenOffPlaybackEnabledCache = enabled;
+  }
+
+  // 获取 Android 息屏播放开关（默认 false）
+  static Future<bool> getScreenOffPlaybackEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getBool(_screenOffPlaybackEnabledKey) ?? false;
+    _screenOffPlaybackEnabledCache = value;
+    return value;
+  }
+
+  // 同步获取 Android 息屏播放开关（从内存缓存读取）
+  static bool getScreenOffPlaybackEnabledSync() {
+    return _screenOffPlaybackEnabledCache ?? false;
   }
 
   // 保存 macOS media_kit 预加载开关

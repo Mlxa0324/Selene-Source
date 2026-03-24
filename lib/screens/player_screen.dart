@@ -206,6 +206,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _adFilterEnabled = false; // 是否开启自动去广告
+  bool _screenOffPlaybackEnabled = false; // Android 息屏播放偏好
   bool _mediaKitPreloadEnabled = Platform.isMacOS;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
@@ -425,6 +426,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final screenOffPlaybackEnabled =
+        await UserDataService.getScreenOffPlaybackEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
       defaultValue: Platform.isMacOS,
@@ -439,6 +442,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
         _adFilterEnabled = adFilterEnabled;
+        _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
       });
     }
@@ -3161,6 +3165,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             hasActiveSleepTimer: _sleepTimerDeadline != null,
             mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
+            screenOffPlaybackEnabled: _screenOffPlaybackEnabled,
             danmakuLayer: _danmakuSettings.enabled && !_isClosing
                 ? IgnorePointer(
                     child: LayoutBuilder(builder: (context, constraints) {

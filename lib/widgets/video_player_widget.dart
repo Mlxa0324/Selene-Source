@@ -68,6 +68,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
   final bool mediaKitPreloadEnabled;
+  final bool screenOffPlaybackEnabled;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
   final String? videoCover;
@@ -123,6 +124,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
     this.mediaKitPreloadEnabled = false,
+    this.screenOffPlaybackEnabled = false,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
     this.adFilterEnabled = false,
@@ -268,7 +270,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (!(Platform.isAndroid || Platform.isIOS)) {
       return false;
     }
-    return PlayerBackendConfig.useMediaKitForMobileNetworkPlayback;
+    return PlayerBackendConfig
+        .shouldUseMediaKitForMobileNetworkPlaybackForPlatform(
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+      preferAndroidScreenOffPlayback:
+          Platform.isAndroid && widget.screenOffPlaybackEnabled,
+    );
   }
 
   bool get _shouldUseMacOSMediaKit {
@@ -573,6 +581,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (widget.mediaKitPreloadEnabled != oldWidget.mediaKitPreloadEnabled &&
         _adapter is MediaKitAdapter) {
       unawaited(_recreateMediaKitAdapterForConfigurationChange());
+    }
+    if (widget.screenOffPlaybackEnabled != oldWidget.screenOffPlaybackEnabled &&
+        !widget.isLocal &&
+        _currentUrl != null &&
+        _currentUrl!.isNotEmpty) {
+      unawaited(_updateDataSource(_currentUrl!));
     }
     if (widget.url != oldWidget.url && widget.url != null) {
       unawaited(_updateDataSource(widget.url!));

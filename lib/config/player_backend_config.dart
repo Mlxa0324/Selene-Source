@@ -19,23 +19,72 @@ class PlayerBackendConfig {
   static const MobileNetworkPlayerBackend androidNetworkBackend =
       MobileNetworkPlayerBackend.webView;
 
-  static MobileNetworkPlayerBackend get currentMobileNetworkBackend {
-    if (Platform.isIOS) return iosNetworkBackend;
-    if (Platform.isAndroid) return androidNetworkBackend;
+  static MobileNetworkPlayerBackend resolveMobileNetworkBackendForPlatform({
+    required bool isAndroid,
+    required bool isIOS,
+    bool preferAndroidScreenOffPlayback = false,
+  }) {
+    if (isAndroid && preferAndroidScreenOffPlayback) {
+      return MobileNetworkPlayerBackend.mediaKit;
+    }
+    if (isIOS) return iosNetworkBackend;
+    if (isAndroid) return androidNetworkBackend;
     return MobileNetworkPlayerBackend.webView;
   }
 
-  static bool get useMediaKitForMobileNetworkPlayback {
-    if (!(Platform.isIOS || Platform.isAndroid)) {
+  static bool shouldUseMediaKitForMobileNetworkPlaybackForPlatform({
+    required bool isAndroid,
+    required bool isIOS,
+    bool preferAndroidScreenOffPlayback = false,
+  }) {
+    if (!(isIOS || isAndroid)) {
       return false;
     }
-    return currentMobileNetworkBackend == MobileNetworkPlayerBackend.mediaKit;
+    return resolveMobileNetworkBackendForPlatform(
+          isAndroid: isAndroid,
+          isIOS: isIOS,
+          preferAndroidScreenOffPlayback: preferAndroidScreenOffPlayback,
+        ) ==
+        MobileNetworkPlayerBackend.mediaKit;
+  }
+
+  static bool shouldInitializeMediaKitForPlatform({
+    required bool isWindows,
+    required bool isMacOS,
+    required bool isAndroid,
+    required bool isIOS,
+    bool preferAndroidScreenOffPlayback = false,
+  }) {
+    if (isWindows || isMacOS) {
+      return true;
+    }
+    return shouldUseMediaKitForMobileNetworkPlaybackForPlatform(
+      isAndroid: isAndroid,
+      isIOS: isIOS,
+      preferAndroidScreenOffPlayback: preferAndroidScreenOffPlayback,
+    );
+  }
+
+  static MobileNetworkPlayerBackend get currentMobileNetworkBackend {
+    return resolveMobileNetworkBackendForPlatform(
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    );
+  }
+
+  static bool get useMediaKitForMobileNetworkPlayback {
+    return shouldUseMediaKitForMobileNetworkPlaybackForPlatform(
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    );
   }
 
   static bool get shouldInitializeMediaKit {
-    if (Platform.isWindows || Platform.isMacOS) {
-      return true;
-    }
-    return useMediaKitForMobileNetworkPlayback;
+    return shouldInitializeMediaKitForPlatform(
+      isWindows: Platform.isWindows,
+      isMacOS: Platform.isMacOS,
+      isAndroid: Platform.isAndroid,
+      isIOS: Platform.isIOS,
+    );
   }
 }
