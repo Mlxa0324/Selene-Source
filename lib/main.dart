@@ -19,10 +19,6 @@ import 'package:bitsdojo_window/bitsdojo_window.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final androidScreenOffPlaybackEnabled = Platform.isAndroid
-      ? await UserDataService.getScreenOffPlaybackEnabled()
-      : false;
-
   // 按当前平台实际播放后端初始化 media_kit。
   // 现在 iOS 在线播放也允许通过代码开关切到 media_kit。
   if (PlayerBackendConfig.shouldInitializeMediaKitForPlatform(
@@ -30,7 +26,6 @@ void main() async {
     isMacOS: Platform.isMacOS,
     isAndroid: Platform.isAndroid,
     isIOS: Platform.isIOS,
-    preferAndroidScreenOffPlayback: androidScreenOffPlaybackEnabled,
   )) {
     try {
       MediaKit.ensureInitialized();

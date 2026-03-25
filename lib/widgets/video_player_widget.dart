@@ -11,6 +11,7 @@ import 'package:pip/pip.dart';
 import '../config/player_backend_config.dart';
 import '../models/search_result.dart';
 import '../models/danmaku_model.dart';
+import '../services/android_media_session_bridge.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
 import 'short_drama_controls.dart'; // 💡 新增
@@ -233,6 +234,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   static const Duration _pipRetryDelay = Duration(milliseconds: 360);
   static const MethodChannel _pipControlChannel =
       MethodChannel('org.moontechlab.selene/pip_controls');
+  static const MethodChannel _androidMediaSessionControlChannel =
+      MethodChannel(AndroidMediaSessionBridge.channelName);
 
   PlayerAdapter? _adapter;
   bool _isInitialized = false;
@@ -257,11 +260,20 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _controlsVisible = true;
   bool _isFullscreen = false; // 💡 新增：记录内部全屏状态
   String _lastDanmakuOverlayTrace = '';
+  String? _lastAndroidMediaSessionSignature;
+  bool _androidBackgroundPlaybackActive = false;
+  bool _androidBackgroundPlaybackTransitioning = false;
+  bool _androidPipNativeTransitioning = false;
+  bool _shouldRestoreWebViewAfterAndroidPip = false;
+  bool _pausePlaybackOnceAdapterReady = false;
+  Timer? _pendingAndroidBackgroundPlaybackTimer;
   final GlobalKey _videoRenderAreaKey = GlobalKey();
   late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
   final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey =
       GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
+  final AndroidMediaSessionBridge _androidMediaSessionBridge =
+      AndroidMediaSessionBridge();
 
   bool get _useMobileNetworkMediaKit {
     if (widget.isLocal) {
@@ -279,8 +291,28 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     );
   }
 
+  bool get _canUseAndroidBackgroundPlayback {
+    return Platform.isAndroid &&
+        widget.screenOffPlaybackEnabled &&
+        !widget.isLocal &&
+        _currentUrl != null &&
+        _canUseMediaKitForUrl(_currentUrl);
+  }
+
+  bool get _canUseAndroidNativePlaybackForPip {
+    return Platform.isAndroid &&
+        widget.screenOffPlaybackEnabled &&
+        !widget.isLocal &&
+        _currentUrl != null &&
+        _canUseMediaKitForUrl(_currentUrl);
+  }
+
   bool get _shouldUseMacOSMediaKit {
     return Platform.isMacOS;
+  }
+
+  bool get _shouldUseAndroidMediaSession {
+    return Platform.isAndroid && _isPipMode;
   }
 
   int get _mediaKitBufferSize {
@@ -337,6 +369,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _safeSetState(() {
             _isLoadingVideo = false;
           });
+          if (_pausePlaybackOnceAdapterReady) {
+            _pausePlaybackOnceAdapterReady = false;
+            unawaited(_adapter?.pause());
+          }
           widget.onReady?.call();
         }
       },
@@ -522,6 +558,19 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     });
   }
 
+  void _bindAndroidMediaSessionControlChannel() {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    _androidMediaSessionControlChannel.setMethodCallHandler((call) async {
+      final action = AndroidMediaSessionBridge.parseAction(call);
+      if (action == null) {
+        return;
+      }
+      await _handleAndroidMediaSessionAction(action);
+    });
+  }
+
   Future<void> _handlePipAction(String action) async {
     switch (action) {
       case 'previous':
@@ -552,6 +601,303 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     unawaited(_pushPipActionsState(reason: 'handle_pip_action'));
   }
 
+  Future<void> _handleAndroidMediaSessionAction(
+    AndroidMediaSessionAction action,
+  ) async {
+    switch (action.type) {
+      case AndroidMediaSessionActionType.play:
+        await _adapter?.play();
+        break;
+      case AndroidMediaSessionActionType.pause:
+        await _adapter?.pause();
+        break;
+      case AndroidMediaSessionActionType.togglePlayPause:
+        final playing = _adapter?.state.playing ?? false;
+        if (playing) {
+          await _adapter?.pause();
+        } else {
+          await _adapter?.play();
+        }
+        break;
+      case AndroidMediaSessionActionType.previous:
+        if (_hasPreviousEpisode()) {
+          widget.onPreviousEpisode?.call();
+        }
+        break;
+      case AndroidMediaSessionActionType.next:
+        if (_hasNextEpisode()) {
+          widget.onNextEpisode?.call();
+        }
+        break;
+      case AndroidMediaSessionActionType.seek:
+        final position = action.position;
+        if (position != null) {
+          await _adapter?.seek(position);
+        }
+        break;
+    }
+    unawaited(
+      _syncAndroidMediaSession(
+        reason: 'handle_media_session_action',
+        force: true,
+      ),
+    );
+  }
+
+  AndroidMediaSessionState? _buildAndroidMediaSessionState() {
+    final adapter = _adapter;
+    final title = widget.videoTitle?.trim();
+    if (adapter == null || title == null || title.isEmpty) {
+      return null;
+    }
+    return AndroidMediaSessionBridge.buildPlaybackState(
+      title: title,
+      sourceName: widget.sourceName,
+      currentEpisodeIndex: widget.currentEpisodeIndex,
+      totalEpisodes: widget.totalEpisodes,
+      artworkUrl: widget.videoCover,
+      duration: adapter.state.duration,
+      position: adapter.state.position,
+      isPlaying: adapter.state.playing,
+      hasPrevious: _hasPreviousEpisode(),
+      hasNext: _hasNextEpisode(),
+    );
+  }
+
+  String _buildAndroidMediaSessionSignature(AndroidMediaSessionState state) {
+    return [
+      state.title,
+      state.subtitle,
+      state.artworkUrl ?? '',
+      state.duration.inMilliseconds,
+      state.position.inMilliseconds ~/ 1000,
+      state.isPlaying,
+      state.hasPrevious,
+      state.hasNext,
+    ].join('|');
+  }
+
+  AndroidBackgroundPlaybackRequest? _buildAndroidBackgroundPlaybackRequest() {
+    final adapter = _adapter;
+    final url = _currentUrl;
+    if (adapter == null || url == null || !_canUseAndroidBackgroundPlayback) {
+      return null;
+    }
+    final state = AndroidMediaSessionBridge.buildPlaybackState(
+      title: widget.videoTitle ?? 'Selene',
+      sourceName: widget.sourceName,
+      currentEpisodeIndex: widget.currentEpisodeIndex,
+      totalEpisodes: widget.totalEpisodes,
+      artworkUrl: widget.videoCover,
+      duration: adapter.state.duration,
+      position: adapter.state.position,
+      isPlaying: adapter.state.playing,
+      hasPrevious: false,
+      hasNext: false,
+    );
+    return AndroidBackgroundPlaybackRequest(
+      title: state.title,
+      subtitle: state.subtitle,
+      artworkUrl: state.artworkUrl,
+      url: url,
+      headers: Map<String, String>.from(_currentHeaders ?? const {}),
+      duration: state.duration,
+      position: state.position,
+      speed: adapter.state.rate,
+    );
+  }
+
+  Future<void> _startAndroidBackgroundPlayback({
+    required String reason,
+  }) async {
+    _pendingAndroidBackgroundPlaybackTimer?.cancel();
+    _pendingAndroidBackgroundPlaybackTimer = null;
+    if (!_canUseAndroidBackgroundPlayback ||
+        _androidBackgroundPlaybackActive ||
+        _androidBackgroundPlaybackTransitioning ||
+        _androidPipNativeTransitioning ||
+        _isPipMode) {
+      return;
+    }
+    final adapter = _adapter;
+    final request = _buildAndroidBackgroundPlaybackRequest();
+    final shouldResumePlayback =
+        (adapter?.state.playing ?? false) || _lastKnownPlaying;
+    if (adapter == null || request == null || !shouldResumePlayback) {
+      return;
+    }
+
+    _androidBackgroundPlaybackTransitioning = true;
+    try {
+      final resumePosition = adapter.state.position;
+      final playbackSpeed = adapter.state.rate;
+      await adapter.pause();
+      final started =
+          await _androidMediaSessionBridge.startBackgroundPlayback(request);
+      if (!started) {
+        await adapter.play();
+        await adapter.setRate(playbackSpeed);
+        return;
+      }
+      _androidBackgroundPlaybackActive = true;
+      _lastAndroidMediaSessionSignature = null;
+      debugPrint(
+        '[BackgroundPlayback] 已切到 Android 后台音频: reason=$reason, position=${resumePosition.inMilliseconds}, resume=$shouldResumePlayback',
+      );
+    } catch (error) {
+      debugPrint('[BackgroundPlayback] 启动失败: $error');
+      unawaited(adapter.play());
+    } finally {
+      _androidBackgroundPlaybackTransitioning = false;
+    }
+  }
+
+  void _scheduleAndroidBackgroundPlaybackStart({
+    required String reason,
+  }) {
+    _pendingAndroidBackgroundPlaybackTimer?.cancel();
+    if (!_canUseAndroidBackgroundPlayback ||
+        _androidBackgroundPlaybackActive ||
+        _androidBackgroundPlaybackTransitioning ||
+        _isPipMode) {
+      return;
+    }
+    _pendingAndroidBackgroundPlaybackTimer = Timer(
+      const Duration(milliseconds: 320),
+      () {
+        _pendingAndroidBackgroundPlaybackTimer = null;
+        if (!mounted || _isPipMode || _androidPipNativeTransitioning) {
+          return;
+        }
+        unawaited(
+          _startAndroidBackgroundPlayback(reason: '${reason}_delayed'),
+        );
+      },
+    );
+  }
+
+  Future<void> _restoreFromAndroidBackgroundPlayback({
+    required String reason,
+  }) async {
+    _pendingAndroidBackgroundPlaybackTimer?.cancel();
+    _pendingAndroidBackgroundPlaybackTimer = null;
+    if (!_androidBackgroundPlaybackActive || _currentUrl == null) {
+      return;
+    }
+    _androidBackgroundPlaybackTransitioning = true;
+    try {
+      final state =
+          await _androidMediaSessionBridge.getBackgroundPlaybackState();
+      await _androidMediaSessionBridge.stopBackgroundPlayback();
+      _androidBackgroundPlaybackActive = false;
+      final restorePosition = state?.position ?? Duration.zero;
+      final restorePlaying = state?.isPlaying ?? false;
+      _pausePlaybackOnceAdapterReady = !restorePlaying;
+      await _updateDataSource(
+        _currentUrl!,
+        startAt: restorePosition,
+      );
+      if (!restorePlaying) {
+        await _adapter?.pause();
+      }
+      debugPrint(
+        '[BackgroundPlayback] 已恢复前台播放器: reason=$reason, position=${restorePosition.inMilliseconds}, playing=$restorePlaying',
+      );
+    } catch (error) {
+      debugPrint('[BackgroundPlayback] 恢复前台播放器失败: $error');
+    } finally {
+      _androidBackgroundPlaybackTransitioning = false;
+    }
+  }
+
+  Future<void> _prepareAndroidNativePlaybackForPip() async {
+    if (!_canUseAndroidNativePlaybackForPip ||
+        _adapter is MediaKitAdapter ||
+        _currentUrl == null ||
+        _androidPipNativeTransitioning) {
+      return;
+    }
+    _androidPipNativeTransitioning = true;
+    try {
+      final position = _adapter?.state.position;
+      final wasPlaying = _adapter?.state.playing ?? true;
+      _pausePlaybackOnceAdapterReady = !wasPlaying;
+      await _updateDataSource(
+        _currentUrl!,
+        startAt: position,
+        forceMediaKit: true,
+      );
+      if (!wasPlaying) {
+        await _adapter?.pause();
+      }
+      _shouldRestoreWebViewAfterAndroidPip = true;
+      debugPrint(
+        '[PiP] 已切到 Android 原生播放器，准备进入 PiP: position=${position?.inMilliseconds ?? 0}',
+      );
+    } finally {
+      _androidPipNativeTransitioning = false;
+    }
+  }
+
+  Future<void> _restoreWebViewAfterAndroidPip({
+    required String reason,
+  }) async {
+    if (!_shouldRestoreWebViewAfterAndroidPip ||
+        _isPipMode ||
+        _androidBackgroundPlaybackActive ||
+        _currentUrl == null) {
+      return;
+    }
+    _shouldRestoreWebViewAfterAndroidPip = false;
+    try {
+      final restorePosition = _adapter?.state.position;
+      final restorePlaying = _adapter?.state.playing ?? true;
+      _pausePlaybackOnceAdapterReady = !restorePlaying;
+      await _updateDataSource(
+        _currentUrl!,
+        startAt: restorePosition,
+      );
+      if (!restorePlaying) {
+        await _adapter?.pause();
+      }
+      debugPrint(
+        '[PiP] 已恢复 WebView 前台播放: reason=$reason, position=${restorePosition?.inMilliseconds ?? 0}',
+      );
+    } catch (error) {
+      debugPrint('[PiP] 恢复 WebView 播放失败: $error');
+    }
+  }
+
+  Future<void> _syncAndroidMediaSession({
+    required String reason,
+    bool force = false,
+  }) async {
+    if (!_shouldUseAndroidMediaSession) {
+      if (AndroidMediaSessionBridge.shouldStopSession(
+        wantsMediaSession: _shouldUseAndroidMediaSession,
+        hasSyncedSession: _lastAndroidMediaSessionSignature != null,
+      )) {
+        _lastAndroidMediaSessionSignature = null;
+        await _androidMediaSessionBridge.stopSession();
+      }
+      return;
+    }
+
+    final state = _buildAndroidMediaSessionState();
+    if (state == null) {
+      return;
+    }
+    final signature = _buildAndroidMediaSessionSignature(state);
+    if (!force && signature == _lastAndroidMediaSessionSignature) {
+      return;
+    }
+    _lastAndroidMediaSessionSignature = signature;
+    debugPrint(
+      '[MediaSession] 同步: reason=$reason, playing=${state.isPlaying}, subtitle=${state.subtitle}',
+    );
+    await _androidMediaSessionBridge.syncSession(state);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -565,6 +911,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     unawaited(_setupPip());
     _registerPipObserver();
     _bindPipControlChannel();
+    _bindAndroidMediaSessionControlChannel();
     unawaited(_pushPipActionsState(reason: 'init_state'));
     widget.onControllerCreated?.call(VideoPlayerWidgetController._(this));
   }
@@ -592,10 +939,23 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       unawaited(_updateDataSource(widget.url!));
     }
 
+    final mediaMetadataChanged = widget.videoTitle != oldWidget.videoTitle ||
+        widget.videoCover != oldWidget.videoCover ||
+        widget.sourceName != oldWidget.sourceName ||
+        widget.screenOffPlaybackEnabled != oldWidget.screenOffPlaybackEnabled ||
+        widget.currentEpisodeIndex != oldWidget.currentEpisodeIndex ||
+        widget.totalEpisodes != oldWidget.totalEpisodes;
+
     if (widget.currentEpisodeIndex != oldWidget.currentEpisodeIndex ||
         widget.totalEpisodes != oldWidget.totalEpisodes ||
         widget.isLastEpisode != oldWidget.isLastEpisode) {
       unawaited(_pushPipActionsState(reason: 'episode_info_changed'));
+    }
+    if (mediaMetadataChanged) {
+      unawaited(
+        _syncAndroidMediaSession(
+            reason: 'widget_metadata_changed', force: true),
+      );
     }
 
     // 💡 优化：当集数从外部改变时（如点击选集），同步 PageView
@@ -786,6 +1146,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           debugPrint('VideoPlayerWidget: progress listener error $error');
         }
       }
+      unawaited(_syncAndroidMediaSession(reason: 'position_changed'));
     });
 
     _playingSubscription = _adapter!.stream.playing.listen((playing) {
@@ -802,6 +1163,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _configurePipAutoEnter(true);
       }
       unawaited(_pushPipActionsState(reason: 'playing_changed'));
+      unawaited(_syncAndroidMediaSession(reason: 'playing_changed'));
     });
 
     if (!widget.live) {
@@ -825,6 +1187,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         }
         widget.onReady?.call();
       }
+      unawaited(_syncAndroidMediaSession(reason: 'duration_changed'));
     });
 
     _bufferingSubscription = _adapter!.stream.buffering.listen((buffering) {
@@ -846,12 +1209,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       }
       widget.onReady?.call();
     }
+    unawaited(
+      _syncAndroidMediaSession(reason: 'player_listeners_ready', force: true),
+    );
   }
 
   Future<void> _updateDataSource(
     String url, {
     Duration? startAt,
     Map<String, String>? headers,
+    bool forceMediaKit = false,
   }) async {
     if (_playerDisposed) {
       return;
@@ -874,6 +1241,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       final currentSpeed = _adapter!.state.rate;
       final canUseMediaKitForUrl = _shouldUseMacOSMediaKit ||
           _shouldUseIOSLocalMediaKit ||
+          (forceMediaKit && Platform.isAndroid && !widget.isLocal) ||
           ((_useMobileNetworkMediaKit && !widget.isLocal) &&
               _canUseMediaKitForUrl(url));
 
@@ -964,6 +1332,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _hasCompleted = false;
         });
       }
+      unawaited(
+        _syncAndroidMediaSession(reason: 'update_data_source', force: true),
+      );
     } catch (error, stackTrace) {
       debugPrint('VideoPlayerWidget: error while changing source $error');
       debugPrint('$stackTrace');
@@ -1066,8 +1437,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           case PipState.pipStateStarted:
             debugPrint('PiP started successfully');
             if (mounted) {
+              _pendingAndroidBackgroundPlaybackTimer?.cancel();
+              _pendingAndroidBackgroundPlaybackTimer = null;
               _safeSetState(() => _isPipMode = true);
               widget.onPipModeChanged?.call(true);
+              unawaited(
+                _syncAndroidMediaSession(
+                  reason: 'pip_state_started',
+                  force: true,
+                ),
+              );
             }
             break;
           case PipState.pipStateStopped:
@@ -1077,6 +1456,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
                 _isPipMode = false;
               });
               widget.onPipModeChanged?.call(false);
+              unawaited(
+                _syncAndroidMediaSession(
+                  reason: 'pip_state_stopped',
+                  force: true,
+                ),
+              );
+              unawaited(
+                _restoreWebViewAfterAndroidPip(reason: 'pip_state_stopped'),
+              );
             }
             break;
           case PipState.pipStateFailed:
@@ -1112,6 +1500,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         await WidgetsBinding.instance.endOfFrame;
         await Future.delayed(_shortDramaPipPreFullscreenDelay);
         if (!mounted) return;
+      }
+
+      if (Platform.isAndroid) {
+        await _prepareAndroidNativePlaybackForPip();
       }
 
       await _setupPip();
@@ -1165,8 +1557,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     _progressListeners.clear();
     _playerDisposed = true;
+    _pendingAndroidBackgroundPlaybackTimer?.cancel();
+    _pendingAndroidBackgroundPlaybackTimer = null;
 
     try {
+      _lastAndroidMediaSessionSignature = null;
+      _androidBackgroundPlaybackActive = false;
+      await _androidMediaSessionBridge.stopBackgroundPlayback();
       await _adapter?.pause();
       await _adapter?.dispose();
     } catch (e) {
@@ -1184,10 +1581,19 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
     switch (state) {
       case AppLifecycleState.paused:
+        _scheduleAndroidBackgroundPlaybackStart(reason: state.name);
+        break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.hidden:
+        _scheduleAndroidBackgroundPlaybackStart(reason: state.name);
         break;
       case AppLifecycleState.resumed:
+        unawaited(
+          _restoreFromAndroidBackgroundPlayback(reason: state.name),
+        );
+        unawaited(
+          _restoreWebViewAfterAndroidPip(reason: state.name),
+        );
         break;
       case AppLifecycleState.detached:
         break;
@@ -1203,6 +1609,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
     if (Platform.isAndroid) {
       _pipControlChannel.setMethodCallHandler(null);
+      _androidMediaSessionControlChannel.setMethodCallHandler(null);
     }
     _shortDramaPageController.dispose();
     _disposePlayer();

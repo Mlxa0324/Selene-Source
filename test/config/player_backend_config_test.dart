@@ -14,7 +14,8 @@ void main() {
       );
     });
 
-    test('prefers MediaKit for Android when screen-off playback is enabled',
+    test(
+        'keeps Android online playback on WebView when screen-off playback is enabled',
         () {
       expect(
         PlayerBackendConfig
@@ -23,7 +24,7 @@ void main() {
           isIOS: false,
           preferAndroidScreenOffPlayback: true,
         ),
-        isTrue,
+        isFalse,
       );
     });
 

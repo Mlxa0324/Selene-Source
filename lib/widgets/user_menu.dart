@@ -1610,7 +1610,7 @@ class _UserMenuState extends State<UserMenu> {
                 if (Platform.isAndroid)
                   _buildToggleOption(
                     title: '息屏播放',
-                    subtitle: '锁屏后优先保持音频播放，PiP 仍需手动点击',
+                    subtitle: '前台保持网页播放，锁屏/后台后切到原生音频播放并启用系统媒体通知',
                     value: _screenOffPlaybackEnabled,
                     onChanged: (value) async {
                       await UserDataService.saveScreenOffPlaybackEnabled(value);

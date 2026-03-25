@@ -17,9 +17,11 @@ class MainActivity : FlutterActivity() {
     private val tag = "PipControls"
     private val backgroundChannel = "org.moontechlab.selene/background_download"
     private val pipControlChannelName = "org.moontechlab.selene/pip_controls"
+    private val mediaSessionChannelName = "org.moontechlab.selene/media_session"
     private val sleepTimerChannelName = "org.moontechlab.selene/sleep_timer"
 
     private lateinit var pipControlChannel: MethodChannel
+    private lateinit var mediaSessionChannel: MethodChannel
     private var pipIsPlaying: Boolean = true
     private var pipHasPrevious: Boolean = false
     private var pipHasNext: Boolean = false
@@ -81,6 +83,78 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        mediaSessionChannel =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, mediaSessionChannelName)
+        mediaSessionChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "syncMediaSession" -> {
+                    val arguments = call.arguments as? Map<*, *>
+                    if (arguments == null) {
+                        result.error("invalid_args", "缺少媒体会话参数", null)
+                        return@setMethodCallHandler
+                    }
+                    MediaPlaybackService.syncSession(
+                        context = this,
+                        title = arguments["title"]?.toString().orEmpty(),
+                        subtitle = arguments["subtitle"]?.toString().orEmpty(),
+                        artworkUrl = arguments["artworkUrl"]?.toString(),
+                        durationMs = (arguments["durationMs"] as? Number)?.toLong() ?: 0L,
+                        positionMs = (arguments["positionMs"] as? Number)?.toLong() ?: 0L,
+                        isPlaying = arguments["isPlaying"] as? Boolean ?: false,
+                        hasPrevious = arguments["hasPrevious"] as? Boolean ?: false,
+                        hasNext = arguments["hasNext"] as? Boolean ?: false,
+                    )
+                    result.success(true)
+                }
+
+                "stopMediaSession" -> {
+                    MediaPlaybackService.stopSession(this)
+                    result.success(true)
+                }
+
+                "startBackgroundPlayback" -> {
+                    val arguments = call.arguments as? Map<*, *>
+                    if (arguments == null) {
+                        result.error("invalid_args", "缺少后台播放参数", null)
+                        return@setMethodCallHandler
+                    }
+                    val rawHeaders = arguments["headers"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+                    val headers = rawHeaders.entries.mapNotNull { entry ->
+                        val key = entry.key?.toString()?.trim().orEmpty()
+                        val value = entry.value?.toString()?.trim().orEmpty()
+                        if (key.isEmpty()) {
+                            null
+                        } else {
+                            key to value
+                        }
+                    }.toMap()
+                    MediaPlaybackService.startBackgroundPlayback(
+                        context = this,
+                        title = arguments["title"]?.toString().orEmpty(),
+                        subtitle = arguments["subtitle"]?.toString().orEmpty(),
+                        artworkUrl = arguments["artworkUrl"]?.toString(),
+                        url = arguments["url"]?.toString().orEmpty(),
+                        headers = headers,
+                        durationMs = (arguments["durationMs"] as? Number)?.toLong() ?: 0L,
+                        positionMs = (arguments["positionMs"] as? Number)?.toLong() ?: 0L,
+                        speed = (arguments["speed"] as? Number)?.toFloat() ?: 1.0f,
+                    )
+                    result.success(true)
+                }
+
+                "stopBackgroundPlayback" -> {
+                    MediaPlaybackService.stop(this)
+                    result.success(true)
+                }
+
+                "getBackgroundPlaybackState" -> {
+                    result.success(MediaPlaybackService.getPlaybackState())
+                }
+
+                else -> result.notImplemented()
+            }
+        }
+
         setPipActionHandler { rawAction ->
             when (rawAction) {
                 ACTION_PIP_PREVIOUS -> {
@@ -101,6 +175,10 @@ class MainActivity : FlutterActivity() {
                     Log.d(tag, "收到未知 PiP 动作: $rawAction")
                 }
             }
+        }
+
+        setMediaSessionActionHandler { action, positionMs ->
+            sendMediaSessionActionToFlutter(action, positionMs)
         }
     }
 
@@ -139,6 +217,17 @@ class MainActivity : FlutterActivity() {
     private fun sendPipActionToFlutter(action: String) {
         Log.d(tag, "回调 Flutter PiP 动作: $action")
         pipControlChannel.invokeMethod("onPipAction", mapOf("action" to action))
+    }
+
+    private fun sendMediaSessionActionToFlutter(action: String, positionMs: Long?) {
+        val payload = mutableMapOf<String, Any>("action" to action)
+        if (positionMs != null && positionMs >= 0L) {
+            payload["positionMs"] = positionMs
+        }
+        runOnUiThread {
+            Log.d(tag, "回调 Flutter 媒体动作: $action, position=$positionMs")
+            mediaSessionChannel.invokeMethod("onMediaSessionAction", payload)
+        }
     }
 
     private fun createPipAction(
@@ -210,19 +299,34 @@ class MainActivity : FlutterActivity() {
         private const val ACTION_PIP_NEXT = "org.moontechlab.selene.pip.action.NEXT"
         @Volatile
         private var pipActionHandler: ((String) -> Unit)? = null
+        @Volatile
+        private var mediaSessionActionHandler: ((String, Long?) -> Unit)? = null
 
         private fun setPipActionHandler(handler: ((String) -> Unit)?) {
             pipActionHandler = handler
+        }
+
+        private fun setMediaSessionActionHandler(handler: ((String, Long?) -> Unit)?) {
+            mediaSessionActionHandler = handler
         }
 
         fun dispatchPipActionFromReceiver(action: String) {
             pipActionHandler?.invoke(action)
                 ?: Log.d("PipControls", "PiP 动作丢弃，当前无可用 Handler: $action")
         }
+
+        fun dispatchMediaSessionActionFromService(action: String, positionMs: Long? = null) {
+            mediaSessionActionHandler?.invoke(action, positionMs)
+                ?: Log.d(
+                    "PipControls",
+                    "媒体动作丢弃，当前无可用 Handler: $action, position=$positionMs",
+                )
+        }
     }
 
     override fun onDestroy() {
         setPipActionHandler(null)
+        setMediaSessionActionHandler(null)
         super.onDestroy()
     }
 }

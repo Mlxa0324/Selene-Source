@@ -24,9 +24,6 @@ class PlayerBackendConfig {
     required bool isIOS,
     bool preferAndroidScreenOffPlayback = false,
   }) {
-    if (isAndroid && preferAndroidScreenOffPlayback) {
-      return MobileNetworkPlayerBackend.mediaKit;
-    }
     if (isIOS) return iosNetworkBackend;
     if (isAndroid) return androidNetworkBackend;
     return MobileNetworkPlayerBackend.webView;

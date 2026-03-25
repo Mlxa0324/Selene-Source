@@ -2323,6 +2323,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         !_isFullscreen &&
         !_isWebFullscreen &&
         !_isEnteringLandscapeFullscreen;
+    final useInlineTimerPickers = !DeviceUtils.isPC();
     final useSideSheet = isLandscape ||
         (DeviceUtils.isTablet(panelContext) &&
             !DeviceUtils.isPortraitTablet(panelContext));
@@ -2371,7 +2372,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       backgroundColor: Colors.transparent,
       barrierColor: Colors.transparent,
       builder: (context) {
-        final height = math.min(size.height * 0.62, 440.0);
+        final height = useInlineTimerPickers
+            ? math.min(size.height * 0.78, 620.0)
+            : math.min(size.height * 0.62, 440.0);
         return SizedBox(
           height: height,
           width: double.infinity,
