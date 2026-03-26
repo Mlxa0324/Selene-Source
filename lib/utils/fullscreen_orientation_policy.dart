@@ -43,6 +43,10 @@ class FullscreenOrientationPolicy {
       ]);
     }
 
+    if (platform == TargetPlatform.android && androidAutoRotateEnabled == null) {
+      return const FullscreenOrientationDecision(null);
+    }
+
     final lockedSide = switch (observedInterfaceOrientation) {
       MobileInterfaceOrientation.landscapeLeft => DeviceOrientation.landscapeLeft,
       MobileInterfaceOrientation.landscapeRight =>

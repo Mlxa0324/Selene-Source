@@ -67,6 +67,21 @@ void main() {
       );
     });
 
+    test('returns null when Android auto-rotate status is unknown', () {
+      final decision = FullscreenOrientationPolicy.resolve(
+        isFullscreen: true,
+        isEnteringFullscreen: false,
+        isShortDramaPortraitFlow: false,
+        platform: TargetPlatform.android,
+        observedInterfaceOrientation:
+            MobileInterfaceOrientation.landscapeLeft,
+        lastConfirmedLandscapeOrientation: null,
+        androidAutoRotateEnabled: null,
+      );
+
+      expect(decision.preferredOrientations, isNull);
+    });
+
     test('abandons locking when not in fullscreen', () {
       final decision = FullscreenOrientationPolicy.resolve(
         isFullscreen: false,
