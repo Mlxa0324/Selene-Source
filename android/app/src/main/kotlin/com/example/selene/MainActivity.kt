@@ -7,7 +7,9 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
+import android.view.Surface
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -18,6 +20,7 @@ class MainActivity : FlutterActivity() {
     private val backgroundChannel = "org.moontechlab.selene/background_download"
     private val pipControlChannelName = "org.moontechlab.selene/pip_controls"
     private val sleepTimerChannelName = "org.moontechlab.selene/sleep_timer"
+    private val orientationChannelName = "selene/orientation"
 
     private lateinit var pipControlChannel: MethodChannel
     private var pipIsPlaying: Boolean = true
@@ -59,6 +62,27 @@ class MainActivity : FlutterActivity() {
                                 finishAffinity()
                             }
                         }
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, orientationChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getSystemAutoRotateEnabled" -> {
+                        val value = runCatching {
+                            Settings.System.getInt(
+                                contentResolver,
+                                Settings.System.ACCELEROMETER_ROTATION,
+                            ) == 1
+                        }.getOrNull()
+                        result.success(value)
+                    }
+
+                    "getCurrentInterfaceOrientation" -> {
+                        result.success(resolveCurrentInterfaceOrientation())
                     }
 
                     else -> result.notImplemented()
@@ -202,6 +226,54 @@ class MainActivity : FlutterActivity() {
 
         val paramsBuilder = PictureInPictureParams.Builder().setActions(actions)
         setPictureInPictureParams(paramsBuilder.build())
+    }
+
+    private fun resolveCurrentInterfaceOrientation(): String {
+        val displayRotation = getCurrentDisplayRotation() ?: return "unknown"
+        val orientation = resources.configuration.orientation
+        if (
+            orientation != Configuration.ORIENTATION_PORTRAIT &&
+            orientation != Configuration.ORIENTATION_LANDSCAPE
+        ) {
+            return "unknown"
+        }
+
+        val isPortraitNatural = when (displayRotation) {
+            Surface.ROTATION_0, Surface.ROTATION_180 ->
+                orientation == Configuration.ORIENTATION_PORTRAIT
+
+            Surface.ROTATION_90, Surface.ROTATION_270 ->
+                orientation == Configuration.ORIENTATION_LANDSCAPE
+
+            else -> return "unknown"
+        }
+
+        return if (isPortraitNatural) {
+            when (displayRotation) {
+                Surface.ROTATION_0 -> "portraitUp"
+                Surface.ROTATION_90 -> "landscapeLeft"
+                Surface.ROTATION_180 -> "portraitDown"
+                Surface.ROTATION_270 -> "landscapeRight"
+                else -> "unknown"
+            }
+        } else {
+            when (displayRotation) {
+                Surface.ROTATION_0 -> "landscapeLeft"
+                Surface.ROTATION_90 -> "portraitDown"
+                Surface.ROTATION_180 -> "landscapeRight"
+                Surface.ROTATION_270 -> "portraitUp"
+                else -> "unknown"
+            }
+        }
+    }
+
+    private fun getCurrentDisplayRotation(): Int? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
     }
 
     companion object {
