@@ -18,7 +18,7 @@ void main() {
     final controller = FullscreenOrientationController(
       orientationService: service,
       retryDelay: Duration.zero,
-      retryTimeout: const Duration(milliseconds: 1),
+      retryTimeout: const Duration(milliseconds: 50),
     );
 
     final target = await controller.resolveAfterFullscreenEntry(
@@ -46,6 +46,30 @@ void main() {
         DeviceOrientation.landscapeRight,
         DeviceOrientation.landscapeLeft,
       ],
+    );
+
+    expect(target, isNull);
+  });
+
+  test('does not accept landscape reads after timeout deadline', () async {
+    final service = _FakeMobileOrientationService(
+      autoRotateEnabled: false,
+      orientationReads: [
+        MobileInterfaceOrientation.unknown,
+        MobileInterfaceOrientation.landscapeRight,
+      ],
+    );
+
+    final controller = FullscreenOrientationController(
+      orientationService: service,
+      retryDelay: Duration.zero,
+      retryTimeout: Duration.zero,
+    );
+
+    final target = await controller.resolveAfterFullscreenEntry(
+      platform: TargetPlatform.android,
+      isShortDramaPortraitFlow: false,
+      lastAppliedOrientations: null,
     );
 
     expect(target, isNull);

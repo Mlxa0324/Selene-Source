@@ -47,21 +47,23 @@ class FullscreenOrientationController {
 
   Future<MobileInterfaceOrientation> _readBoundedLandscapeOrientation() async {
     final deadline = DateTime.now().add(retryTimeout);
-    var hasRetriedOnce = false;
 
     while (true) {
       final observed =
           await orientationService.getCurrentInterfaceOrientation();
+      if (DateTime.now().isAfter(deadline)) {
+        return MobileInterfaceOrientation.unknown;
+      }
       if (observed.isLandscape) {
         return observed;
       }
 
-      if (hasRetriedOnce && DateTime.now().isAfter(deadline)) {
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) {
         return MobileInterfaceOrientation.unknown;
       }
-
-      hasRetriedOnce = true;
-      await Future<void>.delayed(retryDelay);
+      final delay = retryDelay < remaining ? retryDelay : remaining;
+      await Future<void>.delayed(delay);
     }
   }
 
