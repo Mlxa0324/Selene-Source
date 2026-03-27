@@ -74,8 +74,7 @@ void main() {
     expect(service.interfaceReadCount, 0);
   });
 
-  test('returns null when Android auto-rotate state is unavailable',
-      () async {
+  test('returns null when Android auto-rotate state is unavailable', () async {
     final controller = FullscreenOrientationController(
       orientationService: _FakeMobileOrientationService(
         autoRotateEnabled: null,

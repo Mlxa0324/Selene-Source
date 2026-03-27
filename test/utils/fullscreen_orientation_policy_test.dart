@@ -10,8 +10,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.iOS,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: null,
       );
@@ -33,8 +32,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeRight,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeRight,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: false,
       );
@@ -45,15 +43,15 @@ void main() {
       );
     });
 
-    test('returns both landscape orientations for Android when auto-rotate is on',
+    test(
+        'returns both landscape orientations for Android when auto-rotate is on',
         () {
       final decision = FullscreenOrientationPolicy.resolve(
         isFullscreen: true,
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: true,
       );
@@ -73,8 +71,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: null,
       );
@@ -88,8 +85,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.iOS,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: null,
       );
@@ -103,8 +99,7 @@ void main() {
         isEnteringFullscreen: true,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: false,
       );
@@ -118,8 +113,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: true,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeRight,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeRight,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: false,
       );
