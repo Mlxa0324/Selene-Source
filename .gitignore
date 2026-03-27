@@ -148,6 +148,7 @@ $RECYCLE.BIN/
 *.backup
 nul
 
+.worktrees/
 
 /外部资源
 .spec-workflow/
