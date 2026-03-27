@@ -18,6 +18,10 @@ class FullscreenOrientationController {
     required bool isShortDramaPortraitFlow,
     required List<DeviceOrientation>? lastAppliedOrientations,
   }) async {
+    if (isShortDramaPortraitFlow) {
+      return null;
+    }
+
     final autoRotateEnabled = platform == TargetPlatform.android
         ? await orientationService.getSystemAutoRotateEnabled()
         : null;

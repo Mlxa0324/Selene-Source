@@ -28,13 +28,14 @@ void main() {
     );
 
     expect(target, const [DeviceOrientation.landscapeRight]);
-    expect(service.readCount, 2);
+    expect(service.interfaceReadCount, 2);
+    expect(service.autoRotateReadCount, 1);
   });
 
   test('skips duplicate orientation sets', () async {
+    final service = _FakeMobileOrientationService(autoRotateEnabled: true);
     final controller = FullscreenOrientationController(
-      orientationService:
-          _FakeMobileOrientationService(autoRotateEnabled: true),
+      orientationService: service,
       retryDelay: Duration.zero,
       retryTimeout: const Duration(milliseconds: 1),
     );
@@ -49,6 +50,50 @@ void main() {
     );
 
     expect(target, isNull);
+    expect(service.autoRotateReadCount, 1);
+    expect(service.interfaceReadCount, 0);
+  });
+
+  test('skips interface reads when Android auto-rotate state is unknown',
+      () async {
+    final service = _FakeMobileOrientationService(autoRotateEnabled: null);
+    final controller = FullscreenOrientationController(
+      orientationService: service,
+      retryDelay: Duration.zero,
+      retryTimeout: const Duration(milliseconds: 1),
+    );
+
+    final target = await controller.resolveAfterFullscreenEntry(
+      platform: TargetPlatform.android,
+      isShortDramaPortraitFlow: false,
+      lastAppliedOrientations: null,
+    );
+
+    expect(target, isNull);
+    expect(service.autoRotateReadCount, 1);
+    expect(service.interfaceReadCount, 0);
+  });
+
+  test('short drama flow bypasses Android bridge reads', () async {
+    final service = _FakeMobileOrientationService(
+      autoRotateEnabled: false,
+      orientationReads: const [MobileInterfaceOrientation.landscapeLeft],
+    );
+    final controller = FullscreenOrientationController(
+      orientationService: service,
+      retryDelay: Duration.zero,
+      retryTimeout: const Duration(milliseconds: 50),
+    );
+
+    final target = await controller.resolveAfterFullscreenEntry(
+      platform: TargetPlatform.android,
+      isShortDramaPortraitFlow: true,
+      lastAppliedOrientations: null,
+    );
+
+    expect(target, isNull);
+    expect(service.autoRotateReadCount, 0);
+    expect(service.interfaceReadCount, 0);
   });
 
   test('does not accept landscape reads after timeout deadline', () async {
@@ -86,12 +131,13 @@ class _FakeMobileOrientationService
   final bool? autoRotateEnabled;
   final List<MobileInterfaceOrientation> orientationReads;
 
-  int readCount = 0;
+  int autoRotateReadCount = 0;
+  int interfaceReadCount = 0;
   int _index = 0;
 
   @override
   Future<MobileInterfaceOrientation> getCurrentInterfaceOrientation() async {
-    readCount += 1;
+    interfaceReadCount += 1;
     if (_index >= orientationReads.length) {
       return orientationReads.last;
     }
@@ -102,6 +148,7 @@ class _FakeMobileOrientationService
 
   @override
   Future<bool?> getSystemAutoRotateEnabled() async {
+    autoRotateReadCount += 1;
     return autoRotateEnabled;
   }
 }
