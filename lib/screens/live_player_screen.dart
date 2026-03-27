@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../widgets/video_player_surface.dart';
@@ -6,7 +7,9 @@ import '../widgets/video_player_widget.dart';
 import '../models/live_channel.dart';
 import '../models/live_source.dart';
 import '../models/epg_program.dart';
+import '../services/fullscreen_orientation_controller.dart';
 import '../services/live_service.dart';
+import '../services/mobile_orientation_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import '../services/theme_service.dart';
@@ -72,6 +75,13 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
   // 真全屏状态
   bool _isFullscreen = false;
+  bool _isEnteringLandscapeFullscreen = false;
+  List<DeviceOrientation>? _lastAppliedFullscreenOrientations;
+  late final FullscreenOrientationController _fullscreenOrientationController =
+      FullscreenOrientationController(
+    orientationService: const MobileOrientationService(),
+  );
+  int _fullscreenTransitionSerial = 0;
 
   // 加载状态
   bool _isLoading = true;
@@ -200,6 +210,23 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
+  Future<void> _waitForLandscapeMetrics({
+    Duration timeout = const Duration(milliseconds: 850),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      final view = views.isNotEmpty ? views.first : null;
+      if (view != null) {
+        final size = view.physicalSize;
+        if (size.width > size.height) {
+          return;
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 16));
+    }
+  }
+
   Future<void> _loadEpgData() async {
     setState(() {
       _isLoadingEpg = true;
@@ -264,19 +291,56 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     }
   }
 
-  void _onFullscreenChanged(bool isFullscreen) {
-    setState(() {
-      _isFullscreen = isFullscreen;
-    });
-    if (DeviceUtils.isPC()) return;
+  void _onFullscreenChanged(bool isFullscreen) async {
+    final requestId = ++_fullscreenTransitionSerial;
+    if (DeviceUtils.isPC()) {
+      setState(() {
+        _isFullscreen = isFullscreen;
+      });
+      return;
+    }
 
     if (isFullscreen) {
+      setState(() {
+        _isEnteringLandscapeFullscreen = true;
+      });
+
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
+      _lastAppliedFullscreenOrientations = const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ];
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+      await _waitForLandscapeMetrics();
+      if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+      final targetOrientations =
+          await _fullscreenOrientationController.resolveAfterFullscreenEntry(
+        platform: defaultTargetPlatform,
+        isShortDramaPortraitFlow: false,
+        lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+      );
+      if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+      if (targetOrientations != null) {
+        await SystemChrome.setPreferredOrientations(targetOrientations);
+        _lastAppliedFullscreenOrientations = targetOrientations;
+      }
+
+      setState(() {
+        _isFullscreen = true;
+        _isEnteringLandscapeFullscreen = false;
+      });
     } else {
+      setState(() {
+        _isFullscreen = false;
+        _isEnteringLandscapeFullscreen = false;
+        _lastAppliedFullscreenOrientations = null;
+      });
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
@@ -546,8 +610,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
+    final isLandscapeFullscreenActive =
+        _isFullscreen || _isEnteringLandscapeFullscreen;
     // 如果是真全屏模式，不预留状态栏高度
-    final topOffset = _isFullscreen ? 0.0 : (statusBarHeight + macOSPadding);
+    final topOffset =
+        isLandscapeFullscreenActive ? 0.0 : (statusBarHeight + macOSPadding);
 
     if (_isWebFullscreen) {
       // 网页全屏模式：播放器占据整个屏幕（保留顶部安全区域）
@@ -630,7 +697,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       } else {
         // 手机模式
         // 💡 优化：全屏时直接 fill，避免依赖 MediaQuery 的高度计算延迟导致跳变
-        if (_isFullscreen) {
+        if (isLandscapeFullscreenActive) {
           return Positioned.fill(
             top: 0,
             child: Stack(

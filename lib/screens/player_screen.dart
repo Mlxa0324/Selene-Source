@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -22,9 +23,11 @@ import '../models/play_record.dart';
 import '../services/page_cache_service.dart';
 import '../services/local_mode_storage_service.dart';
 import '../services/download_service.dart';
+import '../services/fullscreen_orientation_controller.dart';
 import '../widgets/switch_loading_overlay.dart';
 import '../widgets/dlna_player.dart';
 import '../widgets/dlna_device_dialog.dart';
+import '../services/mobile_orientation_service.dart';
 import '../utils/device_utils.dart';
 import '../widgets/player_details_panel.dart';
 import '../widgets/player_episodes_panel.dart';
@@ -189,6 +192,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 真全屏状态
   bool _isFullscreen = false;
   bool _isEnteringLandscapeFullscreen = false;
+  List<DeviceOrientation>? _lastAppliedFullscreenOrientations;
+  late final FullscreenOrientationController _fullscreenOrientationController =
+      FullscreenOrientationController(
+    orientationService: const MobileOrientationService(),
+  );
   int _fullscreenTransitionSerial = 0;
   int _sourceSwitchRecordSerial = 0;
   int _sourceSpeedHydrationSerial = 0;
@@ -1995,10 +2003,24 @@ class _PlayerScreenState extends State<PlayerScreen>
               ];
 
         SystemChrome.setPreferredOrientations(fullscreenOrientations);
+        _lastAppliedFullscreenOrientations = fullscreenOrientations;
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
         await _waitForLandscapeMetrics();
         if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+        final targetOrientations =
+            await _fullscreenOrientationController.resolveAfterFullscreenEntry(
+          platform: defaultTargetPlatform,
+          isShortDramaPortraitFlow: _isShortDrama,
+          lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+        );
+        if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+        if (targetOrientations != null) {
+          await SystemChrome.setPreferredOrientations(targetOrientations);
+          _lastAppliedFullscreenOrientations = targetOrientations;
+        }
 
         setState(() {
           _isFullscreen = true;
@@ -2011,6 +2033,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       setState(() {
         _isFullscreen = false;
         _isEnteringLandscapeFullscreen = false;
+        _lastAppliedFullscreenOrientations = null;
       });
       if (_isTablet) {
         // 平板退出全屏时，按当前物理方向优先恢复，避免被强制切到竖屏。
