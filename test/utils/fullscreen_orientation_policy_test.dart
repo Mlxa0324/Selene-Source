@@ -10,8 +10,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.iOS,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: null,
       );
@@ -25,15 +24,15 @@ void main() {
       );
     });
 
-    test('locks Android fullscreen to the confirmed side when auto-rotate is off',
+    test(
+        'locks Android fullscreen to the confirmed side when auto-rotate is off',
         () {
       final decision = FullscreenOrientationPolicy.resolve(
         isFullscreen: true,
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeRight,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeRight,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: false,
       );
@@ -44,14 +43,15 @@ void main() {
       );
     });
 
-    test('returns both landscape orientations for Android when auto-rotate is on', () {
+    test(
+        'returns both landscape orientations for Android when auto-rotate is on',
+        () {
       final decision = FullscreenOrientationPolicy.resolve(
         isFullscreen: true,
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: true,
       );
@@ -65,16 +65,43 @@ void main() {
       );
     });
 
+    test('returns null when Android auto-rotate status is unknown', () {
+      final decision = FullscreenOrientationPolicy.resolve(
+        isFullscreen: true,
+        isEnteringFullscreen: false,
+        isShortDramaPortraitFlow: false,
+        platform: TargetPlatform.android,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
+        lastConfirmedLandscapeOrientation: null,
+        androidAutoRotateEnabled: null,
+      );
+
+      expect(decision.preferredOrientations, isNull);
+    });
+
     test('abandons locking when not in fullscreen', () {
       final decision = FullscreenOrientationPolicy.resolve(
         isFullscreen: false,
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: false,
         platform: TargetPlatform.iOS,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeLeft,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: null,
+      );
+
+      expect(decision.preferredOrientations, isNull);
+    });
+
+    test('does not lock while entering fullscreen', () {
+      final decision = FullscreenOrientationPolicy.resolve(
+        isFullscreen: true,
+        isEnteringFullscreen: true,
+        isShortDramaPortraitFlow: false,
+        platform: TargetPlatform.android,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
+        lastConfirmedLandscapeOrientation: null,
+        androidAutoRotateEnabled: false,
       );
 
       expect(decision.preferredOrientations, isNull);
@@ -86,8 +113,7 @@ void main() {
         isEnteringFullscreen: false,
         isShortDramaPortraitFlow: true,
         platform: TargetPlatform.android,
-        observedInterfaceOrientation:
-            MobileInterfaceOrientation.landscapeRight,
+        observedInterfaceOrientation: MobileInterfaceOrientation.landscapeRight,
         lastConfirmedLandscapeOrientation: null,
         androidAutoRotateEnabled: false,
       );
