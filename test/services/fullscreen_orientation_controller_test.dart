@@ -74,6 +74,27 @@ void main() {
     expect(service.interfaceReadCount, 0);
   });
 
+  test('returns null when Android auto-rotate state is unavailable',
+      () async {
+    final controller = FullscreenOrientationController(
+      orientationService: _FakeMobileOrientationService(
+        autoRotateEnabled: null,
+        orientationReads: [MobileInterfaceOrientation.landscapeLeft],
+      ),
+      retryDelay: Duration.zero,
+      retryTimeout: Duration.zero,
+    );
+
+    expect(
+      await controller.resolveAfterFullscreenEntry(
+        platform: TargetPlatform.android,
+        isShortDramaPortraitFlow: false,
+        lastAppliedOrientations: null,
+      ),
+      isNull,
+    );
+  });
+
   test('short drama flow bypasses Android bridge reads', () async {
     final service = _FakeMobileOrientationService(
       autoRotateEnabled: false,

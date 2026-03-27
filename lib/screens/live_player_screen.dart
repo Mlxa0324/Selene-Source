@@ -648,6 +648,22 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         ),
       );
     } else {
+      if (isLandscapeFullscreenActive) {
+        return Positioned.fill(
+          top: 0,
+          child: Stack(
+            children: [
+              Container(
+                key: _playerKey,
+                color: Colors.black,
+                child: _buildPlayerWidget(),
+              ),
+              _buildSwitchLoadingOverlay(),
+            ],
+          ),
+        );
+      }
+
       // 非网页全屏模式：根据不同布局计算播放器位置
       if (_isTablet && !_isPortraitTablet) {
         // 平板横屏模式：播放器在左侧65%区域
@@ -696,24 +712,6 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         );
       } else {
         // 手机模式
-        // 💡 优化：全屏时直接 fill，避免依赖 MediaQuery 的高度计算延迟导致跳变
-        if (isLandscapeFullscreenActive) {
-          return Positioned.fill(
-            top: 0,
-            child: Stack(
-              children: [
-                Container(
-                  key: _playerKey,
-                  color: Colors.black,
-                  child: _buildPlayerWidget(),
-                ),
-                // 加载蒙版
-                _buildSwitchLoadingOverlay(),
-              ],
-            ),
-          );
-        }
-
         final screenWidth = MediaQuery.of(context).size.width;
         final playerHeight = screenWidth / (16 / 9);
 
