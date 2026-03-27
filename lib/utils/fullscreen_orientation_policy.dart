@@ -9,6 +9,12 @@ enum MobileInterfaceOrientation {
   unknown,
 }
 
+extension MobileInterfaceOrientationX on MobileInterfaceOrientation {
+  bool get isLandscape =>
+      this == MobileInterfaceOrientation.landscapeLeft ||
+      this == MobileInterfaceOrientation.landscapeRight;
+}
+
 class FullscreenOrientationDecision {
   const FullscreenOrientationDecision(this.preferredOrientations);
 
@@ -36,19 +42,22 @@ class FullscreenOrientationPolicy {
       ]);
     }
 
-    if (platform == TargetPlatform.android && androidAutoRotateEnabled == true) {
+    if (platform == TargetPlatform.android &&
+        androidAutoRotateEnabled == true) {
       return const FullscreenOrientationDecision([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
     }
 
-    if (platform == TargetPlatform.android && androidAutoRotateEnabled == null) {
+    if (platform == TargetPlatform.android &&
+        androidAutoRotateEnabled == null) {
       return const FullscreenOrientationDecision(null);
     }
 
     final lockedSide = switch (observedInterfaceOrientation) {
-      MobileInterfaceOrientation.landscapeLeft => DeviceOrientation.landscapeLeft,
+      MobileInterfaceOrientation.landscapeLeft =>
+        DeviceOrientation.landscapeLeft,
       MobileInterfaceOrientation.landscapeRight =>
         DeviceOrientation.landscapeRight,
       _ => switch (lastConfirmedLandscapeOrientation) {
