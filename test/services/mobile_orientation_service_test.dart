@@ -116,6 +116,34 @@ void main() {
     expect(invokedMethods, ['getCurrentInterfaceOrientation']);
   });
 
+  test('reads current interface orientation on iOS through channel', () async {
+    const channel = MethodChannel('selene/orientation');
+    final invokedMethods = <String>[];
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      invokedMethods.add(call.method);
+      if (call.method == 'getCurrentInterfaceOrientation') {
+        return 'portraitUp';
+      }
+      return null;
+    });
+
+    expect(
+      await const MobileOrientationService().getCurrentInterfaceOrientation(),
+      MobileInterfaceOrientation.portraitUp,
+    );
+    expect(invokedMethods, ['getCurrentInterfaceOrientation']);
+  });
+
   test('returns unknown when current interface orientation cannot be read',
       () async {
     const channel = MethodChannel('selene/orientation');

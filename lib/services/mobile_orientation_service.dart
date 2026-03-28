@@ -26,7 +26,8 @@ class MobileOrientationService implements MobileOrientationServiceProtocol {
 
   @override
   Future<MobileInterfaceOrientation> getCurrentInterfaceOrientation() async {
-    if (defaultTargetPlatform != TargetPlatform.android) {
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
       return MobileInterfaceOrientation.unknown;
     }
     try {

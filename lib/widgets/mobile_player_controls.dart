@@ -63,6 +63,7 @@ class MobilePlayerControls extends StatefulWidget {
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
   final bool hasActiveSleepTimer;
+  final ValueChanged<bool>? onPlayerLockChanged;
 
   const MobilePlayerControls({
     super.key,
@@ -102,6 +103,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.progressMode = ProgressDisplayMode.time,
     this.showSystemTime = true,
     this.hasActiveSleepTimer = false,
+    this.onPlayerLockChanged,
   });
 
   @override
@@ -665,6 +667,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _isLocked = false;
       _isFullscreen = false;
     });
+    widget.onPlayerLockChanged?.call(false);
     widget.onControlsVisibilityChanged(true);
     _startHideTimer();
   }
@@ -807,6 +810,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               _isLocked = false;
               _controlsVisible = true;
             });
+            widget.onPlayerLockChanged?.call(false);
             _startHideTimer();
           }
         },
@@ -2004,6 +2008,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                   _isLocked = !_isLocked;
                   _controlsVisible = true;
                 });
+                widget.onPlayerLockChanged?.call(_isLocked);
                 _startHideTimer();
               },
               behavior: HitTestBehavior.opaque,

@@ -30,31 +30,79 @@ class DanmakuService {
   factory DanmakuService() => _instance;
   DanmakuService._internal();
 
+  String _manualMatchStorageKey(String source, String id, int episodeIndex) {
+    return '${source}_${id}_$episodeIndex';
+  }
+
+  Map<String, dynamic> _decodeManualMatches(String? matchesJson) {
+    if (matchesJson == null || matchesJson.isEmpty) {
+      return {};
+    }
+
+    final decoded = jsonDecode(matchesJson);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+    return {};
+  }
+
   /// 获取手动匹配的剧集ID
   Future<int?> getManualMatch(
       String source, String id, int episodeIndex) async {
     final prefs = await SharedPreferences.getInstance();
-    final matchesJson = prefs.getString(_manualMatchKey);
-    if (matchesJson == null) return null;
+    final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
+    final key = _manualMatchStorageKey(source, id, episodeIndex);
+    final record = matches[key];
 
-    final Map<String, dynamic> matches = jsonDecode(matchesJson);
-    final key = '${source}_${id}_$episodeIndex';
-    return matches[key] as int?;
+    if (record is num) {
+      return record.toInt();
+    }
+    if (record is Map<String, dynamic>) {
+      return (record['episodeId'] as num?)?.toInt();
+    }
+    if (record is Map) {
+      return (record['episodeId'] as num?)?.toInt();
+    }
+    return null;
+  }
+
+  /// 获取手动匹配时使用的搜索词
+  Future<String?> getManualMatchQuery(
+      String source, String id, int episodeIndex) async {
+    final prefs = await SharedPreferences.getInstance();
+    final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
+    final key = _manualMatchStorageKey(source, id, episodeIndex);
+    final record = matches[key];
+
+    if (record is Map<String, dynamic>) {
+      final query = record['searchKeyword']?.toString().trim();
+      return (query == null || query.isEmpty) ? null : query;
+    }
+    if (record is Map) {
+      final query = record['searchKeyword']?.toString().trim();
+      return (query == null || query.isEmpty) ? null : query;
+    }
+    return null;
   }
 
   /// 保存手动匹配的剧集ID
   Future<void> saveManualMatch(
-      String source, String id, int episodeIndex, int episodeId) async {
+      String source, String id, int episodeIndex, int episodeId,
+      {String? searchKeyword}) async {
     final prefs = await SharedPreferences.getInstance();
-    final matchesJson = prefs.getString(_manualMatchKey);
-    Map<String, dynamic> matches = {};
-
-    if (matchesJson != null) {
-      matches = jsonDecode(matchesJson);
-    }
-
-    final key = '${source}_${id}_$episodeIndex';
-    matches[key] = episodeId;
+    final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
+    final key = _manualMatchStorageKey(source, id, episodeIndex);
+    final cleanKeyword = searchKeyword?.trim();
+    matches[key] = {
+      'episodeId': episodeId,
+      if (cleanKeyword != null && cleanKeyword.isNotEmpty)
+        'searchKeyword': cleanKeyword,
+    };
     await prefs.setString(_manualMatchKey, jsonEncode(matches));
   }
 

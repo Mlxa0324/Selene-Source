@@ -4,11 +4,30 @@ import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  private let orientationChannelName = "selene/orientation"
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
+
+    if let controller = window?.rootViewController as? FlutterViewController {
+      let orientationChannel = FlutterMethodChannel(
+        name: orientationChannelName,
+        binaryMessenger: controller.binaryMessenger
+      )
+      orientationChannel.setMethodCallHandler { [weak self] call, result in
+        switch call.method {
+        case "getCurrentInterfaceOrientation":
+          result(self?.resolveCurrentInterfaceOrientation() ?? "unknown")
+        case "getSystemAutoRotateEnabled":
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
     
     // 配置音频会话以支持后台播放和 PiP
     do {
@@ -20,5 +39,28 @@ import AVFoundation
     }
     
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  private func resolveCurrentInterfaceOrientation() -> String {
+    let sceneOrientation =
+      UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .first(where: { $0.activationState == .foregroundActive })?
+        .interfaceOrientation
+      ?? window?.windowScene?.interfaceOrientation
+      ?? .unknown
+
+    switch sceneOrientation {
+    case .portrait:
+      return "portraitUp"
+    case .portraitUpsideDown:
+      return "portraitDown"
+    case .landscapeLeft:
+      return "landscapeRight"
+    case .landscapeRight:
+      return "landscapeLeft"
+    default:
+      return "unknown"
+    }
   }
 }
