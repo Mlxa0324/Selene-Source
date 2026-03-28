@@ -972,8 +972,28 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _applyPlayerRotationLock({
     bool readCurrentOrientation = false,
+    bool preferCurrentObservedOrientation = false,
   }) async {
     if (DeviceUtils.isPC() || !_playerRotationLocked) return;
+
+    MobileInterfaceOrientation observed = MobileInterfaceOrientation.unknown;
+    if (readCurrentOrientation) {
+      observed = await _readCurrentInterfaceOrientation();
+      if (preferCurrentObservedOrientation) {
+        final targetOrientations =
+            PlayerRotationLockPolicy.resolveInitialLockTarget(
+          observedInterfaceOrientation: observed,
+          lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+          lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+        );
+        if (targetOrientations != null) {
+          _lockedPlayerOrientations = targetOrientations;
+          await SystemChrome.setPreferredOrientations(targetOrientations);
+          _lastAppliedFullscreenOrientations = targetOrientations;
+          return;
+        }
+      }
+    }
 
     final cachedTarget = PlayerRotationLockPolicy.resolveCachedLockTarget(
       currentLockedOrientations: _lockedPlayerOrientations,
@@ -991,7 +1011,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     if (!readCurrentOrientation) return;
 
-    final observed = await _readCurrentInterfaceOrientation();
     final targetOrientations = PlayerRotationLockPolicy.resolve(
       isLocked: true,
       observedInterfaceOrientation: observed,
@@ -1047,13 +1066,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     if (isLocked) {
-      _lockedPlayerOrientations =
-          PlayerRotationLockPolicy.resolveCachedLockTarget(
-        currentLockedOrientations: null,
-        lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
-        lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+      _lockedPlayerOrientations = null;
+      await _applyPlayerRotationLock(
+        readCurrentOrientation: true,
+        preferCurrentObservedOrientation: true,
       );
-      await _applyPlayerRotationLock(readCurrentOrientation: true);
     } else {
       _lockedPlayerOrientations = null;
       await _restoreUnlockedPlayerOrientations();

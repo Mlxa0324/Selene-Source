@@ -106,5 +106,33 @@ void main() {
         isNull,
       );
     });
+
+    test('首次点击锁定时优先使用当前观测方向，而不是旧缓存方向', () {
+      expect(
+        PlayerRotationLockPolicy.resolveInitialLockTarget(
+          observedInterfaceOrientation:
+              MobileInterfaceOrientation.landscapeLeft,
+          lastKnownInterfaceOrientation:
+              MobileInterfaceOrientation.landscapeRight,
+          lastAppliedOrientations: const [DeviceOrientation.landscapeRight],
+        ),
+        const [DeviceOrientation.landscapeLeft],
+      );
+    });
+
+    test('首次点击锁定时若观测方向未知，则回退到缓存方向', () {
+      expect(
+        PlayerRotationLockPolicy.resolveInitialLockTarget(
+          observedInterfaceOrientation: MobileInterfaceOrientation.unknown,
+          lastKnownInterfaceOrientation:
+              MobileInterfaceOrientation.landscapeRight,
+          lastAppliedOrientations: const [
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ],
+        ),
+        const [DeviceOrientation.landscapeRight],
+      );
+    });
   });
 }

@@ -60,4 +60,24 @@ class PlayerRotationLockPolicy {
 
     return null;
   }
+
+  static List<DeviceOrientation>? resolveInitialLockTarget({
+    required MobileInterfaceOrientation observedInterfaceOrientation,
+    required MobileInterfaceOrientation? lastKnownInterfaceOrientation,
+    required List<DeviceOrientation>? lastAppliedOrientations,
+  }) {
+    if (observedInterfaceOrientation != MobileInterfaceOrientation.unknown) {
+      return resolve(
+        isLocked: true,
+        observedInterfaceOrientation: observedInterfaceOrientation,
+        lastKnownInterfaceOrientation: lastKnownInterfaceOrientation,
+      );
+    }
+
+    return resolveCachedLockTarget(
+      currentLockedOrientations: null,
+      lastKnownInterfaceOrientation: lastKnownInterfaceOrientation,
+      lastAppliedOrientations: lastAppliedOrientations,
+    );
+  }
 }
