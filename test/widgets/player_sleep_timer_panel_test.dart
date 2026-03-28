@@ -39,6 +39,22 @@ void main() {
       expect(find.byType(CupertinoPicker), findsNothing);
     });
 
+    testWidgets('shows custom minutes before clock time on mobile platforms',
+        (tester) async {
+      await _pumpPanel(
+        tester,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          platform: TargetPlatform.android,
+        ),
+      );
+
+      final customMinutesLabel = tester.getTopLeft(find.text('自定义分钟数'));
+      final clockTimeLabel = tester.getTopLeft(find.text('指定时间'));
+
+      expect(customMinutesLabel.dy, lessThan(clockTimeLabel.dy));
+    });
+
     testWidgets('submits the selected inline time on mobile platforms',
         (tester) async {
       TimeOfDay? submittedTime;

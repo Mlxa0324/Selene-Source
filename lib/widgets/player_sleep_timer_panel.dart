@@ -106,6 +106,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
       }
       return remainingMinutes;
     }
+
     return 45;
   }
 
@@ -124,9 +125,6 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
     }
   }
 
-  Future<void> _handleCustomMinutes() async =>
-      _handleMinutes(_selectedCustomMinutes);
-
   Future<void> _handleDesktopCustomMinutes() async {
     final minutes = int.tryParse(_desktopCustomMinutesController.text.trim());
     if (minutes == null || minutes <= 0) {
@@ -138,6 +136,9 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
 
     await _handleMinutes(minutes);
   }
+
+  Future<void> _handleCustomMinutes() async =>
+      _handleMinutes(_selectedCustomMinutes);
 
   Future<void> _handleClockTime() async {
     if (_submitting) return;
@@ -251,20 +252,31 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
     );
   }
 
-  String _formatTimeOfDay(TimeOfDay time) {
+  Future<void> _handleInlineClockTime() async {
+    if (_submitting) return;
+    setState(() => _submitting = true);
+    try {
+      final success = await widget.onSetTimeOfDay(_selectedClockTime);
+      if (success && mounted) {
+        Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  String _formatInlineTime(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
 
-  Widget _buildInlinePickerShell({
-    required Widget child,
-    EdgeInsetsGeometry? padding,
-  }) {
+  Widget _buildInlinePickerContainer(Widget child) {
     return Container(
       width: double.infinity,
-      padding:
-          padding ?? const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: _isDarkMode
             ? Colors.white.withValues(alpha: 0.05)
@@ -278,16 +290,16 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
     );
   }
 
-  Widget _buildInlineClockPicker() {
+  Widget _buildInlineTimePicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInlinePickerShell(
-          child: Column(
+        _buildInlinePickerContainer(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '波动选择关闭时间点',
+                '上下波动选择关闭时间点',
                 style: TextStyle(
                   color: _subTextColor,
                   fontSize: 12,
@@ -296,7 +308,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
               ),
               const SizedBox(height: 6),
               Text(
-                _formatTimeOfDay(_selectedClockTime),
+                _formatInlineTime(_selectedClockTime),
                 style: TextStyle(
                   color: _textColor,
                   fontSize: 24,
@@ -340,8 +352,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
         SizedBox(
           width: double.infinity,
           child: FilledButton.tonalIcon(
-            onPressed:
-                _submitting ? null : () => _handleTimeOfDay(_selectedClockTime),
+            onPressed: _submitting ? null : _handleInlineClockTime,
             icon: const Icon(Icons.schedule_outlined, size: 18),
             label: const Text('设置时间'),
             style: FilledButton.styleFrom(
@@ -362,12 +373,12 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInlinePickerShell(
-          child: Column(
+        _buildInlinePickerContainer(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '上下滑动选择分钟数',
+                '上下波动选择分钟数',
                 style: TextStyle(
                   color: _subTextColor,
                   fontSize: 12,
@@ -438,21 +449,6 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
         ),
       ],
     );
-  }
-
-  Future<void> _handleTimeOfDay(TimeOfDay time) async {
-    if (_submitting) return;
-    setState(() => _submitting = true);
-    try {
-      final success = await widget.onSetTimeOfDay(time);
-      if (success && mounted) {
-        Navigator.pop(context);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _submitting = false);
-      }
-    }
   }
 
   @override
@@ -572,31 +568,6 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  _buildSectionTitle('指定时间'),
-                  const SizedBox(height: 10),
-                  if (_usesInlinePickers)
-                    _buildInlineClockPicker()
-                  else
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: OutlinedButton.icon(
-                        onPressed: _submitting ? null : _handleClockTime,
-                        icon: const Icon(Icons.schedule_outlined, size: 18),
-                        label: const Text('选择关闭时间点'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _textColor,
-                          side: BorderSide(
-                            color:
-                                _isDarkMode ? Colors.white24 : Colors.black12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 20),
                   _buildSectionTitle('自定义分钟数'),
                   const SizedBox(height: 10),
                   if (_usesInlinePickers)
@@ -663,6 +634,31 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                           ),
                         ),
                       ],
+                    ),
+                  const SizedBox(height: 20),
+                  _buildSectionTitle('指定时间'),
+                  const SizedBox(height: 10),
+                  if (_usesInlinePickers)
+                    _buildInlineTimePicker()
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: _submitting ? null : _handleClockTime,
+                        icon: const Icon(Icons.schedule_outlined, size: 18),
+                        label: const Text('选择关闭时间点'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _textColor,
+                          side: BorderSide(
+                            color:
+                                _isDarkMode ? Colors.white24 : Colors.black12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               ),

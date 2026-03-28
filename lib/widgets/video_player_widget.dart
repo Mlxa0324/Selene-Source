@@ -79,6 +79,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool hasActiveSleepTimer;
   final ValueChanged<double>? onPlaybackSpeedChanged; // 播放倍速变化回调
   final ValueChanged<String>? onDebugToast;
+  final ValueChanged<bool>? onPlayerLockChanged;
 
   const VideoPlayerWidget({
     super.key,
@@ -141,6 +142,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.hasActiveSleepTimer = false,
     this.onPlaybackSpeedChanged,
     this.onDebugToast,
+    this.onPlayerLockChanged,
   });
 
   @override
@@ -1987,6 +1989,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,
         hasActiveSleepTimer: widget.hasActiveSleepTimer,
+        onPlayerLockChanged: widget.onPlayerLockChanged,
       );
     }
   }

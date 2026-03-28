@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../widgets/video_player_surface.dart';
@@ -6,9 +8,13 @@ import '../widgets/video_player_widget.dart';
 import '../models/live_channel.dart';
 import '../models/live_source.dart';
 import '../models/epg_program.dart';
+import '../services/fullscreen_orientation_controller.dart';
 import '../services/live_service.dart';
+import '../services/mobile_orientation_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
+import '../utils/fullscreen_orientation_policy.dart';
+import '../utils/player_rotation_lock_policy.dart';
 import '../services/theme_service.dart';
 import 'package:provider/provider.dart';
 import '../widgets/windows_title_bar.dart';
@@ -31,7 +37,7 @@ class LivePlayerScreen extends StatefulWidget {
 }
 
 class _LivePlayerScreenState extends State<LivePlayerScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late SystemUiOverlayStyle _originalStyle;
   bool _isInitialized = false;
   late LiveChannel _currentChannel;
@@ -72,6 +78,15 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
   // 真全屏状态
   bool _isFullscreen = false;
+  bool _isEnteringLandscapeFullscreen = false;
+  List<DeviceOrientation>? _lastAppliedFullscreenOrientations;
+  late final FullscreenOrientationController _fullscreenOrientationController =
+      FullscreenOrientationController(
+    orientationService: const MobileOrientationService(),
+  );
+  int _fullscreenTransitionSerial = 0;
+  bool _playerRotationLocked = false;
+  MobileInterfaceOrientation? _lastKnownPlayerInterfaceOrientation;
 
   // 加载状态
   bool _isLoading = true;
@@ -92,6 +107,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     )..repeat();
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -179,6 +195,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // 恢复原始的系统UI样式
     SystemChrome.setSystemUIOverlayStyle(_originalStyle);
     // 恢复屏幕方向
@@ -198,6 +215,95 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (_playerRotationLocked) {
+      unawaited(_applyPlayerRotationLock());
+    }
+  }
+
+  Future<MobileInterfaceOrientation> _readCurrentInterfaceOrientation() async {
+    final orientation =
+        await const MobileOrientationService().getCurrentInterfaceOrientation();
+    if (orientation != MobileInterfaceOrientation.unknown) {
+      _lastKnownPlayerInterfaceOrientation = orientation;
+    }
+    return orientation;
+  }
+
+  Future<void> _applyPlayerRotationLock({
+    bool readCurrentOrientation = false,
+  }) async {
+    if (DeviceUtils.isPC() || !_playerRotationLocked) return;
+
+    final observed = readCurrentOrientation
+        ? await _readCurrentInterfaceOrientation()
+        : MobileInterfaceOrientation.unknown;
+    final targetOrientations = PlayerRotationLockPolicy.resolve(
+      isLocked: true,
+      observedInterfaceOrientation: observed,
+      lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+    );
+    if (targetOrientations == null) return;
+
+    await SystemChrome.setPreferredOrientations(targetOrientations);
+    _lastAppliedFullscreenOrientations = targetOrientations;
+  }
+
+  Future<void> _restoreUnlockedPlayerOrientations() async {
+    if (DeviceUtils.isPC()) return;
+
+    if (_isFullscreen && !_isEnteringLandscapeFullscreen) {
+      final targetOrientations =
+          await _fullscreenOrientationController.resolveAfterFullscreenEntry(
+        platform: defaultTargetPlatform,
+        isShortDramaPortraitFlow: false,
+        lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+      );
+      if (targetOrientations != null) {
+        await SystemChrome.setPreferredOrientations(targetOrientations);
+        _lastAppliedFullscreenOrientations = targetOrientations;
+      }
+      return;
+    }
+
+    _restoreOrientation();
+  }
+
+  Future<void> _handlePlayerLockChanged(bool isLocked) async {
+    if (_playerRotationLocked == isLocked) return;
+
+    if (mounted) {
+      setState(() {
+        _playerRotationLocked = isLocked;
+      });
+    }
+
+    if (isLocked) {
+      await _applyPlayerRotationLock(readCurrentOrientation: true);
+    } else {
+      await _restoreUnlockedPlayerOrientations();
+    }
+  }
+
+  Future<void> _waitForLandscapeMetrics({
+    Duration timeout = const Duration(milliseconds: 850),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      final view = views.isNotEmpty ? views.first : null;
+      if (view != null) {
+        final size = view.physicalSize;
+        if (size.width > size.height) {
+          return;
+        }
+      }
+      await Future.delayed(const Duration(milliseconds: 16));
+    }
   }
 
   Future<void> _loadEpgData() async {
@@ -264,19 +370,57 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     }
   }
 
-  void _onFullscreenChanged(bool isFullscreen) {
-    setState(() {
-      _isFullscreen = isFullscreen;
-    });
-    if (DeviceUtils.isPC()) return;
+  void _onFullscreenChanged(bool isFullscreen) async {
+    final requestId = ++_fullscreenTransitionSerial;
+    if (DeviceUtils.isPC()) {
+      setState(() {
+        _isFullscreen = isFullscreen;
+      });
+      return;
+    }
 
     if (isFullscreen) {
+      setState(() {
+        _isEnteringLandscapeFullscreen = true;
+      });
+
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
       ]);
+      _lastAppliedFullscreenOrientations = const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ];
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+      await _waitForLandscapeMetrics();
+      if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+      final targetOrientations =
+          await _fullscreenOrientationController.resolveAfterFullscreenEntry(
+        platform: defaultTargetPlatform,
+        isShortDramaPortraitFlow: false,
+        lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+      );
+      if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+      if (targetOrientations != null) {
+        await SystemChrome.setPreferredOrientations(targetOrientations);
+        _lastAppliedFullscreenOrientations = targetOrientations;
+      }
+
+      setState(() {
+        _isFullscreen = true;
+        _isEnteringLandscapeFullscreen = false;
+      });
     } else {
+      setState(() {
+        _isFullscreen = false;
+        _isEnteringLandscapeFullscreen = false;
+        _lastAppliedFullscreenOrientations = null;
+        _playerRotationLocked = false;
+      });
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
       ]);
@@ -546,8 +690,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
+    final isLandscapeFullscreenActive =
+        _isFullscreen || _isEnteringLandscapeFullscreen;
     // 如果是真全屏模式，不预留状态栏高度
-    final topOffset = _isFullscreen ? 0.0 : (statusBarHeight + macOSPadding);
+    final topOffset =
+        isLandscapeFullscreenActive ? 0.0 : (statusBarHeight + macOSPadding);
 
     if (_isWebFullscreen) {
       // 网页全屏模式：播放器占据整个屏幕（保留顶部安全区域）
@@ -581,6 +728,22 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         ),
       );
     } else {
+      if (isLandscapeFullscreenActive) {
+        return Positioned.fill(
+          top: 0,
+          child: Stack(
+            children: [
+              Container(
+                key: _playerKey,
+                color: Colors.black,
+                child: _buildPlayerWidget(),
+              ),
+              _buildSwitchLoadingOverlay(),
+            ],
+          ),
+        );
+      }
+
       // 非网页全屏模式：根据不同布局计算播放器位置
       if (_isTablet && !_isPortraitTablet) {
         // 平板横屏模式：播放器在左侧65%区域
@@ -629,24 +792,6 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         );
       } else {
         // 手机模式
-        // 💡 优化：全屏时直接 fill，避免依赖 MediaQuery 的高度计算延迟导致跳变
-        if (_isFullscreen) {
-          return Positioned.fill(
-            top: 0,
-            child: Stack(
-              children: [
-                Container(
-                  key: _playerKey,
-                  color: Colors.black,
-                  child: _buildPlayerWidget(),
-                ),
-                // 加载蒙版
-                _buildSwitchLoadingOverlay(),
-              ],
-            ),
-          );
-        }
-
         final screenWidth = MediaQuery.of(context).size.width;
         final playerHeight = screenWidth / (16 / 9);
 
@@ -696,6 +841,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         });
       },
       onFullscreenChanged: _onFullscreenChanged,
+      onPlayerLockChanged: _handlePlayerLockChanged,
       onExitFullScreen: () {
         // 退出全屏后，重新滚动到当前节目
         _scrollToCurrentProgram();

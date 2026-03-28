@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -22,10 +23,14 @@ import '../models/play_record.dart';
 import '../services/page_cache_service.dart';
 import '../services/local_mode_storage_service.dart';
 import '../services/download_service.dart';
+import '../services/fullscreen_orientation_controller.dart';
 import '../widgets/switch_loading_overlay.dart';
 import '../widgets/dlna_player.dart';
 import '../widgets/dlna_device_dialog.dart';
+import '../services/mobile_orientation_service.dart';
 import '../utils/device_utils.dart';
+import '../utils/fullscreen_orientation_policy.dart';
+import '../utils/player_rotation_lock_policy.dart';
 import '../widgets/player_details_panel.dart';
 import '../widgets/player_episodes_panel.dart';
 import '../widgets/player_sources_panel.dart';
@@ -189,9 +194,16 @@ class _PlayerScreenState extends State<PlayerScreen>
   // 真全屏状态
   bool _isFullscreen = false;
   bool _isEnteringLandscapeFullscreen = false;
+  List<DeviceOrientation>? _lastAppliedFullscreenOrientations;
+  late final FullscreenOrientationController _fullscreenOrientationController =
+      FullscreenOrientationController(
+    orientationService: const MobileOrientationService(),
+  );
   int _fullscreenTransitionSerial = 0;
   int _sourceSwitchRecordSerial = 0;
   int _sourceSpeedHydrationSerial = 0;
+  bool _playerRotationLocked = false;
+  MobileInterfaceOrientation? _lastKnownPlayerInterfaceOrientation;
 
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
@@ -415,6 +427,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.didChangeMetrics();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isClosing) return;
+      if (_playerRotationLocked) {
+        unawaited(_applyPlayerRotationLock());
+      }
       _refreshDanmakuOptionForPlayback(reason: 'metrics_changed');
     });
   }
@@ -927,6 +942,81 @@ class _PlayerScreenState extends State<PlayerScreen>
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
     ]);
+  }
+
+  Future<MobileInterfaceOrientation> _readCurrentInterfaceOrientation() async {
+    final orientation =
+        await const MobileOrientationService().getCurrentInterfaceOrientation();
+    if (orientation != MobileInterfaceOrientation.unknown) {
+      _lastKnownPlayerInterfaceOrientation = orientation;
+    }
+    return orientation;
+  }
+
+  Future<void> _applyPlayerRotationLock({
+    bool readCurrentOrientation = false,
+  }) async {
+    if (DeviceUtils.isPC() || !_playerRotationLocked) return;
+
+    final observed = readCurrentOrientation
+        ? await _readCurrentInterfaceOrientation()
+        : MobileInterfaceOrientation.unknown;
+    final targetOrientations = PlayerRotationLockPolicy.resolve(
+      isLocked: true,
+      observedInterfaceOrientation: observed,
+      lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+    );
+    if (targetOrientations == null) return;
+
+    await SystemChrome.setPreferredOrientations(targetOrientations);
+    _lastAppliedFullscreenOrientations = targetOrientations;
+  }
+
+  Future<void> _restoreUnlockedPlayerOrientations() async {
+    if (DeviceUtils.isPC()) return;
+
+    if (_isFullscreen && !_isEnteringLandscapeFullscreen) {
+      if (_isShortDrama) {
+        const targetOrientations = [DeviceOrientation.portraitUp];
+        await SystemChrome.setPreferredOrientations(targetOrientations);
+        _lastAppliedFullscreenOrientations = targetOrientations;
+        return;
+      }
+
+      final targetOrientations =
+          await _fullscreenOrientationController.resolveAfterFullscreenEntry(
+        platform: defaultTargetPlatform,
+        isShortDramaPortraitFlow: _isShortDrama,
+        lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+      );
+      if (targetOrientations != null) {
+        await SystemChrome.setPreferredOrientations(targetOrientations);
+        _lastAppliedFullscreenOrientations = targetOrientations;
+      }
+      return;
+    }
+
+    if (_isTablet) {
+      _restoreOrientation();
+    } else {
+      _setPortraitOrientation();
+    }
+  }
+
+  Future<void> _handlePlayerLockChanged(bool isLocked) async {
+    if (_playerRotationLocked == isLocked) return;
+
+    if (mounted) {
+      setState(() {
+        _playerRotationLocked = isLocked;
+      });
+    }
+
+    if (isLocked) {
+      await _applyPlayerRotationLock(readCurrentOrientation: true);
+    } else {
+      await _restoreUnlockedPlayerOrientations();
+    }
   }
 
   /// 恢复所有方向
@@ -1999,10 +2089,24 @@ class _PlayerScreenState extends State<PlayerScreen>
               ];
 
         SystemChrome.setPreferredOrientations(fullscreenOrientations);
+        _lastAppliedFullscreenOrientations = fullscreenOrientations;
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
         await _waitForLandscapeMetrics();
         if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+        final targetOrientations =
+            await _fullscreenOrientationController.resolveAfterFullscreenEntry(
+          platform: defaultTargetPlatform,
+          isShortDramaPortraitFlow: _isShortDrama,
+          lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+        );
+        if (!mounted || requestId != _fullscreenTransitionSerial) return;
+
+        if (targetOrientations != null) {
+          await SystemChrome.setPreferredOrientations(targetOrientations);
+          _lastAppliedFullscreenOrientations = targetOrientations;
+        }
 
         setState(() {
           _isFullscreen = true;
@@ -2015,6 +2119,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       setState(() {
         _isFullscreen = false;
         _isEnteringLandscapeFullscreen = false;
+        _lastAppliedFullscreenOrientations = null;
+        _playerRotationLocked = false;
       });
       if (_isTablet) {
         // 平板退出全屏时，按当前物理方向优先恢复，避免被强制切到竖屏。
@@ -3125,6 +3231,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               });
             },
             onFullscreenChanged: _onFullscreenChanged,
+            onPlayerLockChanged: _handlePlayerLockChanged,
             onEpisodesButtonPressed: (fullscreenContext) {
               // 在全屏模式下，使用传入的 context 显示选集面板
               _showEpisodesPanelInFullscreen(fullscreenContext);
@@ -4762,7 +4869,21 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 手动加载指定 episodeId 的弹幕
-  Future<void> _loadDanmakuById(int episodeId) async {
+  Future<String> _resolveInitialDanmakuMatchQuery() async {
+    if (currentSource.isNotEmpty && currentID.isNotEmpty) {
+      final query = await DanmakuService().getManualMatchQuery(
+        currentSource,
+        currentID,
+        _getDanmakuMatchEpisodeIndex(),
+      );
+      if (query != null && query.isNotEmpty) {
+        return query;
+      }
+    }
+    return videoTitle;
+  }
+
+  Future<void> _loadDanmakuById(int episodeId, {String? searchKeyword}) async {
     setState(() => _isDanmakuLoading = true);
     try {
       final comments = await DanmakuService().getDanmakuList(episodeId);
@@ -4786,6 +4907,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             currentID,
             danmakuMatchEpisodeIndex,
             episodeId,
+            searchKeyword: searchKeyword,
           );
         }
 
@@ -4805,12 +4927,15 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   /// 在全屏模式下显示弹幕匹配面板（使用传入的 context）
-  void _showDanmakuMatchPanelInFullscreen(BuildContext fullscreenContext) {
+  Future<void> _showDanmakuMatchPanelInFullscreen(
+      BuildContext fullscreenContext) async {
     final theme = Theme.of(fullscreenContext);
     final screenHeight = MediaQuery.of(fullscreenContext).size.height;
     final screenWidth = MediaQuery.of(fullscreenContext).size.width;
     final isPortrait =
         MediaQuery.of(fullscreenContext).orientation == Orientation.portrait;
+    final initialQuery = await _resolveInitialDanmakuMatchQuery();
+    if (!mounted) return;
 
     if (isPortrait) {
       // 💡 竖屏/短剧模式：从底部弹出
@@ -4832,12 +4957,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
             child: DanmakuMatchPanel(
               theme: theme,
-              initialQuery: videoTitle,
+              initialQuery: initialQuery,
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
-              onEpisodeSelected: (episodeId) {
+              onEpisodeSelected: (episodeId, searchKeyword) {
                 Navigator.pop(context);
-                _loadDanmakuById(episodeId);
+                _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
               },
             ),
           );
@@ -4867,12 +4992,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                   height: panelHeight,
                   child: DanmakuMatchPanel(
                     theme: theme,
-                    initialQuery: videoTitle,
+                    initialQuery: initialQuery,
                     currentEpisodeId: _currentDanmakuEpisodeId,
                     currentEpisodeCommentCount: _currentDanmakuCommentCount,
-                    onEpisodeSelected: (episodeId) {
+                    onEpisodeSelected: (episodeId, searchKeyword) {
                       Navigator.pop(dialogContext);
-                      _loadDanmakuById(episodeId);
+                      _loadDanmakuById(
+                        episodeId,
+                        searchKeyword: searchKeyword,
+                      );
                     },
                     borderRadiusOverride: BorderRadius.circular(10),
                   ),
@@ -4906,12 +5034,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             animation: animation,
             child: DanmakuMatchPanel(
               theme: theme,
-              initialQuery: videoTitle,
+              initialQuery: initialQuery,
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
-              onEpisodeSelected: (episodeId) {
+              onEpisodeSelected: (episodeId, searchKeyword) {
                 Navigator.pop(dialogContext);
-                _loadDanmakuById(episodeId);
+                _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
               },
             ),
           );

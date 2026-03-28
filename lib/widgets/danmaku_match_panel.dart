@@ -8,7 +8,7 @@ class DanmakuMatchPanel extends StatefulWidget {
   final String initialQuery;
   final int? currentEpisodeId; // 当前选中的弹幕 ID
   final int? currentEpisodeCommentCount; // 当前选中弹幕的条数
-  final Function(int episodeId) onEpisodeSelected;
+  final Function(int episodeId, String searchKeyword) onEpisodeSelected;
   final double? backgroundOpacity;
   final BorderRadius? borderRadiusOverride;
   final bool forceDarkStyle;
@@ -37,6 +37,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   String? _errorMessage;
   bool _isDescending = true;
   int? _selectedAnimeId;
+  String? _activeQuery;
 
   // 💡 优化：改为使用复合字符串 Key (animeId_episodeId)，防止不同搜索结果下重复的 episodeId 导致 GlobalKey 冲突
   final Map<String, GlobalKey> _itemKeys = {};
@@ -51,6 +52,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   void initState() {
     super.initState();
     _searchController.text = widget.initialQuery;
+    final initialQuery = widget.initialQuery.trim();
+    _activeQuery = initialQuery.isEmpty ? null : initialQuery;
     _onSearch();
   }
 
@@ -173,6 +176,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
         if (result != null && result.success) {
           setState(() {
             _searchResults = result.animes;
+            _activeQuery = query;
             _sortResults();
             _syncSelectedAnimeId();
             _isLoading = false;
@@ -478,6 +482,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     // 💡 复合 Key 生成
     final compositeKey = '${animeId}_${episode.episodeId}';
     final key = _itemKeys.putIfAbsent(compositeKey, () => GlobalKey());
+    final effectiveQuery = (_activeQuery?.trim().isNotEmpty ?? false)
+        ? _activeQuery!.trim()
+        : widget.initialQuery.trim();
 
     return Material(
       key: key,
@@ -487,7 +494,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           setState(() {
             _selectedAnimeId = animeId;
           });
-          widget.onEpisodeSelected(episode.episodeId);
+          widget.onEpisodeSelected(episode.episodeId, effectiveQuery);
         },
         borderRadius: BorderRadius.circular(4),
         child: Container(
