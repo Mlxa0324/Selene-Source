@@ -12,6 +12,7 @@ import '../config/player_backend_config.dart';
 import '../models/search_result.dart';
 import '../models/danmaku_model.dart';
 import '../services/android_media_session_bridge.dart';
+import '../utils/mobile_playback_lifecycle_policy.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
 import 'short_drama_controls.dart'; // 💡 新增
@@ -267,7 +268,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _androidBackgroundPlaybackTransitioning = false;
   bool _androidPipNativeTransitioning = false;
   bool _shouldRestoreWebViewAfterAndroidPip = false;
+  bool _pendingIosForegroundResume = false;
   bool _pausePlaybackOnceAdapterReady = false;
+  Duration _pendingIosForegroundResumePosition = Duration.zero;
+  int _iosForegroundResumeAttemptToken = 0;
   Timer? _pendingAndroidBackgroundPlaybackTimer;
   final GlobalKey _videoRenderAreaKey = GlobalKey();
   late PageController _shortDramaPageController;
@@ -867,6 +871,117 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       );
     } catch (error) {
       debugPrint('[PiP] 恢复 WebView 播放失败: $error');
+    }
+  }
+
+  void _rememberIosForegroundResumeIfNeeded(AppLifecycleState state) {
+    final shouldRemember =
+        MobilePlaybackLifecyclePolicy.shouldRememberIosForegroundResume(
+      state: state,
+      isIOS: Platform.isIOS,
+      usesWebViewAdapter: _adapter is WebViewPlayerAdapter,
+      isPipMode: _isPipMode,
+      wasPlayingBeforeBackground:
+          (_adapter?.state.playing ?? false) || _lastKnownPlaying,
+    );
+    if (!shouldRemember) {
+      return;
+    }
+    _pendingIosForegroundResume = true;
+    _pendingIosForegroundResumePosition =
+        _adapter?.state.position ?? Duration.zero;
+    debugPrint(
+      '[iOSPlayback] 记录前台恢复意图: state=${state.name}, position=${_pendingIosForegroundResumePosition.inMilliseconds}',
+    );
+  }
+
+  void _clearIosForegroundResumeIntent() {
+    _pendingIosForegroundResume = false;
+    _pendingIosForegroundResumePosition = Duration.zero;
+  }
+
+  Future<void> _attemptIosForegroundPlaybackResume({
+    required String reason,
+  }) async {
+    final shouldAttempt =
+        MobilePlaybackLifecyclePolicy.shouldAttemptIosForegroundResume(
+      state: AppLifecycleState.resumed,
+      isIOS: Platform.isIOS,
+      usesWebViewAdapter: _adapter is WebViewPlayerAdapter,
+      isPipMode: _isPipMode,
+      pendingForegroundResume: _pendingIosForegroundResume,
+    );
+    if (!shouldAttempt || _currentUrl == null) {
+      return;
+    }
+
+    final attemptToken = ++_iosForegroundResumeAttemptToken;
+    final positionBeforeResume =
+        _adapter?.state.position ?? _pendingIosForegroundResumePosition;
+    final resumePosition =
+        positionBeforeResume > _pendingIosForegroundResumePosition
+            ? positionBeforeResume
+            : _pendingIosForegroundResumePosition;
+
+    debugPrint(
+      '[iOSPlayback] 回前台尝试恢复 WebView 播放: reason=$reason, position=${resumePosition.inMilliseconds}',
+    );
+
+    try {
+      await _adapter?.play();
+      await _adapter?.setRate(_playbackSpeed.value);
+    } catch (error) {
+      debugPrint('[iOSPlayback] 前台唤醒播放失败: $error');
+    }
+
+    await Future.delayed(const Duration(milliseconds: 520));
+    if (!mounted ||
+        _playerDisposed ||
+        attemptToken != _iosForegroundResumeAttemptToken) {
+      return;
+    }
+
+    final adapter = _adapter;
+    final positionAfterGracePeriod = adapter?.state.position ?? resumePosition;
+    final shouldReload =
+        MobilePlaybackLifecyclePolicy.shouldReloadIosForegroundPlayback(
+      isIOS: Platform.isIOS,
+      usesWebViewAdapter: adapter is WebViewPlayerAdapter,
+      isPipMode: _isPipMode,
+      pendingForegroundResume: _pendingIosForegroundResume,
+      positionBeforeResume: positionBeforeResume,
+      positionAfterResumeGracePeriod: positionAfterGracePeriod,
+      isPlayingAfterResumeGracePeriod: adapter?.state.playing ?? false,
+      isBufferingAfterResumeGracePeriod:
+          _isBuffering || (adapter?.state.buffering ?? false),
+    );
+
+    if (!shouldReload) {
+      debugPrint(
+        '[iOSPlayback] 回前台恢复成功: reason=$reason, before=${positionBeforeResume.inMilliseconds}, after=${positionAfterGracePeriod.inMilliseconds}',
+      );
+      _clearIosForegroundResumeIntent();
+      return;
+    }
+
+    final reloadPosition = positionAfterGracePeriod > resumePosition
+        ? positionAfterGracePeriod
+        : resumePosition;
+    debugPrint(
+      '[iOSPlayback] 回前台仍卡住，重建 WebView 数据源兜底: reason=$reason, position=${reloadPosition.inMilliseconds}',
+    );
+
+    try {
+      _pausePlaybackOnceAdapterReady = false;
+      await _updateDataSource(
+        _currentUrl!,
+        startAt: reloadPosition > Duration.zero ? reloadPosition : null,
+      );
+      await _adapter?.play();
+    } catch (error) {
+      debugPrint('[iOSPlayback] 重建 WebView 数据源失败: $error');
+    } finally {
+      _clearIosForegroundResumeIntent();
     }
   }
 
@@ -1561,6 +1676,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _playerDisposed = true;
     _pendingAndroidBackgroundPlaybackTimer?.cancel();
     _pendingAndroidBackgroundPlaybackTimer = null;
+    _iosForegroundResumeAttemptToken++;
+    _clearIosForegroundResumeIntent();
 
     try {
       _lastAndroidMediaSessionSignature = null;
@@ -1581,24 +1698,45 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_adapter == null) {
       return;
     }
-    switch (state) {
-      case AppLifecycleState.paused:
+    _rememberIosForegroundResumeIfNeeded(state);
+
+    final androidAction =
+        MobilePlaybackLifecyclePolicy.resolveAndroidBackgroundPlaybackAction(
+      state: state,
+      canUseBackgroundPlayback: _canUseAndroidBackgroundPlayback,
+      backgroundPlaybackActive: _androidBackgroundPlaybackActive,
+      isPipMode: _isPipMode || _androidPipNativeTransitioning,
+    );
+    switch (androidAction) {
+      case AndroidBackgroundPlaybackLifecycleAction.none:
+        break;
+      case AndroidBackgroundPlaybackLifecycleAction.scheduleDelayedStart:
         _scheduleAndroidBackgroundPlaybackStart(reason: state.name);
         break;
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.hidden:
-        _scheduleAndroidBackgroundPlaybackStart(reason: state.name);
+      case AndroidBackgroundPlaybackLifecycleAction.startImmediately:
+        unawaited(
+          _startAndroidBackgroundPlayback(reason: state.name),
+        );
         break;
-      case AppLifecycleState.resumed:
+      case AndroidBackgroundPlaybackLifecycleAction.restoreForeground:
         unawaited(
           _restoreFromAndroidBackgroundPlayback(reason: state.name),
         );
-        unawaited(
-          _restoreWebViewAfterAndroidPip(reason: state.name),
-        );
         break;
-      case AppLifecycleState.detached:
-        break;
+    }
+
+    if (state == AppLifecycleState.resumed) {
+      unawaited(
+        _attemptIosForegroundPlaybackResume(reason: state.name),
+      );
+      unawaited(
+        _restoreWebViewAfterAndroidPip(reason: state.name),
+      );
+    }
+
+    if (state == AppLifecycleState.detached) {
+      _iosForegroundResumeAttemptToken++;
+      _clearIosForegroundResumeIntent();
     }
   }
 
