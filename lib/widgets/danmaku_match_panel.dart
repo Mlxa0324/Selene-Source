@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../models/danmaku_model.dart';
 import '../services/danmaku_service.dart';
@@ -9,6 +11,8 @@ class DanmakuMatchPanel extends StatefulWidget {
   final int? currentEpisodeId; // 当前选中的弹幕 ID
   final int? currentEpisodeCommentCount; // 当前选中弹幕的条数
   final Function(int episodeId, String searchKeyword) onEpisodeSelected;
+  final Future<DanmakuSearchResult?> Function(String query)?
+      searchEpisodesOverride;
   final double? backgroundOpacity;
   final BorderRadius? borderRadiusOverride;
   final bool forceDarkStyle;
@@ -20,6 +24,7 @@ class DanmakuMatchPanel extends StatefulWidget {
     this.currentEpisodeId,
     this.currentEpisodeCommentCount,
     required this.onEpisodeSelected,
+    this.searchEpisodesOverride,
     this.backgroundOpacity,
     this.borderRadiusOverride,
     this.forceDarkStyle = false,
@@ -41,6 +46,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
 
   // 💡 优化：改为使用复合字符串 Key (animeId_episodeId)，防止不同搜索结果下重复的 episodeId 导致 GlobalKey 冲突
   final Map<String, GlobalKey> _itemKeys = {};
+  final Map<int, GlobalKey> _animeItemKeys = {};
 
   // 用于存储 ExpansionTile 的状态，方便定位时展开
   final Map<int, bool> _expansionStates = {};
@@ -63,6 +69,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     _searchController.dispose();
     _tileControllers.clear();
     _itemKeys.clear();
+    _animeItemKeys.clear();
     super.dispose();
   }
 
@@ -113,49 +120,72 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     }
   }
 
-  /// 💡 修复：使用控制器实现 100% 成功的展开定位
-  void _locateToCurrent() {
-    if (widget.currentEpisodeId == null || _searchResults.isEmpty) return;
-
-    int animeId = _selectedAnimeId ?? -1;
-    int targetEpisodeId = widget.currentEpisodeId!;
-
-    if (animeId == -1) {
-      // 1. 查找当前 ID 所在的动画
-      for (var anime in _searchResults) {
-        if (anime.episodes.any((e) => e.episodeId == targetEpisodeId)) {
-          animeId = anime.animeId;
-          break;
-        }
-      }
+  int? _findCurrentAnimeId(int targetEpisodeId) {
+    final selectedAnimeId = _selectedAnimeId;
+    if (selectedAnimeId != null &&
+        _searchResults.any((anime) =>
+            anime.animeId == selectedAnimeId &&
+            anime.episodes.any((e) => e.episodeId == targetEpisodeId))) {
+      return selectedAnimeId;
     }
 
-    if (animeId == -1) return;
+    for (final anime in _searchResults) {
+      if (anime.episodes.any((e) => e.episodeId == targetEpisodeId)) {
+        return anime.animeId;
+      }
+    }
+    return null;
+  }
 
-    // 2. 💡 核心修复：确保数据状态为展开
+  /// 💡 修复：先滚动到父级动画项，再滚动到具体剧集
+  Future<void> _locateToCurrent() async {
+    if (widget.currentEpisodeId == null || _searchResults.isEmpty) return;
+
+    final targetEpisodeId = widget.currentEpisodeId!;
+    final animeId = _findCurrentAnimeId(targetEpisodeId);
+    if (animeId == null) return;
+
     setState(() {
       _expansionStates[animeId] = true;
     });
 
-    // 3. 💡 直接通过控制器下发展开指令
     _tileControllers[animeId]?.expand();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
 
-    // 4. 💡 精准定位
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 延时 250ms 待动画完成
-      Future.delayed(const Duration(milliseconds: 250), () {
-        final compositeKey = '${animeId}_$targetEpisodeId';
-        final targetKey = _itemKeys[compositeKey];
-        if (targetKey?.currentContext != null) {
-          Scrollable.ensureVisible(
-            targetKey!.currentContext!,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOut,
-            alignment: 0.3,
-          );
-        }
-      });
-    });
+    final animeKey = _animeItemKeys[animeId];
+    if (animeKey?.currentContext != null) {
+      await Scrollable.ensureVisible(
+        animeKey!.currentContext!,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeInOut,
+        alignment: 0.15,
+      );
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 260));
+    if (!mounted) return;
+
+    final compositeKey = '${animeId}_$targetEpisodeId';
+    final targetKey = _itemKeys[compositeKey];
+    if (targetKey?.currentContext != null) {
+      await Scrollable.ensureVisible(
+        targetKey!.currentContext!,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+        alignment: 0.3,
+      );
+      return;
+    }
+
+    if (animeKey?.currentContext != null) {
+      await Scrollable.ensureVisible(
+        animeKey!.currentContext!,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeInOut,
+        alignment: 0.15,
+      );
+    }
   }
 
   Future<void> _onSearch() async {
@@ -167,11 +197,13 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
       _errorMessage = null;
       _expansionStates.clear();
       _itemKeys.clear();
+      _animeItemKeys.clear();
       _tileControllers.clear(); // 💡 搜索时清理控制器缓存
     });
 
     try {
-      final result = await DanmakuService().searchEpisodes(query);
+      final result = await (widget.searchEpisodesOverride?.call(query) ??
+          DanmakuService().searchEpisodes(query));
       if (mounted) {
         if (result != null && result.success) {
           setState(() {
@@ -184,8 +216,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           // 如果有当前 ID，自动定位一次
           if (widget.currentEpisodeId != null) {
             // 延时一点点确保列表已构建
-            WidgetsBinding.instance
-                .addPostFrameCallback((_) => _locateToCurrent());
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              unawaited(_locateToCurrent());
+            });
           }
         } else {
           setState(() {
@@ -288,7 +321,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                       tooltip: '定位到当前弹幕',
                       icon: const Icon(Icons.location_searching,
                           color: Colors.green, size: 18),
-                      onPressed: _locateToCurrent,
+                      onPressed: () {
+                        unawaited(_locateToCurrent());
+                      },
                     ),
                   // 排序切换按钮
                   IconButton(
@@ -349,7 +384,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
               ),
             ),
 
-            // 可滚动区域 - 使用 ListView.builder 优化性能
+            // 可滚动区域
             Expanded(
               child: _isLoading
                   ? const Center(
@@ -364,22 +399,21 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                           ? Center(
                               child: Text('未找到相关弹幕',
                                   style: TextStyle(color: subTextColor)))
-                          : ListView.builder(
+                          : SingleChildScrollView(
                               controller: _scrollController,
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 16),
-                              itemCount: _searchResults.length,
-                              itemExtent: null, // 高度自适应
-                              cacheExtent: 1000, // 增加预渲染区域减少闪烁
-                              itemBuilder: (context, index) {
-                                final anime = _searchResults[index];
-                                return _buildAnimeItem(
-                                  anime,
-                                  isDarkMode,
-                                  textColor,
-                                  subTextColor,
-                                );
-                              },
+                              child: Column(
+                                children: [
+                                  for (final anime in _searchResults)
+                                    _buildAnimeItem(
+                                      anime,
+                                      isDarkMode,
+                                      textColor,
+                                      subTextColor,
+                                    ),
+                                ],
+                              ),
                             ),
             ),
             const SizedBox(height: 16),
@@ -397,9 +431,11 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     // 💡 核心：为每个动画项绑定一个持久的控制器
     final controller = _tileControllers.putIfAbsent(
         anime.animeId, () => ExpansionTileController());
+    final animeKey =
+        _animeItemKeys.putIfAbsent(anime.animeId, () => GlobalKey());
 
     return Container(
-      key: ValueKey('anime_${anime.animeId}'), // 💡 增加 Key 增加稳定性
+      key: animeKey,
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: textColor.withOpacity(0.03),
