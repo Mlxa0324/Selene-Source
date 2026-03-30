@@ -24,6 +24,15 @@ abstract class PlayerAdapter {
       {BoxFit fit, Key? key, Widget Function(mkv.VideoState state)? controls});
 }
 
+Future<void> seekPlayerAndNotify({
+  required PlayerAdapter player,
+  required Duration position,
+  ValueChanged<Duration>? onSeek,
+}) async {
+  await player.seek(position);
+  onSeek?.call(position);
+}
+
 abstract class PlayerAdapterStream {
   Stream<bool> get playing;
   Stream<Duration> get position;

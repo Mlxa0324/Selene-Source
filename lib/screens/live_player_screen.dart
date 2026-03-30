@@ -86,6 +86,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   );
   int _fullscreenTransitionSerial = 0;
   bool _playerRotationLocked = false;
+  List<DeviceOrientation>? _lockedPlayerOrientations;
   MobileInterfaceOrientation? _lastKnownPlayerInterfaceOrientation;
 
   // 加载状态
@@ -221,7 +222,20 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (_playerRotationLocked) {
-      unawaited(_applyPlayerRotationLock());
+      final cachedTarget = PlayerRotationLockPolicy.resolveCachedLockTarget(
+        currentLockedOrientations: _lockedPlayerOrientations,
+        lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+        lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+      );
+      if (cachedTarget != null) {
+        _lockedPlayerOrientations = cachedTarget;
+        unawaited(SystemChrome.setPreferredOrientations(cachedTarget));
+        _lastAppliedFullscreenOrientations = cachedTarget;
+      } else {
+        unawaited(_applyPlayerRotationLock(readCurrentOrientation: true));
+      }
+    } else if (Platform.isIOS) {
+      unawaited(_readCurrentInterfaceOrientation());
     }
   }
 
@@ -236,12 +250,43 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
   Future<void> _applyPlayerRotationLock({
     bool readCurrentOrientation = false,
+    bool preferCurrentObservedOrientation = false,
   }) async {
     if (DeviceUtils.isPC() || !_playerRotationLocked) return;
 
-    final observed = readCurrentOrientation
-        ? await _readCurrentInterfaceOrientation()
-        : MobileInterfaceOrientation.unknown;
+    MobileInterfaceOrientation observed = MobileInterfaceOrientation.unknown;
+    if (readCurrentOrientation) {
+      observed = await _readCurrentInterfaceOrientation();
+      if (preferCurrentObservedOrientation) {
+        final targetOrientations =
+            PlayerRotationLockPolicy.resolveInitialLockTarget(
+          observedInterfaceOrientation: observed,
+          lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+          lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+        );
+        if (targetOrientations != null) {
+          _lockedPlayerOrientations = targetOrientations;
+          await SystemChrome.setPreferredOrientations(targetOrientations);
+          _lastAppliedFullscreenOrientations = targetOrientations;
+          return;
+        }
+      }
+    }
+
+    final cachedTarget = PlayerRotationLockPolicy.resolveCachedLockTarget(
+      currentLockedOrientations: _lockedPlayerOrientations,
+      lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+      lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+    );
+    if (cachedTarget != null) {
+      _lockedPlayerOrientations = cachedTarget;
+      await SystemChrome.setPreferredOrientations(cachedTarget);
+      _lastAppliedFullscreenOrientations = cachedTarget;
+      return;
+    }
+
+    if (!readCurrentOrientation) return;
+
     final targetOrientations = PlayerRotationLockPolicy.resolve(
       isLocked: true,
       observedInterfaceOrientation: observed,
@@ -249,12 +294,15 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     );
     if (targetOrientations == null) return;
 
+    _lockedPlayerOrientations = targetOrientations;
     await SystemChrome.setPreferredOrientations(targetOrientations);
     _lastAppliedFullscreenOrientations = targetOrientations;
   }
 
   Future<void> _restoreUnlockedPlayerOrientations() async {
     if (DeviceUtils.isPC()) return;
+
+    _lockedPlayerOrientations = null;
 
     if (_isFullscreen && !_isEnteringLandscapeFullscreen) {
       final targetOrientations =
@@ -283,7 +331,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     }
 
     if (isLocked) {
-      await _applyPlayerRotationLock(readCurrentOrientation: true);
+      _lockedPlayerOrientations = null;
+      await _applyPlayerRotationLock(
+        readCurrentOrientation: true,
+        preferCurrentObservedOrientation: true,
+      );
     } else {
       await _restoreUnlockedPlayerOrientations();
     }
@@ -396,6 +448,10 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
       await _waitForLandscapeMetrics();
       if (!mounted || requestId != _fullscreenTransitionSerial) return;
+      if (Platform.isIOS) {
+        await _readCurrentInterfaceOrientation();
+      }
+      if (!mounted || requestId != _fullscreenTransitionSerial) return;
 
       final targetOrientations =
           await _fullscreenOrientationController.resolveAfterFullscreenEntry(
@@ -420,6 +476,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         _isEnteringLandscapeFullscreen = false;
         _lastAppliedFullscreenOrientations = null;
         _playerRotationLocked = false;
+        _lockedPlayerOrientations = null;
       });
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,

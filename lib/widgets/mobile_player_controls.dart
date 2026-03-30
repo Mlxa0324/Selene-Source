@@ -64,6 +64,7 @@ class MobilePlayerControls extends StatefulWidget {
   final bool showSystemTime;
   final bool hasActiveSleepTimer;
   final ValueChanged<bool>? onPlayerLockChanged;
+  final ValueChanged<Duration>? onSeek;
 
   const MobilePlayerControls({
     super.key,
@@ -104,6 +105,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.showSystemTime = true,
     this.hasActiveSleepTimer = false,
     this.onPlayerLockChanged,
+    this.onSeek,
   });
 
   @override
@@ -481,7 +483,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onSwipeEnd(DragEndDetails details) {
     if (_isLocked || !_isSeekingViaSwipe || widget.live) return;
     if (_dragPosition != null) {
-      widget.player.seek(_dragPosition!);
+      unawaited(seekPlayerAndNotify(
+        player: widget.player,
+        position: _dragPosition!,
+        onSeek: widget.onSeek,
+      ));
     }
     setState(() {
       _isSeekingViaSwipe = false;
@@ -640,7 +646,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     setState(() {
       _dragPosition = target;
     });
-    await widget.player.seek(target);
+    await seekPlayerAndNotify(
+      player: widget.player,
+      position: target,
+      onSeek: widget.onSeek,
+    );
   }
 
   void _enterFullscreen() {
@@ -1474,6 +1484,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               onPositionUpdate: (duration) {
                 setState(() => _dragPosition = duration);
               },
+              onSeek: widget.onSeek,
               dragPosition: _dragPosition,
               isSeekingViaSwipe: _isSeekingViaSwipe,
             ),
@@ -2038,6 +2049,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
   final VoidCallback? onDragEnd;
   final VoidCallback? onDragUpdate;
   final Function(Duration)? onPositionUpdate;
+  final ValueChanged<Duration>? onSeek;
   final Duration? dragPosition;
   final bool isSeekingViaSwipe;
   final bool live;
@@ -2048,6 +2060,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
     this.onDragEnd,
     this.onDragUpdate,
     this.onPositionUpdate,
+    this.onSeek,
     this.dragPosition,
     this.isSeekingViaSwipe = false,
     this.live = false,
@@ -2134,7 +2147,11 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                 });
 
                 // 💡 优化：跳转后锁定 800ms
-                widget.player.seek(seekPosition).then((_) async {
+                seekPlayerAndNotify(
+                  player: widget.player,
+                  position: seekPosition,
+                  onSeek: widget.onSeek,
+                ).then((_) async {
                   await Future.delayed(const Duration(milliseconds: 800));
                   if (mounted) {
                     setState(() {
@@ -2160,7 +2177,11 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
               });
 
               // 💡 优化：跳转后锁定 800ms
-              widget.player.seek(seekPosition).then((_) async {
+              seekPlayerAndNotify(
+                player: widget.player,
+                position: seekPosition,
+                onSeek: widget.onSeek,
+              ).then((_) async {
                 await Future.delayed(const Duration(milliseconds: 800));
                 if (mounted) {
                   setState(() {

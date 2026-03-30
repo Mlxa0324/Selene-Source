@@ -56,9 +56,11 @@ import AVFoundation
     case .portraitUpsideDown:
       return "portraitDown"
     case .landscapeLeft:
-      return "landscapeRight"
-    case .landscapeRight:
+      // UIInterfaceOrientation 与 Flutter 的 DeviceOrientation 在这里保持同名映射，
+      // 否则点击播放器锁定时会被误判到对侧横屏，触发 180 度旋转后再锁住。
       return "landscapeLeft"
+    case .landscapeRight:
+      return "landscapeRight"
     default:
       return "unknown"
     }

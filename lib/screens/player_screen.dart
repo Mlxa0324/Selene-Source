@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -203,6 +203,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _sourceSwitchRecordSerial = 0;
   int _sourceSpeedHydrationSerial = 0;
   bool _playerRotationLocked = false;
+  List<DeviceOrientation>? _lockedPlayerOrientations;
   MobileInterfaceOrientation? _lastKnownPlayerInterfaceOrientation;
 
   // 侧边面板显示状态
@@ -428,7 +429,20 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isClosing) return;
       if (_playerRotationLocked) {
-        unawaited(_applyPlayerRotationLock());
+        final cachedTarget = PlayerRotationLockPolicy.resolveCachedLockTarget(
+          currentLockedOrientations: _lockedPlayerOrientations,
+          lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+          lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+        );
+        if (cachedTarget != null) {
+          _lockedPlayerOrientations = cachedTarget;
+          unawaited(SystemChrome.setPreferredOrientations(cachedTarget));
+          _lastAppliedFullscreenOrientations = cachedTarget;
+        } else {
+          unawaited(_applyPlayerRotationLock(readCurrentOrientation: true));
+        }
+      } else if (Platform.isIOS) {
+        unawaited(_refreshLastKnownPlayerInterfaceOrientation());
       }
       _refreshDanmakuOptionForPlayback(reason: 'metrics_changed');
     });
@@ -953,14 +967,54 @@ class _PlayerScreenState extends State<PlayerScreen>
     return orientation;
   }
 
+  Future<void> _refreshLastKnownPlayerInterfaceOrientation() async {
+    if (DeviceUtils.isPC() || !(Platform.isAndroid || Platform.isIOS)) {
+      return;
+    }
+    await _readCurrentInterfaceOrientation();
+  }
+
   Future<void> _applyPlayerRotationLock({
     bool readCurrentOrientation = false,
+    bool preferCurrentObservedOrientation = false,
   }) async {
     if (DeviceUtils.isPC() || !_playerRotationLocked) return;
 
-    final observed = readCurrentOrientation
-        ? await _readCurrentInterfaceOrientation()
-        : MobileInterfaceOrientation.unknown;
+    MobileInterfaceOrientation observed = MobileInterfaceOrientation.unknown;
+    if (readCurrentOrientation) {
+      observed = await _readCurrentInterfaceOrientation();
+      if (preferCurrentObservedOrientation) {
+        final targetOrientations =
+            PlayerRotationLockPolicy.resolveInitialLockTarget(
+          observedInterfaceOrientation: observed,
+          lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+          lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+        );
+        if (targetOrientations != null) {
+          _lockedPlayerOrientations = targetOrientations;
+          await SystemChrome.setPreferredOrientations(targetOrientations);
+          _lastAppliedFullscreenOrientations = targetOrientations;
+          return;
+        }
+      }
+    }
+
+    final cachedTarget = PlayerRotationLockPolicy.resolveCachedLockTarget(
+      currentLockedOrientations: _lockedPlayerOrientations,
+      lastKnownInterfaceOrientation: _lastKnownPlayerInterfaceOrientation,
+      lastAppliedOrientations: _lastAppliedFullscreenOrientations,
+    );
+    if (cachedTarget != null) {
+      if (!listEquals(_lockedPlayerOrientations, cachedTarget)) {
+        _lockedPlayerOrientations = cachedTarget;
+      }
+      await SystemChrome.setPreferredOrientations(cachedTarget);
+      _lastAppliedFullscreenOrientations = cachedTarget;
+      return;
+    }
+
+    if (!readCurrentOrientation) return;
+
     final targetOrientations = PlayerRotationLockPolicy.resolve(
       isLocked: true,
       observedInterfaceOrientation: observed,
@@ -968,12 +1022,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
     if (targetOrientations == null) return;
 
+    _lockedPlayerOrientations = targetOrientations;
     await SystemChrome.setPreferredOrientations(targetOrientations);
     _lastAppliedFullscreenOrientations = targetOrientations;
   }
 
   Future<void> _restoreUnlockedPlayerOrientations() async {
     if (DeviceUtils.isPC()) return;
+
+    _lockedPlayerOrientations = null;
 
     if (_isFullscreen && !_isEnteringLandscapeFullscreen) {
       if (_isShortDrama) {
@@ -1013,8 +1070,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     if (isLocked) {
-      await _applyPlayerRotationLock(readCurrentOrientation: true);
+      _lockedPlayerOrientations = null;
+      await _applyPlayerRotationLock(
+        readCurrentOrientation: true,
+        preferCurrentObservedOrientation: true,
+      );
     } else {
+      _lockedPlayerOrientations = null;
       await _restoreUnlockedPlayerOrientations();
     }
   }
@@ -1910,17 +1972,36 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 跳转到指定进度
   Future<void> seekToProgress(Duration position) async {
+    final controller = _videoPlayerController;
+    if (controller == null) {
+      _isSeeking = false;
+      return;
+    }
+
     try {
       _isSeeking = true;
-      // 跳转时立即重置弹幕索引，防止大量弹幕重叠喷发
-      _resetDanmakuIndex(position);
-      await _videoPlayerController?.seekTo(position);
-      // 给播放器一点缓冲时间
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) _isSeeking = false;
-      });
+      await controller.seekTo(position);
+      if (_isSeeking) {
+        _handlePlayerSeek(position);
+      }
     } catch (e) {
       _isSeeking = false;
+    }
+  }
+
+  void _handlePlayerSeek(Duration position) {
+    _isSeeking = true;
+    _resetDanmakuIndex(position);
+
+    final shouldRenderImmediately = _hasExplicitDanmakuState
+        ? _danmakuShouldPlay
+        : (_videoPlayerController?.isPlaying ?? false);
+
+    _isSeeking = false;
+    _syncDanmakuPlaybackState(reason: 'player_on_seek');
+
+    if (shouldRenderImmediately) {
+      _sendDanmakuByPosition(position);
     }
   }
 
@@ -2094,6 +2175,10 @@ class _PlayerScreenState extends State<PlayerScreen>
 
         await _waitForLandscapeMetrics();
         if (!mounted || requestId != _fullscreenTransitionSerial) return;
+        if (Platform.isIOS) {
+          await _refreshLastKnownPlayerInterfaceOrientation();
+        }
+        if (!mounted || requestId != _fullscreenTransitionSerial) return;
 
         final targetOrientations =
             await _fullscreenOrientationController.resolveAfterFullscreenEntry(
@@ -2121,6 +2206,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _isEnteringLandscapeFullscreen = false;
         _lastAppliedFullscreenOrientations = null;
         _playerRotationLocked = false;
+        _lockedPlayerOrientations = null;
       });
       if (_isTablet) {
         // 平板退出全屏时，按当前物理方向优先恢复，避免被强制切到竖屏。
@@ -3186,6 +3272,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               startPlay(index, 0);
             },
             onVideoCompleted: _onVideoCompleted,
+            onSeek: _handlePlayerSeek,
             onPlay: () {
               _rebaseDanmakuCursorToCurrentPosition(
                   reason: 'player_on_play', triggerNow: true);
