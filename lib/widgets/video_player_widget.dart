@@ -78,6 +78,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final ValueChanged<double>? onPlaybackSpeedChanged; // 播放倍速变化回调
   final ValueChanged<String>? onDebugToast;
   final ValueChanged<bool>? onPlayerLockChanged;
+  final ValueChanged<Duration>? onSeek;
 
   const VideoPlayerWidget({
     super.key,
@@ -140,6 +141,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onPlaybackSpeedChanged,
     this.onDebugToast,
     this.onPlayerLockChanged,
+    this.onSeek,
   });
 
   @override
@@ -163,7 +165,7 @@ class VideoPlayerWidgetController {
   }
 
   Future<void> seekTo(Duration position) async {
-    await _state._adapter?.seek(position);
+    await _state._seekTo(position);
   }
 
   Duration? get currentPosition => _state._adapter?.state.position;
@@ -392,6 +394,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
 
     setState(fn);
+  }
+
+  Future<void> _seekTo(Duration position) async {
+    final adapter = _adapter;
+    if (adapter == null) {
+      return;
+    }
+    await seekPlayerAndNotify(
+      player: adapter,
+      position: position,
+      onSeek: widget.onSeek,
+    );
   }
 
   ({int aspectX, int aspectY, int preferredWidth, int preferredHeight})
@@ -1512,9 +1526,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             onEpisodeTap: (index) {
               widget.onEpisodeChanged?.call(index);
             },
-            onSourceTap: (source) {
-              widget.onSourceChanged?.call(source);
-            });
+          onSourceTap: (source) {
+            widget.onSourceChanged?.call(source);
+          },
+          onSeek: widget.onSeek,
+        );
       }
 
       return MobilePlayerControls(
@@ -1569,6 +1585,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         showSystemTime: widget.showSystemTime,
         hasActiveSleepTimer: widget.hasActiveSleepTimer,
         onPlayerLockChanged: widget.onPlayerLockChanged,
+        onSeek: widget.onSeek,
       );
     }
   }

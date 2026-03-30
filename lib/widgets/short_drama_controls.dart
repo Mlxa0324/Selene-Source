@@ -47,6 +47,7 @@ class ShortDramaControls extends StatefulWidget {
   final String videoCover;
   final bool isLocal;
   final bool hasActiveSleepTimer;
+  final ValueChanged<Duration>? onSeek;
 
   const ShortDramaControls({
     super.key,
@@ -85,6 +86,7 @@ class ShortDramaControls extends StatefulWidget {
     required this.videoCover,
     this.isLocal = false,
     this.hasActiveSleepTimer = false,
+    this.onSeek,
   });
 
   @override
@@ -664,7 +666,11 @@ class ShortDramaControlsState extends State<ShortDramaControls>
           },
           onHorizontalDragEnd: (_) {
             if (_dragPosition != null) {
-              widget.player.seek(_dragPosition!);
+              unawaited(seekPlayerAndNotify(
+                player: widget.player,
+                position: _dragPosition!,
+                onSeek: widget.onSeek,
+              ));
               if (!_isPlaying) widget.player.play();
             }
             setState(() {

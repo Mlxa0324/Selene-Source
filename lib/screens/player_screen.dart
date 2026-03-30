@@ -1968,17 +1968,36 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 跳转到指定进度
   Future<void> seekToProgress(Duration position) async {
+    final controller = _videoPlayerController;
+    if (controller == null) {
+      _isSeeking = false;
+      return;
+    }
+
     try {
       _isSeeking = true;
-      // 跳转时立即重置弹幕索引，防止大量弹幕重叠喷发
-      _resetDanmakuIndex(position);
-      await _videoPlayerController?.seekTo(position);
-      // 给播放器一点缓冲时间
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) _isSeeking = false;
-      });
+      await controller.seekTo(position);
+      if (_isSeeking) {
+        _handlePlayerSeek(position);
+      }
     } catch (e) {
       _isSeeking = false;
+    }
+  }
+
+  void _handlePlayerSeek(Duration position) {
+    _isSeeking = true;
+    _resetDanmakuIndex(position);
+
+    final shouldRenderImmediately = _hasExplicitDanmakuState
+        ? _danmakuShouldPlay
+        : (_videoPlayerController?.isPlaying ?? false);
+
+    _isSeeking = false;
+    _syncDanmakuPlaybackState(reason: 'player_on_seek');
+
+    if (shouldRenderImmediately) {
+      _sendDanmakuByPosition(position);
     }
   }
 
@@ -3249,6 +3268,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               startPlay(index, 0);
             },
             onVideoCompleted: _onVideoCompleted,
+            onSeek: _handlePlayerSeek,
             onPlay: () {
               _rebaseDanmakuCursorToCurrentPosition(
                   reason: 'player_on_play', triggerNow: true);
