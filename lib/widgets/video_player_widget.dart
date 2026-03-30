@@ -453,6 +453,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       player: adapter,
       position: position,
       onSeek: widget.onSeek,
+      notifyBeforeSeek: true,
     );
   }
 
@@ -2037,54 +2038,53 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       // 这样在滑动切换视频、视频未加载完成时，UI 状态依然保持稳定，不会产生闪烁
       if (widget.isShortDrama && _isFullscreen) {
         return ShortDramaControls(
-            key: _shortDramaControlsKey, // 💡 绑定 Key 以便触发 showToast
-            player: _adapter!,
-            onControlsVisibilityChanged: (visible) {
-              _safeSetState(() => _controlsVisible = visible);
-            },
-            onBackPressed: widget.onBackPressed,
-            onFullscreenChange: (isFullscreen) {
-              if (isFullscreen && widget.isShortDrama) {
-                // 💡 关键修复：进入全屏前，确保 PageController 索引同步
-                if (_shortDramaPageController.initialPage !=
-                    widget.currentEpisodeIndex) {
-                  _shortDramaPageController.dispose();
-                  _shortDramaPageController = PageController(
-                      initialPage: widget.currentEpisodeIndex ?? 0);
-                }
+          key: _shortDramaControlsKey, // 💡 绑定 Key 以便触发 showToast
+          player: _adapter!,
+          onControlsVisibilityChanged: (visible) {
+            _safeSetState(() => _controlsVisible = visible);
+          },
+          onBackPressed: widget.onBackPressed,
+          onFullscreenChange: (isFullscreen) {
+            if (isFullscreen && widget.isShortDrama) {
+              // 💡 关键修复：进入全屏前，确保 PageController 索引同步
+              if (_shortDramaPageController.initialPage !=
+                  widget.currentEpisodeIndex) {
+                _shortDramaPageController.dispose();
+                _shortDramaPageController = PageController(
+                    initialPage: widget.currentEpisodeIndex ?? 0);
               }
-              _safeSetState(() => _isFullscreen = isFullscreen);
-              widget.onFullscreenChanged?.call(isFullscreen);
-            },
-            onNextEpisode: widget.onNextEpisode,
-            onPause: widget.onPause,
-            videoUrl: _currentUrl ?? '',
-            videoTitle: widget.videoTitle,
-            currentEpisodeIndex: widget.currentEpisodeIndex,
-            totalEpisodes: widget.totalEpisodes,
-            episodesTitles: widget.episodesTitles,
-            live: widget.live,
-            playbackSpeedListenable: _playbackSpeed,
-            onSetSpeed: _setPlaybackSpeed,
-            onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
-            onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
-            onSleepTimerButtonPressed: widget.onSleepTimerButtonPressed,
-            hasActiveSleepTimer: widget.hasActiveSleepTimer,
-            videoCover: widget.videoCover ?? '',
-            currentSource: widget.currentSource,
-            currentId: widget.currentId,
-            allSources: widget.allSources,
-            allSourcesSpeed: widget.allSourcesSpeed,
-            isFavorite: widget.isFavorite,
-            onFavoriteToggle: widget.onFavoriteToggle,
-            onCastPressed: widget.onCastButtonPressed,
-            onPipPressed:
-                _isPipDisabledForCurrentPlayback ? null : _enterPipMode,
-            isPipMode: _isPipMode, // 💡 传给短剧控制层
-            isLocal: widget.isLocal,
-            onEpisodeTap: (index) {
-              widget.onEpisodeChanged?.call(index);
-            },
+            }
+            _safeSetState(() => _isFullscreen = isFullscreen);
+            widget.onFullscreenChanged?.call(isFullscreen);
+          },
+          onNextEpisode: widget.onNextEpisode,
+          onPause: widget.onPause,
+          videoUrl: _currentUrl ?? '',
+          videoTitle: widget.videoTitle,
+          currentEpisodeIndex: widget.currentEpisodeIndex,
+          totalEpisodes: widget.totalEpisodes,
+          episodesTitles: widget.episodesTitles,
+          live: widget.live,
+          playbackSpeedListenable: _playbackSpeed,
+          onSetSpeed: _setPlaybackSpeed,
+          onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
+          onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
+          onSleepTimerButtonPressed: widget.onSleepTimerButtonPressed,
+          hasActiveSleepTimer: widget.hasActiveSleepTimer,
+          videoCover: widget.videoCover ?? '',
+          currentSource: widget.currentSource,
+          currentId: widget.currentId,
+          allSources: widget.allSources,
+          allSourcesSpeed: widget.allSourcesSpeed,
+          isFavorite: widget.isFavorite,
+          onFavoriteToggle: widget.onFavoriteToggle,
+          onCastPressed: widget.onCastButtonPressed,
+          onPipPressed: _isPipDisabledForCurrentPlayback ? null : _enterPipMode,
+          isPipMode: _isPipMode, // 💡 传给短剧控制层
+          isLocal: widget.isLocal,
+          onEpisodeTap: (index) {
+            widget.onEpisodeChanged?.call(index);
+          },
           onSourceTap: (source) {
             widget.onSourceChanged?.call(source);
           },

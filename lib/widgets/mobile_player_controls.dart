@@ -487,6 +487,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         player: widget.player,
         position: _dragPosition!,
         onSeek: widget.onSeek,
+        notifyBeforeSeek: true,
       ));
     }
     setState(() {
@@ -650,6 +651,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       player: widget.player,
       position: target,
       onSeek: widget.onSeek,
+      notifyBeforeSeek: true,
     );
   }
 
@@ -2151,6 +2153,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                   player: widget.player,
                   position: seekPosition,
                   onSeek: widget.onSeek,
+                  notifyBeforeSeek: true,
                 ).then((_) async {
                   await Future.delayed(const Duration(milliseconds: 800));
                   if (mounted) {
@@ -2181,6 +2184,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                 player: widget.player,
                 position: seekPosition,
                 onSeek: widget.onSeek,
+                notifyBeforeSeek: true,
               ).then((_) async {
                 await Future.delayed(const Duration(milliseconds: 800));
                 if (mounted) {

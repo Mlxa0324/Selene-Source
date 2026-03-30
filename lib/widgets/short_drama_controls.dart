@@ -670,6 +670,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                 player: widget.player,
                 position: _dragPosition!,
                 onSeek: widget.onSeek,
+                notifyBeforeSeek: true,
               ));
               if (!_isPlaying) widget.player.play();
             }

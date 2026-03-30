@@ -28,9 +28,15 @@ Future<void> seekPlayerAndNotify({
   required PlayerAdapter player,
   required Duration position,
   ValueChanged<Duration>? onSeek,
+  bool notifyBeforeSeek = false,
 }) async {
+  if (notifyBeforeSeek) {
+    onSeek?.call(position);
+  }
   await player.seek(position);
-  onSeek?.call(position);
+  if (!notifyBeforeSeek) {
+    onSeek?.call(position);
+  }
 }
 
 abstract class PlayerAdapterStream {
