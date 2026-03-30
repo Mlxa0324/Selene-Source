@@ -239,6 +239,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _danmakuControllerCreateCount = 0;
   int _danmakuViewportVersion = 0;
   String _lastDanmakuLayerLayoutTrace = '';
+  Timer? _danmakuSeekCompletionTimer;
+  int _danmakuSeekSerial = 0;
+
+  static const Duration _asyncDanmakuSeekDelay = Duration(milliseconds: 350);
 
   bool get _isOfflinePlayback {
     return widget.initialVideoDetail?.source == 'local' ||
@@ -1977,28 +1981,37 @@ class _PlayerScreenState extends State<PlayerScreen>
     try {
       _isSeeking = true;
       await controller.seekTo(position);
-      if (_isSeeking) {
-        _handlePlayerSeek(position);
-      }
     } catch (e) {
+      _danmakuSeekCompletionTimer?.cancel();
+      _danmakuSeekSerial++;
       _isSeeking = false;
     }
   }
 
   void _handlePlayerSeek(Duration position) {
+    final seekSerial = ++_danmakuSeekSerial;
+    _danmakuSeekCompletionTimer?.cancel();
+
     _isSeeking = true;
+    _lastDanmakuCheckTime = -1;
     _resetDanmakuIndex(position);
 
     final shouldRenderImmediately = _hasExplicitDanmakuState
         ? _danmakuShouldPlay
         : (_videoPlayerController?.isPlaying ?? false);
 
-    _isSeeking = false;
-    _syncDanmakuPlaybackState(reason: 'player_on_seek');
+    _danmakuSeekCompletionTimer = Timer(_asyncDanmakuSeekDelay, () {
+      if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
+        return;
+      }
 
-    if (shouldRenderImmediately) {
-      _sendDanmakuByPosition(position);
-    }
+      _isSeeking = false;
+      _syncDanmakuPlaybackState(reason: 'player_on_seek_async');
+
+      if (shouldRenderImmediately) {
+        _sendDanmakuByPosition(position);
+      }
+    });
   }
 
   /// 跳转到指定秒数
@@ -5813,6 +5826,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _beginClosingDanmakuLifecycle('dispose');
     _setKeepScreenOn(false);
     _sleepTimer?.cancel();
+    _danmakuSeekCompletionTimer?.cancel();
     // 保存进度
     _saveProgress(force: true, scene: '页面销毁');
     // 取消超时计时器

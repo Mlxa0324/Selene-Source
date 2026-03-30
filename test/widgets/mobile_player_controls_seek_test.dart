@@ -8,6 +8,61 @@ import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
+  testWidgets('notifies parent before a delayed mobile seek completes',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final seekCompleter = Completer<void>();
+    final player = _FakePlayerAdapter(seekCompleter: seekCompleter);
+    addTearDown(player.dispose);
+
+    Duration? reportedSeekPosition;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: (_) {},
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+            onSeek: (position) {
+              reportedSeekPosition = position;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final progressBar = find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == '_MobileVideoProgressBar',
+    );
+    expect(progressBar, findsOneWidget);
+
+    final rect = tester.getRect(progressBar);
+    final tap = Offset(rect.left + rect.width * 0.75, rect.center.dy);
+
+    await tester.tapAt(tap);
+    await tester.pump();
+
+    expect(seekCompleter.isCompleted, isFalse);
+    expect(reportedSeekPosition, isNotNull);
+    expect(reportedSeekPosition, equals(player.state.position));
+
+    seekCompleter.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('notifies parent after dragging the mobile progress bar',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -63,12 +118,14 @@ void main() {
 }
 
 class _FakePlayerAdapter implements PlayerAdapter {
-  _FakePlayerAdapter()
-      : _stream = _FakePlayerStream(),
+  _FakePlayerAdapter({
+    this.seekCompleter,
+  })  : _stream = _FakePlayerStream(),
         _state = _FakePlayerState();
 
   final _FakePlayerStream _stream;
   final _FakePlayerState _state;
+  final Completer<void>? seekCompleter;
 
   @override
   PlayerAdapterStream get stream => _stream;
@@ -107,6 +164,9 @@ class _FakePlayerAdapter implements PlayerAdapter {
   Future<void> seek(Duration position) async {
     _state.positionValue = position;
     _stream.positionController.add(position);
+    if (seekCompleter != null) {
+      await seekCompleter!.future;
+    }
   }
 
   @override
