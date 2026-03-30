@@ -389,6 +389,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fvp:
+    dependency: "direct main"
+    description:
+      name: fvp
+      sha256: e03c4ba02c367cde8610c09325d085c9b1efe4f7d98a563950993a1fee17a28b
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.35.2"
   gal:
     dependency: "direct main"
     description:
@@ -1187,7 +1195,7 @@ packages:
     source: hosted
     version: "2.9.4"
   video_player_platform_interface:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: video_player_platform_interface
       sha256: "57c5d73173f76d801129d0531c2774052c5a7c11ccb962f1830630decd9f24ec"
