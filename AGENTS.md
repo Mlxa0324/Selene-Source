@@ -2,6 +2,11 @@
 
 ## 变更记录 (Changelog)
 
+### 2026-03-30 00:00:00
+- 新增隐藏的播放器后端 Seek Benchmark 实验页，可在同一设备上对比 `WebView / video_player / media_kit / fvp` 的 HLS 左向 seek 表现。
+- 在用户菜单版本号区域新增长按入口，保持普通点击版本号跳转 GitHub 的现有行为不变。
+- 新增 benchmark 计时模型、四后端 driver 封装与 `fvp`/官方 `video_player` 平台切换层，便于统一采集 seek API 返回、位置稳定与 buffering 清空耗时。
+
 ### 2026-03-23 00:00:00
 - 播放器相关改动尽量回退到 `76c5abaf` 附近，仅保留移动端定时关闭功能。
 - 移除息屏播放开关、相关设置持久化与提示文案，避免继续影响 Android PiP 与前后台切换链路。

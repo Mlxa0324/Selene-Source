@@ -13,6 +13,7 @@ import '../services/version_service.dart';
 import '../services/danmaku_service.dart';
 import '../screens/download_screen.dart';
 import '../screens/home_screen.dart';
+import '../screens/player_benchmark_screen.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import 'update_dialog.dart';
@@ -20,11 +21,15 @@ import 'update_dialog.dart';
 class UserMenu extends StatefulWidget {
   final bool isDarkMode;
   final VoidCallback? onClose;
+  final VoidCallback? onVersionTap;
+  final WidgetBuilder? benchmarkScreenBuilder;
 
   const UserMenu({
     super.key,
     required this.isDarkMode,
     this.onClose,
+    this.onVersionTap,
+    this.benchmarkScreenBuilder,
   });
 
   @override
@@ -243,6 +248,28 @@ class _UserMenuState extends State<UserMenu> {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const LoginScreen()),
       (route) => false,
+    );
+  }
+
+  Future<void> _handleVersionTap() async {
+    final onVersionTap = widget.onVersionTap;
+    if (onVersionTap != null) {
+      onVersionTap();
+      return;
+    }
+
+    final url = Uri.parse('https://github.com/MoonTechLab/Selene');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _openPlayerBenchmark() {
+    final builder = widget.benchmarkScreenBuilder;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: builder ?? (_) => const PlayerBenchmarkScreen(),
+      ),
     );
   }
 
@@ -1458,12 +1485,8 @@ class _UserMenuState extends State<UserMenu> {
           cursor:
               DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
           child: GestureDetector(
-            onTap: () async {
-              final url = Uri.parse('https://github.com/MoonTechLab/Selene');
-              if (await canLaunchUrl(url)) {
-                await launchUrl(url, mode: LaunchMode.externalApplication);
-              }
-            },
+            onTap: _handleVersionTap,
+            onLongPress: _openPlayerBenchmark,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Center(

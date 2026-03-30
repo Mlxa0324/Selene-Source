@@ -298,3 +298,18 @@ Expected: 没有新增 error；如有历史 warning，单独记录
 - 默认测试流是否足够长
 - `fvp` 在 Android/iOS 的初始化是否需要额外平台处理
 - 四个后端里是否存在个别 buffering 信号无法完全归一的问题
+
+## 执行记录（2026-03-30）
+
+- `flutter test test/services/player_benchmark_session_test.dart test/services/player_benchmark_video_platform_registry_test.dart test/screens/player_benchmark_screen_test.dart test/widgets/user_menu_benchmark_entry_test.dart`
+  - 结果：PASS
+- `dart format lib/screens/player_benchmark_screen.dart lib/models/player_benchmark_models.dart lib/services/player_benchmark_session.dart lib/services/player_benchmark_video_platform_registry.dart lib/widgets/benchmark test/services/player_benchmark_session_test.dart test/services/player_benchmark_video_platform_registry_test.dart test/screens/player_benchmark_screen_test.dart test/widgets/user_menu_benchmark_entry_test.dart lib/widgets/user_menu.dart`
+  - 结果：已完成
+- `dart analyze lib/screens/player_benchmark_screen.dart lib/models/player_benchmark_models.dart lib/services/player_benchmark_session.dart lib/services/player_benchmark_video_platform_registry.dart lib/widgets/benchmark lib/widgets/user_menu.dart test/services/player_benchmark_session_test.dart test/services/player_benchmark_video_platform_registry_test.dart test/screens/player_benchmark_screen_test.dart test/widgets/user_menu_benchmark_entry_test.dart`
+  - 结果：无新增 error；存在 `lib/widgets/user_menu.dart` 两条既有 `withOpacity` deprecation info
+
+## 剩余风险
+
+- 默认测试流当前使用 `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`，理论上满足 `240s` 锚点要求，但仍需真机确认不同平台是否都能稳定拖到该位置。
+- `fvp` 当前通过 benchmark 内部的平台注册切换启用，尚未做 Android/iOS 真机初始化验证；如平台侧缺少额外配置，可能只会在真机阶段暴露。
+- 四个后端的 buffering 信号来源并不完全一致，当前已统一成同一套会话采样规则，但最终对比时仍需结合真机转圈体感一起看。
