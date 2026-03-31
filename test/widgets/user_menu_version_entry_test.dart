@@ -5,7 +5,7 @@ import 'package:selene/widgets/user_menu.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('long pressing the version opens the benchmark screen',
+  testWidgets('long pressing the version keeps the current page',
       (tester) async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
@@ -27,9 +27,6 @@ void main() {
             onVersionTap: () {
               versionTapCount++;
             },
-            benchmarkScreenBuilder: (_) => const Scaffold(
-              body: Text('Benchmark Screen'),
-            ),
           ),
         ),
       ),
@@ -39,14 +36,17 @@ void main() {
 
     final versionText = find.text('v1.6.7');
     expect(versionText, findsOneWidget);
+    final gestureDetectorFinder = find.ancestor(
+      of: versionText,
+      matching: find.byType(GestureDetector),
+    );
+    final gestureDetector =
+        tester.widget<GestureDetector>(gestureDetectorFinder.first);
+
+    expect(gestureDetector.onLongPress, isNull);
 
     await tester.tap(versionText);
     await tester.pumpAndSettle();
     expect(versionTapCount, 1);
-
-    await tester.longPress(versionText);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Benchmark Screen'), findsOneWidget);
   });
 }

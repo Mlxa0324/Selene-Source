@@ -2,6 +2,11 @@
 
 ## 变更记录 (Changelog)
 
+### 2026-03-31 00:30:00
+- 下线播放器 backend benchmark 实验功能：移除用户菜单版本号长按入口，避免继续暴露非正式测试页面。
+- 保留 benchmark 相关实现代码供后续参考，但从 `lib/` 与 `test/` 编译链路中移出，统一归档到 `archive/player_benchmark/`。
+- 移除 benchmark 引入的 `fvp` 与 `video_player_platform_interface` 依赖，恢复正式应用依赖面。
+
 ### 2026-03-31 00:00:00
 - 优化正式播放器 WebView seek 关键路径：手动拖动与控制层 seek 改为底层 seek 发起后再异步通知父层，减少正式页相对 benchmark 的额外同步开销。
 - 弹幕 seek 跟随进一步异步化：将索引重置移出 seek 临界路径，并把弹幕索引定位改为二分查找，降低大弹幕列表下的 seek 收尾成本。
