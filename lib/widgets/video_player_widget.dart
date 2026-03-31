@@ -67,6 +67,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final bool hideCenterControlsWithBars;
   final bool mediaKitPreloadEnabled;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
@@ -124,6 +125,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
+    this.hideCenterControlsWithBars = true,
     this.mediaKitPreloadEnabled = false,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
@@ -1582,6 +1584,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         longPressSpeed: widget.longPressSpeed,
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,
+        hideCenterControlsWithBars: widget.hideCenterControlsWithBars,
         hasActiveSleepTimer: widget.hasActiveSleepTimer,
         onPlayerLockChanged: widget.onPlayerLockChanged,
         onSeek: widget.onSeek,

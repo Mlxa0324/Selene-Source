@@ -244,6 +244,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showPlaybackTime = true;
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
+  bool _hideCenterControlsWithBars = true; // 中间按钮是否跟随顶部/底部一起隐藏
   bool _adFilterEnabled = false; // 是否开启自动去广告
   bool _mediaKitPreloadEnabled = Platform.isMacOS;
   int _skipIntroDuration = 0;
@@ -483,6 +484,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fitIndex = await UserDataService.getVideoFitType();
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
+    final hideCenterControlsWithBars =
+        await UserDataService.getHideCenterControlsWithBars();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
@@ -497,6 +500,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _progressMode = ProgressDisplayMode.values[
             progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
+        _hideCenterControlsWithBars = hideCenterControlsWithBars;
         _adFilterEnabled = adFilterEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
       });
@@ -3390,6 +3394,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             longPressSpeed: _longPressSpeed,
             progressMode: _progressMode,
             showSystemTime: _showSystemTime,
+            hideCenterControlsWithBars: _hideCenterControlsWithBars,
             hasActiveSleepTimer: _sleepTimerDeadline != null,
             mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
@@ -5283,6 +5288,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 currentLongPressSpeed: _longPressSpeed,
                 progressMode: _progressMode,
                 showSystemTime: _showSystemTime,
+                hideCenterControlsWithBars: _hideCenterControlsWithBars,
                 skipIntro: _skipIntroDuration,
                 skipOutro: _skipOutroDuration,
                 videoPosition: currentPosition?.inSeconds ?? 0,
@@ -5307,6 +5313,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                   setState(() => _showSystemTime = show);
                   dialogSetState(() {});
                   UserDataService.saveShowSystemTime(show);
+                },
+                onHideCenterControlsWithBarsChanged: (hide) {
+                  setState(() => _hideCenterControlsWithBars = hide);
+                  dialogSetState(() {});
+                  UserDataService.saveHideCenterControlsWithBars(hide);
                 },
                 onSkipIntroChanged: (v) {
                   setState(() => _skipIntroDuration = v);

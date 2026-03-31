@@ -25,6 +25,26 @@ bool shouldShowEpisodeSourceButtons({
   return isEffectiveFullscreen;
 }
 
+@visibleForTesting
+bool shouldShowCenterControls({
+  required bool isPipMode,
+  required bool isLocked,
+  required bool isPlaying,
+  required bool controlsVisible,
+  required bool hideWithControls,
+}) {
+  if (isPipMode || isLocked) {
+    return false;
+  }
+  if (isPlaying) {
+    return controlsVisible;
+  }
+  if (hideWithControls) {
+    return controlsVisible;
+  }
+  return true;
+}
+
 class MobilePlayerControls extends StatefulWidget {
   final PlayerAdapter player;
   final VideoState?
@@ -62,6 +82,7 @@ class MobilePlayerControls extends StatefulWidget {
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final bool hideCenterControlsWithBars;
   final bool hasActiveSleepTimer;
   final ValueChanged<bool>? onPlayerLockChanged;
   final ValueChanged<Duration>? onSeek;
@@ -103,6 +124,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.time,
     this.showSystemTime = true,
+    this.hideCenterControlsWithBars = true,
     this.hasActiveSleepTimer = false,
     this.onPlayerLockChanged,
     this.onSeek,
@@ -1361,20 +1383,21 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     final seekIconSize = _isEffectiveFullscreen ? 36.0 : 26.0;
     final seekTapSize = _isEffectiveFullscreen ? 58.0 : 50.0;
     final horizontalGap = _isEffectiveFullscreen ? 80.0 : 30.0;
+    final showCenterControls = shouldShowCenterControls(
+      isPipMode: widget.isPipMode,
+      isLocked: _isLocked,
+      isPlaying: _isPlaying,
+      controlsVisible: _controlsVisible,
+      hideWithControls: widget.hideCenterControlsWithBars,
+    );
 
     return Positioned.fill(
       child: Center(
         child: AnimatedOpacity(
-          opacity: (!widget.isPipMode &&
-                  !_isLocked &&
-                  (!_isPlaying || _controlsVisible))
-              ? 1.0
-              : 0.0,
+          opacity: showCenterControls ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 200),
           child: IgnorePointer(
-            ignoring: widget.isPipMode ||
-                _isLocked ||
-                (_isPlaying && !_controlsVisible),
+            ignoring: !showCenterControls,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
