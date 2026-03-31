@@ -86,6 +86,7 @@ class MobilePlayerControls extends StatefulWidget {
   final bool hasActiveSleepTimer;
   final ValueChanged<bool>? onPlayerLockChanged;
   final ValueChanged<Duration>? onSeek;
+  final bool? directLongPressRateControlOverride;
 
   const MobilePlayerControls({
     super.key,
@@ -128,6 +129,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.hasActiveSleepTimer = false,
     this.onPlayerLockChanged,
     this.onSeek,
+    this.directLongPressRateControlOverride,
   });
 
   @override
@@ -331,6 +333,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   bool get _isPlaying => widget.player.state.playing;
 
   bool get _shouldUseIOSOnlineRateControl {
+    if (widget.directLongPressRateControlOverride != null) {
+      return widget.directLongPressRateControlOverride!;
+    }
     return Platform.isIOS && !widget.isLocal;
   }
 
@@ -341,6 +346,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Duration get _position => widget.player.state.position;
 
   Duration get _duration => widget.player.state.duration;
+
+  Future<void> _applyPlaybackSpeed(double speed) async {
+    await widget.onSetSpeed(speed);
+  }
 
   void _startHideTimer() {
     _hideTimer?.cancel();
@@ -424,12 +433,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
     if (_shouldUseIOSOnlineRateControl) {
       if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() >= 0.01) {
-        unawaited(widget.player.setRate(_effectiveLongPressSpeed));
+        unawaited(_applyPlaybackSpeed(_effectiveLongPressSpeed));
       }
       return;
     }
 
-    unawaited(widget.onSetSpeed(_effectiveLongPressSpeed));
+    unawaited(_applyPlaybackSpeed(_effectiveLongPressSpeed));
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
@@ -445,11 +454,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
 
     if (_shouldUseIOSOnlineRateControl) {
-      unawaited(widget.player.setRate(restoreSpeed));
+      unawaited(_applyPlaybackSpeed(restoreSpeed));
       return;
     }
 
-    unawaited(widget.onSetSpeed(restoreSpeed));
+    unawaited(_applyPlaybackSpeed(restoreSpeed));
   }
 
   void _onSwipeStart(DragStartDetails details) {
