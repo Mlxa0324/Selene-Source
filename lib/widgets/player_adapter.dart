@@ -39,6 +39,25 @@ Future<void> seekPlayerAndNotify({
   }
 }
 
+Future<void> seekPlayerAndNotifyAsync({
+  required PlayerAdapter player,
+  required Duration position,
+  ValueChanged<Duration>? onSeek,
+}) async {
+  await player.seek(position);
+  if (onSeek == null) {
+    return;
+  }
+  Future<void>(() {
+    try {
+      onSeek(position);
+    } catch (error, stackTrace) {
+      debugPrint('seekPlayerAndNotifyAsync callback failed: $error');
+      debugPrint('$stackTrace');
+    }
+  });
+}
+
 abstract class PlayerAdapterStream {
   Stream<bool> get playing;
   Stream<Duration> get position;

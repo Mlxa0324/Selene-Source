@@ -8,7 +8,7 @@ import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
-  testWidgets('notifies parent before a delayed mobile seek completes',
+  testWidgets('notifies parent after a delayed mobile seek completes',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(400, 800));
@@ -53,17 +53,21 @@ void main() {
     await tester.pump();
 
     expect(seekCompleter.isCompleted, isFalse);
-    expect(reportedSeekPosition, isNotNull);
-    expect(reportedSeekPosition, equals(player.state.position));
+    expect(reportedSeekPosition, isNull);
 
     seekCompleter.complete();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(reportedSeekPosition, isNotNull);
+    expect(reportedSeekPosition, equals(player.state.position));
     await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
 
-  testWidgets('notifies parent after dragging the mobile progress bar',
+  testWidgets(
+      'notifies parent asynchronously after dragging the mobile progress bar',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(400, 800));
@@ -107,6 +111,9 @@ void main() {
     await tester.dragFrom(start, end - start);
     await tester.pump();
 
+    expect(reportedSeekPosition, isNull);
+
+    await tester.pump(const Duration(milliseconds: 1));
     expect(reportedSeekPosition, isNotNull);
     expect(reportedSeekPosition, equals(player.state.position));
     expect(reportedSeekPosition, greaterThan(const Duration(minutes: 1)));

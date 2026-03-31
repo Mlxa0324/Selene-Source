@@ -401,11 +401,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (adapter == null) {
       return;
     }
-    await seekPlayerAndNotify(
+    await seekPlayerAndNotifyAsync(
       player: adapter,
       position: position,
       onSeek: widget.onSeek,
-      notifyBeforeSeek: true,
     );
   }
 
