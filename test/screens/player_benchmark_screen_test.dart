@@ -56,24 +56,73 @@ void main() {
 
     expect(find.text('10s'), findsNothing);
   });
+
+  testWidgets('supports manual slider seek and renders Chinese logs',
+      (tester) async {
+    final driver = _FakeBenchmarkPlayerDriver(
+      initialPosition: const Duration(seconds: 30),
+      initialDuration: const Duration(seconds: 240),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlayerBenchmarkScreen(
+          driverFactory: (_) => driver,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('手动拖动测试'), findsOneWidget);
+    expect(find.text('运行日志'), findsOneWidget);
+    expect(find.byType(Slider), findsOneWidget);
+    expect(find.textContaining('播放器已就绪'), findsOneWidget);
+
+    await tester.drag(find.byType(Slider), const Offset(240, 0));
+    await tester.pumpAndSettle();
+
+    expect(driver.seekCalls, hasLength(1));
+    expect(driver.seekCalls.single, greaterThan(Duration.zero));
+    expect(find.textContaining('已执行手动 seek'), findsOneWidget);
+  });
 }
 
 class _FakeBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
+  _FakeBenchmarkPlayerDriver({
+    this.initialPosition = Duration.zero,
+    this.initialDuration = const Duration(minutes: 4),
+  });
+
   final StreamController<Duration> _positionController =
+      StreamController<Duration>.broadcast();
+  final StreamController<Duration> _durationController =
       StreamController<Duration>.broadcast();
   final StreamController<bool> _bufferingController =
       StreamController<bool>.broadcast();
   final StreamController<bool> _readyController =
       StreamController<bool>.broadcast();
+  final List<Duration> seekCalls = <Duration>[];
+  final Duration initialPosition;
+  final Duration initialDuration;
+
+  Duration _currentPosition = Duration.zero;
+  Duration _currentDuration = Duration.zero;
 
   @override
   Stream<bool> get bufferingStream => _bufferingController.stream;
 
   @override
-  Duration get currentPosition => Duration.zero;
+  Duration get currentPosition => _currentPosition;
+
+  @override
+  Duration get currentDuration => _currentDuration;
 
   @override
   bool get isReady => true;
+
+  @override
+  Stream<Duration> get durationStream => _durationController.stream;
 
   @override
   Stream<Duration> get positionStream => _positionController.stream;
@@ -89,12 +138,17 @@ class _FakeBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
   @override
   Future<void> dispose() async {
     await _positionController.close();
+    await _durationController.close();
     await _bufferingController.close();
     await _readyController.close();
   }
 
   @override
   Future<void> load(String url) async {
+    _currentPosition = initialPosition;
+    _currentDuration = initialDuration;
+    _durationController.add(_currentDuration);
+    _positionController.add(_currentPosition);
     _readyController.add(true);
   }
 
@@ -105,7 +159,11 @@ class _FakeBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
   Future<void> play() async {}
 
   @override
-  Future<void> seek(Duration position) async {}
+  Future<void> seek(Duration position) async {
+    seekCalls.add(position);
+    _currentPosition = position;
+    _positionController.add(position);
+  }
 
   @override
   Future<void> waitUntilReady(

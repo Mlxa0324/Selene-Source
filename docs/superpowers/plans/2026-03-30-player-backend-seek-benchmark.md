@@ -313,3 +313,63 @@ Expected: 没有新增 error；如有历史 warning，单独记录
 - 默认测试流当前使用 `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`，理论上满足 `240s` 锚点要求，但仍需真机确认不同平台是否都能稳定拖到该位置。
 - `fvp` 当前通过 benchmark 内部的平台注册切换启用，尚未做 Android/iOS 真机初始化验证；如平台侧缺少额外配置，可能只会在真机阶段暴露。
 - 四个后端的 buffering 信号来源并不完全一致，当前已统一成同一套会话采样规则，但最终对比时仍需结合真机转圈体感一起看。
+
+## 任务 5：补充手动进度条与中文日志
+
+**Files:**
+- Modify: `lib/widgets/benchmark/benchmark_player_driver.dart`
+- Modify: `lib/widgets/benchmark/drivers/webview_benchmark_driver.dart`
+- Modify: `lib/widgets/benchmark/drivers/video_player_benchmark_driver.dart`
+- Modify: `lib/widgets/benchmark/drivers/media_kit_benchmark_driver.dart`
+- Modify: `lib/widgets/benchmark/drivers/fvp_benchmark_driver.dart`
+- Modify: `lib/screens/player_benchmark_screen.dart`
+- Test: `test/screens/player_benchmark_screen_test.dart`
+
+- [ ] **Step 1: 写失败测试，锁定手动进度条与中文日志**
+
+在 `test/screens/player_benchmark_screen_test.dart` 覆盖：
+- 页面展示“手动拖动测试”和“运行日志”等中文文案
+- 存在可交互的手动进度条
+- 拖动进度条并松手后，只触发一次 seek
+- 页面能显示中文日志，而不是英文结果提示
+
+- [ ] **Step 2: 运行测试确认失败**
+
+Run: `flutter test test/screens/player_benchmark_screen_test.dart`
+Expected: FAIL，提示新文案、进度条或日志行为尚未实现
+
+- [ ] **Step 3: 扩展 benchmark driver 的时长能力**
+
+在 `lib/widgets/benchmark/benchmark_player_driver.dart` 中新增：
+- `Stream<Duration> durationStream`
+- `Duration get currentDuration`
+
+并在四个 driver 中补齐时长信号同步。
+
+- [ ] **Step 4: 在 benchmark 页面加入手动拖动进度条**
+
+在 `lib/screens/player_benchmark_screen.dart` 中实现：
+- 当前时间 / 总时长显示
+- 进度条拖动预览
+- 松手后触发单次 seek
+- 手动 seek 不写入结构化结果表
+
+- [ ] **Step 5: 把页面日志统一改成中文并双写到控制台**
+
+实现要求：
+- 页面内新增日志列表，最新一条在顶部
+- 同时 `debugPrint`
+- 自动跑批和手动拖动都写日志
+- 文案统一中文
+
+- [ ] **Step 6: 运行测试确认通过**
+
+Run: `flutter test test/screens/player_benchmark_screen_test.dart test/services/player_benchmark_session_test.dart test/services/player_benchmark_video_platform_registry_test.dart test/widgets/user_menu_benchmark_entry_test.dart`
+Expected: PASS
+
+- [ ] **Step 7: 提交这一层**
+
+```bash
+git add docs/superpowers/specs/2026-03-30-player-backend-seek-benchmark-design.md docs/superpowers/plans/2026-03-30-player-backend-seek-benchmark.md lib/widgets/benchmark/benchmark_player_driver.dart lib/widgets/benchmark/drivers/webview_benchmark_driver.dart lib/widgets/benchmark/drivers/video_player_benchmark_driver.dart lib/widgets/benchmark/drivers/media_kit_benchmark_driver.dart lib/widgets/benchmark/drivers/fvp_benchmark_driver.dart lib/screens/player_benchmark_screen.dart test/screens/player_benchmark_screen_test.dart
+git commit -m "feat: add manual seek controls to benchmark"
+```

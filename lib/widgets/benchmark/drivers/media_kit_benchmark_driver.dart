@@ -20,10 +20,12 @@ class MediaKitBenchmarkDriver extends BaseBenchmarkPlayerDriver {
     _adapter = adapter;
 
     addSubscription(adapter.stream.position.listen(emitPosition));
+    addSubscription(adapter.stream.duration.listen(emitDuration));
     addSubscription(adapter.stream.buffering.listen(emitBuffering));
 
     await player.open(mk.Media(url), play: false);
     emitPosition(player.state.position);
+    emitDuration(player.state.duration);
     emitBuffering(player.state.buffering);
     markReady();
   }

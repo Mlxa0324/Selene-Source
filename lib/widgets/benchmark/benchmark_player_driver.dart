@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 
 abstract class BenchmarkPlayerDriver {
   Stream<Duration> get positionStream;
+  Stream<Duration> get durationStream;
   Stream<bool> get bufferingStream;
   Stream<bool> get readyStream;
 
   Duration get currentPosition;
+  Duration get currentDuration;
   bool get isReady;
 
   Future<void> load(String url);
@@ -24,6 +26,8 @@ abstract class BenchmarkPlayerDriver {
 abstract class BaseBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
   final StreamController<Duration> _positionController =
       StreamController<Duration>.broadcast();
+  final StreamController<Duration> _durationController =
+      StreamController<Duration>.broadcast();
   final StreamController<bool> _bufferingController =
       StreamController<bool>.broadcast();
   final StreamController<bool> _readyController =
@@ -32,10 +36,14 @@ abstract class BaseBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
 
   Completer<void> _readyCompleter = Completer<void>();
   Duration _currentPosition = Duration.zero;
+  Duration _currentDuration = Duration.zero;
   bool _isReady = false;
 
   @override
   Stream<Duration> get positionStream => _positionController.stream;
+
+  @override
+  Stream<Duration> get durationStream => _durationController.stream;
 
   @override
   Stream<bool> get bufferingStream => _bufferingController.stream;
@@ -45,6 +53,9 @@ abstract class BaseBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
 
   @override
   Duration get currentPosition => _currentPosition;
+
+  @override
+  Duration get currentDuration => _currentDuration;
 
   @override
   bool get isReady => _isReady;
@@ -88,6 +99,14 @@ abstract class BaseBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
   }
 
   @protected
+  void emitDuration(Duration duration) {
+    _currentDuration = duration;
+    if (!_durationController.isClosed) {
+      _durationController.add(duration);
+    }
+  }
+
+  @protected
   void emitBuffering(bool buffering) {
     if (!_bufferingController.isClosed) {
       _bufferingController.add(buffering);
@@ -106,6 +125,7 @@ abstract class BaseBenchmarkPlayerDriver implements BenchmarkPlayerDriver {
     }
     _subscriptions.clear();
     await _positionController.close();
+    await _durationController.close();
     await _bufferingController.close();
     await _readyController.close();
   }

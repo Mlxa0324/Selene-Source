@@ -28,10 +28,12 @@ class VideoPlayerBenchmarkDriver extends BaseBenchmarkPlayerDriver {
     _adapter = adapter;
 
     addSubscription(adapter.stream.position.listen(emitPosition));
+    addSubscription(adapter.stream.duration.listen(emitDuration));
     addSubscription(adapter.stream.buffering.listen(emitBuffering));
 
     await controller.initialize();
     emitPosition(controller.value.position);
+    emitDuration(controller.value.duration);
     emitBuffering(controller.value.isBuffering);
     markReady();
   }
