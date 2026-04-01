@@ -21,11 +21,13 @@ import 'update_dialog.dart';
 class UserMenu extends StatefulWidget {
   final bool isDarkMode;
   final VoidCallback? onClose;
+  final VoidCallback? onVersionTap;
 
   const UserMenu({
     super.key,
     required this.isDarkMode,
     this.onClose,
+    this.onVersionTap,
   });
 
   @override
@@ -249,6 +251,19 @@ class _UserMenuState extends State<UserMenu> {
       MaterialPageRoute(builder: (context) => const LoginScreen()),
       (route) => false,
     );
+  }
+
+  Future<void> _handleVersionTap() async {
+    final onVersionTap = widget.onVersionTap;
+    if (onVersionTap != null) {
+      onVersionTap();
+      return;
+    }
+
+    final url = Uri.parse('https://github.com/MoonTechLab/Selene');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
 
   Future<void> _logoutSavedAccount(
@@ -1482,12 +1497,7 @@ class _UserMenuState extends State<UserMenu> {
           cursor:
               DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
           child: GestureDetector(
-            onTap: () async {
-              final url = Uri.parse('https://github.com/MoonTechLab/Selene');
-              if (await canLaunchUrl(url)) {
-                await launchUrl(url, mode: LaunchMode.externalApplication);
-              }
-            },
+            onTap: _handleVersionTap,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Center(

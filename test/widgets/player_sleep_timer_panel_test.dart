@@ -6,7 +6,8 @@ import 'package:selene/widgets/player_sleep_timer_panel.dart';
 
 void main() {
   group('PlayerSleepTimerPanel', () {
-    testWidgets('uses inline pickers on mobile platforms', (tester) async {
+    testWidgets('keeps inline pickers collapsed by default on mobile platforms',
+        (tester) async {
       await _pumpPanel(
         tester,
         theme: ThemeData(
@@ -15,12 +16,35 @@ void main() {
         ),
       );
 
-      expect(find.byType(CupertinoDatePicker), findsOneWidget);
-      expect(find.byType(CupertinoPicker), findsWidgets);
+      expect(find.byType(CupertinoDatePicker), findsNothing);
+      expect(find.byType(CupertinoPicker), findsNothing);
       expect(find.byType(TextField), findsNothing);
-      expect(find.text('选择关闭时间点'), findsNothing);
+      expect(find.text('调整分钟数'), findsOneWidget);
+      expect(find.text('调整时间'), findsOneWidget);
       expect(find.text('设置时间'), findsOneWidget);
       expect(find.text('设置分钟数'), findsOneWidget);
+    });
+
+    testWidgets('expands only the requested inline picker on mobile platforms',
+        (tester) async {
+      await _pumpPanel(
+        tester,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          platform: TargetPlatform.android,
+        ),
+      );
+
+      await tester.tap(find.text('调整分钟数'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CupertinoPicker), findsOneWidget);
+      expect(find.byType(CupertinoDatePicker), findsNothing);
+
+      await tester.tap(find.text('调整时间'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
     });
 
     testWidgets('keeps existing manual inputs on desktop platforms',
@@ -53,6 +77,48 @@ void main() {
       final clockTimeLabel = tester.getTopLeft(find.text('指定时间'));
 
       expect(customMinutesLabel.dy, lessThan(clockTimeLabel.dy));
+    });
+
+    testWidgets('allows scrolling from the inline summary area on mobile',
+        (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(900, 520));
+
+      final theme = ThemeData(
+        brightness: Brightness.light,
+        platform: TargetPlatform.android,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: SizedBox.expand(
+              child: PlayerSleepTimerPanel(
+                theme: theme,
+                sideSheet: false,
+                canExitApp: true,
+                scheduledAt: DateTime(2026, 3, 25, 22, 30),
+                onSetMinutes: (_) async => false,
+                onSetTimeOfDay: (_) async => false,
+                onCancelTimer: () async => false,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      final before = tester.getTopLeft(find.text('指定时间')).dy;
+      await tester.drag(
+        find.byKey(const Key('sleep-timer-minutes-summary')),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+      final after = tester.getTopLeft(find.text('指定时间')).dy;
+
+      expect(after, lessThan(before));
     });
 
     testWidgets('submits the selected inline time on mobile platforms',

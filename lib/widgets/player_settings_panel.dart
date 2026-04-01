@@ -24,6 +24,7 @@ class PlayerSettingsPanel extends StatelessWidget {
   final double currentLongPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final bool hideCenterControlsWithBars;
   final int skipIntro;
   final int skipOutro;
   final int videoPosition; // 当前播放位置（秒）
@@ -32,6 +33,7 @@ class PlayerSettingsPanel extends StatelessWidget {
   final Function(double) onLongPressSpeedChanged;
   final Function(ProgressDisplayMode) onProgressModeChanged;
   final Function(bool) onShowSystemTimeChanged;
+  final Function(bool) onHideCenterControlsWithBarsChanged;
   final Function(int) onSkipIntroChanged;
   final Function(int) onSkipOutroChanged;
 
@@ -43,6 +45,7 @@ class PlayerSettingsPanel extends StatelessWidget {
     required this.currentLongPressSpeed,
     required this.progressMode,
     required this.showSystemTime,
+    required this.hideCenterControlsWithBars,
     required this.skipIntro,
     required this.skipOutro,
     required this.videoPosition,
@@ -51,6 +54,7 @@ class PlayerSettingsPanel extends StatelessWidget {
     required this.onLongPressSpeedChanged,
     required this.onProgressModeChanged,
     required this.onShowSystemTimeChanged,
+    required this.onHideCenterControlsWithBarsChanged,
     required this.onSkipIntroChanged,
     required this.onSkipOutroChanged,
   });
@@ -130,6 +134,8 @@ class PlayerSettingsPanel extends StatelessWidget {
 
                   // 功能增强
                   _buildSectionHeader('功能增强', subTextColor),
+                  const SizedBox(height: 10),
+                  _buildCenterControlsSwitch(textColor, subTextColor),
                   // const SizedBox(height: 10),
                   // _buildSystemTimeSwitch(isDarkMode, textColor, subTextColor),
 
@@ -375,8 +381,25 @@ class PlayerSettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildSystemTimeSwitch(
-      bool isDarkMode, Color textColor, Color subTextColor) {
+  Widget _buildCenterControlsSwitch(Color textColor, Color subTextColor) {
+    return _buildSwitchRow(
+      title: '中间按钮跟随隐藏',
+      subtitle: '关闭后，暂停时中间三个按钮会保留',
+      value: hideCenterControlsWithBars,
+      onChanged: onHideCenterControlsWithBarsChanged,
+      textColor: textColor,
+      subTextColor: subTextColor,
+    );
+  }
+
+  Widget _buildSwitchRow({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required Color textColor,
+    required Color subTextColor,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -385,7 +408,7 @@ class PlayerSettingsPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '显示系统时间',
+                title,
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
@@ -393,7 +416,7 @@ class PlayerSettingsPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                '控制栏隐藏时在右下角显示',
+                subtitle,
                 style: TextStyle(
                   fontSize: 11,
                   color: subTextColor,
@@ -407,10 +430,10 @@ class PlayerSettingsPanel extends StatelessWidget {
           child: Transform.scale(
             scale: 0.8,
             child: Switch(
-              value: showSystemTime,
-              onChanged: onShowSystemTimeChanged,
-              activeColor: Colors.green,
-              activeTrackColor: Colors.green.withOpacity(0.3),
+              value: value,
+              onChanged: onChanged,
+              activeThumbColor: Colors.green,
+              activeTrackColor: Colors.green.withValues(alpha: 0.3),
             ),
           ),
         )

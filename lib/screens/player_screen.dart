@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, listEquals;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, listEquals, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -45,6 +46,31 @@ import '../services/sleep_timer_service.dart';
 import '../models/danmaku_model.dart';
 import '../utils/font_utils.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
+
+@visibleForTesting
+int findDanmakuSeekIndex(
+  List<DanmakuComment> comments,
+  Duration position,
+) {
+  if (comments.isEmpty) {
+    return 0;
+  }
+
+  final targetTime = position.inMilliseconds / 1000.0;
+  var low = 0;
+  var high = comments.length;
+
+  while (low < high) {
+    final mid = low + ((high - low) >> 1);
+    if (comments[mid].time <= targetTime) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
+}
 
 class PlayerScreen extends StatefulWidget {
   final String? source;
@@ -218,6 +244,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showPlaybackTime = true;
   ProgressDisplayMode _progressMode = ProgressDisplayMode.none;
   bool _showSystemTime = false; // 是否在右下角显示系统时间
+  bool _hideCenterControlsWithBars = true; // 中间按钮是否跟随顶部/底部一起隐藏
   bool _adFilterEnabled = false; // 是否开启自动去广告
   bool _screenOffPlaybackEnabled = false; // Android 息屏播放偏好
   bool _mediaKitPreloadEnabled = Platform.isMacOS;
@@ -458,6 +485,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fitIndex = await UserDataService.getVideoFitType();
     final progressIndex = await UserDataService.getProgressDisplayMode();
     final showSystemTime = await UserDataService.getShowSystemTime();
+    final hideCenterControlsWithBars =
+        await UserDataService.getHideCenterControlsWithBars();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
     final screenOffPlaybackEnabled =
         await UserDataService.getScreenOffPlaybackEnabled();
@@ -474,6 +503,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _progressMode = ProgressDisplayMode.values[
             progressIndex.clamp(0, ProgressDisplayMode.values.length - 1)];
         _showSystemTime = showSystemTime;
+        _hideCenterControlsWithBars = hideCenterControlsWithBars;
         _adFilterEnabled = adFilterEnabled;
         _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
@@ -935,17 +965,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _resetDanmakuIndex(Duration position) {
     if (_danmakuList.isEmpty) return;
 
-    final targetTime = position.inMilliseconds / 1000.0;
-    _danmakuIndex = 0;
-
-    // 找到第一个时间大于目标时间的弹幕索引
-    for (int i = 0; i < _danmakuList.length; i++) {
-      if (_danmakuList[i].time > targetTime) {
-        _danmakuIndex = i;
-        break;
-      }
-      _danmakuIndex = i + 1;
-    }
+    _danmakuIndex = findDanmakuSeekIndex(_danmakuList, position);
 
     // 清空当前显示的弹幕
     _runWithDanmakuController(
@@ -1998,7 +2018,13 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     _isSeeking = true;
     _lastDanmakuCheckTime = -1;
-    _resetDanmakuIndex(position);
+
+    Future<void>(() {
+      if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
+        return;
+      }
+      _resetDanmakuIndex(position);
+    });
 
     final shouldRenderImmediately = _hasExplicitDanmakuState
         ? _danmakuShouldPlay
@@ -3372,6 +3398,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             longPressSpeed: _longPressSpeed,
             progressMode: _progressMode,
             showSystemTime: _showSystemTime,
+            hideCenterControlsWithBars: _hideCenterControlsWithBars,
             hasActiveSleepTimer: _sleepTimerDeadline != null,
             mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
@@ -5266,6 +5293,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 currentLongPressSpeed: _longPressSpeed,
                 progressMode: _progressMode,
                 showSystemTime: _showSystemTime,
+                hideCenterControlsWithBars: _hideCenterControlsWithBars,
                 skipIntro: _skipIntroDuration,
                 skipOutro: _skipOutroDuration,
                 videoPosition: currentPosition?.inSeconds ?? 0,
@@ -5290,6 +5318,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                   setState(() => _showSystemTime = show);
                   dialogSetState(() {});
                   UserDataService.saveShowSystemTime(show);
+                },
+                onHideCenterControlsWithBarsChanged: (hide) {
+                  setState(() => _hideCenterControlsWithBars = hide);
+                  dialogSetState(() {});
+                  UserDataService.saveHideCenterControlsWithBars(hide);
                 },
                 onSkipIntroChanged: (v) {
                   setState(() => _skipIntroDuration = v);

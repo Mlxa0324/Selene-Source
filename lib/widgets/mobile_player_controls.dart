@@ -25,6 +25,26 @@ bool shouldShowEpisodeSourceButtons({
   return isEffectiveFullscreen;
 }
 
+@visibleForTesting
+bool shouldShowCenterControls({
+  required bool isPipMode,
+  required bool isLocked,
+  required bool isPlaying,
+  required bool controlsVisible,
+  required bool hideWithControls,
+}) {
+  if (isPipMode || isLocked) {
+    return false;
+  }
+  if (isPlaying) {
+    return controlsVisible;
+  }
+  if (hideWithControls) {
+    return controlsVisible;
+  }
+  return true;
+}
+
 class MobilePlayerControls extends StatefulWidget {
   final PlayerAdapter player;
   final VideoState?
@@ -62,9 +82,11 @@ class MobilePlayerControls extends StatefulWidget {
   final double longPressSpeed;
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
+  final bool hideCenterControlsWithBars;
   final bool hasActiveSleepTimer;
   final ValueChanged<bool>? onPlayerLockChanged;
   final ValueChanged<Duration>? onSeek;
+  final bool? directLongPressRateControlOverride;
 
   const MobilePlayerControls({
     super.key,
@@ -103,9 +125,11 @@ class MobilePlayerControls extends StatefulWidget {
     this.longPressSpeed = 2.0,
     this.progressMode = ProgressDisplayMode.time,
     this.showSystemTime = true,
+    this.hideCenterControlsWithBars = true,
     this.hasActiveSleepTimer = false,
     this.onPlayerLockChanged,
     this.onSeek,
+    this.directLongPressRateControlOverride,
   });
 
   @override
@@ -309,6 +333,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   bool get _isPlaying => widget.player.state.playing;
 
   bool get _shouldUseIOSOnlineRateControl {
+    if (widget.directLongPressRateControlOverride != null) {
+      return widget.directLongPressRateControlOverride!;
+    }
     return Platform.isIOS && !widget.isLocal;
   }
 
@@ -319,6 +346,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Duration get _position => widget.player.state.position;
 
   Duration get _duration => widget.player.state.duration;
+
+  Future<void> _applyPlaybackSpeed(double speed) async {
+    await widget.onSetSpeed(speed);
+  }
 
   void _startHideTimer() {
     _hideTimer?.cancel();
@@ -402,12 +433,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
     if (_shouldUseIOSOnlineRateControl) {
       if ((_effectiveLongPressSpeed - _originalPlaybackSpeed).abs() >= 0.01) {
-        unawaited(widget.player.setRate(_effectiveLongPressSpeed));
+        unawaited(_applyPlaybackSpeed(_effectiveLongPressSpeed));
       }
       return;
     }
 
-    unawaited(widget.onSetSpeed(_effectiveLongPressSpeed));
+    unawaited(_applyPlaybackSpeed(_effectiveLongPressSpeed));
   }
 
   void _onLongPressEnd(LongPressEndDetails details) {
@@ -423,11 +454,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
 
     if (_shouldUseIOSOnlineRateControl) {
-      unawaited(widget.player.setRate(restoreSpeed));
+      unawaited(_applyPlaybackSpeed(restoreSpeed));
       return;
     }
 
-    unawaited(widget.onSetSpeed(restoreSpeed));
+    unawaited(_applyPlaybackSpeed(restoreSpeed));
   }
 
   void _onSwipeStart(DragStartDetails details) {
@@ -483,11 +514,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   void _onSwipeEnd(DragEndDetails details) {
     if (_isLocked || !_isSeekingViaSwipe || widget.live) return;
     if (_dragPosition != null) {
-      unawaited(seekPlayerAndNotify(
+      unawaited(seekPlayerAndNotifyAsync(
         player: widget.player,
         position: _dragPosition!,
         onSeek: widget.onSeek,
-        notifyBeforeSeek: true,
       ));
     }
     setState(() {
@@ -647,11 +677,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     setState(() {
       _dragPosition = target;
     });
-    await seekPlayerAndNotify(
+    await seekPlayerAndNotifyAsync(
       player: widget.player,
       position: target,
       onSeek: widget.onSeek,
-      notifyBeforeSeek: true,
     );
   }
 
@@ -1363,20 +1392,21 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     final seekIconSize = _isEffectiveFullscreen ? 36.0 : 26.0;
     final seekTapSize = _isEffectiveFullscreen ? 58.0 : 50.0;
     final horizontalGap = _isEffectiveFullscreen ? 80.0 : 30.0;
+    final showCenterControls = shouldShowCenterControls(
+      isPipMode: widget.isPipMode,
+      isLocked: _isLocked,
+      isPlaying: _isPlaying,
+      controlsVisible: _controlsVisible,
+      hideWithControls: widget.hideCenterControlsWithBars,
+    );
 
     return Positioned.fill(
       child: Center(
         child: AnimatedOpacity(
-          opacity: (!widget.isPipMode &&
-                  !_isLocked &&
-                  (!_isPlaying || _controlsVisible))
-              ? 1.0
-              : 0.0,
+          opacity: showCenterControls ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 200),
           child: IgnorePointer(
-            ignoring: widget.isPipMode ||
-                _isLocked ||
-                (_isPlaying && !_controlsVisible),
+            ignoring: !showCenterControls,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2149,11 +2179,10 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                 });
 
                 // 💡 优化：跳转后锁定 800ms
-                seekPlayerAndNotify(
+                seekPlayerAndNotifyAsync(
                   player: widget.player,
                   position: seekPosition,
                   onSeek: widget.onSeek,
-                  notifyBeforeSeek: true,
                 ).then((_) async {
                   await Future.delayed(const Duration(milliseconds: 800));
                   if (mounted) {
@@ -2180,11 +2209,10 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
               });
 
               // 💡 优化：跳转后锁定 800ms
-              seekPlayerAndNotify(
+              seekPlayerAndNotifyAsync(
                 player: widget.player,
                 position: seekPosition,
                 onSeek: widget.onSeek,
-                notifyBeforeSeek: true,
               ).then((_) async {
                 await Future.delayed(const Duration(milliseconds: 800));
                 if (mounted) {

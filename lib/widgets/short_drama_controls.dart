@@ -666,11 +666,10 @@ class ShortDramaControlsState extends State<ShortDramaControls>
           },
           onHorizontalDragEnd: (_) {
             if (_dragPosition != null) {
-              unawaited(seekPlayerAndNotify(
+              unawaited(seekPlayerAndNotifyAsync(
                 player: widget.player,
                 position: _dragPosition!,
                 onSeek: widget.onSeek,
-                notifyBeforeSeek: true,
               ));
               if (!_isPlaying) widget.player.play();
             }

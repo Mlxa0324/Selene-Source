@@ -721,211 +721,207 @@ class _SearchScreenState extends State<SearchScreen>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Wrap(
-            spacing: 8,
+            spacing: 6,
             runSpacing: 8,
             children: _searchHistory.map((history) {
-              final isDeleting = _deletingHistoryItem == history;
-              final isHovered = _hoveredHistoryItem == history;
-
-              return MouseRegion(
-                cursor: DeviceUtils.isPC()
-                    ? SystemMouseCursors.click
-                    : MouseCursor.defer,
-                onEnter: DeviceUtils.isPC()
-                    ? (_) {
-                        setState(() {
-                          _hoveredHistoryItem = history;
-                        });
-                      }
-                    : null,
-                onExit: DeviceUtils.isPC()
-                    ? (_) {
-                        // 只有当前 hover 的是这个历史项时才清除
-                        if (_hoveredHistoryItem == history) {
-                          setState(() {
-                            _hoveredHistoryItem = null;
-                          });
-                        }
-                      }
-                    : null,
-                child: GestureDetector(
-                  onTap: () {
-                    if (!isDeleting) {
-                      _searchController.text = history;
-                      setState(() {
-                        _searchQuery = history;
-                      });
-                      _performSearch(history);
-                    }
-                  },
-                  onLongPressStart: (_) {
-                    if (!isDeleting) {
-                      _startDeleteAnimation(history);
-                    }
-                  },
-                  onLongPressEnd: (_) {
-                    if (isDeleting) {
-                      _cancelDeleteAnimation();
-                    }
-                  },
-                  child: AnimatedBuilder(
-                    animation:
-                        _deleteAnimation ?? const AlwaysStoppedAnimation(0.0),
-                    builder: (context, child) {
-                      // 计算颜色插值
-                      Color backgroundColor;
-                      Color textColor;
-                      Color borderColor;
-
-                      if (isDeleting) {
-                        final animationValue = _deleteAnimation?.value ?? 0.0;
-
-                        // 背景色从正常色渐变到红色
-                        backgroundColor = Color.lerp(
-                          themeService.isDarkMode
-                              ? const Color(0xFF1e1e1e)
-                              : Colors.white,
-                          const Color(0xFFe74c3c).withOpacity(0.2),
-                          animationValue,
-                        )!;
-
-                        // 文字色从正常色渐变到红色
-                        textColor = Color.lerp(
-                          themeService.isDarkMode
-                              ? const Color(0xFFffffff)
-                              : const Color(0xFF2c3e50),
-                          const Color(0xFFe74c3c),
-                          animationValue,
-                        )!;
-
-                        // 边框色从正常色渐变到红色
-                        borderColor = Color.lerp(
-                          themeService.isDarkMode
-                              ? const Color(0xFF333333)
-                              : const Color(0xFFe9ecef),
-                          const Color(0xFFe74c3c),
-                          animationValue,
-                        )!;
-                      } else if (DeviceUtils.isPC() && isHovered) {
-                        // PC 端 hover 效果 - 浅绿色
-                        backgroundColor = themeService.isDarkMode
-                            ? const Color(0xFF1e3a28) // 深色模式下的深绿背景
-                            : const Color(0xFFe8f5e9); // 浅色模式下的浅绿背景
-                        textColor = const Color(0xFF27ae60); // 绿色文字
-                        borderColor = const Color(0xFF52c77a); // 浅绿边框
-                      } else {
-                        backgroundColor = themeService.isDarkMode
-                            ? const Color(0xFF1e1e1e)
-                            : Colors.white;
-                        textColor = themeService.isDarkMode
-                            ? const Color(0xFFffffff)
-                            : const Color(0xFF2c3e50);
-                        borderColor = themeService.isDarkMode
-                            ? const Color(0xFF333333)
-                            : const Color(0xFFe9ecef);
-                      }
-
-                      return Stack(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6, right: 6),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: backgroundColor,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: borderColor,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    history,
-                                    style: FontUtils.poppins(
-                                      fontSize: 14,
-                                      color: textColor,
-                                    ),
-                                  ),
-                                  if (isDeleting) ...[
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      Icons.delete_outline,
-                                      size: 16,
-                                      color: textColor,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                          if (!isDeleting)
-                            Positioned(
-                              top: 3,
-                              right: 3,
-                              child: MouseRegion(
-                                cursor: SystemMouseCursors.click,
-                                onEnter: (_) {
-                                  setState(() {
-                                    _hoveredDeleteButton = history;
-                                  });
-                                },
-                                onExit: (_) {
-                                  setState(() {
-                                    _hoveredDeleteButton = null;
-                                  });
-                                },
-                                child: GestureDetector(
-                                  onTap: () {
-                                    _deleteSearchHistory(history);
-                                  },
-                                  child: Container(
-                                    width: 15,
-                                    height: 15,
-                                    decoration: BoxDecoration(
-                                      color: _hoveredDeleteButton == history
-                                          ? const Color(0xFFe74c3c)
-                                          : themeService.isDarkMode
-                                              ? const Color(0xFF3a3a3a)
-                                              : const Color(0xFFdfe3e6),
-                                      borderRadius: BorderRadius.circular(5),
-                                      border: Border.all(
-                                        color: _hoveredDeleteButton == history
-                                            ? const Color(0xFFe74c3c)
-                                            : themeService.isDarkMode
-                                                ? const Color(0xFF4a4a4a)
-                                                : const Color(0xFFc7cdd1),
-                                        width: 0.5,
-                                      ),
-                                    ),
-                                    child: Icon(
-                                      Icons.close,
-                                      size: 12,
-                                      color: _hoveredDeleteButton == history
-                                          ? Colors.white
-                                          : themeService.isDarkMode
-                                              ? const Color(0xFFd8d8d8)
-                                              : const Color(0xFF6b7780),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              );
+              return _buildSearchHistoryChip(history, themeService);
             }).toList(),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSearchHistoryChip(String history, ThemeService themeService) {
+    final isDeleting = _deletingHistoryItem == history;
+    final isHovered = _hoveredHistoryItem == history;
+
+    return MouseRegion(
+      cursor:
+          DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: DeviceUtils.isPC()
+          ? (_) {
+              setState(() {
+                _hoveredHistoryItem = history;
+              });
+            }
+          : null,
+      onExit: DeviceUtils.isPC()
+          ? (_) {
+              if (_hoveredHistoryItem == history) {
+                setState(() {
+                  _hoveredHistoryItem = null;
+                });
+              }
+            }
+          : null,
+      child: GestureDetector(
+        onTap: () {
+          if (!isDeleting) {
+            _searchController.text = history;
+            setState(() {
+              _searchQuery = history;
+            });
+            _performSearch(history);
+          }
+        },
+        onLongPressStart: (_) {
+          if (!isDeleting) {
+            _startDeleteAnimation(history);
+          }
+        },
+        onLongPressEnd: (_) {
+          if (isDeleting) {
+            _cancelDeleteAnimation();
+          }
+        },
+        child: AnimatedBuilder(
+          animation: _deleteAnimation ?? const AlwaysStoppedAnimation(0.0),
+          builder: (context, child) {
+            Color backgroundColor;
+            Color textColor;
+            Color borderColor;
+
+            if (isDeleting) {
+              final animationValue = _deleteAnimation?.value ?? 0.0;
+              backgroundColor = Color.lerp(
+                themeService.isDarkMode
+                    ? const Color(0xFF1e1e1e)
+                    : Colors.white,
+                const Color(0xFFe74c3c).withValues(alpha: 0.2),
+                animationValue,
+              )!;
+              textColor = Color.lerp(
+                themeService.isDarkMode
+                    ? const Color(0xFFffffff)
+                    : const Color(0xFF2c3e50),
+                const Color(0xFFe74c3c),
+                animationValue,
+              )!;
+              borderColor = Color.lerp(
+                themeService.isDarkMode
+                    ? const Color(0xFF333333)
+                    : const Color(0xFFe9ecef),
+                const Color(0xFFe74c3c),
+                animationValue,
+              )!;
+            } else if (DeviceUtils.isPC() && isHovered) {
+              backgroundColor = themeService.isDarkMode
+                  ? const Color(0xFF1e3a28)
+                  : const Color(0xFFe8f5e9);
+              textColor = const Color(0xFF27ae60);
+              borderColor = const Color(0xFF52c77a);
+            } else {
+              backgroundColor = themeService.isDarkMode
+                  ? const Color(0xFF1e1e1e)
+                  : Colors.white;
+              textColor = themeService.isDarkMode
+                  ? const Color(0xFFffffff)
+                  : const Color(0xFF2c3e50);
+              borderColor = themeService.isDarkMode
+                  ? const Color(0xFF333333)
+                  : const Color(0xFFe9ecef);
+            }
+
+            return Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 5, right: 5),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: backgroundColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: borderColor,
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          history,
+                          style: FontUtils.poppins(
+                            fontSize: 14,
+                            color: textColor,
+                          ),
+                        ),
+                        if (isDeleting) ...[
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.delete_outline,
+                            size: 16,
+                            color: textColor,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                if (!isDeleting)
+                  Positioned(
+                    top: 3,
+                    right: 3,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 0.5, right: 0.5),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.click,
+                        onEnter: (_) {
+                          setState(() {
+                            _hoveredDeleteButton = history;
+                          });
+                        },
+                        onExit: (_) {
+                          setState(() {
+                            _hoveredDeleteButton = null;
+                          });
+                        },
+                        child: GestureDetector(
+                          onTap: () {
+                            _deleteSearchHistory(history);
+                          },
+                          child: Container(
+                            width: 15,
+                            height: 15,
+                            decoration: BoxDecoration(
+                              color: _hoveredDeleteButton == history
+                                  ? const Color(0xFFe74c3c)
+                                  : themeService.isDarkMode
+                                      ? const Color(0xFF3a3a3a)
+                                      : const Color(0xFFdfe3e6),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: _hoveredDeleteButton == history
+                                    ? const Color(0xFFe74c3c)
+                                    : themeService.isDarkMode
+                                        ? const Color(0xFF4a4a4a)
+                                        : const Color(0xFFc7cdd1),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.close,
+                              size: 12,
+                              color: _hoveredDeleteButton == history
+                                  ? Colors.white
+                                  : themeService.isDarkMode
+                                      ? const Color(0xFFd8d8d8)
+                                      : const Color(0xFF6b7780),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
     );
   }
 

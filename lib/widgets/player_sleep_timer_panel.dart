@@ -37,6 +37,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
   late final FixedExtentScrollController _customMinutesScrollController;
   late TimeOfDay _selectedClockTime;
   late int _selectedCustomMinutes;
+  _InlinePickerSection _activeInlinePicker = _InlinePickerSection.none;
   bool _submitting = false;
 
   @override
@@ -273,6 +274,49 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
     return '$hour:$minute';
   }
 
+  void _toggleInlinePicker(_InlinePickerSection section) {
+    setState(() {
+      _activeInlinePicker =
+          _activeInlinePicker == section ? _InlinePickerSection.none : section;
+    });
+  }
+
+  Widget _buildInlineSummaryRow({
+    Key? valueKey,
+    required String value,
+    required String buttonLabel,
+    required VoidCallback onPressed,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            key: valueKey,
+            value,
+            style: TextStyle(
+              color: _textColor,
+              fontSize: 24,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        OutlinedButton(
+          onPressed: _submitting ? null : onPressed,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.green,
+            side: BorderSide(
+              color: Colors.green.withValues(alpha: 0.4),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: Text(buttonLabel),
+        ),
+      ],
+    );
+  }
+
   Widget _buildInlinePickerContainer(Widget child) {
     return Container(
       width: double.infinity,
@@ -307,44 +351,45 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                _formatInlineTime(_selectedClockTime),
-                style: TextStyle(
-                  color: _textColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
+              _buildInlineSummaryRow(
+                valueKey: const Key('sleep-timer-time-summary'),
+                value: _formatInlineTime(_selectedClockTime),
+                buttonLabel: '调整时间',
+                onPressed: () =>
+                    _toggleInlinePicker(_InlinePickerSection.clockTime),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 150,
-                child: CupertinoTheme(
-                  data: CupertinoThemeData(
-                    brightness:
-                        _isDarkMode ? Brightness.dark : Brightness.light,
-                    textTheme: CupertinoTextThemeData(
-                      dateTimePickerTextStyle: TextStyle(
-                        color: _textColor,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
+              if (_activeInlinePicker == _InlinePickerSection.clockTime) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 150,
+                  child: CupertinoTheme(
+                    data: CupertinoThemeData(
+                      brightness:
+                          _isDarkMode ? Brightness.dark : Brightness.light,
+                      textTheme: CupertinoTextThemeData(
+                        dateTimePickerTextStyle: TextStyle(
+                          color: _textColor,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  child: CupertinoDatePicker(
-                    mode: CupertinoDatePickerMode.time,
-                    use24hFormat: true,
-                    initialDateTime: _clockTimeToDateTime(_selectedClockTime),
-                    onDateTimeChanged: (value) {
-                      setState(() {
-                        _selectedClockTime = TimeOfDay(
-                          hour: value.hour,
-                          minute: value.minute,
-                        );
-                      });
-                    },
+                    child: CupertinoDatePicker(
+                      mode: CupertinoDatePickerMode.time,
+                      use24hFormat: true,
+                      initialDateTime: _clockTimeToDateTime(_selectedClockTime),
+                      onDateTimeChanged: (value) {
+                        setState(() {
+                          _selectedClockTime = TimeOfDay(
+                            hour: value.hour,
+                            minute: value.minute,
+                          );
+                        });
+                      },
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -386,50 +431,52 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text(
-                '$_selectedCustomMinutes 分钟',
-                style: TextStyle(
-                  color: _textColor,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
+              _buildInlineSummaryRow(
+                valueKey: const Key('sleep-timer-minutes-summary'),
+                value: '$_selectedCustomMinutes 分钟',
+                buttonLabel: '调整分钟数',
+                onPressed: () =>
+                    _toggleInlinePicker(_InlinePickerSection.customMinutes),
               ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 150,
-                child: CupertinoTheme(
-                  data: CupertinoThemeData(
-                    brightness:
-                        _isDarkMode ? Brightness.dark : Brightness.light,
-                    textTheme: CupertinoTextThemeData(
-                      pickerTextStyle: TextStyle(
-                        color: _textColor,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
+              if (_activeInlinePicker ==
+                  _InlinePickerSection.customMinutes) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 150,
+                  child: CupertinoTheme(
+                    data: CupertinoThemeData(
+                      brightness:
+                          _isDarkMode ? Brightness.dark : Brightness.light,
+                      textTheme: CupertinoTextThemeData(
+                        pickerTextStyle: TextStyle(
+                          color: _textColor,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  child: CupertinoPicker.builder(
-                    scrollController: _customMinutesScrollController,
-                    itemExtent: 38,
-                    useMagnifier: true,
-                    magnification: 1.08,
-                    squeeze: 1.15,
-                    onSelectedItemChanged: (index) {
-                      setState(() {
-                        _selectedCustomMinutes = _minCustomMinutes + index;
-                      });
-                    },
-                    childCount: _maxCustomMinutes - _minCustomMinutes + 1,
-                    itemBuilder: (context, index) {
-                      final value = _minCustomMinutes + index;
-                      return Center(
-                        child: Text('$value 分钟'),
-                      );
-                    },
+                    child: CupertinoPicker.builder(
+                      scrollController: _customMinutesScrollController,
+                      itemExtent: 38,
+                      useMagnifier: true,
+                      magnification: 1.08,
+                      squeeze: 1.15,
+                      onSelectedItemChanged: (index) {
+                        setState(() {
+                          _selectedCustomMinutes = _minCustomMinutes + index;
+                        });
+                      },
+                      childCount: _maxCustomMinutes - _minCustomMinutes + 1,
+                      itemBuilder: (context, index) {
+                        final value = _minCustomMinutes + index;
+                        return Center(
+                          child: Text('$value 分钟'),
+                        );
+                      },
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -668,4 +715,10 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
       ),
     );
   }
+}
+
+enum _InlinePickerSection {
+  none,
+  customMinutes,
+  clockTime,
 }

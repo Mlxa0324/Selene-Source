@@ -124,6 +124,10 @@ class UserDataService {
   /// 是否显示系统时间 Key
   static const String _showSystemTimeKey = 'show_system_time';
 
+  /// 中间播放按钮是否跟随顶部/底部按钮一起隐藏 Key
+  static const String _hideCenterControlsWithBarsKey =
+      'hide_center_controls_with_bars';
+
   /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
 
@@ -412,6 +416,18 @@ class UserDataService {
   static Future<bool> getShowSystemTime() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_showSystemTimeKey) ?? false;
+  }
+
+  // 保存中间播放按钮跟随隐藏开关
+  static Future<void> saveHideCenterControlsWithBars(bool hide) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hideCenterControlsWithBarsKey, hide);
+  }
+
+  // 获取中间播放按钮跟随隐藏开关（默认 true）
+  static Future<bool> getHideCenterControlsWithBars() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_hideCenterControlsWithBarsKey) ?? true;
   }
 
   // 保存跳过片头时长
