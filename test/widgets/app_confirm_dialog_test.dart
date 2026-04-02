@@ -17,7 +17,7 @@ class _DialogHarness extends StatelessWidget {
         brightness: brightness,
         useMaterial3: false,
       ),
-      home: Scaffold(
+      home: const Scaffold(
         body: Center(
           child: AppConfirmDialog(
             title: '删除任务',
@@ -96,7 +96,7 @@ class _ShowDialogHarness extends StatelessWidget {
 void _expectOutlinedCancelButton(WidgetTester tester) {
   final outlinedButton =
       tester.widget<OutlinedButton>(find.byType(OutlinedButton));
-  final side = outlinedButton.style?.side?.resolve(<MaterialState>{});
+  final side = outlinedButton.style?.side?.resolve(<WidgetState>{});
 
   expect(side, isNotNull);
   expect(side!.width, greaterThan(0));

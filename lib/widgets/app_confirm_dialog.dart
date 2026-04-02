@@ -30,7 +30,7 @@ class AppConfirmDialog extends StatelessWidget {
         isDark ? const Color(0xFFFFFFFF) : const Color(0xFF2c3e50);
     final messageColor =
         isDark ? const Color(0xFFb0b0b0) : const Color(0xFF7f8c8d);
-    final dangerColor = const Color(0xFFe74c3c);
+    const dangerColor = Color(0xFFe74c3c);
     final neutralBorderColor =
         isDark ? const Color(0xFF6f6f6f) : const Color(0xFF7f8c8d);
 
