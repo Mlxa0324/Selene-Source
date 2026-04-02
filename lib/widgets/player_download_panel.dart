@@ -5,6 +5,7 @@ import '../models/download_task.dart';
 import '../services/download_service.dart';
 import 'package:provider/provider.dart';
 import '../screens/download_screen.dart';
+import 'app_confirm_dialog.dart';
 import '../utils/device_utils.dart';
 
 const double _compactChildAspectRatioPC = 2.0;
@@ -722,57 +723,37 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                       onTap: () {
                         if (isDownloaded) {
                           // 已经下载完成：弹出删除确认
-                          showDialog(
+                          showAppConfirmDialog(
                             context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('删除缓存'),
-                              content: Text('确定要删除 "$title" 的本地缓存吗？'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('取消'),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _selectedIndices.remove(actualIndex);
-                                    });
-                                    downloadService.deleteTask(taskId);
-                                    Navigator.pop(ctx);
-                                  },
-                                  child: const Text('删除',
-                                      style: TextStyle(color: Colors.red)),
-                                ),
-                              ],
-                            ),
+                            title: '删除缓存',
+                            message: '确定要删除 "$title" 的本地缓存吗？',
+                            confirmLabel: '删除',
+                            cancelLabel: '取消',
+                            icon: Icons.delete_outline,
+                            onConfirm: () async {
+                              setState(() {
+                                _selectedIndices.remove(actualIndex);
+                              });
+                              await downloadService.deleteTask(taskId);
+                            },
                           );
                         } else if (isInQueue) {
                           // 正在下载或排队中：弹出取消下载确认
                           final int progress = (task.progress * 100).toInt();
 
-                          showDialog(
+                          showAppConfirmDialog(
                             context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('取消下载'),
-                              content: Text('该视频已下载 $progress%，是否取消下载？'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('继续下载'),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _selectedIndices.remove(actualIndex);
-                                    });
-                                    downloadService.deleteTask(taskId);
-                                    Navigator.pop(ctx);
-                                  },
-                                  child: const Text('取消下载',
-                                      style: TextStyle(color: Colors.red)),
-                                ),
-                              ],
-                            ),
+                            title: '取消下载',
+                            message: '该视频已下载 $progress%，是否取消下载？',
+                            confirmLabel: '取消下载',
+                            cancelLabel: '继续下载',
+                            icon: Icons.delete_outline,
+                            onConfirm: () async {
+                              setState(() {
+                                _selectedIndices.remove(actualIndex);
+                              });
+                              await downloadService.deleteTask(taskId);
+                            },
                           );
                         } else {
                           _toggleSelection(actualIndex);

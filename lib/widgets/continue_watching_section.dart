@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +7,7 @@ import '../models/video_info.dart';
 import '../services/page_cache_service.dart';
 import '../services/theme_service.dart';
 import '../utils/device_utils.dart';
+import 'app_confirm_dialog.dart';
 import 'video_card.dart';
 import '../utils/image_url.dart';
 import '../utils/font_utils.dart';
@@ -226,6 +228,7 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
       if (imageUrl.isNotEmpty) {
         final headers = getImageRequestHeaders(imageUrl, record.source);
         final provider = NetworkImage(imageUrl, headers: headers);
+        // ignore: use_build_context_synchronously
         precacheImage(provider, context);
       }
     }
@@ -233,119 +236,16 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
 
   /// 显示清空确认弹窗
   void _showClearConfirmation() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Consumer<ThemeService>(
-          builder: (context, themeService, child) {
-            return AlertDialog(
-              backgroundColor: themeService.isDarkMode
-                  ? const Color(0xFF1e1e1e)
-                  : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              contentPadding: const EdgeInsets.all(24),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 图标
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFe74c3c).withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.delete_outline,
-                      color: Color(0xFFe74c3c),
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // 标题
-                  Text(
-                    '清空播放记录',
-                    style: FontUtils.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: themeService.isDarkMode
-                          ? const Color(0xFFffffff)
-                          : const Color(0xFF2c3e50),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // 描述
-                  Text(
-                    '确定要清空所有播放记录吗？此操作无法撤销。',
-                    style: FontUtils.poppins(
-                      fontSize: 14,
-                      color: themeService.isDarkMode
-                          ? const Color(0xFFb0b0b0)
-                          : const Color(0xFF7f8c8d),
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  // 按钮
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            '取消',
-                            style: FontUtils.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: themeService.isDarkMode
-                                  ? const Color(0xFFb0b0b0)
-                                  : const Color(0xFF7f8c8d),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            _clearPlayRecords();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFe74c3c),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            '清空',
-                            style: FontUtils.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    unawaited(
+      showAppConfirmDialog(
+        context: context,
+        title: '清空播放记录',
+        message: '确定要清空所有播放记录吗？此操作无法撤销。',
+        confirmLabel: '清空',
+        onConfirm: () async {
+          await _clearPlayRecords();
+        },
+      ),
     );
   }
 

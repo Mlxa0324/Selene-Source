@@ -7,6 +7,7 @@ import '../models/play_record.dart';
 import '../services/local_mode_storage_service.dart';
 import '../services/page_cache_service.dart';
 import '../services/theme_service.dart';
+import '../widgets/app_confirm_dialog.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:io';
 import '../models/search_result.dart';
@@ -790,72 +791,49 @@ class _DownloadScreenState extends State<DownloadScreen>
     }
   }
 
-  IconData _getActionIcon(DownloadTask task) {
-    if (task.status == DownloadStatus.downloading)
-      return Icons.pause_circle_outline;
-    if (task.status == DownloadStatus.completed)
-      return Icons.play_circle_outline;
-    return Icons.play_circle_outline;
-  }
-
   void _confirmDelete(BuildContext context, DownloadTask task) {
-    showDialog(
+    showAppConfirmDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('删除任务'),
-        content:
-            Text('确定要删除 "${task.title} - ${task.subtitle}" 吗？\n文件也将从本地删除。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () async {
-              final downloadService = context.read<DownloadService>();
-              Navigator.pop(ctx);
-              await downloadService.deleteTask(task.id);
-              await _deleteLocalPlayRecordByTask(task);
-            },
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+      title: '删除任务',
+      message: '确定要删除 "${task.title} - ${task.subtitle}" 吗？\n文件也将从本地删除。',
+      confirmLabel: '删除',
+      cancelLabel: '取消',
+      icon: Icons.delete_outline,
+      onConfirm: () async {
+        final downloadService = context.read<DownloadService>();
+        await downloadService.deleteTask(task.id);
+        await _deleteLocalPlayRecordByTask(task);
+      },
     );
   }
 
   void _confirmBatchDelete(BuildContext context) {
-    showDialog(
+    showAppConfirmDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('批量删除'),
-        content: Text('确定要删除选中的 ${_selectedIds.length} 个任务吗？\n文件也将从本地删除。'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          TextButton(
-            onPressed: () async {
-              final downloadService = context.read<DownloadService>();
-              final selectedTasks = downloadService.tasks
-                  .where((task) => _selectedIds.contains(task.id))
-                  .where((task) => _currentTabIndex == 0
-                      ? task.status != DownloadStatus.completed
-                      : task.status == DownloadStatus.completed)
-                  .toList();
-              Navigator.pop(ctx);
+      title: '批量删除',
+      message: '确定要删除选中的 ${_selectedIds.length} 个任务吗？\n文件也将从本地删除。',
+      confirmLabel: '全部删除',
+      cancelLabel: '取消',
+      icon: Icons.delete_outline,
+      onConfirm: () async {
+        final downloadService = context.read<DownloadService>();
+        final selectedTasks = downloadService.tasks
+            .where((task) => _selectedIds.contains(task.id))
+            .where((task) => _currentTabIndex == 0
+                ? task.status != DownloadStatus.completed
+                : task.status == DownloadStatus.completed)
+            .toList();
 
-              for (final task in selectedTasks) {
-                await downloadService.deleteTask(task.id);
-                await _deleteLocalPlayRecordByTask(task);
-              }
-              if (!mounted) return;
-              setState(() {
-                _isEditing = false;
-                _selectedIds.clear();
-              });
-            },
-            child: const Text('全部删除', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
+        for (final task in selectedTasks) {
+          await downloadService.deleteTask(task.id);
+          await _deleteLocalPlayRecordByTask(task);
+        }
+        if (!mounted) return;
+        setState(() {
+          _isEditing = false;
+          _selectedIds.clear();
+        });
+      },
     );
   }
 }
