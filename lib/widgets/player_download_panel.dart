@@ -5,7 +5,204 @@ import '../models/download_task.dart';
 import '../services/download_service.dart';
 import 'package:provider/provider.dart';
 import '../screens/download_screen.dart';
+import 'app_confirm_dialog.dart';
 import '../utils/device_utils.dart';
+
+const double _compactChildAspectRatioPC = 2.0;
+const double _compactChildAspectRatioDefault = 3.2;
+const double _normalChildAspectRatio = 2.0;
+const double _maxEpisodeGridCardWidth = 150.0;
+const double _episodeGridSpacing = 8.0;
+const double _episodeGridHorizontalPadding = 24.0;
+const double _tabletEpisodeMinWidth = 168.0;
+const double _tabletEpisodeMaxWidth = 220.0;
+const double _tabletEpisodeMinHeight = 80.0;
+const double _tabletEpisodeMaxHeight = 96.0;
+const EdgeInsets _defaultEpisodeTitlePadding =
+    EdgeInsets.symmetric(horizontal: 4);
+const EdgeInsets _tabletEpisodeTitlePadding =
+    EdgeInsets.symmetric(horizontal: 10, vertical: 8);
+const TextStyle _episodeTitleMeasureStyle =
+    TextStyle(fontSize: 13, height: 1.22);
+
+@immutable
+class PlayerDownloadGridLayout {
+  const PlayerDownloadGridLayout({
+    required this.crossAxisCount,
+    required this.titleMaxLines,
+    required this.titlePadding,
+    this.childAspectRatio,
+    this.mainAxisExtent,
+  });
+
+  final int crossAxisCount;
+  final double? childAspectRatio;
+  final double? mainAxisExtent;
+  final int titleMaxLines;
+  final EdgeInsets titlePadding;
+
+  bool get usesMainAxisExtent => mainAxisExtent != null;
+}
+
+@visibleForTesting
+PlayerDownloadGridLayout resolvePlayerDownloadGridLayout({
+  required double gridWidth,
+  required bool isTablet,
+  required bool isPC,
+  required bool isCompact,
+  required List<String> titles,
+  required TextDirection textDirection,
+}) {
+  final defaultCrossAxisCount = _resolveDefaultEpisodeGridCrossAxisCount(
+    gridWidth,
+    isCompact: isCompact,
+  );
+  final defaultChildAspectRatio = isCompact
+      ? (isPC ? _compactChildAspectRatioPC : _compactChildAspectRatioDefault)
+      : _normalChildAspectRatio;
+
+  if (!(isCompact && isTablet && !isPC)) {
+    return PlayerDownloadGridLayout(
+      crossAxisCount: defaultCrossAxisCount,
+      childAspectRatio: defaultChildAspectRatio,
+      titleMaxLines: 2,
+      titlePadding: _defaultEpisodeTitlePadding,
+    );
+  }
+
+  final usableWidth = math.max(0.0, gridWidth - _episodeGridHorizontalPadding);
+  if (usableWidth <= 0) {
+    return PlayerDownloadGridLayout(
+      crossAxisCount: defaultCrossAxisCount,
+      childAspectRatio: defaultChildAspectRatio,
+      titleMaxLines: 2,
+      titlePadding: _defaultEpisodeTitlePadding,
+    );
+  }
+
+  final safeTitles = titles
+      .map((title) => title.trim())
+      .where((title) => title.isNotEmpty)
+      .toList(growable: false);
+
+  final requiredContentWidth = safeTitles.fold<double>(
+    0.0,
+    (current, title) {
+      final measuredWidth = _measureRequiredEpisodeTitleWidthForLines(
+        title,
+        textDirection: textDirection,
+        maxLines: 3,
+      );
+      return math.max(current, measuredWidth);
+    },
+  );
+
+  final desiredCardWidth =
+      (requiredContentWidth + _tabletEpisodeTitlePadding.horizontal + 18)
+          .clamp(_tabletEpisodeMinWidth, _tabletEpisodeMaxWidth);
+  final minCrossAxisCount = usableWidth >= 360 ? 3 : 2;
+  final rawCrossAxisCount = ((usableWidth + _episodeGridSpacing) /
+          (desiredCardWidth + _episodeGridSpacing))
+      .floor();
+  final crossAxisCount = rawCrossAxisCount.clamp(minCrossAxisCount, 4).toInt();
+  final actualCardWidth =
+      (usableWidth - (crossAxisCount - 1) * _episodeGridSpacing) /
+          crossAxisCount;
+  final contentWidth = math.max(
+      48.0, actualCardWidth - _tabletEpisodeTitlePadding.horizontal - 18);
+
+  final maxTextHeight = safeTitles.fold<double>(
+    0.0,
+    (current, title) => math.max(
+      current,
+      _measureEpisodeTitleWrappedHeight(
+        title,
+        maxWidth: contentWidth,
+        textDirection: textDirection,
+        maxLines: 3,
+      ),
+    ),
+  );
+
+  final mainAxisExtent =
+      (maxTextHeight + _tabletEpisodeTitlePadding.vertical + 26)
+          .clamp(_tabletEpisodeMinHeight, _tabletEpisodeMaxHeight)
+          .toDouble();
+
+  return PlayerDownloadGridLayout(
+    crossAxisCount: crossAxisCount,
+    mainAxisExtent: mainAxisExtent,
+    titleMaxLines: 3,
+    titlePadding: _tabletEpisodeTitlePadding,
+  );
+}
+
+int _resolveDefaultEpisodeGridCrossAxisCount(
+  double gridWidth, {
+  required bool isCompact,
+}) {
+  final baseCount = isCompact ? 4 : 3;
+  final usableWidth = math.max(0.0, gridWidth - _episodeGridHorizontalPadding);
+  final dynamicCount = ((usableWidth + _episodeGridSpacing) /
+          (_maxEpisodeGridCardWidth + _episodeGridSpacing))
+      .floor();
+  return math.max(baseCount, math.max(1, dynamicCount));
+}
+
+double _measureRequiredEpisodeTitleWidthForLines(
+  String title, {
+  required TextDirection textDirection,
+  required int maxLines,
+}) {
+  double low = 36.0;
+  double high = _tabletEpisodeMaxWidth;
+
+  while (high - low > 1) {
+    final mid = (low + high) / 2;
+    if (_doesEpisodeTitleFitWithinLines(
+      title,
+      maxWidth: mid,
+      textDirection: textDirection,
+      maxLines: maxLines,
+    )) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+
+  return high;
+}
+
+double _measureEpisodeTitleWrappedHeight(
+  String title, {
+  required double maxWidth,
+  required TextDirection textDirection,
+  required int maxLines,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: title, style: _episodeTitleMeasureStyle),
+    textDirection: textDirection,
+    maxLines: maxLines,
+    ellipsis: '…',
+  )..layout(maxWidth: maxWidth);
+  return painter.height;
+}
+
+bool _doesEpisodeTitleFitWithinLines(
+  String title, {
+  required double maxWidth,
+  required TextDirection textDirection,
+  required int maxLines,
+}) {
+  final painter = TextPainter(
+    text: TextSpan(text: title, style: _episodeTitleMeasureStyle),
+    textDirection: textDirection,
+    maxLines: maxLines,
+    ellipsis: '…',
+  )..layout(maxWidth: maxWidth);
+  return !painter.didExceedMaxLines;
+}
 
 class PlayerDownloadPanel extends StatefulWidget {
   final ThemeData theme;
@@ -33,12 +230,6 @@ class PlayerDownloadPanel extends StatefulWidget {
 
 class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
     with SingleTickerProviderStateMixin {
-  // PC 端紧凑模式下，3.2 会导致卡片过矮，这里单独调大高度
-  static const double _compactChildAspectRatioPC = 2.0;
-  static const double _compactChildAspectRatioDefault = 3.2;
-  static const double _normalChildAspectRatio = 2.0;
-  static const double _maxEpisodeGridCardWidth = 150.0;
-
   final Set<int> _selectedIndices = {};
   int _selectedGroupIndex = 0;
   late AnimationController _animController;
@@ -80,8 +271,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
   // 💡 定位到当前激活的分组
   void _scrollToActiveGroup() {
-    if (!_groupScrollController.hasClients || widget.episodes.length <= 50)
+    if (!_groupScrollController.hasClients || widget.episodes.length <= 50) {
       return;
+    }
 
     // 估算每个 ChoiceChip 的平均宽度（Label + Padding）约 85px
     const double approxItemWidth = 85.0;
@@ -113,7 +305,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   void _scrollToCurrent() {
     if (widget.currentEpisodeIndex == null ||
         _gridKey.currentContext == null ||
-        !_scrollController.hasClients) return;
+        !_scrollController.hasClients) {
+      return;
+    }
 
     // 检查当前播放集是否在当前显示的分组内
     final startOfGroup = _selectedGroupIndex * 50;
@@ -129,25 +323,29 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
     final RenderBox gridBox =
         _gridKey.currentContext!.findRenderObject() as RenderBox;
-    final crossAxisCount =
-        _resolveEpisodeGridCrossAxisCount(gridBox.size.width);
-    final mainAxisSpacing = 8.0;
-    final crossAxisSpacing = 8.0;
-    final horizontalPadding = 24.0;
-    final childAspectRatio = widget.isCompact
-        ? (DeviceUtils.isPC()
-            ? _compactChildAspectRatioPC
-            : _compactChildAspectRatioDefault)
-        : _normalChildAspectRatio;
+    final gridLayout = resolvePlayerDownloadGridLayout(
+      gridWidth: gridBox.size.width,
+      isTablet: DeviceUtils.isTablet(context),
+      isPC: DeviceUtils.isPC(),
+      isCompact: widget.isCompact,
+      titles: _visibleEpisodeTitles(),
+      textDirection:
+          Directionality.maybeOf(_gridKey.currentContext!) ?? TextDirection.ltr,
+    );
+    const mainAxisSpacing = _episodeGridSpacing;
+    const crossAxisSpacing = _episodeGridSpacing;
+    const horizontalPadding = _episodeGridHorizontalPadding;
 
     // 计算宽度和高度（需要减去横向 padding 24，因为左右各 12）
     final itemWidth = (gridBox.size.width -
             horizontalPadding -
-            (crossAxisCount - 1) * crossAxisSpacing) /
-        crossAxisCount;
-    final itemHeight = itemWidth / childAspectRatio;
+            (gridLayout.crossAxisCount - 1) * crossAxisSpacing) /
+        gridLayout.crossAxisCount;
+    final itemHeight = gridLayout.usesMainAxisExtent
+        ? gridLayout.mainAxisExtent!
+        : itemWidth / gridLayout.childAspectRatio!;
 
-    final row = (physicalIndexInGrid / crossAxisCount).floor();
+    final row = (physicalIndexInGrid / gridLayout.crossAxisCount).floor();
     final offset = row * (itemHeight + mainAxisSpacing);
 
     _scrollController.animateTo(
@@ -157,15 +355,22 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
     );
   }
 
-  int _resolveEpisodeGridCrossAxisCount(double gridWidth) {
-    final baseCount = widget.isCompact ? 4 : 3;
-    const spacing = 8.0;
-    const horizontalPadding = 24.0;
-    final usableWidth = math.max(0.0, gridWidth - horizontalPadding);
-    final dynamicCount =
-        ((usableWidth + spacing) / (_maxEpisodeGridCardWidth + spacing))
-            .floor();
-    return math.max(baseCount, math.max(1, dynamicCount));
+  String _episodeTitleAt(int index) {
+    if (widget.episodesTitles.isNotEmpty &&
+        index >= 0 &&
+        index < widget.episodesTitles.length) {
+      return widget.episodesTitles[index];
+    }
+    return '第${index + 1}集';
+  }
+
+  List<String> _visibleEpisodeTitles() {
+    final startIndex = _isGrouped ? _groupStartIndex : 0;
+    final endIndex = _isGrouped ? _groupEndIndex : widget.episodes.length;
+    return List<String>.generate(
+      endIndex - startIndex,
+      (offset) => _episodeTitleAt(startIndex + offset),
+    );
   }
 
   Widget _buildDownloadingAnimation() {
@@ -272,7 +477,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
         subtitle = '第${index + 1}集';
       }
 
-      final taskId = "${widget.title}_${subtitle}".hashCode.toString();
+      final taskId = '${widget.title}_$subtitle'.hashCode.toString();
       final savePath = "${appDir.path}/downloads/${widget.title}/$subtitle";
 
       final task = DownloadTask(
@@ -438,29 +643,36 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final crossAxisCount =
-                    _resolveEpisodeGridCrossAxisCount(constraints.maxWidth);
-                final childAspectRatio = widget.isCompact
-                    ? (DeviceUtils.isPC()
-                        ? _compactChildAspectRatioPC
-                        : _compactChildAspectRatioDefault)
-                    : _normalChildAspectRatio;
+                final gridLayout = resolvePlayerDownloadGridLayout(
+                  gridWidth: constraints.maxWidth,
+                  isTablet: DeviceUtils.isTablet(context),
+                  isPC: DeviceUtils.isPC(),
+                  isCompact: widget.isCompact,
+                  titles: _visibleEpisodeTitles(),
+                  textDirection: Directionality.of(context),
+                );
+                final gridDelegate = gridLayout.usesMainAxisExtent
+                    ? SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: gridLayout.crossAxisCount,
+                        crossAxisSpacing: _episodeGridSpacing,
+                        mainAxisSpacing: _episodeGridSpacing,
+                        mainAxisExtent: gridLayout.mainAxisExtent,
+                      )
+                    : SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: gridLayout.crossAxisCount,
+                        crossAxisSpacing: _episodeGridSpacing,
+                        mainAxisSpacing: _episodeGridSpacing,
+                        childAspectRatio: gridLayout.childAspectRatio!,
+                      );
 
                 return GridView.builder(
                   key: _gridKey,
                   controller: _scrollController,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                    childAspectRatio: childAspectRatio,
-                  ),
-                  itemCount: (widget.episodes.length > 50)
-                      ? (((_selectedGroupIndex + 1) * 50)
-                              .clamp(0, widget.episodes.length) -
-                          (_selectedGroupIndex * 50))
+                  gridDelegate: gridDelegate,
+                  itemCount: _isGrouped
+                      ? (_groupEndIndex - _groupStartIndex)
                       : widget.episodes.length,
                   itemBuilder: (context, index) {
                     final actualIndex = (widget.episodes.length > 50)
@@ -473,13 +685,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                     final isCurrentPlaying =
                         actualIndex == widget.currentEpisodeIndex;
 
-                    String title = '';
-                    if (widget.episodesTitles.isNotEmpty &&
-                        actualIndex < widget.episodesTitles.length) {
-                      title = widget.episodesTitles[actualIndex];
-                    } else {
-                      title = '第${actualIndex + 1}集';
-                    }
+                    final title = _episodeTitleAt(actualIndex);
 
                     // 判断状态
 
@@ -517,57 +723,37 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                       onTap: () {
                         if (isDownloaded) {
                           // 已经下载完成：弹出删除确认
-                          showDialog(
+                          showAppConfirmDialog(
                             context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('删除缓存'),
-                              content: Text('确定要删除 "$title" 的本地缓存吗？'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('取消'),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _selectedIndices.remove(actualIndex);
-                                    });
-                                    downloadService.deleteTask(taskId);
-                                    Navigator.pop(ctx);
-                                  },
-                                  child: const Text('删除',
-                                      style: TextStyle(color: Colors.red)),
-                                ),
-                              ],
-                            ),
+                            title: '删除缓存',
+                            message: '确定要删除 "$title" 的本地缓存吗？',
+                            confirmLabel: '删除',
+                            cancelLabel: '取消',
+                            icon: Icons.delete_outline,
+                            onConfirm: () async {
+                              setState(() {
+                                _selectedIndices.remove(actualIndex);
+                              });
+                              await downloadService.deleteTask(taskId);
+                            },
                           );
                         } else if (isInQueue) {
                           // 正在下载或排队中：弹出取消下载确认
                           final int progress = (task.progress * 100).toInt();
 
-                          showDialog(
+                          showAppConfirmDialog(
                             context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('取消下载'),
-                              content: Text('该视频已下载 $progress%，是否取消下载？'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx),
-                                  child: const Text('继续下载'),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _selectedIndices.remove(actualIndex);
-                                    });
-                                    downloadService.deleteTask(taskId);
-                                    Navigator.pop(ctx);
-                                  },
-                                  child: const Text('取消下载',
-                                      style: TextStyle(color: Colors.red)),
-                                ),
-                              ],
-                            ),
+                            title: '取消下载',
+                            message: '该视频已下载 $progress%，是否取消下载？',
+                            confirmLabel: '取消下载',
+                            cancelLabel: '继续下载',
+                            icon: Icons.delete_outline,
+                            onConfirm: () async {
+                              setState(() {
+                                _selectedIndices.remove(actualIndex);
+                              });
+                              await downloadService.deleteTask(taskId);
+                            },
                           );
                         } else {
                           _toggleSelection(actualIndex);
@@ -599,8 +785,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                             ),
                             child: Center(
                               child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
+                                padding: gridLayout.titlePadding,
                                 child: Text(
                                   title,
                                   style: TextStyle(
@@ -609,11 +794,14 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                                         ? Colors.green
                                         : textColor,
                                     fontSize: 13,
+                                    height: gridLayout.titleMaxLines > 2
+                                        ? 1.22
+                                        : null,
                                     fontWeight: isCurrentPlaying
                                         ? FontWeight.bold
                                         : FontWeight.normal,
                                   ),
-                                  maxLines: 2,
+                                  maxLines: gridLayout.titleMaxLines,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),

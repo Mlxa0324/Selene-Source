@@ -16,6 +16,7 @@ import '../widgets/search_results_grid.dart';
 import '../widgets/filter_options_selector.dart';
 import '../widgets/filter_pill_hover.dart';
 import '../widgets/main_layout.dart';
+import '../widgets/app_confirm_dialog.dart';
 import '../utils/font_utils.dart';
 import '../utils/device_utils.dart';
 import 'player_screen.dart';
@@ -38,7 +39,7 @@ class _SearchScreenState extends State<SearchScreen>
   final ScrollController _scrollController = ScrollController();
   String _searchQuery = '';
   List<String> _searchHistory = [];
-  List<SearchResult> _searchResults = [];
+  final List<SearchResult> _searchResults = [];
   bool _hasSearched = false;
   bool _hasReceivedStart = false; // 是否已收到start消息
   String? _searchError;
@@ -246,6 +247,7 @@ class _SearchScreenState extends State<SearchScreen>
       await PageCacheService().refreshSearchHistory(context);
 
       // 重新获取搜索历史数据
+      // ignore: use_build_context_synchronously
       final result = await PageCacheService().getSearchHistory(context);
       if (mounted) {
         setState(() {
@@ -298,119 +300,16 @@ class _SearchScreenState extends State<SearchScreen>
 
   /// 显示清空确认弹窗
   void _showClearConfirmation() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Consumer<ThemeService>(
-          builder: (context, themeService, child) {
-            return AlertDialog(
-              backgroundColor: themeService.isDarkMode
-                  ? const Color(0xFF1e1e1e)
-                  : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              contentPadding: const EdgeInsets.all(24),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 图标
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFe74c3c).withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.delete_outline,
-                      color: Color(0xFFe74c3c),
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // 标题
-                  Text(
-                    '清空搜索历史',
-                    style: FontUtils.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: themeService.isDarkMode
-                          ? const Color(0xFFffffff)
-                          : const Color(0xFF2c3e50),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // 描述
-                  Text(
-                    '确定要清空所有搜索历史吗？此操作无法撤销。',
-                    style: FontUtils.poppins(
-                      fontSize: 14,
-                      color: themeService.isDarkMode
-                          ? const Color(0xFFb0b0b0)
-                          : const Color(0xFF7f8c8d),
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  // 按钮
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            '取消',
-                            style: FontUtils.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: themeService.isDarkMode
-                                  ? const Color(0xFFb0b0b0)
-                                  : const Color(0xFF7f8c8d),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            _clearSearchHistory();
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFe74c3c),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            '清空',
-                            style: FontUtils.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    unawaited(
+      showAppConfirmDialog(
+        context: context,
+        title: '清空搜索历史',
+        message: '确定要清空所有搜索历史吗？此操作无法撤销。',
+        confirmLabel: '清空',
+        onConfirm: () async {
+          await _clearSearchHistory();
+        },
+      ),
     );
   }
 
@@ -737,8 +636,7 @@ class _SearchScreenState extends State<SearchScreen>
     final isHovered = _hoveredHistoryItem == history;
 
     return MouseRegion(
-      cursor:
-          DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
+      cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
       onEnter: DeviceUtils.isPC()
           ? (_) {
               setState(() {
@@ -934,10 +832,10 @@ class _SearchScreenState extends State<SearchScreen>
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFe74c3c).withOpacity(0.1),
+        color: const Color(0xFFe74c3c).withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFFe74c3c).withOpacity(0.3),
+          color: const Color(0xFFe74c3c).withValues(alpha: 0.3),
           width: 1,
         ),
       ),
