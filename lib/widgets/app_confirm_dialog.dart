@@ -13,7 +13,6 @@ class AppConfirmDialog extends StatelessWidget {
     this.cancelLabel = '取消',
     this.icon = Icons.delete_outline,
     this.isDanger = true,
-    this.onConfirm,
   });
 
   final String title;
@@ -22,7 +21,6 @@ class AppConfirmDialog extends StatelessWidget {
   final String cancelLabel;
   final IconData icon;
   final bool isDanger;
-  final VoidCallback? onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -109,8 +107,7 @@ class AppConfirmDialog extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed:
-                          onConfirm ?? () => Navigator.of(context).pop(true),
+                      onPressed: () => Navigator.of(context).pop(true),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isDanger
                             ? dangerColor
@@ -153,7 +150,7 @@ Future<void> showAppConfirmDialog({
 }) async {
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (dialogContext) {
+    builder: (_) {
       return AppConfirmDialog(
         title: title,
         message: message,
@@ -161,9 +158,6 @@ Future<void> showAppConfirmDialog({
         cancelLabel: cancelLabel,
         icon: icon,
         isDanger: isDanger,
-        onConfirm: () {
-          Navigator.of(dialogContext).pop(true);
-        },
       );
     },
   );
