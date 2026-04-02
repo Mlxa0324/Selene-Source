@@ -12,6 +12,7 @@ import '../config/player_backend_config.dart';
 import '../models/search_result.dart';
 import '../models/danmaku_model.dart';
 import '../services/android_media_session_bridge.dart';
+import '../utils/android_pip_webview_handoff_policy.dart';
 import '../utils/mobile_playback_lifecycle_policy.dart';
 import 'mobile_player_controls.dart';
 import 'pc_player_controls.dart';
@@ -150,6 +151,68 @@ class VideoPlayerWidget extends StatefulWidget {
     this.onSeek,
   });
 
+  @visibleForTesting
+  static bool debugShouldArmAndroidPipWebViewHandoff({
+    required bool isAndroid,
+    required bool screenOffPlaybackEnabled,
+    required bool usesWebViewAdapter,
+    required bool isLocal,
+    required bool canUseNativeBackgroundPlayback,
+    required bool backgroundPlaybackActive,
+    required bool pipNativeTransitioning,
+  }) {
+    return AndroidPipWebViewHandoffPolicy.shouldArmForPip(
+      isAndroid: isAndroid,
+      screenOffPlaybackEnabled: screenOffPlaybackEnabled,
+      usesWebViewAdapter: usesWebViewAdapter,
+      isLocal: isLocal,
+      canUseNativeBackgroundPlayback: canUseNativeBackgroundPlayback,
+      backgroundPlaybackActive: backgroundPlaybackActive,
+      pipNativeTransitioning: pipNativeTransitioning,
+    );
+  }
+
+  @visibleForTesting
+  static bool debugShouldPrepareNativePlaybackForAndroidPip({
+    required bool isAndroid,
+    required bool shouldArmForPip,
+  }) {
+    return AndroidPipWebViewHandoffPolicy.shouldPrepareNativePlaybackForPip(
+      isAndroid: isAndroid,
+      shouldArmForPip: shouldArmForPip,
+    );
+  }
+
+  @visibleForTesting
+  static bool debugShouldScheduleAndroidPipBackgroundHandoff({
+    required AppLifecycleState state,
+    required bool isAndroid,
+    required bool isPipMode,
+    required bool handoffArmed,
+  }) {
+    return AndroidPipWebViewHandoffPolicy.shouldStartBackgroundHandoffTimer(
+      state: state,
+      isAndroid: isAndroid,
+      isPipMode: isPipMode,
+      handoffArmed: handoffArmed,
+    );
+  }
+
+  @visibleForTesting
+  static bool debugShouldCancelAndroidPipBackgroundHandoff({
+    required AppLifecycleState state,
+    required bool isAndroid,
+    required bool isPipMode,
+    required bool handoffArmed,
+  }) {
+    return AndroidPipWebViewHandoffPolicy.shouldCancelBackgroundHandoff(
+      state: state,
+      isAndroid: isAndroid,
+      isPipMode: isPipMode,
+      handoffArmed: handoffArmed,
+    );
+  }
+
   @override
   State<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
 }
@@ -239,6 +302,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   static const Duration _shortDramaPipPreStartDelay =
       Duration(milliseconds: 180);
   static const Duration _pipRetryDelay = Duration(milliseconds: 360);
+  static const Duration _androidPipBackgroundHandoffDelay =
+      Duration(seconds: 1);
   static const MethodChannel _pipControlChannel =
       MethodChannel('org.moontechlab.selene/pip_controls');
   static const MethodChannel _androidMediaSessionControlChannel =
@@ -271,12 +336,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _androidBackgroundPlaybackActive = false;
   bool _androidBackgroundPlaybackTransitioning = false;
   bool _androidPipNativeTransitioning = false;
+  bool _androidPipBackgroundHandoffArmed = false;
   bool _shouldRestoreWebViewAfterAndroidPip = false;
   bool _pendingIosForegroundResume = false;
   bool _pausePlaybackOnceAdapterReady = false;
   Duration _pendingIosForegroundResumePosition = Duration.zero;
   int _iosForegroundResumeAttemptToken = 0;
   Timer? _pendingAndroidBackgroundPlaybackTimer;
+  Timer? _pendingAndroidPipBackgroundHandoffTimer;
+  AppLifecycleState _lastLifecycleState = AppLifecycleState.resumed;
   final GlobalKey _videoRenderAreaKey = GlobalKey();
   late PageController _shortDramaPageController;
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
@@ -315,6 +383,20 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         !widget.isLocal &&
         _currentUrl != null &&
         _canUseMediaKitForUrl(_currentUrl);
+  }
+
+  bool get _usesWebViewAdapter => _adapter is WebViewPlayerAdapter;
+
+  bool get _canUseAndroidPipWebViewBackgroundHandoff {
+    return AndroidPipWebViewHandoffPolicy.shouldArmForPip(
+      isAndroid: Platform.isAndroid,
+      screenOffPlaybackEnabled: widget.screenOffPlaybackEnabled,
+      usesWebViewAdapter: _usesWebViewAdapter,
+      isLocal: widget.isLocal,
+      canUseNativeBackgroundPlayback: _canUseMediaKitForUrl(_currentUrl),
+      backgroundPlaybackActive: _androidBackgroundPlaybackActive,
+      pipNativeTransitioning: _androidPipNativeTransitioning,
+    );
   }
 
   bool get _shouldUseMacOSMediaKit {
@@ -731,6 +813,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   Future<void> _startAndroidBackgroundPlayback({
     required String reason,
+    bool allowWhilePipMode = false,
   }) async {
     _pendingAndroidBackgroundPlaybackTimer?.cancel();
     _pendingAndroidBackgroundPlaybackTimer = null;
@@ -738,7 +821,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _androidBackgroundPlaybackActive ||
         _androidBackgroundPlaybackTransitioning ||
         _androidPipNativeTransitioning ||
-        _isPipMode) {
+        (_isPipMode && !allowWhilePipMode)) {
       return;
     }
     final adapter = _adapter;
@@ -762,6 +845,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         return;
       }
       _androidBackgroundPlaybackActive = true;
+      _androidPipBackgroundHandoffArmed = false;
       _lastAndroidMediaSessionSignature = null;
       debugPrint(
         '[BackgroundPlayback] 已切到 Android 后台音频: reason=$reason, position=${resumePosition.inMilliseconds}, resume=$shouldResumePlayback',
@@ -795,6 +879,63 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _startAndroidBackgroundPlayback(reason: '${reason}_delayed'),
         );
       },
+    );
+  }
+
+  void _cancelAndroidPipBackgroundHandoff({
+    required String reason,
+    bool clearArm = false,
+  }) {
+    if (_pendingAndroidPipBackgroundHandoffTimer != null) {
+      debugPrint('[PiP] Android 后台接管已取消: reason=$reason');
+    }
+    _pendingAndroidPipBackgroundHandoffTimer?.cancel();
+    _pendingAndroidPipBackgroundHandoffTimer = null;
+    if (clearArm) {
+      _androidPipBackgroundHandoffArmed = false;
+    }
+  }
+
+  void _scheduleAndroidPipBackgroundHandoff({
+    required String reason,
+  }) {
+    _pendingAndroidPipBackgroundHandoffTimer?.cancel();
+    if (!_androidPipBackgroundHandoffArmed ||
+        !_isPipMode ||
+        !_canUseAndroidPipWebViewBackgroundHandoff) {
+      return;
+    }
+    debugPrint('[PiP] Android 后台接管计时开始: state=$reason');
+    _pendingAndroidPipBackgroundHandoffTimer = Timer(
+      _androidPipBackgroundHandoffDelay,
+      () {
+        _pendingAndroidPipBackgroundHandoffTimer = null;
+        unawaited(
+          _executeAndroidPipBackgroundHandoff(reason: '${reason}_handoff'),
+        );
+      },
+    );
+  }
+
+  Future<void> _executeAndroidPipBackgroundHandoff({
+    required String reason,
+  }) async {
+    final shouldExecute =
+        AndroidPipWebViewHandoffPolicy.shouldExecuteBackgroundHandoff(
+      mounted: mounted,
+      isPipMode: _isPipMode,
+      handoffArmed: _androidPipBackgroundHandoffArmed,
+      canUseHandoff: _canUseAndroidPipWebViewBackgroundHandoff,
+      lastLifecycleState: _lastLifecycleState,
+    );
+    if (!shouldExecute) {
+      return;
+    }
+    _cancelAndroidPipBackgroundHandoff(reason: reason, clearArm: true);
+    debugPrint('[PiP] Android WebView 离开可见阶段超过 1s，开始切到后台原生播放');
+    await _startAndroidBackgroundPlayback(
+      reason: reason,
+      allowWhilePipMode: true,
     );
   }
 
@@ -1356,6 +1497,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (_playerDisposed) {
       return;
     }
+    _cancelAndroidPipBackgroundHandoff(
+      reason: 'update_data_source',
+      clearArm: true,
+    );
     _currentUrl = url;
     if (headers != null) {
       _currentHeaders = headers;
@@ -1574,6 +1719,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
               _pendingAndroidBackgroundPlaybackTimer = null;
               _safeSetState(() => _isPipMode = true);
               widget.onPipModeChanged?.call(true);
+              if (_androidPipBackgroundHandoffArmed) {
+                debugPrint('[PiP] Android PiP 仍可见，跳过后台接管计时');
+              }
               unawaited(
                 _syncAndroidMediaSession(
                   reason: 'pip_state_started',
@@ -1585,6 +1733,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           case PipState.pipStateStopped:
             debugPrint('PiP stopped');
             if (mounted) {
+              _cancelAndroidPipBackgroundHandoff(
+                reason: 'pip_state_stopped',
+                clearArm: true,
+              );
               _safeSetState(() {
                 _isPipMode = false;
               });
@@ -1603,6 +1755,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           case PipState.pipStateFailed:
             debugPrint('PiP failed: $error');
             if (mounted) {
+              _cancelAndroidPipBackgroundHandoff(
+                reason: 'pip_state_failed',
+                clearArm: true,
+              );
               _safeSetState(() => _isPipMode = false);
               widget.onPipModeChanged?.call(false);
             }
@@ -1636,7 +1792,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       }
 
       if (Platform.isAndroid) {
-        await _prepareAndroidNativePlaybackForPip();
+        final shouldArmForPip = _canUseAndroidPipWebViewBackgroundHandoff;
+        if (AndroidPipWebViewHandoffPolicy.shouldPrepareNativePlaybackForPip(
+          isAndroid: Platform.isAndroid,
+          shouldArmForPip: shouldArmForPip,
+        )) {
+          await _prepareAndroidNativePlaybackForPip();
+        } else if (shouldArmForPip) {
+          _androidPipBackgroundHandoffArmed = true;
+          debugPrint('[PiP] Android WebView 进入 PiP，延迟后台接管已启用');
+        }
       }
 
       await _setupPip();
@@ -1692,6 +1857,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _playerDisposed = true;
     _pendingAndroidBackgroundPlaybackTimer?.cancel();
     _pendingAndroidBackgroundPlaybackTimer = null;
+    _cancelAndroidPipBackgroundHandoff(reason: 'dispose', clearArm: true);
     _iosForegroundResumeAttemptToken++;
     _clearIosForegroundResumeIntent();
 
@@ -1711,10 +1877,37 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    _lastLifecycleState = state;
     if (_adapter == null) {
       return;
     }
     _rememberIosForegroundResumeIfNeeded(state);
+
+    final shouldCancelAndroidPipHandoff =
+        AndroidPipWebViewHandoffPolicy.shouldCancelBackgroundHandoff(
+      state: state,
+      isAndroid: Platform.isAndroid,
+      isPipMode: _isPipMode,
+      handoffArmed: _androidPipBackgroundHandoffArmed,
+    );
+    if (shouldCancelAndroidPipHandoff) {
+      _cancelAndroidPipBackgroundHandoff(
+        reason: state.name,
+        clearArm: !_isPipMode || state == AppLifecycleState.detached,
+      );
+    }
+
+    final shouldScheduleAndroidPipHandoff =
+        AndroidPipWebViewHandoffPolicy.shouldStartBackgroundHandoffTimer(
+      state: state,
+      isAndroid: Platform.isAndroid,
+      isPipMode: _isPipMode,
+      handoffArmed: _androidPipBackgroundHandoffArmed,
+    );
+    if (shouldScheduleAndroidPipHandoff) {
+      _scheduleAndroidPipBackgroundHandoff(reason: state.name);
+      return;
+    }
 
     final androidAction =
         MobilePlaybackLifecyclePolicy.resolveAndroidBackgroundPlaybackAction(
@@ -1751,6 +1944,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
 
     if (state == AppLifecycleState.detached) {
+      _cancelAndroidPipBackgroundHandoff(
+        reason: state.name,
+        clearArm: true,
+      );
       _iosForegroundResumeAttemptToken++;
       _clearIosForegroundResumeIntent();
     }
