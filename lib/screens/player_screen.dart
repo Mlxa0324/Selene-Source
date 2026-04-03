@@ -246,6 +246,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _hideCenterControlsWithBars = true; // 中间按钮是否跟随顶部/底部一起隐藏
   bool _adFilterEnabled = false; // 是否开启自动去广告
+  bool _screenOffPlaybackEnabled = false; // Android 息屏播放偏好
   bool _mediaKitPreloadEnabled = Platform.isMacOS;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
@@ -487,6 +488,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final hideCenterControlsWithBars =
         await UserDataService.getHideCenterControlsWithBars();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final screenOffPlaybackEnabled =
+        await UserDataService.getScreenOffPlaybackEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
       defaultValue: Platform.isMacOS,
@@ -502,6 +505,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _showSystemTime = showSystemTime;
         _hideCenterControlsWithBars = hideCenterControlsWithBars;
         _adFilterEnabled = adFilterEnabled;
+        _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
       });
     }
@@ -3398,6 +3402,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             hasActiveSleepTimer: _sleepTimerDeadline != null,
             mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
+            screenOffPlaybackEnabled: _screenOffPlaybackEnabled,
             danmakuLayer: _danmakuSettings.enabled && !_isClosing
                 ? IgnorePointer(
                     child: LayoutBuilder(builder: (context, constraints) {

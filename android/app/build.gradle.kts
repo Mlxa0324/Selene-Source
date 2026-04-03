@@ -75,6 +75,12 @@ android {
     }
 }
 
+dependencies {
+    implementation("androidx.media:media:1.7.0")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+}
+
 flutter {
     source = "../.."
 }

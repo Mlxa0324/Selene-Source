@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -46,6 +47,7 @@ class _UserMenuState extends State<UserMenu> {
   bool _localSearch = false;
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
+  bool _screenOffPlaybackEnabled = false;
   bool _mediaKitPreloadEnabled = true;
   bool _showLive = false;
   bool _showSourceBrowser = false;
@@ -83,6 +85,8 @@ class _UserMenuState extends State<UserMenu> {
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final screenOffPlaybackEnabled =
+        await UserDataService.getScreenOffPlaybackEnabled();
     final mediaKitPreloadEnabled =
         await UserDataService.getMediaKitPreloadEnabled(
       defaultValue: true,
@@ -104,6 +108,7 @@ class _UserMenuState extends State<UserMenu> {
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
+        _screenOffPlaybackEnabled = screenOffPlaybackEnabled;
         _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
         _showLive = showLive;
         _showSourceBrowser = showSourceBrowser;
@@ -1048,6 +1053,7 @@ class _UserMenuState extends State<UserMenu> {
     required bool value,
     required Future<void> Function(bool) onChanged,
     required IconData icon,
+    String? subtitle,
   }) {
     return Material(
       color: Colors.transparent,
@@ -1067,15 +1073,33 @@ class _UserMenuState extends State<UserMenu> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                title,
-                style: FontUtils.poppins(
-                  fontSize: 16,
-                  color: widget.isDarkMode
-                      ? const Color(0xFFffffff)
-                      : const Color(0xFF1f2937),
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      color: widget.isDarkMode
+                          ? const Color(0xFFffffff)
+                          : const Color(0xFF1f2937),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: FontUtils.poppins(
+                        fontSize: 12,
+                        color: widget.isDarkMode
+                            ? const Color(0xFF9ca3af)
+                            : const Color(0xFF6b7280),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
             GestureDetector(
@@ -1593,6 +1617,17 @@ class _UserMenuState extends State<UserMenu> {
                   },
                   icon: LucideIcons.shieldCheck,
                 ),
+                if (Platform.isAndroid)
+                  _buildToggleOption(
+                    title: '息屏播放',
+                    subtitle: '前台保持网页播放，锁屏/后台后切到原生音频播放并启用系统媒体通知',
+                    value: _screenOffPlaybackEnabled,
+                    onChanged: (value) async {
+                      await UserDataService.saveScreenOffPlaybackEnabled(value);
+                      setState(() => _screenOffPlaybackEnabled = value);
+                    },
+                    icon: LucideIcons.moonStar,
+                  ),
                 if (DeviceUtils.isMacOS())
                   _buildToggleOption(
                     title: '预加载（media_kit）',

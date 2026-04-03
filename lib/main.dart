@@ -21,7 +21,12 @@ void main() async {
 
   // 按当前平台实际播放后端初始化 media_kit。
   // 现在 iOS 在线播放也允许通过代码开关切到 media_kit。
-  if (PlayerBackendConfig.shouldInitializeMediaKit) {
+  if (PlayerBackendConfig.shouldInitializeMediaKitForPlatform(
+    isWindows: Platform.isWindows,
+    isMacOS: Platform.isMacOS,
+    isAndroid: Platform.isAndroid,
+    isIOS: Platform.isIOS,
+  )) {
     try {
       MediaKit.ensureInitialized();
     } catch (e) {
@@ -136,7 +141,7 @@ class _AppWrapperState extends State<AppWrapper> {
         // 本地模式：尝试刷新订阅内容
         try {
           final subscriptionUrl =
-          await LocalModeStorageService.getSubscriptionUrl();
+              await LocalModeStorageService.getSubscriptionUrl();
           if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
             // 💡 优化：增加 10 秒超时控制，防止因网络波动导致启动页永久卡死
             final response = await http
@@ -144,14 +149,16 @@ class _AppWrapperState extends State<AppWrapper> {
                 .timeout(const Duration(seconds: 10));
             if (response.statusCode == 200) {
               final content =
-              await SubscriptionService.parseSubscriptionContent(
-                  response.body);
+                  await SubscriptionService.parseSubscriptionContent(
+                      response.body);
               if (content != null) {
-                if (content.searchResources != null && content.searchResources!.isNotEmpty) {
+                if (content.searchResources != null &&
+                    content.searchResources!.isNotEmpty) {
                   await LocalModeStorageService.saveSearchSources(
                       content.searchResources!);
                 }
-                if (content.liveSources != null && content.liveSources!.isNotEmpty) {
+                if (content.liveSources != null &&
+                    content.liveSources!.isNotEmpty) {
                   await LocalModeStorageService.saveLiveSources(
                       content.liveSources!);
                 }
@@ -237,18 +244,18 @@ class _AppWrapperState extends State<AppWrapper> {
                 gradient: themeService.isDarkMode
                     ? null
                     : const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFe6f3fb),
-                    Color(0xFFeaf3f7),
-                    Color(0xFFf7f7f3),
-                    Color(0xFFe9ecef),
-                    Color(0xFFdbe3ea),
-                    Color(0xFFd3dde6),
-                  ],
-                  stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
-                ),
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0xFFe6f3fb),
+                          Color(0xFFeaf3f7),
+                          Color(0xFFf7f7f3),
+                          Color(0xFFe9ecef),
+                          Color(0xFFdbe3ea),
+                          Color(0xFFd3dde6),
+                        ],
+                        stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                      ),
               ),
               child: Center(
                 child: Column(
