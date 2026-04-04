@@ -2030,7 +2030,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
         return;
       }
-      _resetDanmakuIndex(position);
+      if (PlayerScreenDanmakuPolicy.shouldResetOnSeek(
+        reason: 'player_on_seek_async',
+      )) {
+        _resetDanmakuIndex(position);
+      }
     });
 
     final shouldRenderImmediately = _hasExplicitDanmakuState
