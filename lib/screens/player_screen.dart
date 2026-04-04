@@ -72,6 +72,13 @@ int findDanmakuSeekIndex(
   return low;
 }
 
+@visibleForTesting
+abstract final class PlayerScreenDanmakuPolicy {
+  static bool shouldRebaseOnPlay({required String reason}) {
+    return reason != 'player_on_play';
+  }
+}
+
 class PlayerScreen extends StatefulWidget {
   final String? source;
   final String? id;
@@ -3309,8 +3316,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             onVideoCompleted: _onVideoCompleted,
             onSeek: _handlePlayerSeek,
             onPlay: () {
-              _rebaseDanmakuCursorToCurrentPosition(
-                  reason: 'player_on_play', triggerNow: true);
+              if (PlayerScreenDanmakuPolicy.shouldRebaseOnPlay(
+                reason: 'player_on_play',
+              )) {
+                _rebaseDanmakuCursorToCurrentPosition(
+                    reason: 'player_on_play', triggerNow: true);
+              }
               _syncDanmakuPlaybackState(
                   reason: 'player_on_play', forcePlaying: true);
             },
