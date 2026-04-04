@@ -73,15 +73,10 @@ int findDanmakuSeekIndex(
 }
 
 @visibleForTesting
-abstract final class PlayerScreenDanmakuPolicy {
-  static bool shouldRebaseOnPlay({required String reason}) {
-    return reason != 'player_on_play';
-  }
+bool shouldRebaseDanmakuOnResume() => false;
 
-  static bool shouldResetOnSeek({required String reason}) {
-    return reason == 'player_on_seek_async';
-  }
-}
+@visibleForTesting
+bool shouldResetDanmakuOnSeek() => true;
 
 class PlayerScreen extends StatefulWidget {
   final String? source;
@@ -2030,9 +2025,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
         return;
       }
-      if (PlayerScreenDanmakuPolicy.shouldResetOnSeek(
-        reason: 'player_on_seek_async',
-      )) {
+      if (shouldResetDanmakuOnSeek()) {
         _resetDanmakuIndex(position);
       }
     });
@@ -3324,9 +3317,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             onVideoCompleted: _onVideoCompleted,
             onSeek: _handlePlayerSeek,
             onPlay: () {
-              if (PlayerScreenDanmakuPolicy.shouldRebaseOnPlay(
-                reason: 'player_on_play',
-              )) {
+              if (shouldRebaseDanmakuOnResume()) {
                 _rebaseDanmakuCursorToCurrentPosition(
                     reason: 'player_on_play', triggerNow: true);
               }
