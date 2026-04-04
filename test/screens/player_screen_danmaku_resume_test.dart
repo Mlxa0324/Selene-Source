@@ -12,14 +12,4 @@ void main() {
 
     expect(syncCalls, 1);
   });
-
-  test('seek still requires danmaku reset and clear', () {
-    var resetCalls = 0;
-
-    runDanmakuSeekReset(
-      reset: () => resetCalls++,
-    );
-
-    expect(resetCalls, 1);
-  });
 }

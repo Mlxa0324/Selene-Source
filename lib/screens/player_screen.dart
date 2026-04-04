@@ -80,10 +80,11 @@ void runDanmakuResumeCallbacks({
 }
 
 @visibleForTesting
-void runDanmakuSeekReset({
-  required void Function() reset,
+void runDanmakuSeekCallbacks({
+  required void Function() resetIndex,
+  required void Function() clearVisible,
 }) {
-  reset();
+  resetIndex();
 }
 
 class PlayerScreen extends StatefulWidget {
@@ -971,11 +972,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  /// 重置弹幕索引（用于 seek 操作）
-  void _resetDanmakuIndex(Duration position) {
+  void _updateDanmakuIndex(Duration position) {
     if (_danmakuList.isEmpty) return;
 
     _danmakuIndex = findDanmakuSeekIndex(_danmakuList, position);
+  }
+
+  /// 重置弹幕索引（用于 seek 操作）
+  void _resetDanmakuIndex(Duration position, {bool clearVisible = true}) {
+    _updateDanmakuIndex(position);
+    if (!clearVisible) return;
 
     // 清空当前显示的弹幕
     _runWithDanmakuController(
@@ -2033,8 +2039,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
         return;
       }
-      runDanmakuSeekReset(
-        reset: () => _resetDanmakuIndex(position),
+      runDanmakuSeekCallbacks(
+        resetIndex: () => _resetDanmakuIndex(position, clearVisible: false),
+        clearVisible: () {},
       );
     });
 

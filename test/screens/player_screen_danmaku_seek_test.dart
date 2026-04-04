@@ -41,6 +41,19 @@ void main() {
       4,
     );
   });
+
+  test('seek keeps visible danmaku while resetting index cursor', () {
+    var resetCalls = 0;
+    var clearCalls = 0;
+
+    runDanmakuSeekCallbacks(
+      resetIndex: () => resetCalls++,
+      clearVisible: () => clearCalls++,
+    );
+
+    expect(resetCalls, 1);
+    expect(clearCalls, 0);
+  });
 }
 
 DanmakuComment _comment(double seconds) {
