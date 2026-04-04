@@ -4,15 +4,12 @@ import 'package:selene/screens/player_screen.dart';
 
 void main() {
   test('normal play resume only syncs danmaku playback state', () {
-    var rebaseCalls = 0;
     var syncCalls = 0;
 
     runDanmakuResumeCallbacks(
-      rebase: () => rebaseCalls++,
       sync: () => syncCalls++,
     );
 
-    expect(rebaseCalls, 0);
     expect(syncCalls, 1);
   });
 

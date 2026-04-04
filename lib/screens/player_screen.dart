@@ -74,7 +74,6 @@ int findDanmakuSeekIndex(
 
 @visibleForTesting
 void runDanmakuResumeCallbacks({
-  required void Function() rebase,
   required void Function() sync,
 }) {
   sync();
@@ -3327,8 +3326,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             onSeek: _handlePlayerSeek,
             onPlay: () {
               runDanmakuResumeCallbacks(
-                rebase: () => _rebaseDanmakuCursorToCurrentPosition(
-                    reason: 'player_on_play', triggerNow: true),
                 sync: () => _syncDanmakuPlaybackState(
                     reason: 'player_on_play', forcePlaying: true),
               );
