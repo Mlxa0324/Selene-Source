@@ -73,10 +73,19 @@ int findDanmakuSeekIndex(
 }
 
 @visibleForTesting
-bool shouldRebaseDanmakuOnResume() => false;
+void runDanmakuResumeCallbacks({
+  required void Function() rebase,
+  required void Function() sync,
+}) {
+  sync();
+}
 
 @visibleForTesting
-bool shouldResetDanmakuOnSeek() => true;
+void runDanmakuSeekReset({
+  required void Function() reset,
+}) {
+  reset();
+}
 
 class PlayerScreen extends StatefulWidget {
   final String? source;
@@ -2025,9 +2034,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
         return;
       }
-      if (shouldResetDanmakuOnSeek()) {
-        _resetDanmakuIndex(position);
-      }
+      runDanmakuSeekReset(
+        reset: () => _resetDanmakuIndex(position),
+      );
     });
 
     final shouldRenderImmediately = _hasExplicitDanmakuState
@@ -3317,12 +3326,12 @@ class _PlayerScreenState extends State<PlayerScreen>
             onVideoCompleted: _onVideoCompleted,
             onSeek: _handlePlayerSeek,
             onPlay: () {
-              if (shouldRebaseDanmakuOnResume()) {
-                _rebaseDanmakuCursorToCurrentPosition(
-                    reason: 'player_on_play', triggerNow: true);
-              }
-              _syncDanmakuPlaybackState(
-                  reason: 'player_on_play', forcePlaying: true);
+              runDanmakuResumeCallbacks(
+                rebase: () => _rebaseDanmakuCursorToCurrentPosition(
+                    reason: 'player_on_play', triggerNow: true),
+                sync: () => _syncDanmakuPlaybackState(
+                    reason: 'player_on_play', forcePlaying: true),
+              );
             },
             onPause: () {
               // 暂停时保存进度
