@@ -11,4 +11,13 @@ void main() {
       isFalse,
     );
   });
+
+  test('seek still requires danmaku reset and clear', () {
+    expect(
+      PlayerScreenDanmakuPolicy.shouldResetOnSeek(
+        reason: 'player_on_seek_async',
+      ),
+      isTrue,
+    );
+  });
 }

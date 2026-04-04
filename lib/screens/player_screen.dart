@@ -77,6 +77,10 @@ abstract final class PlayerScreenDanmakuPolicy {
   static bool shouldRebaseOnPlay({required String reason}) {
     return reason != 'player_on_play';
   }
+
+  static bool shouldResetOnSeek({required String reason}) {
+    return reason == 'player_on_seek_async';
+  }
 }
 
 class PlayerScreen extends StatefulWidget {
