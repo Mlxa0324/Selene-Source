@@ -106,6 +106,43 @@ class DanmakuService {
     await prefs.setString(_manualMatchKey, jsonEncode(matches));
   }
 
+  /// 单独保存手动匹配时使用的搜索词
+  Future<void> saveManualMatchQuery(
+      String source, String id, int episodeIndex, String searchKeyword) async {
+    final cleanKeyword = searchKeyword.trim();
+    if (cleanKeyword.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
+    final key = _manualMatchStorageKey(source, id, episodeIndex);
+    final existingRecord = matches[key];
+
+    if (existingRecord is Map<String, dynamic>) {
+      matches[key] = {
+        ...existingRecord,
+        'searchKeyword': cleanKeyword,
+      };
+    } else if (existingRecord is Map) {
+      matches[key] = {
+        ...existingRecord.map(
+          (recordKey, value) => MapEntry(recordKey.toString(), value),
+        ),
+        'searchKeyword': cleanKeyword,
+      };
+    } else if (existingRecord is num) {
+      matches[key] = {
+        'episodeId': existingRecord.toInt(),
+        'searchKeyword': cleanKeyword,
+      };
+    } else {
+      matches[key] = {
+        'searchKeyword': cleanKeyword,
+      };
+    }
+
+    await prefs.setString(_manualMatchKey, jsonEncode(matches));
+  }
+
   /// 清除所有手动匹配记录
   Future<void> clearAllManualMatches() async {
     final prefs = await SharedPreferences.getInstance();

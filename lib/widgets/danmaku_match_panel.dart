@@ -11,6 +11,7 @@ class DanmakuMatchPanel extends StatefulWidget {
   final int? currentEpisodeId; // 当前选中的弹幕 ID
   final int? currentEpisodeCommentCount; // 当前选中弹幕的条数
   final Function(int episodeId, String searchKeyword) onEpisodeSelected;
+  final Future<void> Function(String query)? onSearchSubmitted;
   final Future<DanmakuSearchResult?> Function(String query)?
       searchEpisodesOverride;
   final double? backgroundOpacity;
@@ -24,6 +25,7 @@ class DanmakuMatchPanel extends StatefulWidget {
     this.currentEpisodeId,
     this.currentEpisodeCommentCount,
     required this.onEpisodeSelected,
+    this.onSearchSubmitted,
     this.searchEpisodesOverride,
     this.backgroundOpacity,
     this.borderRadiusOverride,
@@ -191,6 +193,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   Future<void> _onSearch() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) return;
+
+    await widget.onSearchSubmitted?.call(query);
 
     setState(() {
       _isLoading = true;

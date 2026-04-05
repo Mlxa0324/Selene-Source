@@ -50,4 +50,52 @@ void main() {
       isNull,
     );
   });
+
+  test('单独缓存搜索词时允许没有剧集ID', () async {
+    final service = DanmakuService();
+
+    await service.saveManualMatchQuery(
+      'test_source',
+      'video_2',
+      5,
+      '银魂',
+    );
+
+    expect(
+      await service.getManualMatch('test_source', 'video_2', 5),
+      isNull,
+    );
+    expect(
+      await service.getManualMatchQuery('test_source', 'video_2', 5),
+      '银魂',
+    );
+  });
+
+  test('单独缓存搜索词时保留已有剧集ID', () async {
+    final service = DanmakuService();
+
+    await service.saveManualMatch(
+      'test_source',
+      'video_3',
+      2,
+      114514,
+      searchKeyword: '旧关键词',
+    );
+
+    await service.saveManualMatchQuery(
+      'test_source',
+      'video_3',
+      2,
+      '新关键词',
+    );
+
+    expect(
+      await service.getManualMatch('test_source', 'video_3', 2),
+      114514,
+    );
+    expect(
+      await service.getManualMatchQuery('test_source', 'video_3', 2),
+      '新关键词',
+    );
+  });
 }

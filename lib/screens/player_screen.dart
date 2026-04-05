@@ -5028,6 +5028,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     return videoTitle;
   }
 
+  Future<void> _cacheManualDanmakuSearchQuery(String query) async {
+    if (currentSource.isEmpty || currentID.isEmpty) {
+      return;
+    }
+
+    await DanmakuService().saveManualMatchQuery(
+      currentSource,
+      currentID,
+      _getDanmakuMatchEpisodeIndex(),
+      query,
+    );
+  }
+
   Future<void> _loadDanmakuById(int episodeId, {String? searchKeyword}) async {
     setState(() => _isDanmakuLoading = true);
     try {
@@ -5105,6 +5118,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               initialQuery: initialQuery,
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
+              onSearchSubmitted: _cacheManualDanmakuSearchQuery,
               onEpisodeSelected: (episodeId, searchKeyword) {
                 Navigator.pop(context);
                 _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
@@ -5140,6 +5154,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     initialQuery: initialQuery,
                     currentEpisodeId: _currentDanmakuEpisodeId,
                     currentEpisodeCommentCount: _currentDanmakuCommentCount,
+                    onSearchSubmitted: _cacheManualDanmakuSearchQuery,
                     onEpisodeSelected: (episodeId, searchKeyword) {
                       Navigator.pop(dialogContext);
                       _loadDanmakuById(
@@ -5182,6 +5197,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               initialQuery: initialQuery,
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
+              onSearchSubmitted: _cacheManualDanmakuSearchQuery,
               onEpisodeSelected: (episodeId, searchKeyword) {
                 Navigator.pop(dialogContext);
                 _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
