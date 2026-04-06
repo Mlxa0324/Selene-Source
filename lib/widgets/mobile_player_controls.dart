@@ -13,6 +13,13 @@ import 'player_settings_panel.dart';
 import 'player_adapter.dart';
 import '../utils/device_utils.dart';
 
+const double _mobileProgressBarTouchHeight = 36;
+const double _mobileProgressBarTrackHeight = 6;
+const double _mobileProgressBarTrackBottomPadding = 9;
+const double _mobileProgressBarThumbSize = 16;
+const double _mobileProgressBarThumbBottomPadding = 4;
+const double _mobileProgressBarEdgeGuard = 4;
+
 @visibleForTesting
 bool shouldShowEpisodeSourceButtons({
   required bool isTabletOrDesktop,
@@ -137,9 +144,11 @@ class MobilePlayerControls extends StatefulWidget {
 }
 
 class _MobilePlayerControlsState extends State<MobilePlayerControls> {
+  static const Duration _dragPositionFallbackClearDelay = Duration(seconds: 5);
   final List<StreamSubscription> _subscriptions = [];
   final ValueNotifier<bool> _longPressingNotifier = ValueNotifier<bool>(false);
   Timer? _hideTimer;
+  Timer? _dragPositionCleanupTimer;
   bool _controlsVisible = true;
   bool _isLongPressing = false;
   double _originalPlaybackSpeed = 1.0;
@@ -294,6 +303,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         final diff = (pos.inMilliseconds - _dragPosition!.inMilliseconds).abs();
         // 如果实际进度跟跳转点的差距缩小到 1.2 秒内（留一点容错），说明跳转成功且视频已开始在该点播放
         if (diff < 1200) {
+          _cancelDragPositionCleanup();
           setState(() => _dragPosition = null);
         }
       }
@@ -321,6 +331,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     VolumeController.instance.removeListener();
 
     _hideTimer?.cancel();
+    _dragPositionCleanupTimer?.cancel();
     _batteryTimer?.cancel(); // 💡 清理电池计时器
     _volumeHideTimer?.cancel();
     _brightnessHideTimer?.cancel();
@@ -346,6 +357,24 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Duration get _position => widget.player.state.position;
 
   Duration get _duration => widget.player.state.duration;
+
+  void _cancelDragPositionCleanup() {
+    _dragPositionCleanupTimer?.cancel();
+    _dragPositionCleanupTimer = null;
+  }
+
+  void _scheduleDragPositionCleanup() {
+    _cancelDragPositionCleanup();
+    _dragPositionCleanupTimer = Timer(_dragPositionFallbackClearDelay, () {
+      if (mounted &&
+          _dragPosition != null &&
+          !_isSeekingViaSwipe &&
+          !_isDraggingProgressBar) {
+        setState(() => _dragPosition = null);
+      }
+      _dragPositionCleanupTimer = null;
+    });
+  }
 
   Future<void> _applyPlaybackSpeed(double speed) async {
     await widget.onSetSpeed(speed);
@@ -478,6 +507,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _swipeStartPosition = _position;
       _dragPosition = null;
     });
+    _cancelDragPositionCleanup();
     // 同步给父组件但不立即开启 timer，由 _onSwipeEnd 处理
     widget.onControlsVisibilityChanged(_controlsVisible);
     _hideTimer?.cancel();
@@ -508,6 +538,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       milliseconds:
           targetPosition.inMilliseconds.clamp(0, duration.inMilliseconds),
     );
+    _cancelDragPositionCleanup();
     setState(() => _dragPosition = clamped);
   }
 
@@ -524,16 +555,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _isSeekingViaSwipe = false;
       // 💡 优化：这里不再立即设为 null，由进度监听器同步后清除，或 2秒后强制清除
     });
-
-    // 保险机制：2秒后强制清除，防止因为进度同步失败导致进度条一直卡住
-    Future.delayed(const Duration(seconds: 5), () {
-      if (mounted &&
-          _dragPosition != null &&
-          !_isSeekingViaSwipe &&
-          !_isDraggingProgressBar) {
-        setState(() => _dragPosition = null);
-      }
-    });
+    _scheduleDragPositionCleanup();
 
     // 同步状态给父组件
     widget.onControlsVisibilityChanged(_controlsVisible);
@@ -674,9 +696,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }
 
     final target = Duration(milliseconds: clampedMs);
+    _cancelDragPositionCleanup();
     setState(() {
       _dragPosition = target;
     });
+    _scheduleDragPositionCleanup();
     await seekPlayerAndNotifyAsync(
       player: widget.player,
       position: target,
@@ -1481,12 +1505,13 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         child: IgnorePointer(
           ignoring: !_controlsVisible || _isLocked,
           child: Container(
-            height: 24,
+            height: _mobileProgressBarTouchHeight,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             child: _MobileVideoProgressBar(
               player: widget.player,
               live: widget.live,
               onDragStart: () {
+                _cancelDragPositionCleanup();
                 setState(() {
                   _isDraggingProgressBar = true;
                 });
@@ -1497,16 +1522,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                   _isDraggingProgressBar = false;
                   // 💡 优化：这里不再立即设为 null，由进度监听器同步后清除
                 });
-
-                // 保险机制：2秒后强制清除
-                Future.delayed(const Duration(seconds: 5), () {
-                  if (mounted &&
-                      _dragPosition != null &&
-                      !_isSeekingViaSwipe &&
-                      !_isDraggingProgressBar) {
-                    setState(() => _dragPosition = null);
-                  }
-                });
+                _scheduleDragPositionCleanup();
 
                 _startHideTimer();
               },
@@ -1514,6 +1530,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 _hideTimer?.cancel();
               },
               onPositionUpdate: (duration) {
+                _cancelDragPositionCleanup();
                 setState(() => _dragPosition = duration);
               },
               onSeek: widget.onSeek,
@@ -2150,8 +2167,10 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
           : (details) {
               // 💡 优化：横屏全屏时，如果触摸点在进度条容器的最顶部或最底部边缘（dy 极小或极大），
               // 说明可能是想滑出系统栏，此时忽略拖动起手。
-              if (details.localPosition.dy < 4 || details.localPosition.dy > 20)
-                return;
+              if (details.localPosition.dy < _mobileProgressBarEdgeGuard ||
+                  details.localPosition.dy >
+                      (_mobileProgressBarTouchHeight -
+                          _mobileProgressBarEdgeGuard)) return;
 
               _isDragging = true;
               widget.onDragStart?.call();
@@ -2225,7 +2244,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
               widget.onDragEnd?.call();
             },
       child: Container(
-        height: 24,
+        height: _mobileProgressBarTouchHeight,
         color: Colors.transparent,
         child: Center(
           child: LayoutBuilder(
@@ -2243,9 +2262,11 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                   Positioned(
                     left: 0,
                     right: 0,
-                    top: 9,
+                    top: _mobileProgressBarTouchHeight -
+                        _mobileProgressBarTrackBottomPadding -
+                        _mobileProgressBarTrackHeight,
                     child: Container(
-                      height: 6,
+                      height: _mobileProgressBarTrackHeight,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(3),
                         color: Colors.white.withOpacity(0.3),
@@ -2254,10 +2275,12 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                   ),
                   Positioned(
                     left: 0,
-                    top: 9,
+                    top: _mobileProgressBarTouchHeight -
+                        _mobileProgressBarTrackBottomPadding -
+                        _mobileProgressBarTrackHeight,
                     child: Container(
                       width: progressValue * progressWidth,
-                      height: 6,
+                      height: _mobileProgressBarTrackHeight,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(3),
                         color: Colors.red,
@@ -2266,14 +2289,16 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                   ),
                   if (!widget.live)
                     Positioned(
-                      left: thumbPosition - 8,
-                      top: 4,
+                      left: thumbPosition - (_mobileProgressBarThumbSize / 2),
+                      top: _mobileProgressBarTouchHeight -
+                          _mobileProgressBarThumbBottomPadding -
+                          _mobileProgressBarThumbSize,
                       child: AnimatedScale(
                         scale: widget.isSeekingViaSwipe ? 1.25 : 1.0,
                         duration: const Duration(milliseconds: 150),
                         child: Container(
-                          width: 16,
-                          height: 16,
+                          width: _mobileProgressBarThumbSize,
+                          height: _mobileProgressBarThumbSize,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: Colors.red,

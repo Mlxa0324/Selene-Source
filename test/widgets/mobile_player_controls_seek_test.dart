@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 
+import 'package:selene/widgets/danmaku_control_icons.dart';
 import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
@@ -178,17 +179,109 @@ void main() {
     expect(reportedSpeeds, containsAllInOrder([2.0, 1.0]));
     expect(player.state.rate, 1.0);
   });
+
+  testWidgets(
+      'forward ten seconds does not reuse an expired relative seek target',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter(emitSeekPositionToStream: false);
+    addTearDown(player.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: (_) {},
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    player.emitPosition(const Duration(minutes: 3));
+    await tester.pump();
+
+    final forwardSeekGestureFinder = find.ancestor(
+      of: find.byType(ForwardTenIcon),
+      matching: find.byType(GestureDetector),
+    );
+    final forwardSeekGesture =
+        tester.widget<GestureDetector>(forwardSeekGestureFinder.first);
+
+    forwardSeekGesture.onTap!.call();
+    await tester.pump();
+
+    expect(player.seekCalls.last, const Duration(minutes: 3, seconds: 10));
+
+    await tester.pump(const Duration(seconds: 6));
+    player.emitPosition(const Duration(minutes: 5));
+    await tester.pump();
+
+    forwardSeekGesture.onTap!.call();
+    await tester.pump();
+
+    expect(player.seekCalls.last, const Duration(minutes: 5, seconds: 10));
+  });
+
+  testWidgets(
+      'mobile progress bar increases touch height without changing control type',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter();
+    addTearDown(player.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: (_) {},
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final progressBar = find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == '_MobileVideoProgressBar',
+    );
+
+    expect(progressBar, findsOneWidget);
+    expect(tester.getSize(progressBar).height, 36);
+  });
 }
 
 class _FakePlayerAdapter implements PlayerAdapter {
   _FakePlayerAdapter({
     this.seekCompleter,
+    this.emitSeekPositionToStream = true,
   })  : _stream = _FakePlayerStream(),
         _state = _FakePlayerState();
 
   final _FakePlayerStream _stream;
   final _FakePlayerState _state;
   final Completer<void>? seekCompleter;
+  final bool emitSeekPositionToStream;
+  final List<Duration> seekCalls = <Duration>[];
 
   @override
   PlayerAdapterStream get stream => _stream;
@@ -225,8 +318,11 @@ class _FakePlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> seek(Duration position) async {
+    seekCalls.add(position);
     _state.positionValue = position;
-    _stream.positionController.add(position);
+    if (emitSeekPositionToStream) {
+      _stream.positionController.add(position);
+    }
     if (seekCompleter != null) {
       await seekCompleter!.future;
     }
@@ -246,6 +342,11 @@ class _FakePlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> updateVideoFit(BoxFit fit) async {}
+
+  void emitPosition(Duration position) {
+    _state.positionValue = position;
+    _stream.positionController.add(position);
+  }
 }
 
 class _FakePlayerStream implements PlayerAdapterStream {
