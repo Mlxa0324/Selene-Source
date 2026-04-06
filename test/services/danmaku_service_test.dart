@@ -98,4 +98,48 @@ void main() {
       '新关键词',
     );
   });
+
+  test('读取初始搜索词时会回退到同标题最近一次手动匹配搜索词', () async {
+    final service = DanmakuService();
+
+    await service.saveLastManualMatchQueryForTitle(
+      '进击的巨人',
+      'Attack on Titan',
+    );
+
+    expect(
+      await service.resolveManualMatchQuery(
+        'other_source',
+        'video_4',
+        9,
+        fallbackTitle: '进击的巨人',
+      ),
+      'Attack on Titan',
+    );
+  });
+
+  test('读取初始搜索词时优先返回当前源当前集的精确缓存', () async {
+    final service = DanmakuService();
+
+    await service.saveLastManualMatchQueryForTitle(
+      '银魂',
+      'gintama',
+    );
+    await service.saveManualMatchQuery(
+      'test_source',
+      'video_5',
+      2,
+      '银魂 第三季',
+    );
+
+    expect(
+      await service.resolveManualMatchQuery(
+        'test_source',
+        'video_5',
+        2,
+        fallbackTitle: '银魂',
+      ),
+      '银魂 第三季',
+    );
+  });
 }

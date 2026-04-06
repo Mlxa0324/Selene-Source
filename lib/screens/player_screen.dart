@@ -5015,21 +5015,39 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 手动加载指定 episodeId 的弹幕
   Future<String> _resolveInitialDanmakuMatchQuery() async {
+    final fallbackTitle =
+        widget.title.trim().isNotEmpty ? widget.title : videoTitle;
+
     if (currentSource.isNotEmpty && currentID.isNotEmpty) {
-      final query = await DanmakuService().getManualMatchQuery(
+      final query = await DanmakuService().resolveManualMatchQuery(
         currentSource,
         currentID,
         _getDanmakuMatchEpisodeIndex(),
+        fallbackTitle: fallbackTitle,
       );
       if (query != null && query.isNotEmpty) {
         return query;
       }
     }
+
+    final titleQuery =
+        await DanmakuService().getLastManualMatchQueryForTitle(fallbackTitle);
+    if (titleQuery != null && titleQuery.isNotEmpty) {
+      return titleQuery;
+    }
+
     return videoTitle;
   }
 
   Future<void> _cacheManualDanmakuSearchQuery(String query) async {
+    final fallbackTitle =
+        widget.title.trim().isNotEmpty ? widget.title : videoTitle;
+
     if (currentSource.isEmpty || currentID.isEmpty) {
+      await DanmakuService().saveLastManualMatchQueryForTitle(
+        fallbackTitle,
+        query,
+      );
       return;
     }
 
@@ -5037,6 +5055,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       currentSource,
       currentID,
       _getDanmakuMatchEpisodeIndex(),
+      query,
+    );
+    await DanmakuService().saveLastManualMatchQueryForTitle(
+      fallbackTitle,
       query,
     );
   }
@@ -5066,6 +5088,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             danmakuMatchEpisodeIndex,
             episodeId,
             searchKeyword: searchKeyword,
+          );
+        }
+        if (searchKeyword != null && searchKeyword.trim().isNotEmpty) {
+          final fallbackTitle =
+              widget.title.trim().isNotEmpty ? widget.title : videoTitle;
+          await DanmakuService().saveLastManualMatchQueryForTitle(
+            fallbackTitle,
+            searchKeyword,
           );
         }
 
