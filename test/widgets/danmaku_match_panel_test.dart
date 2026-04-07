@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/danmaku_model.dart';
+import 'package:selene/services/danmaku_service.dart';
 import 'package:selene/widgets/danmaku_match_panel.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('定位按钮会先滚动到离屏目标，再展开当前弹幕项', (tester) async {
     final result = DanmakuSearchResult(
       errorCode: 0,
@@ -148,5 +156,55 @@ void main() {
     expect(find.text('很远的目标第2集'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('点击搜索后即使没有结果也会缓存当前搜索词', (tester) async {
+    final service = DanmakuService();
+    const source = 'test_source';
+    const id = 'video_1';
+    const episodeIndex = 7;
+
+    Future<DanmakuSearchResult?> fakeSearch(String _) async => DanmakuSearchResult(
+          errorCode: 1,
+          success: false,
+          errorMessage: '未找到结果',
+          animes: const [],
+        );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 420,
+              height: 420,
+              child: DanmakuMatchPanel(
+                theme: ThemeData.dark(),
+                initialQuery: '',
+                onEpisodeSelected: (_, __) {},
+                onSearchSubmitted: (query) => service.saveManualMatchQuery(
+                  source,
+                  id,
+                  episodeIndex,
+                  query,
+                ),
+                searchEpisodesOverride: fakeSearch,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'JOJO');
+    await tester.tap(find.byIcon(Icons.send));
+    await tester.pumpAndSettle();
+
+    expect(
+      await service.getManualMatchQuery(source, id, episodeIndex),
+      'JOJO',
+    );
   });
 }

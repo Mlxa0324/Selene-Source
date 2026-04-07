@@ -10,6 +10,8 @@ class DanmakuService {
   static const String _baseApiKey = 'danmaku_base_api';
   static const String _settingsKey = 'danmaku_settings';
   static const String _manualMatchKey = 'danmaku_manual_matches';
+  static const String _manualMatchTitleQueryKey =
+      'danmaku_manual_match_title_queries';
 
   // 搜索缓存
   static final Map<String, (DanmakuSearchResult, DateTime)> _searchCache = {};
@@ -32,6 +34,10 @@ class DanmakuService {
 
   String _manualMatchStorageKey(String source, String id, int episodeIndex) {
     return '${source}_${id}_$episodeIndex';
+  }
+
+  String _manualMatchTitleStorageKey(String title) {
+    return title.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
 
   Map<String, dynamic> _decodeManualMatches(String? matchesJson) {
@@ -90,6 +96,39 @@ class DanmakuService {
     return null;
   }
 
+  /// 获取同标题最近一次手动匹配时使用的搜索词
+  Future<String?> getLastManualMatchQueryForTitle(String title) async {
+    final cleanTitle = _manualMatchTitleStorageKey(title);
+    if (cleanTitle.isEmpty) {
+      return null;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final queries =
+        _decodeManualMatches(prefs.getString(_manualMatchTitleQueryKey));
+    final query = queries[cleanTitle]?.toString().trim();
+    return (query == null || query.isEmpty) ? null : query;
+  }
+
+  /// 读取手动匹配初始搜索词：优先当前源当前集，其次回退到同标题最近一次搜索词
+  Future<String?> resolveManualMatchQuery(
+    String source,
+    String id,
+    int episodeIndex, {
+    String? fallbackTitle,
+  }) async {
+    final exactQuery = await getManualMatchQuery(source, id, episodeIndex);
+    if (exactQuery != null && exactQuery.isNotEmpty) {
+      return exactQuery;
+    }
+
+    if (fallbackTitle == null || fallbackTitle.trim().isEmpty) {
+      return null;
+    }
+
+    return getLastManualMatchQueryForTitle(fallbackTitle);
+  }
+
   /// 保存手动匹配的剧集ID
   Future<void> saveManualMatch(
       String source, String id, int episodeIndex, int episodeId,
@@ -104,6 +143,57 @@ class DanmakuService {
         'searchKeyword': cleanKeyword,
     };
     await prefs.setString(_manualMatchKey, jsonEncode(matches));
+  }
+
+  /// 单独保存手动匹配时使用的搜索词
+  Future<void> saveManualMatchQuery(
+      String source, String id, int episodeIndex, String searchKeyword) async {
+    final cleanKeyword = searchKeyword.trim();
+    if (cleanKeyword.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
+    final key = _manualMatchStorageKey(source, id, episodeIndex);
+    final existingRecord = matches[key];
+
+    if (existingRecord is Map<String, dynamic>) {
+      matches[key] = {
+        ...existingRecord,
+        'searchKeyword': cleanKeyword,
+      };
+    } else if (existingRecord is Map) {
+      matches[key] = {
+        ...existingRecord.map(
+          (recordKey, value) => MapEntry(recordKey.toString(), value),
+        ),
+        'searchKeyword': cleanKeyword,
+      };
+    } else if (existingRecord is num) {
+      matches[key] = {
+        'episodeId': existingRecord.toInt(),
+        'searchKeyword': cleanKeyword,
+      };
+    } else {
+      matches[key] = {
+        'searchKeyword': cleanKeyword,
+      };
+    }
+
+    await prefs.setString(_manualMatchKey, jsonEncode(matches));
+  }
+
+  /// 保存同标题最近一次手动匹配时使用的搜索词
+  Future<void> saveLastManualMatchQueryForTitle(
+      String title, String searchKeyword) async {
+    final cleanTitle = _manualMatchTitleStorageKey(title);
+    final cleanKeyword = searchKeyword.trim();
+    if (cleanTitle.isEmpty || cleanKeyword.isEmpty) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final queries =
+        _decodeManualMatches(prefs.getString(_manualMatchTitleQueryKey));
+    queries[cleanTitle] = cleanKeyword;
+    await prefs.setString(_manualMatchTitleQueryKey, jsonEncode(queries));
   }
 
   /// 清除所有手动匹配记录

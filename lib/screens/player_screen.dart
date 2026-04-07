@@ -72,6 +72,21 @@ int findDanmakuSeekIndex(
   return low;
 }
 
+@visibleForTesting
+void runDanmakuResumeCallbacks({
+  required void Function() sync,
+}) {
+  sync();
+}
+
+@visibleForTesting
+void runDanmakuSeekCallbacks({
+  required void Function() resetIndex,
+  required void Function() clearVisible,
+}) {
+  resetIndex();
+}
+
 class PlayerScreen extends StatefulWidget {
   final String? source;
   final String? id;
@@ -961,11 +976,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  /// 重置弹幕索引（用于 seek 操作）
-  void _resetDanmakuIndex(Duration position) {
+  void _updateDanmakuIndex(Duration position) {
     if (_danmakuList.isEmpty) return;
 
     _danmakuIndex = findDanmakuSeekIndex(_danmakuList, position);
+  }
+
+  /// 重置弹幕索引（用于 seek 操作）
+  void _resetDanmakuIndex(Duration position, {bool clearVisible = true}) {
+    _updateDanmakuIndex(position);
+    if (!clearVisible) return;
 
     // 清空当前显示的弹幕
     _runWithDanmakuController(
@@ -2023,7 +2043,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (!mounted || _isClosing || seekSerial != _danmakuSeekSerial) {
         return;
       }
-      _resetDanmakuIndex(position);
+      runDanmakuSeekCallbacks(
+        resetIndex: () => _resetDanmakuIndex(position, clearVisible: false),
+        clearVisible: () {},
+      );
     });
 
     final shouldRenderImmediately = _hasExplicitDanmakuState
@@ -3313,10 +3336,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             onVideoCompleted: _onVideoCompleted,
             onSeek: _handlePlayerSeek,
             onPlay: () {
-              _rebaseDanmakuCursorToCurrentPosition(
-                  reason: 'player_on_play', triggerNow: true);
-              _syncDanmakuPlaybackState(
-                  reason: 'player_on_play', forcePlaying: true);
+              runDanmakuResumeCallbacks(
+                sync: () => _syncDanmakuPlaybackState(
+                    reason: 'player_on_play', forcePlaying: true),
+              );
             },
             onPause: () {
               // 暂停时保存进度
@@ -4997,17 +5020,52 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 手动加载指定 episodeId 的弹幕
   Future<String> _resolveInitialDanmakuMatchQuery() async {
+    final fallbackTitle =
+        widget.title.trim().isNotEmpty ? widget.title : videoTitle;
+
     if (currentSource.isNotEmpty && currentID.isNotEmpty) {
-      final query = await DanmakuService().getManualMatchQuery(
+      final query = await DanmakuService().resolveManualMatchQuery(
         currentSource,
         currentID,
         _getDanmakuMatchEpisodeIndex(),
+        fallbackTitle: fallbackTitle,
       );
       if (query != null && query.isNotEmpty) {
         return query;
       }
     }
+
+    final titleQuery =
+        await DanmakuService().getLastManualMatchQueryForTitle(fallbackTitle);
+    if (titleQuery != null && titleQuery.isNotEmpty) {
+      return titleQuery;
+    }
+
     return videoTitle;
+  }
+
+  Future<void> _cacheManualDanmakuSearchQuery(String query) async {
+    final fallbackTitle =
+        widget.title.trim().isNotEmpty ? widget.title : videoTitle;
+
+    if (currentSource.isEmpty || currentID.isEmpty) {
+      await DanmakuService().saveLastManualMatchQueryForTitle(
+        fallbackTitle,
+        query,
+      );
+      return;
+    }
+
+    await DanmakuService().saveManualMatchQuery(
+      currentSource,
+      currentID,
+      _getDanmakuMatchEpisodeIndex(),
+      query,
+    );
+    await DanmakuService().saveLastManualMatchQueryForTitle(
+      fallbackTitle,
+      query,
+    );
   }
 
   Future<void> _loadDanmakuById(int episodeId, {String? searchKeyword}) async {
@@ -5035,6 +5093,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             danmakuMatchEpisodeIndex,
             episodeId,
             searchKeyword: searchKeyword,
+          );
+        }
+        if (searchKeyword != null && searchKeyword.trim().isNotEmpty) {
+          final fallbackTitle =
+              widget.title.trim().isNotEmpty ? widget.title : videoTitle;
+          await DanmakuService().saveLastManualMatchQueryForTitle(
+            fallbackTitle,
+            searchKeyword,
           );
         }
 
@@ -5087,6 +5153,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               initialQuery: initialQuery,
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
+              onSearchSubmitted: _cacheManualDanmakuSearchQuery,
               onEpisodeSelected: (episodeId, searchKeyword) {
                 Navigator.pop(context);
                 _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
@@ -5122,6 +5189,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     initialQuery: initialQuery,
                     currentEpisodeId: _currentDanmakuEpisodeId,
                     currentEpisodeCommentCount: _currentDanmakuCommentCount,
+                    onSearchSubmitted: _cacheManualDanmakuSearchQuery,
                     onEpisodeSelected: (episodeId, searchKeyword) {
                       Navigator.pop(dialogContext);
                       _loadDanmakuById(
@@ -5164,6 +5232,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               initialQuery: initialQuery,
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
+              onSearchSubmitted: _cacheManualDanmakuSearchQuery,
               onEpisodeSelected: (episodeId, searchKeyword) {
                 Navigator.pop(dialogContext);
                 _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
