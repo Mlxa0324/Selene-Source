@@ -12,6 +12,13 @@ enum AndroidMediaSessionActionType {
   seek,
 }
 
+enum AndroidBackgroundPlaybackPhase {
+  idle,
+  starting,
+  ready,
+  error,
+}
+
 class AndroidMediaSessionAction {
   const AndroidMediaSessionAction({
     required this.type,
@@ -98,17 +105,29 @@ class AndroidBackgroundPlaybackState {
     required this.isPlaying,
     required this.position,
     required this.duration,
+    required this.phase,
+    this.errorCode,
+    this.errorMessage,
   });
 
   final bool isActive;
   final bool isPlaying;
   final Duration position;
   final Duration duration;
+  final AndroidBackgroundPlaybackPhase phase;
+  final String? errorCode;
+  final String? errorMessage;
 }
 
+typedef AndroidBackgroundPlaybackStateFetcher =
+    Future<AndroidBackgroundPlaybackState?> Function();
+
 class AndroidMediaSessionBridge {
-  AndroidMediaSessionBridge({bool? platformOverride})
-      : _platformOverride = platformOverride;
+  AndroidMediaSessionBridge({
+    bool? platformOverride,
+    AndroidBackgroundPlaybackStateFetcher? backgroundPlaybackStateFetcher,
+  })  : _platformOverride = platformOverride,
+        _backgroundPlaybackStateFetcher = backgroundPlaybackStateFetcher;
 
   static const String channelName = 'org.moontechlab.selene/media_session';
   static const String _syncMethod = 'syncMediaSession';
@@ -122,6 +141,7 @@ class AndroidMediaSessionBridge {
   static const MethodChannel _channel = MethodChannel(channelName);
 
   final bool? _platformOverride;
+  final AndroidBackgroundPlaybackStateFetcher? _backgroundPlaybackStateFetcher;
 
   bool get _isSupported {
     if (_platformOverride != null) {
@@ -182,6 +202,9 @@ class AndroidMediaSessionBridge {
   }
 
   Future<AndroidBackgroundPlaybackState?> getBackgroundPlaybackState() async {
+    if (_backgroundPlaybackStateFetcher != null) {
+      return _backgroundPlaybackStateFetcher();
+    }
     if (!_isSupported) {
       return null;
     }
@@ -193,6 +216,30 @@ class AndroidMediaSessionBridge {
       debugPrint('获取 Android 后台音频播放状态失败: $e');
       return null;
     }
+  }
+
+  Future<AndroidBackgroundPlaybackState?> waitForBackgroundPlaybackReady({
+    Duration timeout = const Duration(seconds: 2),
+    Duration pollInterval = const Duration(milliseconds: 120),
+  }) async {
+    if (!_isSupported) {
+      return null;
+    }
+
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final state = await getBackgroundPlaybackState();
+      if (state != null) {
+        if (state.phase == AndroidBackgroundPlaybackPhase.ready) {
+          return state;
+        }
+        if (state.phase == AndroidBackgroundPlaybackPhase.error) {
+          return state;
+        }
+      }
+      await Future<void>.delayed(pollInterval);
+    }
+    return null;
   }
 
   static bool shouldStopSession({
@@ -287,7 +334,25 @@ class AndroidMediaSessionBridge {
       duration: Duration(
         milliseconds: (raw['durationMs'] as num?)?.toInt() ?? 0,
       ),
+      phase: parseBackgroundPlaybackPhase(raw['phase']),
+      errorCode: raw['errorCode']?.toString(),
+      errorMessage: raw['errorMessage']?.toString(),
     );
+  }
+
+  static AndroidBackgroundPlaybackPhase parseBackgroundPlaybackPhase(
+    Object? raw,
+  ) {
+    switch (raw?.toString()) {
+      case 'starting':
+        return AndroidBackgroundPlaybackPhase.starting;
+      case 'ready':
+        return AndroidBackgroundPlaybackPhase.ready;
+      case 'error':
+        return AndroidBackgroundPlaybackPhase.error;
+      default:
+        return AndroidBackgroundPlaybackPhase.idle;
+    }
   }
 
   static String _buildSubtitle({

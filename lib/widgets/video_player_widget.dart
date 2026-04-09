@@ -335,6 +335,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   String? _lastAndroidMediaSessionSignature;
   bool _androidBackgroundPlaybackActive = false;
   bool _androidBackgroundPlaybackTransitioning = false;
+  bool _androidBackgroundPlaybackIntentRemembered = false;
   bool _androidPipNativeTransitioning = false;
   bool _androidPipBackgroundHandoffArmed = false;
   bool _shouldRestoreWebViewAfterAndroidPip = false;
@@ -375,6 +376,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         !widget.isLocal &&
         _currentUrl != null &&
         _canUseMediaKitForUrl(_currentUrl);
+  }
+
+  String get _androidBackgroundPlaybackEligibilityTrace {
+    final currentUrl = _currentUrl;
+    final uri = currentUrl == null ? null : Uri.tryParse(currentUrl);
+    return 'screenOff=${widget.screenOffPlaybackEnabled}, '
+        'isLocal=${widget.isLocal}, '
+        'hasUrl=${currentUrl != null}, '
+        'scheme=${uri?.scheme ?? 'null'}, '
+        'usesWebView=$_usesWebViewAdapter, '
+        'canUseMediaKitUrl=${_canUseMediaKitForUrl(currentUrl)}';
   }
 
   bool get _canUseAndroidNativePlaybackForPip {
@@ -811,24 +823,114 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     );
   }
 
+  Future<AndroidBackgroundPlaybackState?>
+      _waitForAndroidBackgroundPlaybackReady({
+    Duration timeout = const Duration(seconds: 2),
+  }) {
+    return _androidMediaSessionBridge.waitForBackgroundPlaybackReady(
+      timeout: timeout,
+      pollInterval: const Duration(milliseconds: 120),
+    );
+  }
+
+  Future<void> _rollbackAndroidBackgroundPlaybackFailure({
+    required PlayerAdapter adapter,
+    required double playbackSpeed,
+    required String reason,
+    AndroidBackgroundPlaybackState? failureState,
+  }) async {
+    debugPrint(
+      '[BackgroundPlayback] 回滚前台播放器: '
+      'reason=$reason, '
+      'phase=${failureState?.phase.name}, '
+      'errorCode=${failureState?.errorCode}, '
+      'errorMessage=${failureState?.errorMessage}',
+    );
+
+    try {
+      await _androidMediaSessionBridge.stopBackgroundPlayback();
+    } catch (error) {
+      debugPrint('[BackgroundPlayback] 停止失败后台 service 失败: $error');
+    }
+
+    try {
+      await adapter.play();
+      await adapter.setRate(playbackSpeed);
+    } catch (error) {
+      debugPrint('[BackgroundPlayback] 回滚恢复前台播放失败: $error');
+    }
+
+    _androidBackgroundPlaybackActive = false;
+    _androidBackgroundPlaybackIntentRemembered = false;
+    _androidPipBackgroundHandoffArmed = false;
+  }
+
   Future<void> _startAndroidBackgroundPlayback({
     required String reason,
     bool allowWhilePipMode = false,
   }) async {
     _pendingAndroidBackgroundPlaybackTimer?.cancel();
     _pendingAndroidBackgroundPlaybackTimer = null;
-    if (!_canUseAndroidBackgroundPlayback ||
-        _androidBackgroundPlaybackActive ||
-        _androidBackgroundPlaybackTransitioning ||
-        _androidPipNativeTransitioning ||
-        (_isPipMode && !allowWhilePipMode)) {
+    if (!_canUseAndroidBackgroundPlayback) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=can_use_false',
+      );
+      return;
+    }
+    if (_androidBackgroundPlaybackActive) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=already_active',
+      );
+      return;
+    }
+    if (_androidBackgroundPlaybackTransitioning) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=transitioning',
+      );
+      return;
+    }
+    if (_androidPipNativeTransitioning) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=pip_native_transitioning',
+      );
+      return;
+    }
+    if (_isPipMode && !allowWhilePipMode) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=pip_mode',
+      );
       return;
     }
     final adapter = _adapter;
     final request = _buildAndroidBackgroundPlaybackRequest();
+    final adapterPlaying = adapter?.state.playing ?? false;
     final shouldResumePlayback =
-        (adapter?.state.playing ?? false) || _lastKnownPlaying;
-    if (adapter == null || request == null || !shouldResumePlayback) {
+        MobilePlaybackLifecyclePolicy.shouldStartAndroidBackgroundPlayback(
+      adapterPlaying: adapterPlaying,
+      lastKnownPlaying: _lastKnownPlaying,
+      rememberedPlaybackIntent: _androidBackgroundPlaybackIntentRemembered,
+    );
+    if (adapter == null) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=adapter_null',
+      );
+      return;
+    }
+    if (request == null) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: reason=$reason, why=request_null',
+      );
+      return;
+    }
+    if (!shouldResumePlayback) {
+      debugPrint(
+        '[BackgroundPlayback] 跳过后台接管: '
+        'reason=$reason, '
+        'why=not_playing, '
+        'adapterPlaying=$adapterPlaying, '
+        'lastKnownPlaying=$_lastKnownPlaying, '
+        'rememberedIntent=$_androidBackgroundPlaybackIntentRemembered',
+      );
       return;
     }
 
@@ -836,23 +938,78 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     try {
       final resumePosition = adapter.state.position;
       final playbackSpeed = adapter.state.rate;
+      debugPrint(
+        '[BackgroundPlayback] 发起后台接管: '
+        'reason=$reason, '
+        'position=${resumePosition.inMilliseconds}, '
+        'speed=$playbackSpeed, '
+        'hasHeaders=${request.headers.isNotEmpty}, '
+        'allowWhilePip=$allowWhilePipMode',
+      );
+
       await adapter.pause();
-      final started =
+      final accepted =
           await _androidMediaSessionBridge.startBackgroundPlayback(request);
-      if (!started) {
-        await adapter.play();
-        await adapter.setRate(playbackSpeed);
+      if (!accepted) {
+        await _rollbackAndroidBackgroundPlaybackFailure(
+          adapter: adapter,
+          playbackSpeed: playbackSpeed,
+          reason: '${reason}_not_accepted',
+        );
         return;
       }
+
+      debugPrint('[BackgroundPlayback] 请求已接受，等待原生 ready');
+
+      final readyState = await _waitForAndroidBackgroundPlaybackReady();
+      if (readyState == null) {
+        await _rollbackAndroidBackgroundPlaybackFailure(
+          adapter: adapter,
+          playbackSpeed: playbackSpeed,
+          reason: '${reason}_ready_timeout',
+        );
+        return;
+      }
+
+      if (readyState.phase == AndroidBackgroundPlaybackPhase.error) {
+        await _rollbackAndroidBackgroundPlaybackFailure(
+          adapter: adapter,
+          playbackSpeed: playbackSpeed,
+          reason: '${reason}_ready_error',
+          failureState: readyState,
+        );
+        return;
+      }
+
+      if (readyState.phase != AndroidBackgroundPlaybackPhase.ready) {
+        await _rollbackAndroidBackgroundPlaybackFailure(
+          adapter: adapter,
+          playbackSpeed: playbackSpeed,
+          reason: '${reason}_unexpected_phase',
+          failureState: readyState,
+        );
+        return;
+      }
+
       _androidBackgroundPlaybackActive = true;
+      _androidBackgroundPlaybackIntentRemembered = false;
       _androidPipBackgroundHandoffArmed = false;
       _lastAndroidMediaSessionSignature = null;
       debugPrint(
-        '[BackgroundPlayback] 已切到 Android 后台音频: reason=$reason, position=${resumePosition.inMilliseconds}, resume=$shouldResumePlayback',
+        '[BackgroundPlayback] 后台原生已 ready: '
+        'reason=$reason, '
+        'position=${readyState.position.inMilliseconds}, '
+        'duration=${readyState.duration.inMilliseconds}, '
+        'playing=${readyState.isPlaying}',
       );
     } catch (error) {
       debugPrint('[BackgroundPlayback] 启动失败: $error');
-      unawaited(adapter.play());
+      _androidBackgroundPlaybackIntentRemembered = false;
+      try {
+        await adapter.play();
+      } catch (playError) {
+        debugPrint('[BackgroundPlayback] 异常分支恢复播放失败: $playError');
+      }
     } finally {
       _androidBackgroundPlaybackTransitioning = false;
     }
@@ -944,6 +1101,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }) async {
     _pendingAndroidBackgroundPlaybackTimer?.cancel();
     _pendingAndroidBackgroundPlaybackTimer = null;
+    _androidBackgroundPlaybackIntentRemembered = false;
     if (!_androidBackgroundPlaybackActive || _currentUrl == null) {
       return;
     }
@@ -1717,6 +1875,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             if (mounted) {
               _pendingAndroidBackgroundPlaybackTimer?.cancel();
               _pendingAndroidBackgroundPlaybackTimer = null;
+              if (AndroidPipWebViewHandoffPolicy
+                  .shouldArmBackgroundHandoffOnPipStarted(
+                isAndroid: Platform.isAndroid,
+                canUseHandoff: _canUseAndroidPipWebViewBackgroundHandoff,
+                handoffArmed: _androidPipBackgroundHandoffArmed,
+              )) {
+                _androidPipBackgroundHandoffArmed = true;
+                debugPrint('[PiP] PiP started 后自动 arm 后台接管');
+              }
               _safeSetState(() => _isPipMode = true);
               widget.onPipModeChanged?.call(true);
               if (_androidPipBackgroundHandoffArmed) {
@@ -1860,6 +2027,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _cancelAndroidPipBackgroundHandoff(reason: 'dispose', clearArm: true);
     _iosForegroundResumeAttemptToken++;
     _clearIosForegroundResumeIntent();
+    _androidBackgroundPlaybackIntentRemembered = false;
 
     try {
       _lastAndroidMediaSessionSignature = null;
@@ -1882,6 +2050,51 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
     _rememberIosForegroundResumeIfNeeded(state);
+
+    final wasPlayingBeforeBackground =
+        (_adapter?.state.playing ?? false) || _lastKnownPlaying;
+    final rememberAndroidBackgroundPlaybackIntent =
+        MobilePlaybackLifecyclePolicy
+            .shouldRememberAndroidBackgroundPlaybackIntent(
+      state: state,
+      isAndroid: Platform.isAndroid,
+      canUseBackgroundPlayback: _canUseAndroidBackgroundPlayback,
+      backgroundPlaybackActive: _androidBackgroundPlaybackActive,
+      isPipMode: _isPipMode || _androidPipNativeTransitioning,
+      wasPlayingBeforeBackground: wasPlayingBeforeBackground,
+    );
+    if (rememberAndroidBackgroundPlaybackIntent) {
+      _androidBackgroundPlaybackIntentRemembered = true;
+    } else if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.detached) {
+      _androidBackgroundPlaybackIntentRemembered = false;
+    }
+
+    if (AndroidPipWebViewHandoffPolicy.shouldArmBackgroundHandoffOnPipStarted(
+      isAndroid: Platform.isAndroid,
+      canUseHandoff: _canUseAndroidPipWebViewBackgroundHandoff,
+      handoffArmed: _androidPipBackgroundHandoffArmed,
+    ) &&
+        _isPipMode) {
+      _androidPipBackgroundHandoffArmed = true;
+      debugPrint('[PiP] 生命周期检测到自动 PiP，补 arm 后台接管');
+    }
+
+    debugPrint(
+      '[BackgroundPlayback] lifecycle: '
+      'state=${state.name}, '
+      'isPip=$_isPipMode, '
+      'canUse=$_canUseAndroidBackgroundPlayback, '
+      'eligibility={$_androidBackgroundPlaybackEligibilityTrace}, '
+      'pipCanHandoff=$_canUseAndroidPipWebViewBackgroundHandoff, '
+      'pipArmed=$_androidPipBackgroundHandoffArmed, '
+      'active=$_androidBackgroundPlaybackActive, '
+      'transitioning=$_androidBackgroundPlaybackTransitioning, '
+      'pipTransitioning=$_androidPipNativeTransitioning, '
+      'adapterPlaying=${_adapter?.state.playing ?? false}, '
+      'lastKnownPlaying=$_lastKnownPlaying, '
+      'rememberedIntent=$_androidBackgroundPlaybackIntentRemembered',
+    );
 
     final shouldCancelAndroidPipHandoff =
         AndroidPipWebViewHandoffPolicy.shouldCancelBackgroundHandoff(
@@ -1915,6 +2128,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       canUseBackgroundPlayback: _canUseAndroidBackgroundPlayback,
       backgroundPlaybackActive: _androidBackgroundPlaybackActive,
       isPipMode: _isPipMode || _androidPipNativeTransitioning,
+    );
+    debugPrint(
+      '[BackgroundPlayback] lifecycle_action: '
+      'state=${state.name}, action=${androidAction.name}',
     );
     switch (androidAction) {
       case AndroidBackgroundPlaybackLifecycleAction.none:

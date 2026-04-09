@@ -64,6 +64,45 @@ void main() {
       );
     });
 
+    test('Android 在进入后台前原本正在播放时，记录后台接管意图', () {
+      expect(
+        MobilePlaybackLifecyclePolicy.shouldRememberAndroidBackgroundPlaybackIntent(
+          state: AppLifecycleState.hidden,
+          isAndroid: true,
+          canUseBackgroundPlayback: true,
+          backgroundPlaybackActive: false,
+          isPipMode: false,
+          wasPlayingBeforeBackground: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('Android 若进入后台前本就未播放，则不记录后台接管意图', () {
+      expect(
+        MobilePlaybackLifecyclePolicy.shouldRememberAndroidBackgroundPlaybackIntent(
+          state: AppLifecycleState.paused,
+          isAndroid: true,
+          canUseBackgroundPlayback: true,
+          backgroundPlaybackActive: false,
+          isPipMode: false,
+          wasPlayingBeforeBackground: false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('Android 后台接管启动时允许使用已记录的前台播放意图', () {
+      expect(
+        MobilePlaybackLifecyclePolicy.shouldStartAndroidBackgroundPlayback(
+          adapterPlaying: false,
+          lastKnownPlaying: false,
+          rememberedPlaybackIntent: true,
+        ),
+        isTrue,
+      );
+    });
+
     test('iOS WebView 后台前若原本在播，记录前台恢复意图', () {
       expect(
         MobilePlaybackLifecyclePolicy.shouldRememberIosForegroundResume(

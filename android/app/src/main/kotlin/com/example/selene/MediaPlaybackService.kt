@@ -50,6 +50,9 @@ class MediaPlaybackService : Service() {
     private lateinit var mediaSession: MediaSessionCompat
     private var player: ExoPlayer? = null
     private var currentState = defaultPlaybackState()
+    private var playbackPhase: String = PHASE_IDLE
+    private var lastErrorCode: String? = null
+    private var lastErrorMessage: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var artworkBitmap: Bitmap? = null
     private var artworkLoadVersion: Int = 0
@@ -57,17 +60,50 @@ class MediaPlaybackService : Service() {
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) {
+                playbackPhase = PHASE_READY
+                lastErrorCode = null
+                lastErrorMessage = null
+                android.util.Log.d(LOG_TAG, "onIsPlayingChanged=true")
+            }
             syncStateFromPlayer(forceNotificationUpdate = true)
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED) {
-                currentState = currentState.copy(isPlaying = false)
+            when (playbackState) {
+                Player.STATE_BUFFERING -> {
+                    android.util.Log.d(LOG_TAG, "player state=BUFFERING")
+                }
+
+                Player.STATE_READY -> {
+                    android.util.Log.d(
+                        LOG_TAG,
+                        "player state=READY playWhenReady=${player?.playWhenReady} isPlaying=${player?.isPlaying}",
+                    )
+                    if (player?.playWhenReady == true) {
+                        playbackPhase = PHASE_READY
+                        lastErrorCode = null
+                        lastErrorMessage = null
+                    }
+                }
+
+                Player.STATE_ENDED -> {
+                    currentState = currentState.copy(isPlaying = false)
+                    android.util.Log.d(LOG_TAG, "player state=ENDED")
+                }
             }
             syncStateFromPlayer(forceNotificationUpdate = true)
         }
 
         override fun onPlayerError(error: PlaybackException) {
+            playbackPhase = PHASE_ERROR
+            lastErrorCode = error.errorCodeName
+            lastErrorMessage = error.message ?: error.cause?.message
+            android.util.Log.e(
+                LOG_TAG,
+                "onPlayerError code=${error.errorCodeName} message=${error.message}",
+                error,
+            )
             currentState = currentState.copy(
                 isActive = false,
                 isPlaying = false,
@@ -115,7 +151,15 @@ class MediaPlaybackService : Service() {
         when (intent?.action) {
             ACTION_START_BACKGROUND_PLAYBACK -> {
                 currentState = currentStateFromBackgroundIntent(intent).copy(isActive = true)
+                playbackPhase = PHASE_STARTING
+                lastErrorCode = null
+                lastErrorMessage = null
+                android.util.Log.d(
+                    LOG_TAG,
+                    "start background playback url=${currentState.url.take(120)} hasHeaders=${currentState.headers.isNotEmpty()} position=${currentState.positionMs} speed=${currentState.speed}",
+                )
                 refreshArtworkIfNeeded()
+                updateCachedPlaybackState()
                 startForeground(NOTIFICATION_ID, buildNotification())
                 startPlaybackFromCurrentState()
                 return START_STICKY
@@ -174,6 +218,9 @@ class MediaPlaybackService : Service() {
         player = null
         mediaSession.release()
         currentState = defaultPlaybackState()
+        playbackPhase = PHASE_IDLE
+        lastErrorCode = null
+        lastErrorMessage = null
         artworkBitmap = null
         lastArtworkUrl = null
         updateCachedPlaybackState()
@@ -204,6 +251,10 @@ class MediaPlaybackService : Service() {
             stopPlaybackAndService()
             return
         }
+        android.util.Log.d(
+            LOG_TAG,
+            "prepare media item host=${runCatching { android.net.Uri.parse(currentState.url).host }.getOrNull()} hasHeaders=${currentState.headers.isNotEmpty()}",
+        )
         val exoPlayer = ensurePlayer()
         val dataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Selene")
@@ -247,6 +298,9 @@ class MediaPlaybackService : Service() {
                 isActive = false,
             )
         }
+        playbackPhase = PHASE_IDLE
+        lastErrorCode = null
+        lastErrorMessage = null
         updateMediaSessionState()
         updateCachedPlaybackState()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -258,6 +312,9 @@ class MediaPlaybackService : Service() {
             return
         }
         currentState = defaultPlaybackState()
+        playbackPhase = PHASE_IDLE
+        lastErrorCode = null
+        lastErrorMessage = null
         updateMediaSessionState()
         updateCachedPlaybackState()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -330,6 +387,9 @@ class MediaPlaybackService : Service() {
             "isPlaying" to currentState.isPlaying,
             "positionMs" to currentState.positionMs,
             "durationMs" to currentState.durationMs,
+            "phase" to playbackPhase,
+            "errorCode" to lastErrorCode,
+            "errorMessage" to lastErrorMessage,
         )
     }
 
@@ -648,19 +708,27 @@ class MediaPlaybackService : Service() {
         const val EXTRA_HAS_PREVIOUS = "hasPrevious"
         const val EXTRA_HAS_NEXT = "hasNext"
 
+        private const val LOG_TAG = "ScreenOffPlayback"
         private const val CHANNEL_ID = "selene_media_playback_channel"
         private const val CHANNEL_NAME = "媒体播放"
         private const val NOTIFICATION_ID = 10087
+        private const val PHASE_IDLE = "idle"
+        private const val PHASE_STARTING = "starting"
+        private const val PHASE_READY = "ready"
+        private const val PHASE_ERROR = "error"
 
         @Volatile
         private var runningService: MediaPlaybackService? = null
 
         @Volatile
-        private var cachedPlaybackState: Map<String, Any> = mapOf(
+        private var cachedPlaybackState: Map<String, Any?> = mapOf(
             "isActive" to false,
             "isPlaying" to false,
             "positionMs" to 0L,
             "durationMs" to 0L,
+            "phase" to PHASE_IDLE,
+            "errorCode" to null,
+            "errorMessage" to null,
         )
 
         fun syncSession(
@@ -727,7 +795,7 @@ class MediaPlaybackService : Service() {
             context.startService(intent)
         }
 
-        fun getPlaybackState(): Map<String, Any> {
+        fun getPlaybackState(): Map<String, Any?> {
             return runningService?.let { service ->
                 val exoPlayer = service.player
                 mapOf(
@@ -736,6 +804,9 @@ class MediaPlaybackService : Service() {
                     "positionMs" to (exoPlayer?.currentPosition?.coerceAtLeast(0L)
                         ?: service.currentState.positionMs),
                     "durationMs" to service.resolveDurationMs(exoPlayer),
+                    "phase" to service.playbackPhase,
+                    "errorCode" to service.lastErrorCode,
+                    "errorMessage" to service.lastErrorMessage,
                 )
             } ?: cachedPlaybackState
         }

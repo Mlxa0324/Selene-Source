@@ -42,6 +42,35 @@ class MobilePlaybackLifecyclePolicy {
     };
   }
 
+  static bool shouldRememberAndroidBackgroundPlaybackIntent({
+    required AppLifecycleState state,
+    required bool isAndroid,
+    required bool canUseBackgroundPlayback,
+    required bool backgroundPlaybackActive,
+    required bool isPipMode,
+    required bool wasPlayingBeforeBackground,
+  }) {
+    if (!isAndroid ||
+        !canUseBackgroundPlayback ||
+        backgroundPlaybackActive ||
+        isPipMode ||
+        !wasPlayingBeforeBackground) {
+      return false;
+    }
+
+    return state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused;
+  }
+
+  static bool shouldStartAndroidBackgroundPlayback({
+    required bool adapterPlaying,
+    required bool lastKnownPlaying,
+    required bool rememberedPlaybackIntent,
+  }) {
+    return adapterPlaying || lastKnownPlaying || rememberedPlaybackIntent;
+  }
+
   static bool shouldRememberIosForegroundResume({
     required AppLifecycleState state,
     required bool isIOS,

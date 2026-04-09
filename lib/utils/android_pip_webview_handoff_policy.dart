@@ -26,6 +26,14 @@ abstract final class AndroidPipWebViewHandoffPolicy {
     return isAndroid && !shouldArmForPip;
   }
 
+  static bool shouldArmBackgroundHandoffOnPipStarted({
+    required bool isAndroid,
+    required bool canUseHandoff,
+    required bool handoffArmed,
+  }) {
+    return isAndroid && canUseHandoff && !handoffArmed;
+  }
+
   static bool shouldStartBackgroundHandoffTimer({
     required AppLifecycleState state,
     required bool isAndroid,

@@ -166,6 +166,9 @@ void main() {
         'isPlaying': false,
         'positionMs': 42000,
         'durationMs': 1440000,
+        'phase': 'idle',
+        'errorCode': null,
+        'errorMessage': null,
       });
 
       expect(state, isNotNull);
@@ -173,6 +176,151 @@ void main() {
       expect(state.isPlaying, isFalse);
       expect(state.position, const Duration(seconds: 42));
       expect(state.duration, const Duration(minutes: 24));
+      expect(state.phase, AndroidBackgroundPlaybackPhase.idle);
+    });
+
+    test('parses starting background playback state payload', () {
+      final state = AndroidMediaSessionBridge.parseBackgroundPlaybackState({
+        'isActive': true,
+        'isPlaying': false,
+        'positionMs': 42000,
+        'durationMs': 1440000,
+        'phase': 'starting',
+        'errorCode': null,
+        'errorMessage': null,
+      });
+
+      expect(state, isNotNull);
+      expect(state!.phase, AndroidBackgroundPlaybackPhase.starting);
+      expect(state.errorCode, isNull);
+      expect(state.errorMessage, isNull);
+    });
+
+    test('parses ready background playback state payload', () {
+      final state = AndroidMediaSessionBridge.parseBackgroundPlaybackState({
+        'isActive': true,
+        'isPlaying': true,
+        'positionMs': 43000,
+        'durationMs': 1440000,
+        'phase': 'ready',
+        'errorCode': null,
+        'errorMessage': null,
+      });
+
+      expect(state, isNotNull);
+      expect(state!.phase, AndroidBackgroundPlaybackPhase.ready);
+      expect(state.isPlaying, isTrue);
+    });
+
+    test('parses error background playback state payload', () {
+      final state = AndroidMediaSessionBridge.parseBackgroundPlaybackState({
+        'isActive': false,
+        'isPlaying': false,
+        'positionMs': 42000,
+        'durationMs': 1440000,
+        'phase': 'error',
+        'errorCode': 'ERROR_CODE_IO_BAD_HTTP_STATUS',
+        'errorMessage': '403',
+      });
+
+      expect(state, isNotNull);
+      expect(state!.phase, AndroidBackgroundPlaybackPhase.error);
+      expect(state.errorCode, 'ERROR_CODE_IO_BAD_HTTP_STATUS');
+      expect(state.errorMessage, '403');
+    });
+
+    test('defaults unknown background playback phase to idle', () {
+      final state = AndroidMediaSessionBridge.parseBackgroundPlaybackState({
+        'isActive': false,
+        'isPlaying': false,
+        'positionMs': 0,
+        'durationMs': 0,
+        'phase': 'weird_value',
+      });
+
+      expect(state, isNotNull);
+      expect(state!.phase, AndroidBackgroundPlaybackPhase.idle);
+    });
+
+    test('waitForBackgroundPlaybackReady returns ready state before timeout',
+        () async {
+      final states = <AndroidBackgroundPlaybackState?>[
+        const AndroidBackgroundPlaybackState(
+          isActive: true,
+          isPlaying: false,
+          position: Duration.zero,
+          duration: Duration.zero,
+          phase: AndroidBackgroundPlaybackPhase.starting,
+        ),
+        const AndroidBackgroundPlaybackState(
+          isActive: true,
+          isPlaying: true,
+          position: Duration(seconds: 1),
+          duration: Duration(minutes: 24),
+          phase: AndroidBackgroundPlaybackPhase.ready,
+        ),
+      ];
+
+      final bridge = AndroidMediaSessionBridge(
+        platformOverride: true,
+        backgroundPlaybackStateFetcher: () async => states.removeAt(0),
+      );
+
+      final state = await bridge.waitForBackgroundPlaybackReady(
+        timeout: const Duration(milliseconds: 80),
+        pollInterval: const Duration(milliseconds: 1),
+      );
+
+      expect(state, isNotNull);
+      expect(state!.phase, AndroidBackgroundPlaybackPhase.ready);
+      expect(state.isPlaying, isTrue);
+    });
+
+    test('waitForBackgroundPlaybackReady returns error state immediately',
+        () async {
+      final bridge = AndroidMediaSessionBridge(
+        platformOverride: true,
+        backgroundPlaybackStateFetcher: () async =>
+            const AndroidBackgroundPlaybackState(
+          isActive: false,
+          isPlaying: false,
+          position: Duration.zero,
+          duration: Duration.zero,
+          phase: AndroidBackgroundPlaybackPhase.error,
+          errorCode: 'ERROR_CODE_IO_BAD_HTTP_STATUS',
+          errorMessage: '403',
+        ),
+      );
+
+      final state = await bridge.waitForBackgroundPlaybackReady(
+        timeout: const Duration(milliseconds: 80),
+        pollInterval: const Duration(milliseconds: 1),
+      );
+
+      expect(state, isNotNull);
+      expect(state!.phase, AndroidBackgroundPlaybackPhase.error);
+      expect(state.errorMessage, '403');
+    });
+
+    test('waitForBackgroundPlaybackReady returns null on timeout', () async {
+      final bridge = AndroidMediaSessionBridge(
+        platformOverride: true,
+        backgroundPlaybackStateFetcher: () async =>
+            const AndroidBackgroundPlaybackState(
+          isActive: true,
+          isPlaying: false,
+          position: Duration.zero,
+          duration: Duration.zero,
+          phase: AndroidBackgroundPlaybackPhase.starting,
+        ),
+      );
+
+      final state = await bridge.waitForBackgroundPlaybackReady(
+        timeout: const Duration(milliseconds: 10),
+        pollInterval: const Duration(milliseconds: 1),
+      );
+
+      expect(state, isNull);
     });
   });
 }

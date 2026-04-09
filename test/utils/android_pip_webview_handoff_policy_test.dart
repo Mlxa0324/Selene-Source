@@ -31,6 +31,28 @@ void main() {
       );
     });
 
+    test('自动进入 PiP 后若满足 WebView 接管条件，会自动 arm 延迟接管', () {
+      expect(
+        AndroidPipWebViewHandoffPolicy.shouldArmBackgroundHandoffOnPipStarted(
+          isAndroid: true,
+          canUseHandoff: true,
+          handoffArmed: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('已经 arm 的 PiP started 回调不重复 arm', () {
+      expect(
+        AndroidPipWebViewHandoffPolicy.shouldArmBackgroundHandoffOnPipStarted(
+          isAndroid: true,
+          canUseHandoff: true,
+          handoffArmed: true,
+        ),
+        isFalse,
+      );
+    });
+
     test('PiP 离开可见阶段时启动后台接管计时', () {
       expect(
         AndroidPipWebViewHandoffPolicy.shouldStartBackgroundHandoffTimer(
