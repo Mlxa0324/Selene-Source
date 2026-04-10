@@ -134,6 +134,10 @@ class UserDataService {
   /// macOS media_kit 预加载 Key
   static const String _mediaKitPreloadEnabledKey = 'media_kit_preload_enabled';
 
+  /// 全平台在线播放预加载 Key
+  static const String _playbackPreloadEnabledKey =
+      'playback_preload_enabled_v1';
+
   /// WebView 播放器 hls.js 脚本源码缓存 Key
   static const String _hlsJsCacheKey = 'hls_js_cache_v1';
 
@@ -341,6 +345,22 @@ class UserDataService {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_mediaKitPreloadEnabledKey) ?? defaultValue;
+  }
+
+  // 保存全平台在线播放预加载开关
+  static Future<void> savePlaybackPreloadEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_playbackPreloadEnabledKey, enabled);
+  }
+
+  // 获取全平台在线播放预加载开关
+  static Future<bool> getPlaybackPreloadEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    final unified = prefs.getBool(_playbackPreloadEnabledKey);
+    if (unified != null) {
+      return unified;
+    }
+    return prefs.getBool(_mediaKitPreloadEnabledKey) ?? true;
   }
 
   // 保存长按倍速

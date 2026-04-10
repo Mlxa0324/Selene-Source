@@ -5,8 +5,33 @@ import 'package:flutter/services.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'dlna_device_dialog.dart';
 import 'danmaku_control_icons.dart';
+import '../models/player_cached_range.dart';
+import '../utils/player_cached_range_utils.dart';
 import '../models/danmaku_model.dart';
 import 'player_adapter.dart';
+
+@visibleForTesting
+({double start, double end})? resolvePcCachedProgressSegment({
+  required Duration duration,
+  required Duration position,
+  required List<PlayerCachedRange> cachedRanges,
+}) {
+  if (duration <= Duration.zero) {
+    return null;
+  }
+  final range = findPrimaryPlayerCachedRange(position, cachedRanges);
+  if (range == null) {
+    return null;
+  }
+  final start = (range.start.inMilliseconds / duration.inMilliseconds)
+      .clamp(0.0, 1.0);
+  final end =
+      (range.end.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+  if (end <= start) {
+    return null;
+  }
+  return (start: start, end: end);
+}
 
 // 带 hover 效果的按钮组件
 class HoverButton extends StatefulWidget {
@@ -2005,17 +2030,19 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   Widget build(BuildContext context) {
     final duration = widget.player.state.duration;
     final position = widget.dragPosition ?? widget.player.state.position;
-    final buffer = widget.player.state.buffer;
+    final cachedSegment = resolvePcCachedProgressSegment(
+      duration: duration,
+      position: widget.player.state.position,
+      cachedRanges: widget.player.state.cachedRanges,
+    );
 
     double value = 0.0;
-    double preloadValue = 0.0;
     if (duration.inMilliseconds > 0) {
       // live 模式下进度固定在最后
       if (widget.live) {
         value = 1.0;
       } else {
         value = position.inMilliseconds / duration.inMilliseconds;
-        preloadValue = buffer.inMilliseconds / duration.inMilliseconds;
       }
     }
 
@@ -2099,9 +2126,10 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
           child: Center(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final progressWidth = constraints.maxWidth;
-                final progressValue = value.clamp(0.0, 1.0);
-                final preloadProgressValue = preloadValue.clamp(0.0, 1.0);
+              final progressWidth = constraints.maxWidth;
+              final progressValue = value.clamp(0.0, 1.0);
+                final cachedStart = cachedSegment?.start ?? 0.0;
+                final cachedEnd = cachedSegment?.end ?? 0.0;
                 final thumbPosition = (progressValue * progressWidth)
                     .clamp(8.0, progressWidth - 8.0);
 
@@ -2121,14 +2149,13 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
                         ),
                       ),
                     ),
-                    if (widget.showPreloadProgress &&
-                        preloadProgressValue > progressValue)
+                    if (widget.showPreloadProgress && cachedSegment != null)
                       Positioned(
-                        left: 0,
+                        left: cachedStart * progressWidth,
                         top: 9,
                         child: IgnorePointer(
                           child: Container(
-                            width: preloadProgressValue * progressWidth,
+                            width: (cachedEnd - cachedStart) * progressWidth,
                             height: 6,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(3),

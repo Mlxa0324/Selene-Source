@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/widgets/danmaku_control_icons.dart';
 import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
@@ -354,6 +355,8 @@ class _FakePlayerStream implements PlayerAdapterStream {
   final positionController = StreamController<Duration>.broadcast();
   final durationController = StreamController<Duration>.broadcast();
   final bufferController = StreamController<Duration>.broadcast();
+  final cachedRangesController =
+      StreamController<List<PlayerCachedRange>>.broadcast();
   final completedController = StreamController<bool>.broadcast();
   final volumeController = StreamController<double>.broadcast();
   final rateController = StreamController<double>.broadcast();
@@ -364,6 +367,10 @@ class _FakePlayerStream implements PlayerAdapterStream {
 
   @override
   Stream<bool> get buffering => bufferingController.stream;
+
+  @override
+  Stream<List<PlayerCachedRange>> get cachedRanges =>
+      cachedRangesController.stream;
 
   @override
   Stream<bool> get completed => completedController.stream;
@@ -388,6 +395,7 @@ class _FakePlayerStream implements PlayerAdapterStream {
     await positionController.close();
     await durationController.close();
     await bufferController.close();
+    await cachedRangesController.close();
     await completedController.close();
     await volumeController.close();
     await rateController.close();
@@ -400,6 +408,7 @@ class _FakePlayerState implements PlayerAdapterState {
   Duration positionValue = Duration.zero;
   Duration durationValue = const Duration(minutes: 12);
   Duration bufferValue = Duration.zero;
+  List<PlayerCachedRange> cachedRangesValue = const [];
   double volumeValue = 100;
   double rateValue = 1.0;
   bool bufferingValue = false;
@@ -411,6 +420,9 @@ class _FakePlayerState implements PlayerAdapterState {
 
   @override
   bool get buffering => bufferingValue;
+
+  @override
+  List<PlayerCachedRange> get cachedRanges => cachedRangesValue;
 
   @override
   Duration get duration => durationValue;

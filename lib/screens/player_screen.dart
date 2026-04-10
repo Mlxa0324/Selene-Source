@@ -261,7 +261,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _hideCenterControlsWithBars = true; // 中间按钮是否跟随顶部/底部一起隐藏
   bool _adFilterEnabled = false; // 是否开启自动去广告
-  bool _mediaKitPreloadEnabled = Platform.isMacOS;
+  bool _playbackPreloadEnabled = true;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
   bool _isSeeking = false; // 是否正在执行跳转操作
@@ -502,10 +502,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final hideCenterControlsWithBars =
         await UserDataService.getHideCenterControlsWithBars();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
-    final mediaKitPreloadEnabled =
-        await UserDataService.getMediaKitPreloadEnabled(
-      defaultValue: Platform.isMacOS,
-    );
+    final playbackPreloadEnabled =
+        await UserDataService.getPlaybackPreloadEnabled();
 
     if (mounted) {
       setState(() {
@@ -517,7 +515,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _showSystemTime = showSystemTime;
         _hideCenterControlsWithBars = hideCenterControlsWithBars;
         _adFilterEnabled = adFilterEnabled;
-        _mediaKitPreloadEnabled = mediaKitPreloadEnabled;
+        _playbackPreloadEnabled = playbackPreloadEnabled;
       });
     }
   }
@@ -3419,7 +3417,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             showSystemTime: _showSystemTime,
             hideCenterControlsWithBars: _hideCenterControlsWithBars,
             hasActiveSleepTimer: _sleepTimerDeadline != null,
-            mediaKitPreloadEnabled: _mediaKitPreloadEnabled,
+            playbackPreloadEnabled: _playbackPreloadEnabled,
             adFilterEnabled: _adFilterEnabled,
             danmakuLayer: _danmakuSettings.enabled && !_isClosing
                 ? IgnorePointer(

@@ -11,6 +11,8 @@ import 'dlna_device_dialog.dart';
 import 'danmaku_control_icons.dart';
 import 'player_settings_panel.dart';
 import 'player_adapter.dart';
+import '../models/player_cached_range.dart';
+import '../utils/player_cached_range_utils.dart';
 import '../utils/device_utils.dart';
 
 const double _mobileProgressBarTouchHeight = 36;
@@ -50,6 +52,29 @@ bool shouldShowCenterControls({
     return controlsVisible;
   }
   return true;
+}
+
+@visibleForTesting
+({double start, double end})? resolveMobileCachedProgressSegment({
+  required Duration duration,
+  required Duration position,
+  required List<PlayerCachedRange> cachedRanges,
+}) {
+  if (duration <= Duration.zero) {
+    return null;
+  }
+  final range = findPrimaryPlayerCachedRange(position, cachedRanges);
+  if (range == null) {
+    return null;
+  }
+  final start = (range.start.inMilliseconds / duration.inMilliseconds)
+      .clamp(0.0, 1.0);
+  final end =
+      (range.end.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
+  if (end <= start) {
+    return null;
+  }
+  return (start: start, end: end);
 }
 
 class MobilePlayerControls extends StatefulWidget {
@@ -94,6 +119,7 @@ class MobilePlayerControls extends StatefulWidget {
   final ValueChanged<bool>? onPlayerLockChanged;
   final ValueChanged<Duration>? onSeek;
   final bool? directLongPressRateControlOverride;
+  final bool showPreloadProgress;
 
   const MobilePlayerControls({
     super.key,
@@ -137,6 +163,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.onPlayerLockChanged,
     this.onSeek,
     this.directLongPressRateControlOverride,
+    this.showPreloadProgress = false,
   });
 
   @override
@@ -1536,6 +1563,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               onSeek: widget.onSeek,
               dragPosition: _dragPosition,
               isSeekingViaSwipe: _isSeekingViaSwipe,
+              showPreloadProgress: widget.showPreloadProgress,
             ),
           ),
         ),
@@ -2102,6 +2130,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
   final Duration? dragPosition;
   final bool isSeekingViaSwipe;
   final bool live;
+  final bool showPreloadProgress;
 
   const _MobileVideoProgressBar({
     required this.player,
@@ -2113,6 +2142,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
     this.dragPosition,
     this.isSeekingViaSwipe = false,
     this.live = false,
+    this.showPreloadProgress = false,
   });
 
   @override
@@ -2146,6 +2176,11 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
   Widget build(BuildContext context) {
     final duration = widget.player.state.duration;
     final position = widget.dragPosition ?? widget.player.state.position;
+    final cachedSegment = resolveMobileCachedProgressSegment(
+      duration: duration,
+      position: widget.player.state.position,
+      cachedRanges: widget.player.state.cachedRanges,
+    );
 
     double value = 0.0;
     if (duration.inMilliseconds > 0) {
@@ -2251,6 +2286,8 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
             builder: (context, constraints) {
               final progressWidth = constraints.maxWidth;
               final progressValue = value.clamp(0.0, 1.0);
+              final cachedStart = cachedSegment?.start ?? 0.0;
+              final cachedEnd = cachedSegment?.end ?? 0.0;
               final thumbMin = progressWidth <= 16 ? progressWidth / 2 : 8.0;
               final thumbMax =
                   progressWidth <= 16 ? thumbMin : progressWidth - 8.0;
@@ -2273,6 +2310,21 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                       ),
                     ),
                   ),
+                  if (widget.showPreloadProgress && cachedSegment != null)
+                    Positioned(
+                      left: cachedStart * progressWidth,
+                      top: _mobileProgressBarTouchHeight -
+                          _mobileProgressBarTrackBottomPadding -
+                          _mobileProgressBarTrackHeight,
+                      child: Container(
+                        width: (cachedEnd - cachedStart) * progressWidth,
+                        height: _mobileProgressBarTrackHeight,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(3),
+                          color: Colors.white.withOpacity(0.34),
+                        ),
+                      ),
+                    ),
                   Positioned(
                     left: 0,
                     top: _mobileProgressBarTouchHeight -

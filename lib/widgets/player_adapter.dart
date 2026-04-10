@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:video_player/video_player.dart' as vp;
+import '../models/player_cached_range.dart';
 
 /// A bridge to provide a common interface between media_kit and video_player
 abstract class PlayerAdapter {
@@ -63,6 +65,7 @@ abstract class PlayerAdapterStream {
   Stream<Duration> get position;
   Stream<Duration> get duration;
   Stream<Duration> get buffer;
+  Stream<List<PlayerCachedRange>> get cachedRanges;
   Stream<bool> get completed;
   Stream<double> get volume;
   Stream<double> get rate;
@@ -74,11 +77,79 @@ abstract class PlayerAdapterState {
   Duration get position;
   Duration get duration;
   Duration get buffer;
+  List<PlayerCachedRange> get cachedRanges;
   double get volume;
   double get rate;
   bool get buffering;
   double get width; // 💡 新增：视频原始宽度
   double get height; // 💡 新增：视频原始高度
+}
+
+List<PlayerCachedRange> resolveSinglePlayerCachedRange({
+  required Duration start,
+  required Duration end,
+}) {
+  if (end <= start) {
+    return const [];
+  }
+  return [
+    PlayerCachedRange(start: start, end: end),
+  ];
+}
+
+class WebViewPreloadTuning {
+  final Duration? targetForwardBuffer;
+  final Duration? backBufferRetention;
+  final String preloadAttribute;
+
+  const WebViewPreloadTuning({
+    required this.targetForwardBuffer,
+    required this.backBufferRetention,
+    required this.preloadAttribute,
+  });
+}
+
+WebViewPreloadTuning resolveWebViewPreloadTuning({
+  required bool preloadEnabled,
+}) {
+  if (!preloadEnabled) {
+    return const WebViewPreloadTuning(
+      targetForwardBuffer: null,
+      backBufferRetention: null,
+      preloadAttribute: 'metadata',
+    );
+  }
+
+  return const WebViewPreloadTuning(
+    targetForwardBuffer: Duration(minutes: 5),
+    backBufferRetention: Duration(minutes: 15),
+    preloadAttribute: 'auto',
+  );
+}
+
+List<PlayerCachedRange> decodeWebViewCachedRanges(dynamic raw) {
+  if (raw is! List) {
+    return const [];
+  }
+  final ranges = <PlayerCachedRange>[];
+  for (final item in raw) {
+    if (item is! Map) {
+      continue;
+    }
+    final start = item['startMs'];
+    final end = item['endMs'];
+    if (start is! num || end is! num) {
+      continue;
+    }
+    final range = PlayerCachedRange(
+      start: Duration(milliseconds: start.round()),
+      end: Duration(milliseconds: end.round()),
+    );
+    if (range.end > range.start) {
+      ranges.add(range);
+    }
+  }
+  return ranges;
 }
 
 /// media_kit implementation
@@ -137,6 +208,14 @@ class _MediaKitStream implements PlayerAdapterStream {
   @override
   Stream<Duration> get buffer => player.stream.buffer;
   @override
+  Stream<List<PlayerCachedRange>> get cachedRanges =>
+      player.stream.buffer.map((buffer) {
+        return resolveSinglePlayerCachedRange(
+          start: Duration.zero,
+          end: buffer,
+        );
+      });
+  @override
   Stream<bool> get completed => player.stream.completed;
   @override
   Stream<double> get volume => player.stream.volume;
@@ -158,6 +237,11 @@ class _MediaKitState implements PlayerAdapterState {
   Duration get duration => player.state.duration;
   @override
   Duration get buffer => player.state.buffer;
+  @override
+  List<PlayerCachedRange> get cachedRanges => resolveSinglePlayerCachedRange(
+        start: Duration.zero,
+        end: player.state.buffer,
+      );
   @override
   double get volume => player.state.volume;
   @override
@@ -187,6 +271,8 @@ class VideoPlayerAdapter implements PlayerAdapter {
       StreamController<double>.broadcast();
   final StreamController<bool> _bufferingController =
       StreamController<bool>.broadcast();
+  final StreamController<List<PlayerCachedRange>> _cachedRangesController =
+      StreamController<List<PlayerCachedRange>>.broadcast();
 
   @override
   late final PlayerAdapterStream stream;
@@ -206,6 +292,19 @@ class VideoPlayerAdapter implements PlayerAdapter {
   double _lastVolume = 1.0;
   double _lastRate = 1.0;
   bool _lastBuffering = false;
+  List<PlayerCachedRange> _lastCachedRanges = const [];
+
+  List<PlayerCachedRange> _resolveCachedRanges() {
+    if (controller.value.buffered.isEmpty) {
+      return const [];
+    }
+    return controller.value.buffered
+        .map((range) => PlayerCachedRange(
+              start: range.start,
+              end: range.end,
+            ))
+        .toList(growable: false);
+  }
 
   void _onControllerChanged() {
     if (controller.value.isPlaying != _lastPlaying) {
@@ -239,6 +338,11 @@ class VideoPlayerAdapter implements PlayerAdapter {
       _lastBuffering = controller.value.isBuffering;
       _bufferingController.add(_lastBuffering);
     }
+    final cachedRanges = _resolveCachedRanges();
+    if (!listEquals(cachedRanges, _lastCachedRanges)) {
+      _lastCachedRanges = cachedRanges;
+      _cachedRangesController.add(cachedRanges);
+    }
   }
 
   @override
@@ -267,6 +371,7 @@ class VideoPlayerAdapter implements PlayerAdapter {
     await _volumeController.close();
     await _rateController.close();
     await _bufferingController.close();
+    await _cachedRangesController.close();
     await controller.dispose();
   }
 
@@ -308,6 +413,9 @@ class _VideoPlayerStream implements PlayerAdapterStream {
   Stream<Duration> get buffer =>
       const Stream<Duration>.empty().asBroadcastStream();
   @override
+  Stream<List<PlayerCachedRange>> get cachedRanges =>
+      adapter._cachedRangesController.stream;
+  @override
   Stream<bool> get completed => adapter._completedController.stream;
   @override
   Stream<double> get volume => adapter._volumeController.stream;
@@ -330,6 +438,8 @@ class _VideoPlayerState implements PlayerAdapterState {
   @override
   Duration get buffer => adapter.controller.value.duration;
   @override
+  List<PlayerCachedRange> get cachedRanges => adapter._resolveCachedRanges();
+  @override
   double get volume => adapter.controller.value.volume * 100;
   @override
   double get rate => adapter.controller.value.playbackSpeed;
@@ -349,6 +459,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final Duration? startAt;
   final bool adFilterEnabled;
   final bool seekBoostEnabled;
+  final bool preloadEnabled;
 
   /// 进度拖放搜索预热并行性（代码可配置）
   static const int defaultSeekWarmupConcurrency = 2;
@@ -376,6 +487,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       StreamController<double>.broadcast();
   final StreamController<bool> _bufferingController =
       StreamController<bool>.broadcast();
+  final StreamController<List<PlayerCachedRange>> _cachedRangesController =
+      StreamController<List<PlayerCachedRange>>.broadcast();
 
   bool _playing = false;
   Duration _position = Duration.zero;
@@ -383,6 +496,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _volume = 100;
   double _rate = 1.0;
   bool _buffering = false;
+  List<PlayerCachedRange> _cachedRanges = const [];
   double _videoWidth = 0; // 💡 新增
   double _videoHeight = 0; // 💡 新增
   bool _isDisposed = false;
@@ -406,6 +520,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     this.onDebugToast,
     this.adFilterEnabled = false,
     this.seekBoostEnabled = false,
+    this.preloadEnabled = false,
   }) {
     stream = _WebViewPlayerStream(this);
     state = _WebViewPlayerState(this);
@@ -512,6 +627,15 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         _buffering = nextBuffering;
         if (!_bufferingController.isClosed) {
           _bufferingController.add(_buffering);
+        }
+        break;
+      case 'cached_ranges':
+        final nextCachedRanges = decodeWebViewCachedRanges(event['ranges']);
+        if (!listEquals(_cachedRanges, nextCachedRanges)) {
+          _cachedRanges = nextCachedRanges;
+          if (!_cachedRangesController.isClosed) {
+            _cachedRangesController.add(_cachedRanges);
+          }
         }
         break;
       // 💡 新增：处理视频尺寸变化
@@ -798,6 +922,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     await _volumeController.close();
     await _rateController.close();
     await _bufferingController.close();
+    await _cachedRangesController.close();
   }
 
   @override
@@ -813,9 +938,17 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   }
 
   String _buildHtmlContent() {
+    final preloadTuning =
+        resolveWebViewPreloadTuning(preloadEnabled: preloadEnabled);
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
     final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false'; // 暂时先关闭该功能
+    final preloadEnabledJs = preloadEnabled ? 'true' : 'false';
+    final preloadAttributeJs = preloadTuning.preloadAttribute;
+    final targetForwardBufferSecondsJs =
+        preloadTuning.targetForwardBuffer?.inSeconds ?? 0;
+    final backBufferRetentionSecondsJs =
+        preloadTuning.backBufferRetention?.inSeconds ?? 0;
     final seekWarmupConcurrencyJs =
         seekWarmupConcurrency < 1 ? 1 : seekWarmupConcurrency;
     final seekWarmupSegmentCountJs =
@@ -850,6 +983,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var startTime = $startSeconds;
     var adFilterEnabled = $adFilterEnabledJs;
     var seekBoostEnabled = $seekBoostEnabledJs;
+    var preloadEnabled = $preloadEnabledJs;
+    var preloadAttribute = '$preloadAttributeJs';
+    var targetForwardBufferSeconds = $targetForwardBufferSecondsJs;
+    var backBufferRetentionSeconds = $backBufferRetentionSecondsJs;
     var seekWarmupConcurrency = $seekWarmupConcurrencyJs;
     var seekWarmupSegmentCount = $seekWarmupSegmentCountJs;
     var seekWarmupReadBytes = $seekWarmupReadBytesJs;
@@ -909,6 +1046,28 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       if (window.flutter_inappwebview) {
         window.flutter_inappwebview.callHandler('onPlayerEvent', event);
       }
+    }
+
+    function emitBufferedRanges() {
+      if (!player || !player.buffered) {
+        sendEvent('cached_ranges', { ranges: [] });
+        return;
+      }
+      var ranges = [];
+      try {
+        for (var i = 0; i < player.buffered.length; i++) {
+          var start = Number(player.buffered.start(i)) || 0;
+          var end = Number(player.buffered.end(i)) || 0;
+          if (end <= start) {
+            continue;
+          }
+          ranges.push({
+            startMs: Math.round(start * 1000),
+            endMs: Math.round(end * 1000)
+          });
+        }
+      } catch (_) {}
+      sendEvent('cached_ranges', { ranges: ranges });
     }
 
     window.__lastPlayerDebugAt = 0;
@@ -1437,6 +1596,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     window.beginRateChangeBufferingSuppression = beginRateChangeBufferingSuppression;
 
     if (player) {
+      player.preload = preloadAttribute;
       configureIOSPlaybackDefaults();
       player.addEventListener('play', function() { sendEvent('play'); });
       player.addEventListener('pause', function() { sendEvent('pause'); });
@@ -1446,14 +1606,22 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         emitRecentRateEvent('ratechange', player);
         sendEvent('ratechange', { rate: player.playbackRate });
       });
-      player.addEventListener('timeupdate', function() { sendEvent('timeupdate', { currentTime: player.currentTime }); });
-      player.addEventListener('durationchange', function() { sendEvent('durationchange', { duration: player.duration }); });
+      player.addEventListener('timeupdate', function() {
+        sendEvent('timeupdate', { currentTime: player.currentTime });
+        emitBufferedRanges();
+      });
+      player.addEventListener('durationchange', function() {
+        sendEvent('durationchange', { duration: player.duration });
+        emitBufferedRanges();
+      });
+      player.addEventListener('progress', emitBufferedRanges);
       
       // 💡 新增：监听视频尺寸
       player.addEventListener('loadedmetadata', function() {
         if (startTime > 0) player.currentTime = startTime;
         sendEvent('ready');
         sendEvent('sizechange', { width: player.videoWidth, height: player.videoHeight });
+        emitBufferedRanges();
       });
 
       player.addEventListener('resize', function() {
@@ -1470,11 +1638,13 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         emitRecentRateEvent('canplay', player);
         clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
+        emitBufferedRanges();
       });
       player.addEventListener('playing', function() {
         emitRecentRateEvent('playing', player);
         clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
+        emitBufferedRanges();
       });
       player.addEventListener('seeking', function() {
         emitRecentRateEvent('seeking', player);
@@ -1485,11 +1655,13 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         clearBufferingFallbackTimer();
         sendEvent('buffering', { value: false });
         sendEvent('timeupdate', { currentTime: player.currentTime });
+        emitBufferedRanges();
       });
 
       player.addEventListener('loadedmetadata', function() {
         if (startTime > 0) player.currentTime = startTime;
         sendEvent('ready');
+        emitBufferedRanges();
       });
     }
 
@@ -1498,6 +1670,14 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     if (isM3u8) {
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         var config = { enableWorker: true, lowLatencyMode: true };
+        if (preloadEnabled) {
+          config.maxBufferLength = Math.max(30, targetForwardBufferSeconds);
+          config.maxMaxBufferLength = Math.max(30, targetForwardBufferSeconds);
+          config.backBufferLength = Math.max(
+            targetForwardBufferSeconds,
+            backBufferRetentionSeconds
+          );
+        }
         if (seekBoostEnabled) {
           config.maxBufferLength = 8;
           config.maxMaxBufferLength = 16;
@@ -1642,6 +1822,9 @@ class _WebViewPlayerStream implements PlayerAdapterStream {
   Stream<Duration> get buffer =>
       const Stream<Duration>.empty().asBroadcastStream();
   @override
+  Stream<List<PlayerCachedRange>> get cachedRanges =>
+      adapter._cachedRangesController.stream;
+  @override
   Stream<bool> get completed => adapter._completedController.stream;
   @override
   Stream<double> get volume => adapter._volumeController.stream;
@@ -1663,6 +1846,8 @@ class _WebViewPlayerState implements PlayerAdapterState {
   Duration get duration => adapter._duration;
   @override
   Duration get buffer => adapter._duration;
+  @override
+  List<PlayerCachedRange> get cachedRanges => adapter._cachedRanges;
   @override
   double get volume => adapter._volume;
   @override

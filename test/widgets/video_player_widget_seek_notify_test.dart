@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
@@ -96,6 +97,8 @@ class _FakePlayerStream implements PlayerAdapterStream {
   final positionController = StreamController<Duration>.broadcast();
   final durationController = StreamController<Duration>.broadcast();
   final bufferController = StreamController<Duration>.broadcast();
+  final cachedRangesController =
+      StreamController<List<PlayerCachedRange>>.broadcast();
   final completedController = StreamController<bool>.broadcast();
   final volumeController = StreamController<double>.broadcast();
   final rateController = StreamController<double>.broadcast();
@@ -103,6 +106,9 @@ class _FakePlayerStream implements PlayerAdapterStream {
 
   @override
   Stream<Duration> get buffer => bufferController.stream;
+  @override
+  Stream<List<PlayerCachedRange>> get cachedRanges =>
+      cachedRangesController.stream;
 
   @override
   Stream<bool> get buffering => bufferingController.stream;
@@ -130,6 +136,7 @@ class _FakePlayerStream implements PlayerAdapterStream {
     await positionController.close();
     await durationController.close();
     await bufferController.close();
+    await cachedRangesController.close();
     await completedController.close();
     await volumeController.close();
     await rateController.close();
@@ -142,6 +149,8 @@ class _FakePlayerState implements PlayerAdapterState {
 
   @override
   Duration get buffer => Duration.zero;
+  @override
+  List<PlayerCachedRange> get cachedRanges => const [];
 
   @override
   bool get buffering => false;
