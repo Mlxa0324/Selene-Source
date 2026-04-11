@@ -1,23 +1,49 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:selene/models/playback_preload.dart';
 import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
-  test('preload tuning enables a five-minute forward buffer target', () {
-    final tuning = resolveWebViewPreloadTuning(preloadEnabled: true);
-
-    expect(tuning.targetForwardBuffer, const Duration(minutes: 5));
-    expect(tuning.backBufferRetention, const Duration(minutes: 15));
-    expect(tuning.preloadAttribute, 'auto');
-  });
-
-  test('preload tuning falls back to metadata when preload is disabled', () {
-    final tuning = resolveWebViewPreloadTuning(preloadEnabled: false);
+  test('preload tuning turns off buffering targets when level is off', () {
+    final tuning = resolveWebViewPreloadTuning(
+      preloadLevel: PlaybackPreloadLevel.off,
+    );
 
     expect(tuning.targetForwardBuffer, isNull);
     expect(tuning.backBufferRetention, isNull);
     expect(tuning.preloadAttribute, 'metadata');
+  });
+
+  test('preload tuning uses a one-minute forward buffer target for low', () {
+    final tuning = resolveWebViewPreloadTuning(
+      preloadLevel: PlaybackPreloadLevel.low,
+    );
+
+    expect(tuning.targetForwardBuffer, const Duration(minutes: 1));
+    expect(tuning.backBufferRetention, const Duration(minutes: 15));
+    expect(tuning.preloadAttribute, 'auto');
+  });
+
+  test('preload tuning uses a three-minute forward buffer target for medium',
+      () {
+    final tuning = resolveWebViewPreloadTuning(
+      preloadLevel: PlaybackPreloadLevel.medium,
+    );
+
+    expect(tuning.targetForwardBuffer, const Duration(minutes: 3));
+    expect(tuning.backBufferRetention, const Duration(minutes: 15));
+    expect(tuning.preloadAttribute, 'auto');
+  });
+
+  test('preload tuning uses a five-minute forward buffer target for high', () {
+    final tuning = resolveWebViewPreloadTuning(
+      preloadLevel: PlaybackPreloadLevel.high,
+    );
+
+    expect(tuning.targetForwardBuffer, const Duration(minutes: 5));
+    expect(tuning.backBufferRetention, const Duration(minutes: 15));
+    expect(tuning.preloadAttribute, 'auto');
   });
 
   test('decodeWebViewCachedRanges parses confirmed buffered ranges', () {

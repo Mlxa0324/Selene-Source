@@ -8,6 +8,7 @@ import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:selene/widgets/player_sources_panel.dart';
 import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
+import '../models/playback_preload.dart';
 import '../config/player_backend_config.dart';
 import '../models/search_result.dart';
 import '../models/danmaku_model.dart';
@@ -68,7 +69,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
   final bool hideCenterControlsWithBars;
-  final bool playbackPreloadEnabled;
+  final PlaybackPreloadLevel playbackPreloadLevel;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
   final String? videoCover;
@@ -126,7 +127,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
     this.hideCenterControlsWithBars = true,
-    this.playbackPreloadEnabled = false,
+    this.playbackPreloadLevel = PlaybackPreloadLevel.off,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
     this.adFilterEnabled = false,
@@ -282,7 +283,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   int get _mediaKitBufferSize {
-    if (Platform.isMacOS && widget.playbackPreloadEnabled) {
+    if (Platform.isMacOS && widget.playbackPreloadLevel.isEnabled) {
       return 256 * 1024 * 1024;
     }
     return 32 * 1024 * 1024;
@@ -328,7 +329,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       startAt: startAt,
       adFilterEnabled: widget.adFilterEnabled,
       seekBoostEnabled: !widget.isLocal,
-      preloadEnabled: widget.playbackPreloadEnabled && !widget.isLocal,
+      preloadLevel: widget.isLocal
+          ? PlaybackPreloadLevel.off
+          : widget.playbackPreloadLevel,
       onDebugToast: widget.onDebugToast,
       onReady: () {
         debugPrint('VideoPlayerWidget: WebView ready');
@@ -589,7 +592,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (widget.headers != oldWidget.headers && widget.headers != null) {
       _currentHeaders = widget.headers;
     }
-    if (widget.playbackPreloadEnabled != oldWidget.playbackPreloadEnabled &&
+    if (widget.playbackPreloadLevel != oldWidget.playbackPreloadLevel &&
         _adapter is MediaKitAdapter) {
       unawaited(_recreateMediaKitAdapterForConfigurationChange());
     }
@@ -1454,7 +1457,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           onDanmakuButtonPressed: widget.onDanmakuButtonPressed,
           onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
           showPreloadProgress:
-              widget.playbackPreloadEnabled && !widget.isLocal,
+              widget.playbackPreloadLevel.isEnabled && !widget.isLocal,
           forceControlsVisible: widget.forceControlsVisible,
           live: widget.live,
           playbackSpeedListenable: _playbackSpeed,
@@ -1586,7 +1589,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         progressMode: widget.progressMode,
         showSystemTime: widget.showSystemTime,
         hideCenterControlsWithBars: widget.hideCenterControlsWithBars,
-        showPreloadProgress: widget.playbackPreloadEnabled && !widget.isLocal,
+        showPreloadProgress:
+            widget.playbackPreloadLevel.isEnabled && !widget.isLocal,
         hasActiveSleepTimer: widget.hasActiveSleepTimer,
         onPlayerLockChanged: widget.onPlayerLockChanged,
         onSeek: widget.onSeek,

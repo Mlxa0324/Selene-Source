@@ -2,18 +2,19 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:selene/models/playback_preload.dart';
 import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/widgets/player_adapter.dart';
 import 'package:selene/widgets/video_player_widget.dart';
 
 void main() {
-  test('video player widget exposes unified playback preload flag', () {
+  test('video player widget exposes unified playback preload level', () {
     const widget = VideoPlayerWidget(
       isShortDrama: false,
-      playbackPreloadEnabled: true,
+      playbackPreloadLevel: PlaybackPreloadLevel.medium,
     );
 
-    expect(widget.playbackPreloadEnabled, isTrue);
+    expect(widget.playbackPreloadLevel, PlaybackPreloadLevel.medium);
   });
 
   test('player adapter exposes cached ranges through stream and state',

@@ -1,39 +1,51 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:selene/models/playback_preload.dart';
 import 'package:selene/services/user_data_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('getPlaybackPreloadEnabled defaults to true when nothing is stored',
+  test('getPlaybackPreloadLevel defaults to high when nothing is stored',
       () async {
     SharedPreferences.setMockInitialValues({});
 
     expect(
-      await UserDataService.getPlaybackPreloadEnabled(),
-      isTrue,
+      await UserDataService.getPlaybackPreloadLevel(),
+      PlaybackPreloadLevel.high,
     );
   });
 
-  test('getPlaybackPreloadEnabled falls back to legacy media kit key',
+  test('getPlaybackPreloadLevel falls back to legacy unified bool key',
       () async {
+    SharedPreferences.setMockInitialValues({
+      'playback_preload_enabled_v1': false,
+    });
+
+    expect(
+      await UserDataService.getPlaybackPreloadLevel(),
+      PlaybackPreloadLevel.off,
+    );
+  });
+
+  test('getPlaybackPreloadLevel falls back to legacy media kit key', () async {
     SharedPreferences.setMockInitialValues({
       'media_kit_preload_enabled': false,
     });
 
     expect(
-      await UserDataService.getPlaybackPreloadEnabled(),
-      isFalse,
+      await UserDataService.getPlaybackPreloadLevel(),
+      PlaybackPreloadLevel.off,
     );
   });
 
-  test('savePlaybackPreloadEnabled writes the unified key', () async {
+  test('savePlaybackPreloadLevel writes the unified level key', () async {
     SharedPreferences.setMockInitialValues({});
 
-    await UserDataService.savePlaybackPreloadEnabled(false);
+    await UserDataService.savePlaybackPreloadLevel(PlaybackPreloadLevel.medium);
 
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getBool('playback_preload_enabled_v1'), isFalse);
+    expect(prefs.getString('playback_preload_level_v1'), 'medium');
   });
 }

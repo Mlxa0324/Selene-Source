@@ -7,6 +7,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:video_player/video_player.dart' as vp;
+import '../models/playback_preload.dart';
 import '../models/player_cached_range.dart';
 
 /// A bridge to provide a common interface between media_kit and video_player
@@ -110,9 +111,9 @@ class WebViewPreloadTuning {
 }
 
 WebViewPreloadTuning resolveWebViewPreloadTuning({
-  required bool preloadEnabled,
+  required PlaybackPreloadLevel preloadLevel,
 }) {
-  if (!preloadEnabled) {
+  if (!preloadLevel.isEnabled) {
     return const WebViewPreloadTuning(
       targetForwardBuffer: null,
       backBufferRetention: null,
@@ -120,9 +121,9 @@ WebViewPreloadTuning resolveWebViewPreloadTuning({
     );
   }
 
-  return const WebViewPreloadTuning(
-    targetForwardBuffer: Duration(minutes: 5),
-    backBufferRetention: Duration(minutes: 15),
+  return WebViewPreloadTuning(
+    targetForwardBuffer: preloadLevel.targetForwardBuffer,
+    backBufferRetention: preloadLevel.backBufferRetention,
     preloadAttribute: 'auto',
   );
 }
@@ -459,7 +460,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final Duration? startAt;
   final bool adFilterEnabled;
   final bool seekBoostEnabled;
-  final bool preloadEnabled;
+  final PlaybackPreloadLevel preloadLevel;
 
   /// 进度拖放搜索预热并行性（代码可配置）
   static const int defaultSeekWarmupConcurrency = 2;
@@ -520,7 +521,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     this.onDebugToast,
     this.adFilterEnabled = false,
     this.seekBoostEnabled = false,
-    this.preloadEnabled = false,
+    this.preloadLevel = PlaybackPreloadLevel.off,
   }) {
     stream = _WebViewPlayerStream(this);
     state = _WebViewPlayerState(this);
@@ -939,11 +940,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   String _buildHtmlContent() {
     final preloadTuning =
-        resolveWebViewPreloadTuning(preloadEnabled: preloadEnabled);
+        resolveWebViewPreloadTuning(preloadLevel: preloadLevel);
     final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
     final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false'; // 暂时先关闭该功能
-    final preloadEnabledJs = preloadEnabled ? 'true' : 'false';
+    final preloadEnabledJs = preloadLevel.isEnabled ? 'true' : 'false';
     final preloadAttributeJs = preloadTuning.preloadAttribute;
     final targetForwardBufferSecondsJs =
         preloadTuning.targetForwardBuffer?.inSeconds ?? 0;

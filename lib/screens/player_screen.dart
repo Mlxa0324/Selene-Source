@@ -20,6 +20,7 @@ import '../services/user_data_service.dart';
 import '../services/search_service.dart';
 import '../models/search_result.dart';
 import '../models/douban_movie.dart';
+import '../models/playback_preload.dart';
 import '../models/play_record.dart';
 import '../services/page_cache_service.dart';
 import '../services/local_mode_storage_service.dart';
@@ -261,7 +262,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _showSystemTime = false; // 是否在右下角显示系统时间
   bool _hideCenterControlsWithBars = true; // 中间按钮是否跟随顶部/底部一起隐藏
   bool _adFilterEnabled = false; // 是否开启自动去广告
-  bool _playbackPreloadEnabled = true;
+  PlaybackPreloadLevel _playbackPreloadLevel = kDefaultPlaybackPreloadLevel;
   int _skipIntroDuration = 0;
   int _skipOutroDuration = 0;
   bool _isSeeking = false; // 是否正在执行跳转操作
@@ -502,8 +503,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final hideCenterControlsWithBars =
         await UserDataService.getHideCenterControlsWithBars();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
-    final playbackPreloadEnabled =
-        await UserDataService.getPlaybackPreloadEnabled();
+    final playbackPreloadLevel =
+        await UserDataService.getPlaybackPreloadLevel();
 
     if (mounted) {
       setState(() {
@@ -515,7 +516,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         _showSystemTime = showSystemTime;
         _hideCenterControlsWithBars = hideCenterControlsWithBars;
         _adFilterEnabled = adFilterEnabled;
-        _playbackPreloadEnabled = playbackPreloadEnabled;
+        _playbackPreloadLevel = playbackPreloadLevel;
       });
     }
   }
@@ -3417,7 +3418,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             showSystemTime: _showSystemTime,
             hideCenterControlsWithBars: _hideCenterControlsWithBars,
             hasActiveSleepTimer: _sleepTimerDeadline != null,
-            playbackPreloadEnabled: _playbackPreloadEnabled,
+            playbackPreloadLevel: _playbackPreloadLevel,
             adFilterEnabled: _adFilterEnabled,
             danmakuLayer: _danmakuSettings.enabled && !_isClosing
                 ? IgnorePointer(

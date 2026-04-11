@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/playback_preload.dart';
 import '../models/search_result.dart';
 
 class SavedUserAccount {
@@ -137,6 +138,9 @@ class UserDataService {
   /// 全平台在线播放预加载 Key
   static const String _playbackPreloadEnabledKey =
       'playback_preload_enabled_v1';
+
+  /// 全平台在线播放预加载级别 Key
+  static const String _playbackPreloadLevelKey = 'playback_preload_level_v1';
 
   /// WebView 播放器 hls.js 脚本源码缓存 Key
   static const String _hlsJsCacheKey = 'hls_js_cache_v1';
@@ -349,18 +353,43 @@ class UserDataService {
 
   // 保存全平台在线播放预加载开关
   static Future<void> savePlaybackPreloadEnabled(bool enabled) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_playbackPreloadEnabledKey, enabled);
+    await savePlaybackPreloadLevel(
+      playbackPreloadLevelFromLegacyEnabled(enabled),
+    );
   }
 
   // 获取全平台在线播放预加载开关
   static Future<bool> getPlaybackPreloadEnabled() async {
+    return (await getPlaybackPreloadLevel()).isEnabled;
+  }
+
+  // 保存全平台在线播放预加载级别
+  static Future<void> savePlaybackPreloadLevel(
+      PlaybackPreloadLevel level) async {
     final prefs = await SharedPreferences.getInstance();
-    final unified = prefs.getBool(_playbackPreloadEnabledKey);
-    if (unified != null) {
-      return unified;
+    await prefs.setString(_playbackPreloadLevelKey, level.storageValue);
+  }
+
+  // 获取全平台在线播放预加载级别
+  static Future<PlaybackPreloadLevel> getPlaybackPreloadLevel() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final storedLevel = prefs.getString(_playbackPreloadLevelKey);
+    if (storedLevel != null && storedLevel.isNotEmpty) {
+      return playbackPreloadLevelFromStorage(storedLevel);
     }
-    return prefs.getBool(_mediaKitPreloadEnabledKey) ?? true;
+
+    final legacyUnified = prefs.getBool(_playbackPreloadEnabledKey);
+    if (legacyUnified != null) {
+      return playbackPreloadLevelFromLegacyEnabled(legacyUnified);
+    }
+
+    final legacyMediaKit = prefs.getBool(_mediaKitPreloadEnabledKey);
+    if (legacyMediaKit != null) {
+      return playbackPreloadLevelFromLegacyEnabled(legacyMediaKit);
+    }
+
+    return kDefaultPlaybackPreloadLevel;
   }
 
   // 保存长按倍速

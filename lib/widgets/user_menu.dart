@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:selene/services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/playback_preload.dart';
 import '../services/user_data_service.dart';
 import '../screens/login_screen.dart';
 import '../services/douban_cache_service.dart';
@@ -34,6 +35,9 @@ class UserMenu extends StatefulWidget {
 }
 
 class _UserMenuState extends State<UserMenu> {
+  static const List<PlaybackPreloadLevel> _preloadLevels =
+      PlaybackPreloadLevel.values;
+
   String _serverUrl = '';
   String? _username;
   String _role = 'user';
@@ -46,7 +50,7 @@ class _UserMenuState extends State<UserMenu> {
   bool _localSearch = false;
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
-  bool _playbackPreloadEnabled = true;
+  PlaybackPreloadLevel _playbackPreloadLevel = kDefaultPlaybackPreloadLevel;
   bool _showLive = false;
   bool _showSourceBrowser = false;
   bool _showSettings = false;
@@ -83,8 +87,8 @@ class _UserMenuState extends State<UserMenu> {
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
-    final playbackPreloadEnabled =
-        await UserDataService.getPlaybackPreloadEnabled();
+    final playbackPreloadLevel =
+        await UserDataService.getPlaybackPreloadLevel();
     final showLive = await UserDataService.getShowLive();
     final showSourceBrowser = await UserDataService.getShowSourceBrowser();
     final savedAccounts = await UserDataService.getSavedAccounts();
@@ -102,7 +106,7 @@ class _UserMenuState extends State<UserMenu> {
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
-        _playbackPreloadEnabled = playbackPreloadEnabled;
+        _playbackPreloadLevel = playbackPreloadLevel;
         _showLive = showLive;
         _showSourceBrowser = showSourceBrowser;
         _savedAccounts = savedAccounts;
@@ -1117,6 +1121,107 @@ class _UserMenuState extends State<UserMenu> {
     );
   }
 
+  Widget _buildPreloadLevelOption() {
+    final isDarkMode = widget.isDarkMode;
+    final idleBackground =
+        isDarkMode ? const Color(0xFF111827) : const Color(0xFFF3F4F6);
+    final activeBackground =
+        isDarkMode ? const Color(0xFF065F46) : const Color(0xFFD1FAE5);
+    final idleText =
+        isDarkMode ? const Color(0xFFD1D5DB) : const Color(0xFF4B5563);
+    final activeText =
+        isDarkMode ? const Color(0xFFECFDF5) : const Color(0xFF047857);
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        key: const ValueKey('app-settings-preload-option'),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 10,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              LucideIcons.gauge,
+              size: 20,
+              color: isDarkMode
+                  ? const Color(0xFF9ca3af)
+                  : const Color(0xFF6b7280),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                '预加载级别',
+                style: FontUtils.poppins(
+                  fontSize: 16,
+                  color: isDarkMode
+                      ? const Color(0xFFffffff)
+                      : const Color(0xFF1f2937),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 196),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: isDarkMode
+                      ? const Color(0xFF1F2937)
+                      : const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _preloadLevels.map((level) {
+                    final isSelected = level == _playbackPreloadLevel;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () async {
+                          if (level == _playbackPreloadLevel) {
+                            return;
+                          }
+                          await UserDataService.savePlaybackPreloadLevel(level);
+                          if (!mounted) {
+                            return;
+                          }
+                          setState(() => _playbackPreloadLevel = level);
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          curve: Curves.easeOutCubic,
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            color:
+                                isSelected ? activeBackground : idleBackground,
+                            borderRadius: BorderRadius.circular(11),
+                          ),
+                          child: Text(
+                            level.label,
+                            textAlign: TextAlign.center,
+                            style: FontUtils.poppins(
+                              fontSize: 13,
+                              color: isSelected ? activeText : idleText,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -1124,7 +1229,7 @@ class _UserMenuState extends State<UserMenu> {
       child: GestureDetector(
         onTap: widget.onClose,
         child: Container(
-          color: Colors.black.withOpacity(0.3),
+          color: Colors.black.withValues(alpha: 0.3),
           child: Center(
             child: GestureDetector(
               onTap: () {}, // 阻止点击菜单内容时关闭
@@ -1139,7 +1244,7 @@ class _UserMenuState extends State<UserMenu> {
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withValues(alpha: 0.1),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -1593,16 +1698,7 @@ class _UserMenuState extends State<UserMenu> {
                   },
                   icon: LucideIcons.shieldCheck,
                 ),
-                _buildToggleOption(
-                  title: '预加载',
-                  value: _playbackPreloadEnabled,
-                  onChanged: (value) async {
-                    await UserDataService.savePlaybackPreloadEnabled(value);
-                    setState(() => _playbackPreloadEnabled = value);
-                  },
-                  icon: LucideIcons.gauge,
-                  optionKey: const ValueKey('app-settings-preload-option'),
-                ),
+                _buildPreloadLevelOption(),
                 _buildToggleOption(
                   title: '显示直播入口',
                   value: _showLive,
