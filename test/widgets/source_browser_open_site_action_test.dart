@@ -57,6 +57,20 @@ void main() {
 
     expect(openedUri?.toString(), 'https://wolongzyw.com');
   });
+
+  testWidgets('source browser uses 外部打开 copy for site action', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await _pumpSourceBrowserScreen(
+      tester,
+      size: const Size(900, 1200),
+      onOpenSourceSite: (_) async {},
+      useDesktopStyleOverride: true,
+    );
+
+    expect(find.text('外部打开'), findsOneWidget);
+    expect(find.text('浏览器打开'), findsNothing);
+  });
 }
 
 Future<void> _pumpSourceBrowserScreen(

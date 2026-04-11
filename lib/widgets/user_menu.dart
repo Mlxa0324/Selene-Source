@@ -1129,12 +1129,10 @@ class _UserMenuState extends State<UserMenu> {
     final useRoomyLayout = screenWidth >= DeviceUtils.tabletMinWidth;
     final idleBackground =
         isDarkMode ? const Color(0xFF111827) : const Color(0xFFF3F4F6);
-    final activeBackground =
-        isDarkMode ? const Color(0xFF065F46) : const Color(0xFFD1FAE5);
+    const activeBackground = Color(0xFF10B981);
     final idleText =
         isDarkMode ? const Color(0xFFD1D5DB) : const Color(0xFF4B5563);
-    final activeText =
-        isDarkMode ? const Color(0xFFECFDF5) : const Color(0xFF047857);
+    const activeText = Colors.white;
 
     Widget buildPreloadButton(PlaybackPreloadLevel level, {double? width}) {
       final isSelected = level == _playbackPreloadLevel;

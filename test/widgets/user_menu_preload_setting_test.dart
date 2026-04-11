@@ -142,7 +142,9 @@ void main() {
 
     expect(selectorDecoration.borderRadius, BorderRadius.circular(12));
     expect(selectedDecoration.borderRadius, BorderRadius.circular(8));
+    expect(selectedDecoration.color, const Color(0xFF10B981));
     expect(selectedLabel.style?.fontSize, 11);
+    expect(selectedLabel.style?.color, Colors.white);
   });
 
   testWidgets(
