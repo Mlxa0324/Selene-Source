@@ -1,5 +1,21 @@
 import '../models/player_cached_range.dart';
 
+List<PlayerCachedRange> accumulatePlayerCachedRanges({
+  required List<PlayerCachedRange> existing,
+  required List<PlayerCachedRange> incoming,
+}) {
+  if (existing.isEmpty) {
+    return mergePlayerCachedRanges(incoming);
+  }
+  if (incoming.isEmpty) {
+    return mergePlayerCachedRanges(existing);
+  }
+  return mergePlayerCachedRanges([
+    ...existing,
+    ...incoming,
+  ]);
+}
+
 List<PlayerCachedRange> mergePlayerCachedRanges(List<PlayerCachedRange> ranges) {
   if (ranges.isEmpty) {
     return const [];
@@ -27,6 +43,31 @@ List<PlayerCachedRange> mergePlayerCachedRanges(List<PlayerCachedRange> ranges) 
   }
 
   return merged;
+}
+
+List<({double start, double end})> resolvePlayerCachedProgressSegments({
+  required Duration duration,
+  required List<PlayerCachedRange> cachedRanges,
+}) {
+  if (duration <= Duration.zero) {
+    return const [];
+  }
+
+  final totalMilliseconds = duration.inMilliseconds;
+  if (totalMilliseconds <= 0) {
+    return const [];
+  }
+
+  return mergePlayerCachedRanges(cachedRanges)
+      .map((range) {
+        final start =
+            (range.start.inMilliseconds / totalMilliseconds).clamp(0.0, 1.0);
+        final end =
+            (range.end.inMilliseconds / totalMilliseconds).clamp(0.0, 1.0);
+        return (start: start, end: end);
+      })
+      .where((segment) => segment.end > segment.start)
+      .toList(growable: false);
 }
 
 PlayerCachedRange? findContainingPlayerCachedRange(

@@ -16,9 +16,9 @@ import '../utils/player_cached_range_utils.dart';
 import '../utils/device_utils.dart';
 
 const double _mobileProgressBarTouchHeight = 36;
-const double _mobileProgressBarTrackHeight = 6;
+const double _mobileProgressBarTrackHeight = 7;
 const double _mobileProgressBarTrackBottomPadding = 9;
-const double _mobileProgressBarThumbSize = 16;
+const double _mobileProgressBarThumbSize = 18;
 const double _mobileProgressBarThumbBottomPadding = 4;
 const double _mobileProgressBarEdgeGuard = 4;
 
@@ -120,6 +120,7 @@ class MobilePlayerControls extends StatefulWidget {
   final ValueChanged<Duration>? onSeek;
   final bool? directLongPressRateControlOverride;
   final bool showPreloadProgress;
+  final List<PlayerCachedRange>? preloadProgressRanges;
 
   const MobilePlayerControls({
     super.key,
@@ -164,6 +165,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.onSeek,
     this.directLongPressRateControlOverride,
     this.showPreloadProgress = false,
+    this.preloadProgressRanges,
   });
 
   @override
@@ -1564,6 +1566,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               dragPosition: _dragPosition,
               isSeekingViaSwipe: _isSeekingViaSwipe,
               showPreloadProgress: widget.showPreloadProgress,
+              preloadProgressRanges: widget.preloadProgressRanges,
             ),
           ),
         ),
@@ -2131,6 +2134,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
   final bool isSeekingViaSwipe;
   final bool live;
   final bool showPreloadProgress;
+  final List<PlayerCachedRange>? preloadProgressRanges;
 
   const _MobileVideoProgressBar({
     required this.player,
@@ -2143,6 +2147,7 @@ class _MobileVideoProgressBar extends StatefulWidget {
     this.isSeekingViaSwipe = false,
     this.live = false,
     this.showPreloadProgress = false,
+    this.preloadProgressRanges,
   });
 
   @override
@@ -2176,10 +2181,10 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
   Widget build(BuildContext context) {
     final duration = widget.player.state.duration;
     final position = widget.dragPosition ?? widget.player.state.position;
-    final cachedSegment = resolveMobileCachedProgressSegment(
+    final cachedSegments = resolvePlayerCachedProgressSegments(
       duration: duration,
-      position: widget.player.state.position,
-      cachedRanges: widget.player.state.cachedRanges,
+      cachedRanges:
+          widget.preloadProgressRanges ?? widget.player.state.cachedRanges,
     );
 
     double value = 0.0;
@@ -2286,11 +2291,13 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
             builder: (context, constraints) {
               final progressWidth = constraints.maxWidth;
               final progressValue = value.clamp(0.0, 1.0);
-              final cachedStart = cachedSegment?.start ?? 0.0;
-              final cachedEnd = cachedSegment?.end ?? 0.0;
-              final thumbMin = progressWidth <= 16 ? progressWidth / 2 : 8.0;
-              final thumbMax =
-                  progressWidth <= 16 ? thumbMin : progressWidth - 8.0;
+              const thumbRadius = _mobileProgressBarThumbSize / 2;
+              final thumbMin = progressWidth <= _mobileProgressBarThumbSize
+                  ? progressWidth / 2
+                  : thumbRadius;
+              final thumbMax = progressWidth <= _mobileProgressBarThumbSize
+                  ? thumbMin
+                  : progressWidth - thumbRadius;
               final thumbPosition =
                   (progressValue * progressWidth).clamp(thumbMin, thumbMax);
               return Stack(
@@ -2306,25 +2313,27 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                       height: _mobileProgressBarTrackHeight,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(3),
-                        color: Colors.white.withOpacity(0.3),
+                        color: Colors.white.withValues(alpha: 0.3),
                       ),
                     ),
                   ),
-                  if (widget.showPreloadProgress && cachedSegment != null)
-                    Positioned(
-                      left: cachedStart * progressWidth,
-                      top: _mobileProgressBarTouchHeight -
-                          _mobileProgressBarTrackBottomPadding -
-                          _mobileProgressBarTrackHeight,
-                      child: Container(
-                        width: (cachedEnd - cachedStart) * progressWidth,
-                        height: _mobileProgressBarTrackHeight,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(3),
-                          color: Colors.white.withOpacity(0.34),
+                  if (widget.showPreloadProgress)
+                    for (final cachedSegment in cachedSegments)
+                      Positioned(
+                        left: cachedSegment.start * progressWidth,
+                        top: _mobileProgressBarTouchHeight -
+                            _mobileProgressBarTrackBottomPadding -
+                            _mobileProgressBarTrackHeight,
+                        child: Container(
+                          width: (cachedSegment.end - cachedSegment.start) *
+                              progressWidth,
+                          height: _mobileProgressBarTrackHeight,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(3),
+                            color: Colors.white.withValues(alpha: 0.34),
+                          ),
                         ),
                       ),
-                    ),
                   Positioned(
                     left: 0,
                     top: _mobileProgressBarTouchHeight -
@@ -2356,7 +2365,7 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
                             color: Colors.red,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
+                                color: Colors.black.withValues(alpha: 0.3),
                                 blurRadius: 4,
                                 offset: const Offset(0, 2),
                               ),

@@ -113,6 +113,7 @@ class PCPlayerControls extends StatefulWidget {
   final DanmakuSettings danmakuSettings;
   final void Function(DanmakuSettings settings)? onDanmakuSettingsChanged;
   final bool showPreloadProgress;
+  final List<PlayerCachedRange>? preloadProgressRanges;
 
   const PCPlayerControls({
     super.key,
@@ -151,6 +152,7 @@ class PCPlayerControls extends StatefulWidget {
     this.danmakuSettings = const DanmakuSettings(),
     this.onDanmakuSettingsChanged,
     this.showPreloadProgress = false,
+    this.preloadProgressRanges,
   });
 
   @override
@@ -1106,6 +1108,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
                     child: CustomVideoProgressBar(
                       player: widget.player,
                       showPreloadProgress: widget.showPreloadProgress,
+                      preloadProgressRanges: widget.preloadProgressRanges,
                       onDragStart: _onSeekStart,
                       onDragEnd: _onSeekEnd,
                       onDragUpdate: () {
@@ -1909,6 +1912,7 @@ class CustomVideoProgressBar extends StatefulWidget {
   final Duration? dragPosition;
   final bool isSeekingViaSwipe;
   final bool live;
+  final List<PlayerCachedRange>? preloadProgressRanges;
 
   const CustomVideoProgressBar({
     super.key,
@@ -1921,11 +1925,18 @@ class CustomVideoProgressBar extends StatefulWidget {
     this.dragPosition,
     this.isSeekingViaSwipe = false,
     this.live = false,
+    this.preloadProgressRanges,
   });
 
   @override
   State<CustomVideoProgressBar> createState() => _CustomVideoProgressBarState();
 }
+
+const double _desktopProgressBarTouchHeight = 24;
+const double _desktopProgressBarTrackHeight = 7;
+const double _desktopProgressBarTrackTop = 8.5;
+const double _desktopProgressBarThumbSize = 18;
+const double _desktopProgressBarThumbTop = 3;
 
 class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   bool _isDragging = false;
@@ -2030,10 +2041,10 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
   Widget build(BuildContext context) {
     final duration = widget.player.state.duration;
     final position = widget.dragPosition ?? widget.player.state.position;
-    final cachedSegment = resolvePcCachedProgressSegment(
+    final cachedSegments = resolvePlayerCachedProgressSegments(
       duration: duration,
-      position: widget.player.state.position,
-      cachedRanges: widget.player.state.cachedRanges,
+      cachedRanges:
+          widget.preloadProgressRanges ?? widget.player.state.cachedRanges,
     );
 
     double value = 0.0;
@@ -2121,17 +2132,16 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
                 widget.onDragEnd?.call();
               },
         child: Container(
-          height: 24,
+          height: _desktopProgressBarTouchHeight,
           color: Colors.transparent,
           child: Center(
             child: LayoutBuilder(
               builder: (context, constraints) {
-              final progressWidth = constraints.maxWidth;
-              final progressValue = value.clamp(0.0, 1.0);
-                final cachedStart = cachedSegment?.start ?? 0.0;
-                final cachedEnd = cachedSegment?.end ?? 0.0;
+                final progressWidth = constraints.maxWidth;
+                final progressValue = value.clamp(0.0, 1.0);
+                const thumbRadius = _desktopProgressBarThumbSize / 2;
                 final thumbPosition = (progressValue * progressWidth)
-                    .clamp(8.0, progressWidth - 8.0);
+                    .clamp(thumbRadius, progressWidth - thumbRadius);
 
                 return Stack(
                   clipBehavior: Clip.none,
@@ -2140,47 +2150,56 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
                     Positioned(
                       left: 0,
                       right: 0,
-                      top: 9,
+                      top: _desktopProgressBarTrackTop,
                       child: Container(
-                        height: 6,
+                        height: _desktopProgressBarTrackHeight,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(3),
+                          borderRadius: BorderRadius.circular(
+                            _desktopProgressBarTrackHeight / 2,
+                          ),
                           color: Colors.white.withValues(alpha: 0.3),
                         ),
                       ),
                     ),
-                    if (widget.showPreloadProgress && cachedSegment != null)
-                      Positioned(
-                        left: cachedStart * progressWidth,
-                        top: 9,
-                        child: IgnorePointer(
-                          child: Container(
-                            width: (cachedEnd - cachedStart) * progressWidth,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(3),
-                              color: Colors.white.withValues(alpha: 0.34),
+                    if (widget.showPreloadProgress)
+                      for (final cachedSegment in cachedSegments)
+                        Positioned(
+                          left: cachedSegment.start * progressWidth,
+                          top: _desktopProgressBarTrackTop,
+                          child: IgnorePointer(
+                            child: Container(
+                              width:
+                                  (cachedSegment.end - cachedSegment.start) *
+                                      progressWidth,
+                              height: _desktopProgressBarTrackHeight,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(
+                                  _desktopProgressBarTrackHeight / 2,
+                                ),
+                                color: Colors.white.withValues(alpha: 0.34),
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     // 已播放进度
                     Positioned(
                       left: 0,
-                      top: 9,
+                      top: _desktopProgressBarTrackTop,
                       child: Container(
                         width: progressValue * progressWidth,
-                        height: 6,
+                        height: _desktopProgressBarTrackHeight,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(3),
+                          borderRadius: BorderRadius.circular(
+                            _desktopProgressBarTrackHeight / 2,
+                          ),
                           color: Colors.red,
                         ),
                       ),
                     ),
                     // 可拖拽的圆形把手
                     Positioned(
-                      left: thumbPosition - 8,
-                      top: 4,
+                      left: thumbPosition - thumbRadius,
+                      top: _desktopProgressBarThumbTop,
                       child: MouseRegion(
                         onEnter: (_) => setState(() => _isHoveringThumb = true),
                         onExit: (_) => setState(() => _isHoveringThumb = false),
@@ -2192,8 +2211,8 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
                               : 1.0,
                           duration: const Duration(milliseconds: 150),
                           child: Container(
-                            width: 16,
-                            height: 16,
+                            width: _desktopProgressBarThumbSize,
+                            height: _desktopProgressBarThumbSize,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: Colors.red,

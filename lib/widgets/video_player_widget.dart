@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
 import 'package:selene/widgets/player_sources_panel.dart';
 import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
 import '../models/playback_preload.dart';
+import '../models/player_cached_range.dart';
 import '../config/player_backend_config.dart';
 import '../models/search_result.dart';
 import '../models/danmaku_model.dart';
@@ -18,6 +20,7 @@ import 'short_drama_controls.dart'; // 💡 新增
 import 'video_player_surface.dart';
 import 'player_settings_panel.dart';
 import 'player_adapter.dart';
+import '../utils/player_cached_range_utils.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
@@ -251,6 +254,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   StreamSubscription? _completedSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _bufferingSubscription;
+  StreamSubscription<List<PlayerCachedRange>>? _cachedRangesSubscription;
   final ValueNotifier<double> _playbackSpeed = ValueNotifier<double>(1.0);
   bool _playerDisposed = false;
   bool _isBuffering = false;
@@ -267,6 +271,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   final GlobalKey<mkv.VideoState> _videoKey = GlobalKey<mkv.VideoState>();
   final GlobalKey<ShortDramaControlsState> _shortDramaControlsKey =
       GlobalKey<ShortDramaControlsState>(); // 💡 修复：改为公开类名
+  final Map<String, List<PlayerCachedRange>> _persistedCachedRangesByMedia =
+      <String, List<PlayerCachedRange>>{};
+  String? _activeCachedRangesMediaKey;
 
   bool get _useMobileNetworkMediaKit {
     if (widget.isLocal) {
@@ -300,6 +307,80 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     final uri = Uri.tryParse(url);
     final scheme = uri?.scheme.toLowerCase();
     return scheme == 'http' || scheme == 'https' || scheme == 'file';
+  }
+
+  bool get _shouldPersistPreloadProgress {
+    return widget.playbackPreloadLevel.isEnabled && !widget.isLocal;
+  }
+
+  String _buildCachedRangesMediaKey({String? url}) {
+    return [
+      widget.currentSource ?? '',
+      widget.currentId ?? '',
+      widget.currentEpisodeIndex?.toString() ?? '-1',
+      url ?? _currentUrl ?? '',
+    ].join('|');
+  }
+
+  List<PlayerCachedRange> get _currentPreloadProgressRanges {
+    if (!_shouldPersistPreloadProgress) {
+      return const [];
+    }
+    final key = _activeCachedRangesMediaKey;
+    if (key == null) {
+      return const [];
+    }
+    return _persistedCachedRangesByMedia[key] ?? const [];
+  }
+
+  void _activateCachedRangesMediaKey({String? url}) {
+    if (!_shouldPersistPreloadProgress) {
+      _activeCachedRangesMediaKey = null;
+      return;
+    }
+    final key = _buildCachedRangesMediaKey(url: url);
+    _activeCachedRangesMediaKey = key;
+    _persistedCachedRangesByMedia.putIfAbsent(key, () => const []);
+  }
+
+  void _recordCachedRanges(List<PlayerCachedRange> ranges) {
+    if (!_shouldPersistPreloadProgress || ranges.isEmpty) {
+      return;
+    }
+
+    final key = _activeCachedRangesMediaKey ?? _buildCachedRangesMediaKey();
+    final previous = _persistedCachedRangesByMedia[key] ?? const [];
+    final merged = accumulatePlayerCachedRanges(
+      existing: previous,
+      incoming: ranges,
+    );
+    if (listEquals(previous, merged)) {
+      return;
+    }
+
+    if (!mounted) {
+      _persistedCachedRangesByMedia[key] = merged;
+      return;
+    }
+
+    _safeSetState(() {
+      _persistedCachedRangesByMedia[key] = merged;
+      _activeCachedRangesMediaKey = key;
+    });
+  }
+
+  void _setupCachedRangesListener() {
+    _cachedRangesSubscription?.cancel();
+    _cachedRangesSubscription = null;
+
+    if (_adapter == null || !_shouldPersistPreloadProgress) {
+      return;
+    }
+
+    _cachedRangesSubscription = _adapter!.stream.cachedRanges.listen(
+      _recordCachedRanges,
+    );
+    _recordCachedRanges(_adapter!.state.cachedRanges);
   }
 
   MediaKitAdapter _createMediaKitAdapter() {
@@ -575,6 +656,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     WidgetsBinding.instance.addObserver(this);
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
+    _activateCachedRangesMediaKey(url: _currentUrl);
     _initializePlayer();
     unawaited(_setupPip());
     _registerPipObserver();
@@ -586,6 +668,19 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   @override
   void didUpdateWidget(covariant VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final preloadConfigChanged =
+        widget.playbackPreloadLevel != oldWidget.playbackPreloadLevel ||
+            widget.isLocal != oldWidget.isLocal;
+    if (preloadConfigChanged ||
+        widget.currentSource != oldWidget.currentSource ||
+        widget.currentId != oldWidget.currentId ||
+        widget.currentEpisodeIndex != oldWidget.currentEpisodeIndex ||
+        widget.url != oldWidget.url) {
+      _activateCachedRangesMediaKey(url: widget.url ?? _currentUrl);
+      if (preloadConfigChanged && widget.url == oldWidget.url) {
+        _setupCachedRangesListener();
+      }
+    }
     if (widget.initialFitType != oldWidget.initialFitType) {
       _setVideoFit(widget.initialFitType);
     }
@@ -842,6 +937,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       });
     });
 
+    _setupCachedRangesListener();
+
     // 立即检查一次当前状态 ，防止错过已经准备好的状态
     final currentDuration = _adapter!.state.duration;
     if (currentDuration != Duration.zero) {
@@ -865,6 +962,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
     _currentUrl = url;
+    _activateCachedRangesMediaKey(url: url);
+    _cachedRangesSubscription?.cancel();
+    _cachedRangesSubscription = null;
     if (headers != null) {
       _currentHeaders = headers;
     }
@@ -895,6 +995,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
           play: true,
         );
+        _setupCachedRangesListener();
       } else if (canUseMediaKitForUrl) {
         final oldAdapter = _adapter;
         _adapter = _createMediaKitAdapter();
@@ -1166,10 +1267,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
     _bufferingSubscription?.cancel();
+    _cachedRangesSubscription?.cancel();
     _positionSubscription = null;
     _playingSubscription = null;
     _completedSubscription = null;
     _durationSubscription = null;
+    _cachedRangesSubscription = null;
 
     _progressListeners.clear();
     _playerDisposed = true;
@@ -1458,6 +1561,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           onDanmakuMatchButtonPressed: widget.onDanmakuMatchButtonPressed,
           showPreloadProgress:
               widget.playbackPreloadLevel.isEnabled && !widget.isLocal,
+          preloadProgressRanges: _currentPreloadProgressRanges,
           forceControlsVisible: widget.forceControlsVisible,
           live: widget.live,
           playbackSpeedListenable: _playbackSpeed,
@@ -1591,6 +1695,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         hideCenterControlsWithBars: widget.hideCenterControlsWithBars,
         showPreloadProgress:
             widget.playbackPreloadLevel.isEnabled && !widget.isLocal,
+        preloadProgressRanges: _currentPreloadProgressRanges,
         hasActiveSleepTimer: widget.hasActiveSleepTimer,
         onPlayerLockChanged: widget.onPlayerLockChanged,
         onSeek: widget.onSeek,

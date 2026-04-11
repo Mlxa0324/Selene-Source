@@ -269,14 +269,127 @@ void main() {
     expect(progressBar, findsOneWidget);
     expect(tester.getSize(progressBar).height, 36);
   });
+
+  testWidgets('mobile progress bar uses slightly larger track and thumb',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter();
+    addTearDown(player.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: (_) {},
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final activeTrack = find.byWidgetPredicate((widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.color == Colors.red &&
+          decoration.shape != BoxShape.circle;
+    });
+    final thumb = find.byWidgetPredicate((widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.shape == BoxShape.circle &&
+          decoration.color == Colors.red;
+    });
+
+    expect(activeTrack, findsOneWidget);
+    expect(thumb, findsOneWidget);
+    expect(tester.getSize(activeTrack).height, 7);
+    expect(tester.getSize(thumb), const Size(18, 18));
+  });
+
+  testWidgets('mobile preload progress keeps multiple cached segments',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter(
+      position: const Duration(minutes: 7),
+      duration: const Duration(minutes: 10),
+      cachedRanges: const [
+        PlayerCachedRange(
+          start: Duration.zero,
+          end: Duration(minutes: 2),
+        ),
+        PlayerCachedRange(
+          start: Duration(minutes: 6),
+          end: Duration(minutes: 8),
+        ),
+      ],
+    );
+    addTearDown(player.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: (_) {},
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+            showPreloadProgress: true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final preloadSegments = find.byWidgetPredicate((widget) {
+      if (widget is! Container) {
+        return false;
+      }
+      final decoration = widget.decoration;
+      return decoration is BoxDecoration &&
+          decoration.shape != BoxShape.circle &&
+          decoration.color == Colors.white.withValues(alpha: 0.34);
+    });
+
+    expect(preloadSegments, findsNWidgets(2));
+  });
 }
 
 class _FakePlayerAdapter implements PlayerAdapter {
   _FakePlayerAdapter({
     this.seekCompleter,
     this.emitSeekPositionToStream = true,
+    Duration? position,
+    Duration? duration,
+    List<PlayerCachedRange>? cachedRanges,
   })  : _stream = _FakePlayerStream(),
-        _state = _FakePlayerState();
+        _state = _FakePlayerState(
+          positionValue: position ?? Duration.zero,
+          durationValue: duration ?? const Duration(minutes: 12),
+          cachedRangesValue: cachedRanges ?? const [],
+        );
 
   final _FakePlayerStream _stream;
   final _FakePlayerState _state;
@@ -404,11 +517,17 @@ class _FakePlayerStream implements PlayerAdapterStream {
 }
 
 class _FakePlayerState implements PlayerAdapterState {
+  _FakePlayerState({
+    this.positionValue = Duration.zero,
+    this.durationValue = const Duration(minutes: 12),
+    this.cachedRangesValue = const [],
+  });
+
   bool playingValue = true;
-  Duration positionValue = Duration.zero;
-  Duration durationValue = const Duration(minutes: 12);
+  Duration positionValue;
+  Duration durationValue;
   Duration bufferValue = Duration.zero;
-  List<PlayerCachedRange> cachedRangesValue = const [];
+  List<PlayerCachedRange> cachedRangesValue;
   double volumeValue = 100;
   double rateValue = 1.0;
   bool bufferingValue = false;
