@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -1123,6 +1125,8 @@ class _UserMenuState extends State<UserMenu> {
 
   Widget _buildPreloadLevelOption() {
     final isDarkMode = widget.isDarkMode;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final useRoomyLayout = screenWidth >= DeviceUtils.tabletMinWidth;
     final idleBackground =
         isDarkMode ? const Color(0xFF111827) : const Color(0xFFF3F4F6);
     final activeBackground =
@@ -1132,6 +1136,106 @@ class _UserMenuState extends State<UserMenu> {
     final activeText =
         isDarkMode ? const Color(0xFFECFDF5) : const Color(0xFF047857);
 
+    Widget buildPreloadButton(PlaybackPreloadLevel level, {double? width}) {
+      final isSelected = level == _playbackPreloadLevel;
+      return SizedBox(
+        width: width,
+        child: GestureDetector(
+          onTap: () async {
+            if (level == _playbackPreloadLevel) {
+              return;
+            }
+            await UserDataService.savePlaybackPreloadLevel(level);
+            if (!mounted) {
+              return;
+            }
+            setState(() => _playbackPreloadLevel = level);
+          },
+          child: AnimatedContainer(
+            key: ValueKey(
+              'app-settings-preload-level-button-${level.storageValue}',
+            ),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: isSelected ? activeBackground : idleBackground,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              level.label,
+              textAlign: TextAlign.center,
+              style: FontUtils.poppins(
+                fontSize: 11,
+                color: isSelected ? activeText : idleText,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final header = Row(
+      key: const ValueKey('app-settings-preload-level-header'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          LucideIcons.gauge,
+          size: 20,
+          color: isDarkMode ? const Color(0xFF9ca3af) : const Color(0xFF6b7280),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          '预加载级别',
+          style: FontUtils.poppins(
+            fontSize: 16,
+            color:
+                isDarkMode ? const Color(0xFFffffff) : const Color(0xFF1f2937),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+
+    final selector = Container(
+      key: const ValueKey('app-settings-preload-level-wrap'),
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF1F2937) : const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = math.max(0.0, constraints.maxWidth);
+
+          if (!useRoomyLayout) {
+            return Row(
+              key: const ValueKey('app-settings-preload-level-row'),
+              children: _preloadLevels.map((level) {
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: buildPreloadButton(level),
+                  ),
+                );
+              }).toList(),
+            );
+          }
+
+          final buttonWidth = availableWidth >= 248 ? 48.0 : 44.0;
+
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _preloadLevels.map((level) {
+              return buildPreloadButton(level, width: buttonWidth);
+            }).toList(),
+          );
+        },
+      ),
+    );
+
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -1140,86 +1244,44 @@ class _UserMenuState extends State<UserMenu> {
           horizontal: 16,
           vertical: 10,
         ),
-        child: Row(
-          children: [
-            Icon(
-              LucideIcons.gauge,
-              size: 20,
-              color: isDarkMode
-                  ? const Color(0xFF9ca3af)
-                  : const Color(0xFF6b7280),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '预加载级别',
-                style: FontUtils.poppins(
-                  fontSize: 16,
-                  color: isDarkMode
-                      ? const Color(0xFFffffff)
-                      : const Color(0xFF1f2937),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 196),
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: isDarkMode
-                      ? const Color(0xFF1F2937)
-                      : const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: _preloadLevels.map((level) {
-                    final isSelected = level == _playbackPreloadLevel;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () async {
-                          if (level == _playbackPreloadLevel) {
-                            return;
-                          }
-                          await UserDataService.savePlaybackPreloadLevel(level);
-                          if (!mounted) {
-                            return;
-                          }
-                          setState(() => _playbackPreloadLevel = level);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          padding: const EdgeInsets.symmetric(vertical: 7),
-                          decoration: BoxDecoration(
-                            color:
-                                isSelected ? activeBackground : idleBackground,
-                            borderRadius: BorderRadius.circular(11),
-                          ),
-                          child: Text(
-                            level.label,
-                            textAlign: TextAlign.center,
-                            style: FontUtils.poppins(
-                              fontSize: 13,
-                              color: isSelected ? activeText : idleText,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                            ),
-                          ),
-                        ),
+        child: useRoomyLayout
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  header,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 276),
+                        child: selector,
                       ),
-                    );
-                  }).toList(),
-                ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  header,
+                  const SizedBox(height: 12),
+                  selector,
+                ],
               ),
-            ),
-          ],
-        ),
       ),
     );
+  }
+
+  double _resolveDialogWidth(BuildContext context) {
+    if (DeviceUtils.isPC()) {
+      return 360;
+    }
+    if (DeviceUtils.isTablet(context)) {
+      final screenWidth = MediaQuery.of(context).size.width;
+      return math.min(screenWidth - 40, 420);
+    }
+    return 280;
   }
 
   @override
@@ -1234,8 +1296,9 @@ class _UserMenuState extends State<UserMenu> {
             child: GestureDetector(
               onTap: () {}, // 阻止点击菜单内容时关闭
               child: AnimatedContainer(
+                key: const ValueKey('user-menu-dialog'),
                 duration: const Duration(milliseconds: 200),
-                width: DeviceUtils.isMacOS() ? 360 : 280,
+                width: _resolveDialogWidth(context),
                 margin: const EdgeInsets.symmetric(horizontal: 20),
                 decoration: BoxDecoration(
                   color: widget.isDarkMode
@@ -1698,7 +1761,6 @@ class _UserMenuState extends State<UserMenu> {
                   },
                   icon: LucideIcons.shieldCheck,
                 ),
-                _buildPreloadLevelOption(),
                 _buildToggleOption(
                   title: '显示直播入口',
                   value: _showLive,
@@ -1727,6 +1789,7 @@ class _UserMenuState extends State<UserMenu> {
                     },
                     icon: LucideIcons.search,
                   ),
+                _buildPreloadLevelOption(),
                 const SizedBox(height: 8),
               ],
             ),

@@ -6,7 +6,7 @@ enum PlaybackPreloadLevel {
 }
 
 const PlaybackPreloadLevel kDefaultPlaybackPreloadLevel =
-    PlaybackPreloadLevel.high;
+    PlaybackPreloadLevel.medium;
 
 extension PlaybackPreloadLevelX on PlaybackPreloadLevel {
   String get storageValue => name;

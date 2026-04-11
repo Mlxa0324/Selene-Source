@@ -331,10 +331,10 @@ class UserDataService {
     await prefs.setBool(_adFilterEnabledKey, enabled);
   }
 
-  // 获取去广告开关（默认 false）
+  // 获取去广告开关（默认 true）
   static Future<bool> getAdFilterEnabled() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_adFilterEnabledKey) ?? false;
+    return prefs.getBool(_adFilterEnabledKey) ?? true;
   }
 
   // 保存 macOS media_kit 预加载开关

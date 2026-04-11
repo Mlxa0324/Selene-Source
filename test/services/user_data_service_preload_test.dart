@@ -7,13 +7,22 @@ import 'package:selene/services/user_data_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('getPlaybackPreloadLevel defaults to high when nothing is stored',
+  test('getPlaybackPreloadLevel defaults to medium when nothing is stored',
       () async {
     SharedPreferences.setMockInitialValues({});
 
     expect(
       await UserDataService.getPlaybackPreloadLevel(),
-      PlaybackPreloadLevel.high,
+      PlaybackPreloadLevel.medium,
+    );
+  });
+
+  test('getAdFilterEnabled defaults to true when nothing is stored', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    expect(
+      await UserDataService.getAdFilterEnabled(),
+      isTrue,
     );
   });
 
