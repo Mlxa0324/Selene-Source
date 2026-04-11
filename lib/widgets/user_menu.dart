@@ -1046,10 +1046,12 @@ class _UserMenuState extends State<UserMenu> {
     required bool value,
     required Future<void> Function(bool) onChanged,
     required IconData icon,
+    Key? optionKey,
   }) {
     return Material(
       color: Colors.transparent,
       child: Container(
+        key: optionKey,
         padding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 10,
@@ -1107,101 +1109,6 @@ class _UserMenuState extends State<UserMenu> {
                     ),
                   ),
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSegmentOption({
-    required String title,
-    required bool value,
-    required Future<void> Function(bool) onChanged,
-    required IconData icon,
-  }) {
-    Widget buildChoice({
-      required String label,
-      required bool selected,
-      required bool nextValue,
-    }) {
-      return Expanded(
-        child: GestureDetector(
-          onTap: selected
-              ? null
-              : () async {
-                  await onChanged(nextValue);
-                  setState(() {});
-                },
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: selected
-                  ? const Color(0xFF10b981)
-                  : Colors.transparent,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: FontUtils.poppins(
-                fontSize: 13,
-                color: selected
-                    ? Colors.white
-                    : (widget.isDarkMode
-                        ? const Color(0xFFd1d5db)
-                        : const Color(0xFF4b5563)),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: widget.isDarkMode
-                  ? const Color(0xFF9ca3af)
-                  : const Color(0xFF6b7280),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: FontUtils.poppins(
-                  fontSize: 16,
-                  color: widget.isDarkMode
-                      ? const Color(0xFFffffff)
-                      : const Color(0xFF1f2937),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Container(
-              width: 92,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                color: widget.isDarkMode
-                    ? const Color(0xFF374151)
-                    : const Color(0xFFF3F4F6),
-              ),
-              child: Row(
-                children: [
-                  buildChoice(label: '开', selected: value, nextValue: true),
-                  buildChoice(label: '关', selected: !value, nextValue: false),
-                ],
               ),
             ),
           ],
@@ -1686,7 +1593,7 @@ class _UserMenuState extends State<UserMenu> {
                   },
                   icon: LucideIcons.shieldCheck,
                 ),
-                _buildSegmentOption(
+                _buildToggleOption(
                   title: '预加载',
                   value: _playbackPreloadEnabled,
                   onChanged: (value) async {
@@ -1694,6 +1601,7 @@ class _UserMenuState extends State<UserMenu> {
                     setState(() => _playbackPreloadEnabled = value);
                   },
                   icon: LucideIcons.gauge,
+                  optionKey: const ValueKey('app-settings-preload-option'),
                 ),
                 _buildToggleOption(
                   title: '显示直播入口',

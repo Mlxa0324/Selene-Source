@@ -34,8 +34,17 @@ void main() {
     await tester.tap(find.text('应用设置'));
     await tester.pumpAndSettle();
 
+    final preloadRow =
+        find.byKey(const ValueKey('app-settings-preload-option'));
+
     expect(find.text('预加载'), findsOneWidget);
-    expect(find.text('开'), findsOneWidget);
+    expect(preloadRow, findsOneWidget);
+    expect(
+      find.descendant(of: preloadRow, matching: find.byType(AnimatedAlign)),
+      findsOneWidget,
+    );
+    expect(find.text('开'), findsNothing);
+    expect(find.text('关'), findsNothing);
     expect(find.text('预加载（media_kit）'), findsNothing);
   });
 }

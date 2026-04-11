@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/search_resource.dart';
 import '../models/video_info.dart';
@@ -10,6 +11,7 @@ import '../services/source_browser_service.dart';
 import '../services/theme_service.dart';
 import '../services/user_data_service.dart';
 import '../utils/device_utils.dart';
+import '../utils/source_site_utils.dart';
 import '../widgets/video_card.dart';
 import '../widgets/pulsing_dots_indicator.dart';
 import '../widgets/shimmer_effect.dart';
@@ -17,7 +19,16 @@ import 'source_browser_style.dart';
 import 'player_screen.dart';
 
 class SourceBrowserScreen extends StatefulWidget {
-  const SourceBrowserScreen({super.key});
+  final Future<List<SearchResource>> Function()? availableSourcesLoader;
+  final Future<void> Function(Uri uri)? onOpenSourceSite;
+  final bool? useDesktopStyleOverride;
+
+  const SourceBrowserScreen({
+    super.key,
+    this.availableSourcesLoader,
+    this.onOpenSourceSite,
+    this.useDesktopStyleOverride,
+  });
 
   @override
   State<SourceBrowserScreen> createState() => _SourceBrowserScreenState();
@@ -113,7 +124,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       _sourceError = '';
     });
     try {
-      final sources = await SourceBrowserService.getAvailableSources();
+      final sources = await (widget.availableSourcesLoader?.call() ??
+          SourceBrowserService.getAvailableSources());
       var nextSource = _currentSource;
       final exists =
           nextSource == 'auto' || sources.any((item) => item.key == nextSource);
@@ -139,6 +151,33 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
         });
       }
     }
+  }
+
+  Future<void> _openSourceSite(SearchResource resource) async {
+    final uri = resolveSearchResourceSiteRootUri(resource);
+    if (uri == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该数据源没有可打开的站点地址')),
+      );
+      return;
+    }
+
+    final customHandler = widget.onOpenSourceSite;
+    if (customHandler != null) {
+      await customHandler(uri);
+      return;
+    }
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('浏览器打开失败')),
+    );
   }
 
   Future<void> _handleSourceChanged(
@@ -494,8 +533,8 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
       builder: (context, themeService, child) {
         final isDarkMode = themeService.isDarkMode;
         const accent = Color(0xFF27ae60);
-        final isDesktopStyle =
-            DeviceUtils.isTablet(context) || DeviceUtils.isPC();
+        final isDesktopStyle = widget.useDesktopStyleOverride ??
+            (DeviceUtils.isTablet(context) || DeviceUtils.isPC());
 
         final horizontalPadding =
             isDesktopStyle ? 16.0 : _mobileCompactOuterPadding;
@@ -680,12 +719,13 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                 onTap: () => _handleSourceChanged('auto'),
               ),
               ..._filteredSources.map(
-                (source) => _buildSourceChip(
-                  label: source.name,
+                (source) => _buildSourceChipWithAction(
+                  source: source,
                   selected: _currentSource == source.key,
                   accent: accent,
                   isDarkMode: isDarkMode,
                   onTap: () => _handleSourceChanged(source.key),
+                  onOpenSite: () => _openSourceSite(source),
                 ),
               ),
             ],
@@ -1150,6 +1190,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                             subtitle: source.api,
                             isDarkMode: isDarkMode,
                             accent: accent,
+                            resource: source,
                           )),
                       if (_sourceError.isNotEmpty)
                         Padding(
@@ -1173,6 +1214,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     String? subtitle,
     required bool isDarkMode,
     required Color accent,
+    SearchResource? resource,
   }) {
     final selected = _currentSource == value;
     return Padding(
@@ -1182,52 +1224,88 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
             ? accent.withValues(alpha: 0.12)
             : (isDarkMode ? const Color(0xFF101513) : const Color(0xFFF7FAF8)),
         borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () async {
-            Navigator.of(context).pop();
-            await _handleSourceChanged(value);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: selected
-                              ? accent
-                              : (isDarkMode
-                                  ? Colors.white
-                                  : const Color(0xFF1f2d26)),
-                        ),
-                      ),
-                      if (subtitle != null && subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDarkMode
-                                ? Colors.white.withValues(alpha: 0.56)
-                                : const Color(0xFF708178),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await _handleSourceChanged(value);
+                  },
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: selected
+                                      ? accent
+                                      : (isDarkMode
+                                          ? Colors.white
+                                          : const Color(0xFF1f2d26)),
+                                ),
+                              ),
+                              if (subtitle != null && subtitle.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDarkMode
+                                        ? Colors.white.withValues(alpha: 0.56)
+                                        : const Color(0xFF708178),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
+                        if (selected)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Icon(
+                              LucideIcons.check,
+                              size: 18,
+                              color: accent,
+                            ),
+                          ),
                       ],
-                    ],
+                    ),
                   ),
                 ),
-                if (selected) Icon(LucideIcons.check, size: 18, color: accent),
+              ),
+              if (resource != null &&
+                  resolveSearchResourceSiteRootUri(resource) != null) ...[
+                const SizedBox(width: 8),
+                TextButton(
+                  key: ValueKey('source-browser-open-site-${resource.key}'),
+                  onPressed: () => _openSourceSite(resource),
+                  style: TextButton.styleFrom(
+                    foregroundColor: accent,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('浏览器打开'),
+                ),
               ],
-            ),
+            ],
           ),
         ),
       ),
@@ -1491,6 +1569,60 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
                     : const Color(0xFF38463f)),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSourceChipWithAction({
+    required SearchResource source,
+    required bool selected,
+    required Color accent,
+    required bool isDarkMode,
+    required VoidCallback onTap,
+    required VoidCallback onOpenSite,
+  }) {
+    final siteUri = resolveSearchResourceSiteRootUri(source);
+    if (siteUri == null) {
+      return _buildSourceChip(
+        label: source.name,
+        selected: selected,
+        accent: accent,
+        isDarkMode: isDarkMode,
+        onTap: onTap,
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF101513) : const Color(0xFFF2F7F3),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildSourceChip(
+            label: source.name,
+            selected: selected,
+            accent: accent,
+            isDarkMode: isDarkMode,
+            onTap: onTap,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton(
+              key: ValueKey('source-browser-open-site-${source.key}'),
+              onPressed: onOpenSite,
+              style: TextButton.styleFrom(
+                foregroundColor: accent,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('浏览器打开'),
+            ),
+          ),
+        ],
       ),
     );
   }
