@@ -10,7 +10,12 @@ class DanmakuMatchPanel extends StatefulWidget {
   final String initialQuery;
   final int? currentEpisodeId; // 当前选中的弹幕 ID
   final int? currentEpisodeCommentCount; // 当前选中弹幕的条数
-  final Function(int episodeId, String searchKeyword) onEpisodeSelected;
+  final Function(
+    int episodeId,
+    String searchKeyword,
+    DanmakuSearchAnime anime,
+    int episodeIndex,
+  ) onEpisodeSelected;
   final Future<void> Function(String query)? onSearchSubmitted;
   final Future<DanmakuSearchResult?> Function(String query)?
       searchEpisodesOverride;
@@ -495,6 +500,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
               childrenPadding: EdgeInsets.zero,
               children: [
                 ...anime.episodes.map((ep) => _buildEpisodeItem(
+                      anime,
                       anime.animeId,
                       ep,
                       textColor,
@@ -509,6 +515,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
   }
 
   Widget _buildEpisodeItem(
+    DanmakuSearchAnime anime,
     int animeId,
     DanmakuSearchEpisode episode,
     Color textColor,
@@ -534,7 +541,12 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           setState(() {
             _selectedAnimeId = animeId;
           });
-          widget.onEpisodeSelected(episode.episodeId, effectiveQuery);
+          widget.onEpisodeSelected(
+            episode.episodeId,
+            effectiveQuery,
+            anime,
+            anime.episodes.indexWhere((item) => item.episodeId == episode.episodeId),
+          );
         },
         borderRadius: BorderRadius.circular(4),
         child: Container(
@@ -562,7 +574,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
               ),
               if ((selectedCommentCount ?? 0) > 0) ...[
                 Text(
-                  '${selectedCommentCount}条',
+                  '$selectedCommentCount条',
                   style: TextStyle(
                     color: isSelected ? Colors.green : subTextColor,
                     fontSize: 12,

@@ -5061,7 +5061,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Future<void> _loadDanmakuById(int episodeId, {String? searchKeyword}) async {
+  Future<void> _loadDanmakuById(
+    int episodeId, {
+    String? searchKeyword,
+    List<DanmakuSearchEpisode>? orderedEpisodes,
+    int? selectedEpisodeOffset,
+  }) async {
     setState(() => _isDanmakuLoading = true);
     try {
       final comments = await DanmakuService().getDanmakuList(episodeId);
@@ -5080,13 +5085,28 @@ class _PlayerScreenState extends State<PlayerScreen>
         // 保存手动匹配关系
         if (currentSource.isNotEmpty && currentID.isNotEmpty) {
           final danmakuMatchEpisodeIndex = _getDanmakuMatchEpisodeIndex();
-          await DanmakuService().saveManualMatch(
-            currentSource,
-            currentID,
-            danmakuMatchEpisodeIndex,
-            episodeId,
-            searchKeyword: searchKeyword,
-          );
+          if (orderedEpisodes != null &&
+              orderedEpisodes.isNotEmpty &&
+              selectedEpisodeOffset != null &&
+              selectedEpisodeOffset >= 0 &&
+              selectedEpisodeOffset < orderedEpisodes.length) {
+            await DanmakuService().saveManualMatchSeries(
+              currentSource,
+              currentID,
+              danmakuMatchEpisodeIndex,
+              orderedEpisodes.map((episode) => episode.episodeId).toList(),
+              selectedEpisodeOffset: selectedEpisodeOffset,
+              searchKeyword: searchKeyword,
+            );
+          } else {
+            await DanmakuService().saveManualMatch(
+              currentSource,
+              currentID,
+              danmakuMatchEpisodeIndex,
+              episodeId,
+              searchKeyword: searchKeyword,
+            );
+          }
         }
         if (searchKeyword != null && searchKeyword.trim().isNotEmpty) {
           final fallbackTitle =
@@ -5121,7 +5141,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final isPortrait =
         MediaQuery.of(fullscreenContext).orientation == Orientation.portrait;
     final initialQuery = await _resolveInitialDanmakuMatchQuery();
-    if (!mounted) return;
+    if (!mounted || !fullscreenContext.mounted) return;
 
     if (isPortrait) {
       // 💡 竖屏/短剧模式：从底部弹出
@@ -5147,9 +5167,15 @@ class _PlayerScreenState extends State<PlayerScreen>
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
               onSearchSubmitted: _cacheManualDanmakuSearchQuery,
-              onEpisodeSelected: (episodeId, searchKeyword) {
+              onEpisodeSelected:
+                  (episodeId, searchKeyword, anime, episodeIndex) {
                 Navigator.pop(context);
-                _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
+                _loadDanmakuById(
+                  episodeId,
+                  searchKeyword: searchKeyword,
+                  orderedEpisodes: anime.episodes,
+                  selectedEpisodeOffset: episodeIndex,
+                );
               },
             ),
           );
@@ -5183,11 +5209,14 @@ class _PlayerScreenState extends State<PlayerScreen>
                     currentEpisodeId: _currentDanmakuEpisodeId,
                     currentEpisodeCommentCount: _currentDanmakuCommentCount,
                     onSearchSubmitted: _cacheManualDanmakuSearchQuery,
-                    onEpisodeSelected: (episodeId, searchKeyword) {
+                    onEpisodeSelected:
+                        (episodeId, searchKeyword, anime, episodeIndex) {
                       Navigator.pop(dialogContext);
                       _loadDanmakuById(
                         episodeId,
                         searchKeyword: searchKeyword,
+                        orderedEpisodes: anime.episodes,
+                        selectedEpisodeOffset: episodeIndex,
                       );
                     },
                     borderRadiusOverride: BorderRadius.circular(10),
@@ -5226,9 +5255,15 @@ class _PlayerScreenState extends State<PlayerScreen>
               currentEpisodeId: _currentDanmakuEpisodeId,
               currentEpisodeCommentCount: _currentDanmakuCommentCount,
               onSearchSubmitted: _cacheManualDanmakuSearchQuery,
-              onEpisodeSelected: (episodeId, searchKeyword) {
+              onEpisodeSelected:
+                  (episodeId, searchKeyword, anime, episodeIndex) {
                 Navigator.pop(dialogContext);
-                _loadDanmakuById(episodeId, searchKeyword: searchKeyword);
+                _loadDanmakuById(
+                  episodeId,
+                  searchKeyword: searchKeyword,
+                  orderedEpisodes: anime.episodes,
+                  selectedEpisodeOffset: episodeIndex,
+                );
               },
             ),
           );

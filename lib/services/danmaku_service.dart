@@ -145,6 +145,54 @@ class DanmakuService {
     await prefs.setString(_manualMatchKey, jsonEncode(matches));
   }
 
+  /// 保存一整条手动匹配结果，并把从当前选中项开始的后续集映射到后续视频集
+  Future<void> saveManualMatchSeries(
+    String source,
+    String id,
+    int episodeIndex,
+    List<int> episodeIds, {
+    required int selectedEpisodeOffset,
+    String? searchKeyword,
+  }) async {
+    if (episodeIds.isEmpty ||
+        selectedEpisodeOffset < 0 ||
+        selectedEpisodeOffset >= episodeIds.length) {
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
+    final cleanKeyword = searchKeyword?.trim();
+
+    for (var offset = selectedEpisodeOffset; offset < episodeIds.length; offset++) {
+      final targetEpisodeIndex = episodeIndex + (offset - selectedEpisodeOffset);
+      final key = _manualMatchStorageKey(source, id, targetEpisodeIndex);
+      final existingRecord = matches[key];
+      final nextEpisodeId = episodeIds[offset];
+
+      Map<String, dynamic> nextRecord;
+      if (existingRecord is Map<String, dynamic>) {
+        nextRecord = {...existingRecord};
+      } else if (existingRecord is Map) {
+        nextRecord = existingRecord.map(
+          (recordKey, value) => MapEntry(recordKey.toString(), value),
+        );
+      } else if (existingRecord is num) {
+        nextRecord = {'episodeId': existingRecord.toInt()};
+      } else {
+        nextRecord = {};
+      }
+
+      nextRecord['episodeId'] = nextEpisodeId;
+      if (cleanKeyword != null && cleanKeyword.isNotEmpty) {
+        nextRecord['searchKeyword'] = cleanKeyword;
+      }
+      matches[key] = nextRecord;
+    }
+
+    await prefs.setString(_manualMatchKey, jsonEncode(matches));
+  }
+
   /// 单独保存手动匹配时使用的搜索词
   Future<void> saveManualMatchQuery(
       String source, String id, int episodeIndex, String searchKeyword) async {

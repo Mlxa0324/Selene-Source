@@ -142,4 +142,34 @@ void main() {
       '银魂 第三季',
     );
   });
+
+  test('保存手动匹配条目时会把后续集映射到后续视频集并持久化', () async {
+    final service = DanmakuService();
+
+    await service.saveManualMatchSeries(
+      'test_source',
+      'video_variety',
+      10,
+      const [501, 502, 503, 504],
+      selectedEpisodeOffset: 1,
+      searchKeyword: '20250601期',
+    );
+
+    expect(
+      await service.getManualMatch('test_source', 'video_variety', 10),
+      502,
+    );
+    expect(
+      await service.getManualMatch('test_source', 'video_variety', 11),
+      503,
+    );
+    expect(
+      await service.getManualMatch('test_source', 'video_variety', 12),
+      504,
+    );
+    expect(
+      await service.getManualMatchQuery('test_source', 'video_variety', 11),
+      '20250601期',
+    );
+  });
 }

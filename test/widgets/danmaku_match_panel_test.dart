@@ -54,7 +54,7 @@ void main() {
                   currentEpisodeId: currentEpisodeId,
                   currentEpisodeCommentCount:
                       currentEpisodeId == null ? null : 719,
-                  onEpisodeSelected: (_, __) {},
+                  onEpisodeSelected: (_, __, ___, ____) {},
                   searchEpisodesOverride: fakeSearch,
                 ),
               ),
@@ -130,7 +130,7 @@ void main() {
                   currentEpisodeId: currentEpisodeId,
                   currentEpisodeCommentCount:
                       currentEpisodeId == null ? null : 1201,
-                  onEpisodeSelected: (_, __) {},
+                  onEpisodeSelected: (_, __, ___, ____) {},
                   searchEpisodesOverride: fakeSearch,
                 ),
               ),
@@ -181,7 +181,7 @@ void main() {
               child: DanmakuMatchPanel(
                 theme: ThemeData.dark(),
                 initialQuery: '',
-                onEpisodeSelected: (_, __) {},
+                onEpisodeSelected: (_, __, ___, ____) {},
                 onSearchSubmitted: (query) => service.saveManualMatchQuery(
                   source,
                   id,
@@ -206,5 +206,62 @@ void main() {
       await service.getManualMatchQuery(source, id, episodeIndex),
       'JOJO',
     );
+  });
+
+  testWidgets('点击剧集时会把所属条目和选中位置一起回传', (tester) async {
+    final result = DanmakuSearchResult(
+      errorCode: 0,
+      success: true,
+      errorMessage: '',
+      animes: [
+        DanmakuSearchAnime(
+          animeId: 7,
+          animeTitle: '测试综艺',
+          type: 'tvseries',
+          typeDescription: '综艺',
+          episodes: [
+            DanmakuSearchEpisode(episodeId: 701, episodeTitle: '20250525期'),
+            DanmakuSearchEpisode(episodeId: 702, episodeTitle: '20250601期'),
+            DanmakuSearchEpisode(episodeId: 703, episodeTitle: '20250608期'),
+          ],
+        ),
+      ],
+    );
+
+    int? selectedEpisodeId;
+    int? selectedEpisodeIndex;
+    DanmakuSearchAnime? selectedAnime;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 420,
+            height: 420,
+            child: DanmakuMatchPanel(
+              theme: ThemeData.dark(),
+              initialQuery: '测试综艺',
+              onEpisodeSelected: (episodeId, _, anime, episodeIndex) {
+                selectedEpisodeId = episodeId;
+                selectedAnime = anime;
+                selectedEpisodeIndex = episodeIndex;
+              },
+              searchEpisodesOverride: (_) async => result,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试综艺').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('20250601期'));
+    await tester.pumpAndSettle();
+
+    expect(selectedEpisodeId, 702);
+    expect(selectedEpisodeIndex, 1);
+    expect(selectedAnime?.animeId, 7);
+    expect(selectedAnime?.episodes.length, 3);
   });
 }
