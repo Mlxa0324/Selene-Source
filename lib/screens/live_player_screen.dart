@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../widgets/video_player_surface.dart';
@@ -21,6 +22,22 @@ import '../widgets/windows_title_bar.dart';
 import '../widgets/switch_loading_overlay.dart';
 import '../widgets/filter_pill_hover.dart';
 import '../widgets/filter_options_selector.dart';
+
+@visibleForTesting
+List<DeviceOrientation> resolveLiveInitialFullscreenOrientations({
+  required bool isTablet,
+}) {
+  if (isTablet) {
+    return const [
+      DeviceOrientation.landscapeRight,
+      DeviceOrientation.landscapeLeft,
+    ];
+  }
+  return const [
+    DeviceOrientation.landscapeRight,
+    DeviceOrientation.landscapeLeft,
+  ];
+}
 
 class LivePlayerScreen extends StatefulWidget {
   final LiveChannel channel;
@@ -436,14 +453,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         _isEnteringLandscapeFullscreen = true;
       });
 
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-      _lastAppliedFullscreenOrientations = const [
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ];
+      final fullscreenOrientations = resolveLiveInitialFullscreenOrientations(
+        isTablet: _isTablet,
+      );
+      SystemChrome.setPreferredOrientations(fullscreenOrientations);
+      _lastAppliedFullscreenOrientations = fullscreenOrientations;
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
       await _waitForLandscapeMetrics();
