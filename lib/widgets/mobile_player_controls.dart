@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -55,6 +56,15 @@ bool shouldShowCenterControls({
 }
 
 @visibleForTesting
+bool shouldIgnoreTransientPauseUi({
+  required bool isSeekingViaSwipe,
+  required bool isDraggingProgressBar,
+  required bool hasPendingDragPosition,
+}) {
+  return isSeekingViaSwipe || isDraggingProgressBar || hasPendingDragPosition;
+}
+
+@visibleForTesting
 ({double start, double end})? resolveMobileCachedProgressSegment({
   required Duration duration,
   required Duration position,
@@ -67,8 +77,8 @@ bool shouldShowCenterControls({
   if (range == null) {
     return null;
   }
-  final start = (range.start.inMilliseconds / duration.inMilliseconds)
-      .clamp(0.0, 1.0);
+  final start =
+      (range.start.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
   final end =
       (range.end.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
   if (end <= start) {
@@ -267,6 +277,19 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   @override
   void didUpdateWidget(covariant MobilePlayerControls oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      _cancelPlayerSubscriptions();
+      _listenPlayerStreams();
+    }
+
+    final mediaChanged = oldWidget.player != widget.player ||
+        oldWidget.videoUrl != widget.videoUrl ||
+        oldWidget.currentEpisodeIndex != widget.currentEpisodeIndex;
+
+    if (mediaChanged && !widget.isPipMode && _controlsVisible && _isPlaying) {
+      _startHideTimer();
+    }
+
     if (!oldWidget.isPipMode && widget.isPipMode) {
       _hideTimer?.cancel();
       if (_controlsVisible) {
@@ -312,6 +335,14 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       if (playing && _controlsVisible) {
         _startHideTimer();
       }
+      if (!playing &&
+          shouldIgnoreTransientPauseUi(
+            isSeekingViaSwipe: _isSeekingViaSwipe,
+            isDraggingProgressBar: _isDraggingProgressBar,
+            hasPendingDragPosition: _dragPosition != null,
+          )) {
+        return;
+      }
       if (!playing) {
         _hideTimer?.cancel();
         if (!_controlsVisible) {
@@ -348,12 +379,16 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
     }));
   }
 
-  @override
-  void dispose() {
+  void _cancelPlayerSubscriptions() {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
     _subscriptions.clear();
+  }
+
+  @override
+  void dispose() {
+    _cancelPlayerSubscriptions();
     _batterySubscription?.cancel(); // 💡 清理电池监听
 
     // 移除系统监听

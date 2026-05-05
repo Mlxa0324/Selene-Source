@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/download_service.dart';
@@ -12,6 +13,50 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:io';
 import '../models/search_result.dart';
 import 'player_screen.dart';
+
+@visibleForTesting
+DownloadTask? resolveContinueTaskForDownloadGroup({
+  required List<DownloadTask> group,
+  required Iterable<PlayRecord> records,
+}) {
+  if (group.isEmpty) {
+    return null;
+  }
+
+  final recordsById = <String, PlayRecord>{
+    for (final record in records) record.id: record,
+  };
+  DownloadTask? bestTask;
+  PlayRecord? bestRecord;
+
+  for (final task in group) {
+    final direct = recordsById[task.id];
+    PlayRecord? matchedRecord = direct;
+    if (matchedRecord == null) {
+      final targetEpisodeIndex = task.episodeIndex + 1;
+      for (final record in records) {
+        if (record.source == 'local' &&
+            record.title == task.title &&
+            record.index == targetEpisodeIndex) {
+          matchedRecord = record;
+          break;
+        }
+      }
+    }
+    if (matchedRecord == null) {
+      continue;
+    }
+    if (bestRecord == null ||
+        matchedRecord.saveTime > bestRecord.saveTime ||
+        (matchedRecord.saveTime == bestRecord.saveTime &&
+            matchedRecord.playTime > bestRecord.playTime)) {
+      bestRecord = matchedRecord;
+      bestTask = task;
+    }
+  }
+
+  return bestTask ?? group.first;
+}
 
 class DownloadScreen extends StatefulWidget {
   const DownloadScreen({super.key});
@@ -143,6 +188,13 @@ class _DownloadScreenState extends State<DownloadScreen>
     final totalText =
         record.totalTime > 0 ? " / ${record.formattedTotalTime}" : "";
     return "$baseText · 上次看到 ${record.formattedPlayTime}$totalText";
+  }
+
+  DownloadTask? _resolveContinueTaskForGroup(List<DownloadTask> group) {
+    return resolveContinueTaskForDownloadGroup(
+      group: group,
+      records: _localPlayRecords.values,
+    );
   }
 
   // 归类已完成任务
@@ -524,77 +576,100 @@ class _DownloadScreenState extends State<DownloadScreen>
     final bool isExpanded = _expandedTitles.contains(title);
     final completedCount =
         group.where((t) => t.status == DownloadStatus.completed).length;
+    final continueTask = _resolveContinueTaskForGroup(group);
 
     return Column(
       children: [
-        GestureDetector(
-          onTap: () async {
-            setState(() {
-              if (isExpanded) {
-                _expandedTitles.remove(title);
-              } else {
-                _expandedTitles.add(title);
-              }
-            });
-          },
-          child: Container(
-            margin: const EdgeInsets.only(top: 12),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDarkMode ? Colors.white.withOpacity(0.08) : Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDarkMode
-                    ? Colors.white10
-                    : Colors.black.withOpacity(0.08),
-              ),
+        Container(
+          margin: const EdgeInsets.only(top: 12),
+          decoration: BoxDecoration(
+            color: isDarkMode ? Colors.white.withOpacity(0.08) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color:
+                  isDarkMode ? Colors.white10 : Colors.black.withOpacity(0.08),
             ),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
-                    imageUrl: group[0].cover,
-                    width: 50,
-                    height: 70,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: isDarkMode
-                              ? Colors.white.withOpacity(0.9)
-                              : const Color(0xFF2c3e50),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedTitles.remove(title);
+                  } else {
+                    _expandedTitles.add(title);
+                  }
+                });
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: CachedNetworkImage(
+                        imageUrl: group[0].cover,
+                        width: 50,
+                        height: 70,
+                        fit: BoxFit.cover,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "共 ${group.length} 集 · 已完成 $completedCount 集",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isDarkMode ? Colors.white38 : Colors.black45,
-                        ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: isDarkMode
+                                  ? Colors.white.withOpacity(0.9)
+                                  : const Color(0xFF2c3e50),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "共 ${group.length} 集 · 已完成 $completedCount 集",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color:
+                                  isDarkMode ? Colors.white38 : Colors.black45,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    if (!_isEditing && continueTask != null)
+                      TextButton(
+                        onPressed: () async {
+                          await _playOfflineVideo(context, continueTask, group);
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('继续播放'),
+                      ),
+                    Icon(
+                      isExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
+                      color: isDarkMode ? Colors.white38 : Colors.black38,
+                    ),
+                  ],
                 ),
-                Icon(
-                  isExpanded
-                      ? Icons.keyboard_arrow_up
-                      : Icons.keyboard_arrow_down,
-                  color: isDarkMode ? Colors.white38 : Colors.black38,
-                ),
-              ],
+              ),
             ),
           ),
         ),

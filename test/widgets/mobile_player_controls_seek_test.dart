@@ -375,6 +375,51 @@ void main() {
 
     expect(preloadSegments, findsNWidgets(2));
   });
+
+  testWidgets(
+      'restarts hide countdown after switching to a new episode player while playing',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final firstPlayer = _FakePlayerAdapter()..emitPlaying(true);
+    final secondPlayer = _FakePlayerAdapter()..emitPlaying(true);
+    addTearDown(firstPlayer.dispose);
+    addTearDown(secondPlayer.dispose);
+
+    final playbackSpeed = ValueNotifier<double>(1.0);
+    addTearDown(playbackSpeed.dispose);
+    final visibilityEvents = <bool>[];
+
+    Future<void> pumpControls(_FakePlayerAdapter player, int episodeIndex) {
+      return tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: MobilePlayerControls(
+              player: player,
+              onControlsVisibilityChanged: visibilityEvents.add,
+              onFullscreenChange: (_) {},
+              videoUrl: 'https://example.com/video-$episodeIndex.m3u8',
+              currentEpisodeIndex: episodeIndex,
+              playbackSpeedListenable: playbackSpeed,
+              onSetSpeed: (_) async {},
+              onEnterPipMode: () async {},
+              isPipMode: false,
+            ),
+          ),
+        ),
+      );
+    }
+
+    await pumpControls(firstPlayer, 0);
+    await tester.pump();
+
+    await pumpControls(secondPlayer, 1);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+
+    expect(visibilityEvents, contains(false));
+  });
 }
 
 class _FakePlayerAdapter implements PlayerAdapter {
@@ -460,6 +505,11 @@ class _FakePlayerAdapter implements PlayerAdapter {
   void emitPosition(Duration position) {
     _state.positionValue = position;
     _stream.positionController.add(position);
+  }
+
+  void emitPlaying(bool playing) {
+    _state.playingValue = playing;
+    _stream.playingController.add(playing);
   }
 }
 

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../utils/device_utils.dart';
@@ -200,8 +201,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
     final TextDirection textDirection = Directionality.of(context);
     final double lineHeight =
         (textStyle.fontSize ?? 14) * (textStyle.height ?? 1.0);
-    const double horizontalPadding = 12.0;
-    final double verticalPadding = widget.isCompact ? 8.0 : 10.0;
+    final itemPadding = resolveEpisodeItemPadding(isCompact: widget.isCompact);
+    final double horizontalPadding = itemPadding.horizontal;
+    final double verticalPadding = itemPadding.vertical;
 
     _EpisodeGridLayout? fallbackLayout;
 
@@ -523,6 +525,16 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
       ),
     );
   }
+}
+
+@visibleForTesting
+({double horizontal, double vertical}) resolveEpisodeItemPadding({
+  required bool isCompact,
+}) {
+  return (
+    horizontal: 6.0,
+    vertical: isCompact ? 4.0 : 5.0,
+  );
 }
 
 class _GroupPagerButton extends StatelessWidget {

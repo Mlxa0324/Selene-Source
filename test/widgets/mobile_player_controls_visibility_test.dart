@@ -83,4 +83,28 @@ void main() {
       );
     });
   });
+
+  group('shouldIgnoreTransientPauseUi', () {
+    test('ignores pause UI while seek state is still settling', () {
+      expect(
+        shouldIgnoreTransientPauseUi(
+          isSeekingViaSwipe: false,
+          isDraggingProgressBar: false,
+          hasPendingDragPosition: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('allows normal pause UI after seek state clears', () {
+      expect(
+        shouldIgnoreTransientPauseUi(
+          isSeekingViaSwipe: false,
+          isDraggingProgressBar: false,
+          hasPendingDragPosition: false,
+        ),
+        isFalse,
+      );
+    });
+  });
 }

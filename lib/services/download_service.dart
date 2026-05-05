@@ -204,56 +204,56 @@ class DownloadService extends ChangeNotifier {
 
   Future<bool> _tryMergeSegmentsToMp4(
       DownloadTask task, int totalSegments) async {
-    if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) {
-      return false;
-    }
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
 
-    final ffmpeg = await _findFfmpeg();
-    if (ffmpeg == null) {
-      debugPrint('未检测到 ffmpeg，尝试合并为单个 ts');
-      return await _concatSegmentsToTs(task, totalSegments);
-    }
+    if (isDesktop) {
+      final ffmpeg = await _findFfmpeg();
+      if (ffmpeg != null) {
+        try {
+          final concatFile = File("${task.savePath}/concat.txt");
+          final buffer = StringBuffer();
+          for (var i = 0; i < totalSegments; i++) {
+            final segFile = File("${task.savePath}/seg_$i.ts");
+            if (await segFile.exists()) {
+              buffer.writeln("file 'seg_$i.ts'");
+            }
+          }
+          if (buffer.length == 0) return false;
 
-    try {
-      final concatFile = File("${task.savePath}/concat.txt");
-      final buffer = StringBuffer();
-      for (var i = 0; i < totalSegments; i++) {
-        final segFile = File("${task.savePath}/seg_$i.ts");
-        if (await segFile.exists()) {
-          buffer.writeln("file 'seg_$i.ts'");
+          await concatFile.writeAsString(buffer.toString());
+
+          final outputPath = "${task.savePath}/merged.mp4";
+          final result = await Process.run(
+            ffmpeg,
+            [
+              '-y',
+              '-f',
+              'concat',
+              '-safe',
+              '0',
+              '-i',
+              concatFile.path,
+              '-c',
+              'copy',
+              outputPath
+            ],
+            workingDirectory: task.savePath,
+            runInShell: true,
+          );
+          if (result.exitCode == 0) {
+            return true; // ffmpeg 合并成功，无需再合 TS
+          }
+          debugPrint('ffmpeg 合并失败: ${result.stderr}');
+        } catch (e) {
+          debugPrint('ffmpeg 合并异常: $e');
         }
       }
-      if (buffer.length == 0) return false;
-
-      await concatFile.writeAsString(buffer.toString());
-
-      final outputPath = "${task.savePath}/merged.mp4";
-      final result = await Process.run(
-        ffmpeg,
-        [
-          '-y',
-          '-f',
-          'concat',
-          '-safe',
-          '0',
-          '-i',
-          concatFile.path,
-          '-c',
-          'copy',
-          outputPath
-        ],
-        workingDirectory: task.savePath,
-        runInShell: true,
-      );
-      if (result.exitCode != 0) {
-        debugPrint('合并失败: ${result.stderr}');
-        return false;
-      }
-      return true;
-    } catch (e) {
-      debugPrint('合并异常: $e');
-      return false;
     }
+
+    // 所有平台：合并分片为单个 ts 文件，确保播放时无需临时合并
+    debugPrint('合并分片为单个 ts 文件');
+    return await _concatSegmentsToTs(task, totalSegments);
   }
 
   List<DownloadTask> get tasks => _tasks;
@@ -278,6 +278,30 @@ class DownloadService extends ChangeNotifier {
     }
     notifyListeners();
     _syncBackgroundService();
+
+    // 后台修复旧版本下载：为已完成的下载补充 merged.ts
+    unawaited(_repairLegacyCompletedDownloads());
+  }
+
+  /// 修复旧版本下载：为已下载完成但没有 merged.ts 或 merged.mp4 的任务补充合并
+  Future<void> _repairLegacyCompletedDownloads() async {
+    for (var i = 0; i < _tasks.length; i++) {
+      final task = _tasks[i];
+      if (task.status != DownloadStatus.completed) continue;
+
+      final mergedMp4 = File("${task.savePath}/merged.mp4");
+      final mergedTs = File("${task.savePath}/merged.ts");
+      if ((await mergedMp4.exists() && await mergedMp4.length() > 0) ||
+          (await mergedTs.exists() && await mergedTs.length() > 0)) {
+        continue; // 已有合并文件，跳过
+      }
+
+      final segmentFiles = await _listSegmentFiles(task.savePath);
+      if (segmentFiles.isEmpty) continue;
+
+      debugPrint('修复旧版本下载: ${task.title} - ${task.subtitle}');
+      await _concatSegmentFilesToTs(task.savePath, segmentFiles);
+    }
   }
 
   Future<void> _loadTasks() async {

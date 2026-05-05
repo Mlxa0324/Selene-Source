@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:selene/widgets/player_episodes_panel.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 
 void main() {
@@ -45,5 +46,16 @@ void main() {
     await tester.pump();
 
     expect(changedValue, isFalse);
+  });
+
+  test('compact episode panel padding is reduced and stays centered friendly',
+      () {
+    final compact = resolveEpisodeItemPadding(isCompact: true);
+    final regular = resolveEpisodeItemPadding(isCompact: false);
+
+    expect(compact.horizontal, 6);
+    expect(compact.vertical, 4);
+    expect(regular.horizontal, 6);
+    expect(regular.vertical, 5);
   });
 }
