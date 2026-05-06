@@ -548,9 +548,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
   return (
     horizontal: 6.0,
     vertical: switch ((isCompact, normalizedLineCount)) {
-      (true, 1) => 6.0,
-      (true, 2) => 5.0,
-      (true, _) => 4.0,
+      (true, 1) => 8.0,
+      (true, 2) => 6.0,
+      (true, _) => 5.0,
       (false, 1) => 8.0,
       (false, 2) => 6.0,
       (false, _) => 5.0,

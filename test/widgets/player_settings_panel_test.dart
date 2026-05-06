@@ -60,8 +60,8 @@ void main() {
         resolveEpisodeItemPadding(isCompact: false, lineCount: 3);
 
     expect(compactSingle.horizontal, 6);
-    expect(compactSingle.vertical, 6);
-    expect(compactMulti.vertical, 4);
+    expect(compactSingle.vertical, 8);
+    expect(compactMulti.vertical, 5);
     expect(regularSingle.horizontal, 6);
     expect(regularSingle.vertical, 8);
     expect(regularMulti.vertical, 5);
