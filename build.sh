@@ -14,6 +14,8 @@ NC='\033[0m' # No Color
 
 # 版本信息
 APP_VERSION=""
+ANDROID_TARGET_PLATFORMS="android-arm64,android-arm"
+COPY_ANDROID_ARMV7=true
 
 # 读取版本号
 read_version() {
@@ -90,14 +92,18 @@ get_dependencies() {
 
 # 构建安卓版本
 build_android() {
-    log_info "开始构建安卓 armv8 和 armv7a 版本..."
+    if [ "$COPY_ANDROID_ARMV7" = true ]; then
+        log_info "开始构建安卓 armv8 和 armv7a 版本..."
+    else
+        log_info "开始构建安卓 armv8 版本..."
+    fi
     
     # 确保安卓构建目录存在
     mkdir -p build/android
     
     # 构建 APK，添加优化参数
     flutter build apk --release \
-        --target-platform android-arm64,android-arm \
+        --target-platform "$ANDROID_TARGET_PLATFORMS" \
         --split-per-abi \
         --obfuscate \
         --split-debug-info=build/app/outputs/symbols
@@ -242,11 +248,13 @@ copy_artifacts() {
     else
         log_warning "安卓 arm64 APK 文件未找到"
     fi
-    if [ -f "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk" ]; then
-        cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/selene-${APP_VERSION}-armv7a.apk"
-        log_success "安卓 armv7a APK 已复制到 dist/selene-${APP_VERSION}-armv7a.apk"
-    else
-        log_warning "安卓 armv7a APK 文件未找到"
+    if [ "$COPY_ANDROID_ARMV7" = true ]; then
+        if [ -f "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/selene-${APP_VERSION}-armv7a.apk"
+            log_success "安卓 armv7a APK 已复制到 dist/selene-${APP_VERSION}-armv7a.apk"
+        else
+            log_warning "安卓 armv7a APK 文件未找到"
+        fi
     fi
 
     # 复制 iOS 构建产物
@@ -341,6 +349,8 @@ main() {
     BUILD_MACOS_ARM64=true
     BUILD_MACOS_X86_64=true
     PARALLEL_BUILD=true
+    ANDROID_TARGET_PLATFORMS="android-arm64,android-arm"
+    COPY_ANDROID_ARMV7=true
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -377,6 +387,15 @@ main() {
                 BUILD_ANDROID=false
                 shift
                 ;;
+            --android-v8a-ios|--armv8-ios)
+                BUILD_ANDROID=true
+                BUILD_IOS=true
+                BUILD_MACOS_ARM64=false
+                BUILD_MACOS_X86_64=false
+                ANDROID_TARGET_PLATFORMS="android-arm64"
+                COPY_ANDROID_ARMV7=false
+                shift
+                ;;
             --sequential)
                 PARALLEL_BUILD=false
                 shift
@@ -390,6 +409,8 @@ main() {
                 echo "  --macos-x86_64-only  只构建 macOS x86_64 版本"
                 echo "  --macos-only         构建 macOS 所有架构"
                 echo "  --apple-only         构建所有 Apple 平台版本（iOS 和 macOS）"
+                echo "  --armv8-ios          只构建 Android arm64-v8a 和 iOS 无签名版本"
+                echo "  --android-v8a-ios    同上（兼容旧参数）"
                 echo "  --sequential         顺序构建（默认为并行构建）"
                 echo "  --help               显示此帮助信息"
                 exit 0

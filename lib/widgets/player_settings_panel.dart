@@ -82,7 +82,7 @@ class PlayerSettingsPanel extends StatelessWidget {
         children: [
           // 标题栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+            padding: const EdgeInsets.fromLTRB(20, 10, 8, 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -90,11 +90,12 @@ class PlayerSettingsPanel extends StatelessWidget {
                   '播放设置',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 17,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: Icon(Icons.close, color: textColor, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),

@@ -345,9 +345,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
           Padding(
             padding: EdgeInsets.fromLTRB(
               20,
-              widget.isCompact ? 22 : 26,
+              widget.isCompact ? 10 : 26,
               8,
-              widget.isCompact ? 14 : 18,
+              widget.isCompact ? 4 : 18,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -356,11 +356,13 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                   '选集 (${widget.episodes.length})',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: widget.isCompact ? 17 : 19,
+                    fontSize: widget.isCompact ? 16 : 19,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
+                  visualDensity:
+                      widget.isCompact ? VisualDensity.compact : null,
                   icon: Icon(Icons.close, color: textColor, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
