@@ -515,9 +515,9 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
           Padding(
             padding: EdgeInsets.fromLTRB(
               20,
-              widget.sideSheet ? 16 : 20,
+              widget.sideSheet ? 10 : 20,
               8,
-              widget.sideSheet ? 8 : 12,
+              widget.sideSheet ? 4 : 12,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -526,11 +526,13 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                   '定时关闭',
                   style: TextStyle(
                     color: _textColor,
-                    fontSize: widget.sideSheet ? 17 : 19,
+                    fontSize: widget.sideSheet ? 16 : 19,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
+                  visualDensity:
+                      widget.sideSheet ? VisualDensity.compact : null,
                   onPressed: () => Navigator.pop(context),
                   icon: Icon(Icons.close, color: _textColor, size: 20),
                 ),

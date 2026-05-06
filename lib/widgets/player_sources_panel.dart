@@ -163,7 +163,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(
-                20, widget.isCompact ? 16 : 20, 8, widget.isCompact ? 4 : 8),
+                20, widget.isCompact ? 10 : 20, 8, widget.isCompact ? 4 : 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -171,13 +171,15 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                   '换源 (${widget.sources.length})',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: widget.isCompact ? 17 : 19,
+                    fontSize: widget.isCompact ? 16 : 19,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 Row(
                   children: [
                     IconButton(
+                      visualDensity:
+                          widget.isCompact ? VisualDensity.compact : null,
                       icon: RotationTransition(
                         turns: _rotationController,
                         child: Icon(
@@ -191,6 +193,8 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                       onPressed: _isRefreshing ? null : _handleRefresh,
                     ),
                     IconButton(
+                      visualDensity:
+                          widget.isCompact ? VisualDensity.compact : null,
                       icon: Icon(Icons.close, color: textColor, size: 20),
                       onPressed: () => Navigator.pop(context),
                     ),
