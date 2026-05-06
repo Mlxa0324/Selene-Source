@@ -50,12 +50,38 @@ void main() {
 
   test('compact episode panel padding is reduced and stays centered friendly',
       () {
-    final compact = resolveEpisodeItemPadding(isCompact: true);
-    final regular = resolveEpisodeItemPadding(isCompact: false);
+    final compactSingle =
+        resolveEpisodeItemPadding(isCompact: true, lineCount: 1);
+    final compactMulti =
+        resolveEpisodeItemPadding(isCompact: true, lineCount: 3);
+    final regularSingle =
+        resolveEpisodeItemPadding(isCompact: false, lineCount: 1);
+    final regularMulti =
+        resolveEpisodeItemPadding(isCompact: false, lineCount: 3);
 
-    expect(compact.horizontal, 6);
-    expect(compact.vertical, 4);
-    expect(regular.horizontal, 6);
-    expect(regular.vertical, 5);
+    expect(compactSingle.horizontal, 6);
+    expect(compactSingle.vertical, 6);
+    expect(compactMulti.vertical, 4);
+    expect(regularSingle.horizontal, 6);
+    expect(regularSingle.vertical, 8);
+    expect(regularMulti.vertical, 5);
+  });
+
+  test('episode panel defaults to three columns', () {
+    final panel = PlayerEpisodesPanel(
+      theme: ThemeData.dark(),
+      episodes: ['1', '2', '3'],
+      episodesTitles: ['第1集', '第2集', '第3集'],
+      currentEpisodeIndex: 0,
+      isReversed: false,
+      onEpisodeTap: _noopEpisodeTap,
+      onToggleOrder: _noop,
+    );
+
+    expect(panel.crossAxisCount, 3);
   });
 }
+
+void _noopEpisodeTap(int _) {}
+
+void _noop() {}

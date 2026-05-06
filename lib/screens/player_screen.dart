@@ -4345,7 +4345,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final statusBarHeight = MediaQuery.of(context).padding.top;
 
     // 作为最大列数提示，实际列数在面板内部会根据标题长度和面板宽度自适应。
-    final crossAxisCount = _isPortraitTablet ? 5 : 4;
+    final crossAxisCount = 3;
 
     // 平板模式：使用 showGeneralDialog
     if (_isTablet) {
@@ -5551,7 +5551,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 episodesTitles: currentDetail!.episodesTitles,
                 currentEpisodeIndex: currentEpisodeIndex,
                 isReversed: _isEpisodesReversed,
-                crossAxisCount: 4,
+                crossAxisCount: 3,
                 onEpisodeTap: (index) {
                   Navigator.pop(dialogContext);
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -6087,7 +6087,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     _isEpisodesReversed = !_isEpisodesReversed;
                                   });
                                 },
-                                crossAxisCount: 4,
+                                crossAxisCount: 3,
                               ),
                             ),
                           // Source panel (slide in from right, phone landscape only).

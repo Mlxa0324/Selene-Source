@@ -247,7 +247,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
                 episodesTitles: widget.episodesTitles ?? [],
                 currentEpisodeIndex: widget.currentEpisodeIndex ?? 0,
                 isReversed: false,
-                crossAxisCount: 4,
+                crossAxisCount: 3,
                 backgroundOpacity: 1.0, // 竖屏不透明
                 isCompact: false, // 竖屏宽松模式
                 onEpisodeTap: (index) {

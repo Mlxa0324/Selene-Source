@@ -26,7 +26,7 @@ class PlayerEpisodesPanel extends StatefulWidget {
     required this.isReversed,
     required this.onEpisodeTap,
     required this.onToggleOrder,
-    this.crossAxisCount = 4,
+    this.crossAxisCount = 3,
     this.backgroundOpacity,
     this.isCompact = true,
   });
@@ -201,9 +201,11 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
     final TextDirection textDirection = Directionality.of(context);
     final double lineHeight =
         (textStyle.fontSize ?? 14) * (textStyle.height ?? 1.0);
-    final itemPadding = resolveEpisodeItemPadding(isCompact: widget.isCompact);
+    final itemPadding = resolveEpisodeItemPadding(
+      isCompact: widget.isCompact,
+      lineCount: 1,
+    );
     final double horizontalPadding = itemPadding.horizontal;
-    final double verticalPadding = itemPadding.vertical;
 
     _EpisodeGridLayout? fallbackLayout;
 
@@ -221,6 +223,10 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
           stats.threeLineRatio > 0.08 || stats.overflowRatio > 0.0;
       final int displayLines =
           useThreeLines ? 3 : (stats.multiLineRatio > 0.28 ? 2 : 1);
+      final double verticalPadding = resolveEpisodeItemPadding(
+        isCompact: widget.isCompact,
+        lineCount: displayLines,
+      ).vertical;
       final double itemExtent = verticalPadding * 2 +
           lineHeight * displayLines +
           (widget.isCompact ? 10.0 : 12.0);
@@ -251,15 +257,21 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
     }
 
     return fallbackLayout ??
-        _EpisodeGridLayout(
-          crossAxisCount: 1,
-          spacing: spacing,
-          itemExtent: verticalPadding * 2 + lineHeight + 12,
-          maxLines: 1,
-          textStyle: textStyle,
-          horizontalPadding: horizontalPadding,
-          verticalPadding: verticalPadding,
-        );
+        (() {
+          final fallbackVerticalPadding = resolveEpisodeItemPadding(
+            isCompact: widget.isCompact,
+            lineCount: 1,
+          ).vertical;
+          return _EpisodeGridLayout(
+            crossAxisCount: 1,
+            spacing: spacing,
+            itemExtent: fallbackVerticalPadding * 2 + lineHeight + 12,
+            maxLines: 1,
+            textStyle: textStyle,
+            horizontalPadding: horizontalPadding,
+            verticalPadding: fallbackVerticalPadding,
+          );
+        })();
   }
 
   _EpisodeTextStats _measureTextStats({
@@ -333,9 +345,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
           Padding(
             padding: EdgeInsets.fromLTRB(
               20,
-              widget.isCompact ? 16 : 20,
+              widget.isCompact ? 22 : 26,
               8,
-              widget.isCompact ? 8 : 12,
+              widget.isCompact ? 14 : 18,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -478,9 +490,9 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
                       16,
-                      12,
+                      widget.isCompact ? 18 : 20,
                       16,
-                      widget.isCompact ? 16 : 24,
+                      widget.isCompact ? 24 : 32,
                     ),
                     child: AnimatedSize(
                       duration: const Duration(milliseconds: 220),
@@ -530,10 +542,19 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
 @visibleForTesting
 ({double horizontal, double vertical}) resolveEpisodeItemPadding({
   required bool isCompact,
+  int lineCount = 1,
 }) {
+  final normalizedLineCount = lineCount.clamp(1, 3);
   return (
     horizontal: 6.0,
-    vertical: isCompact ? 4.0 : 5.0,
+    vertical: switch ((isCompact, normalizedLineCount)) {
+      (true, 1) => 6.0,
+      (true, 2) => 5.0,
+      (true, _) => 4.0,
+      (false, 1) => 8.0,
+      (false, 2) => 6.0,
+      (false, _) => 5.0,
+    },
   );
 }
 
