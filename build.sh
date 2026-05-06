@@ -3,6 +3,9 @@
 # Selene 构建脚本
 # 用于构建安卓和 iOS 无签名版本，并将构建产物复制到根目录下
 
+# 构建armv8 + ios
+# build.sh --armv8-ios
+
 set -e  # 遇到错误时退出
 
 # 颜色定义

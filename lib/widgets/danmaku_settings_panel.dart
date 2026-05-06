@@ -63,7 +63,7 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
         children: [
           // 标题栏
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 12, 12),
+            padding: const EdgeInsets.fromLTRB(20, 10, 8, 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -71,11 +71,12 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                   '弹幕设置',
                   style: TextStyle(
                     color: textColor,
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 IconButton(
+                  visualDensity: VisualDensity.compact,
                   icon: Icon(Icons.close, color: textColor, size: 20),
                   onPressed: () => Navigator.pop(context),
                   padding: EdgeInsets.zero,
