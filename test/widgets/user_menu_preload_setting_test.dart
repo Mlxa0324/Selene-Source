@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:selene/models/app_theme_scheme.dart';
+import 'package:selene/services/theme_service.dart';
 import 'package:selene/widgets/user_menu.dart';
 
 void main() {
@@ -27,15 +30,7 @@ void main() {
       buildSignature: 'sig',
     );
 
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: UserMenu(
-            isDarkMode: false,
-          ),
-        ),
-      ),
-    );
+    await _pumpUserMenu(tester);
 
     await tester.pumpAndSettle();
 
@@ -58,6 +53,36 @@ void main() {
     expect(find.text('预加载（media_kit）'), findsNothing);
   });
 
+  testWidgets('settings page shows theme color selector with five fixed schemes',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    PackageInfo.setMockInitialValues(
+      appName: 'Selene',
+      packageName: 'com.example.selene',
+      version: '1.6.7',
+      buildNumber: '1',
+      buildSignature: 'sig',
+    );
+
+    await _pumpUserMenu(tester);
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('应用设置'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('主题色'), findsOneWidget);
+    expect(find.text('经典影院绿'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('app-settings-theme-color-option')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('深海蓝'), findsOneWidget);
+    expect(find.text('霓虹紫'), findsOneWidget);
+    expect(find.text('落日橙'), findsOneWidget);
+    expect(find.text('玫瑰红'), findsOneWidget);
+  });
+
   testWidgets('phone preload level options stay on a single row',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -72,15 +97,7 @@ void main() {
       buildSignature: 'sig',
     );
 
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: UserMenu(
-            isDarkMode: false,
-          ),
-        ),
-      ),
-    );
+    await _pumpUserMenu(tester);
 
     await tester.pumpAndSettle();
 
@@ -107,15 +124,7 @@ void main() {
       buildSignature: 'sig',
     );
 
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: UserMenu(
-            isDarkMode: false,
-          ),
-        ),
-      ),
-    );
+    await _pumpUserMenu(tester);
 
     await tester.pumpAndSettle();
 
@@ -142,9 +151,42 @@ void main() {
 
     expect(selectorDecoration.borderRadius, BorderRadius.circular(12));
     expect(selectedDecoration.borderRadius, BorderRadius.circular(8));
-    expect(selectedDecoration.color, const Color(0xFF10B981));
+    expect(
+      selectedDecoration.color,
+      AppThemeScheme.classicGreen.lightSeedColor,
+    );
     expect(selectedLabel.style?.fontSize, 11);
     expect(selectedLabel.style?.color, Colors.white);
+  });
+
+  testWidgets('preload level selector active color follows selected app theme',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'app_theme_scheme_v1': 'ocean_blue',
+    });
+    PackageInfo.setMockInitialValues(
+      appName: 'Selene',
+      packageName: 'com.example.selene',
+      version: '1.6.7',
+      buildNumber: '1',
+      buildSignature: 'sig',
+    );
+
+    await _pumpUserMenu(tester);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('应用设置'));
+    await tester.pumpAndSettle();
+
+    final selectedButton = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('app-settings-preload-level-button-medium')),
+    );
+    final selectedDecoration = selectedButton.decoration! as BoxDecoration;
+
+    expect(
+      selectedDecoration.color,
+      AppThemeScheme.oceanBlue.lightSeedColor,
+    );
   });
 
   testWidgets(
@@ -162,15 +204,7 @@ void main() {
       buildSignature: 'sig',
     );
 
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: UserMenu(
-            isDarkMode: false,
-          ),
-        ),
-      ),
-    );
+    await _pumpUserMenu(tester);
 
     await tester.pumpAndSettle();
 
@@ -204,4 +238,19 @@ void main() {
     );
     expect(tester.getSize(preloadMediumButton).width, lessThan(56));
   });
+}
+
+Future<void> _pumpUserMenu(WidgetTester tester) async {
+  await tester.pumpWidget(
+    ChangeNotifierProvider(
+      create: (_) => ThemeService(),
+      child: const MaterialApp(
+        home: Scaffold(
+          body: UserMenu(
+            isDarkMode: false,
+          ),
+        ),
+      ),
+    ),
+  );
 }

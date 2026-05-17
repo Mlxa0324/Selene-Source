@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/play_record.dart';
 import '../models/video_info.dart';
 import '../widgets/video_card.dart';
 import '../services/page_cache_service.dart';
+import '../services/theme_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import '../utils/home_library_grid_layout.dart';
@@ -152,9 +154,10 @@ class _HistoryGridState extends State<HistoryGrid>
   }
 
   Widget _buildLoadingState() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return RefreshIndicator(
       onRefresh: _loadData,
-      color: const Color(0xFF27ae60),
+      color: accentColor,
       child: LayoutBuilder(
         builder: (context, constraints) {
           // 平板模式根据宽度动态展示6～9列，手机模式3列
@@ -229,6 +232,7 @@ class _HistoryGridState extends State<HistoryGrid>
   }
 
   Widget _buildErrorState() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -260,7 +264,7 @@ class _HistoryGridState extends State<HistoryGrid>
           ElevatedButton(
             onPressed: _loadPlayRecords,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF27ae60),
+              backgroundColor: accentColor,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -315,9 +319,10 @@ class _HistoryGridState extends State<HistoryGrid>
   }
 
   Widget _buildHistoryGrid() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return RefreshIndicator(
       onRefresh: _loadPlayRecords,
-      color: const Color(0xFF27ae60),
+      color: accentColor,
       child: LayoutBuilder(
         builder: (context, constraints) {
           // 平板模式根据宽度动态展示6～9列，手机模式3列

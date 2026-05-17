@@ -266,7 +266,7 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
                 '播放记录已清空',
                 style: FontUtils.poppins(color: Colors.white),
               ),
-              backgroundColor: const Color(0xFF27ae60),
+              backgroundColor: context.read<ThemeService>().accentColor,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -431,7 +431,7 @@ class _ContinueWatchingSectionState extends State<ContinueWatchingSection>
                         style: FontUtils.poppins(
                           fontSize: 14,
                           color: DeviceUtils.isPC() && _isMoreButtonHovered
-                              ? const Color(0xFF27ae60) // hover 时绿色
+                              ? context.watch<ThemeService>().accentColor
                               : const Color(0xFF7f8c8d),
                         ),
                       ),

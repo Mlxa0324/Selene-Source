@@ -296,7 +296,7 @@ class _CapsuleTabHoverState extends State<_CapsuleTabHover> {
                 )!;
               } else if (widget.isPC && _isHovered) {
                 // PC上未选中且hover：显示绿色
-                color = const Color(0xFF27AE60);
+                color = widget.themeService.accentColor;
               } else {
                 // 未选中且未hover：默认颜色
                 color = widget.themeService.isDarkMode

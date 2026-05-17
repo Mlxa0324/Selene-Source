@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class CustomSwitch extends StatefulWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
-  final Color activeColor;
+  final Color? activeColor;
   final Color inactiveColor;
   final Color thumbColor;
   final double width;
@@ -13,7 +13,7 @@ class CustomSwitch extends StatefulWidget {
     super.key,
     required this.value,
     required this.onChanged,
-    this.activeColor = Colors.green,
+    this.activeColor,
     this.inactiveColor = Colors.grey,
     this.thumbColor = Colors.white,
     this.width = 50.0,
@@ -28,7 +28,6 @@ class _CustomSwitchState extends State<CustomSwitch>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _thumbAnimation;
-  late Animation<Color?> _colorAnimation;
 
   @override
   void initState() {
@@ -44,11 +43,6 @@ class _CustomSwitchState extends State<CustomSwitch>
         curve: Curves.easeInOut,
       ),
     );
-
-    _colorAnimation = ColorTween(
-      begin: widget.inactiveColor,
-      end: widget.activeColor,
-    ).animate(_animationController);
 
     if (widget.value) {
       _animationController.value = 1.0;
@@ -75,6 +69,7 @@ class _CustomSwitchState extends State<CustomSwitch>
 
   @override
   Widget build(BuildContext context) {
+    final activeColor = widget.activeColor ?? Theme.of(context).colorScheme.primary;
     return GestureDetector(
       onTap: () {
         widget.onChanged(!widget.value);
@@ -87,7 +82,11 @@ class _CustomSwitchState extends State<CustomSwitch>
             height: widget.height,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(widget.height / 2),
-              color: _colorAnimation.value,
+              color: Color.lerp(
+                widget.inactiveColor,
+                activeColor,
+                _animationController.value,
+              ),
             ),
             child: Align(
               alignment: Alignment(

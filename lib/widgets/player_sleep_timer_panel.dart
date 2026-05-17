@@ -83,6 +83,11 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
 
   Color get _subTextColor => _isDarkMode ? Colors.white54 : Colors.black54;
 
+  Color get _accentColor => widget.theme.colorScheme.primary;
+
+  Color _accentWithAlpha(double alpha) =>
+      _accentColor.withValues(alpha: alpha.clamp(0.0, 1.0));
+
   TimeOfDay _initialClockTime() {
     if (widget.scheduledAt != null) {
       final scheduledAt = widget.scheduledAt!;
@@ -144,6 +149,8 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
   Future<void> _handleClockTime() async {
     if (_submitting) return;
 
+    final accentColor = _accentColor;
+
     final now = TimeOfDay.now();
     final picked = await showTimePicker(
       context: context,
@@ -152,19 +159,19 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
         return Theme(
           data: widget.theme.copyWith(
             colorScheme: _isDarkMode
-                ? const ColorScheme.dark(
-                    primary: Colors.green,
+                ? ColorScheme.dark(
+                    primary: accentColor,
                     surface: Color(0xFF171717),
                   )
-                : const ColorScheme.light(
-                    primary: Colors.green,
+                : ColorScheme.light(
+                    primary: accentColor,
                     surface: Colors.white,
                   ),
             timePickerTheme: TimePickerThemeData(
               backgroundColor: _backgroundColor,
-              dialHandColor: Colors.green,
+              dialHandColor: accentColor,
               dayPeriodColor:
-                  WidgetStateColor.resolveWith((states) => Colors.green),
+                  WidgetStateColor.resolveWith((states) => accentColor),
               hourMinuteTextColor: _textColor,
               helpTextStyle: TextStyle(color: _subTextColor),
               dialTextColor: _textColor,
@@ -233,15 +240,16 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
   }
 
   Widget _buildQuickButton(String label, int minutes) {
+    final accentColor = _accentColor;
     return Expanded(
       child: SizedBox(
         height: 40,
         child: FilledButton.tonal(
           onPressed: _submitting ? null : () => _handleMinutes(minutes),
           style: FilledButton.styleFrom(
-            backgroundColor: Colors.green.withValues(alpha: 0.14),
-            foregroundColor: Colors.green,
-            disabledBackgroundColor: Colors.green.withValues(alpha: 0.08),
+            backgroundColor: _accentWithAlpha(0.14),
+            foregroundColor: accentColor,
+            disabledBackgroundColor: _accentWithAlpha(0.08),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -287,6 +295,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
     required String buttonLabel,
     required VoidCallback onPressed,
   }) {
+    final accentColor = _accentColor;
     return Row(
       children: [
         Expanded(
@@ -303,9 +312,9 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
         OutlinedButton(
           onPressed: _submitting ? null : onPressed,
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.green,
+            foregroundColor: accentColor,
             side: BorderSide(
-              color: Colors.green.withValues(alpha: 0.4),
+              color: _accentWithAlpha(0.4),
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -335,6 +344,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
   }
 
   Widget _buildInlineTimePicker() {
+    final accentColor = _accentColor;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -401,9 +411,9 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
             icon: const Icon(Icons.schedule_outlined, size: 18),
             label: const Text('设置时间'),
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.green.withValues(alpha: 0.14),
-              foregroundColor: Colors.green,
-              disabledBackgroundColor: Colors.green.withValues(alpha: 0.08),
+              backgroundColor: _accentWithAlpha(0.14),
+              foregroundColor: accentColor,
+              disabledBackgroundColor: _accentWithAlpha(0.08),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -415,6 +425,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
   }
 
   Widget _buildInlineMinutesPicker() {
+    final accentColor = _accentColor;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -486,7 +497,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
           child: FilledButton(
             onPressed: _submitting ? null : _handleCustomMinutes,
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.green,
+              backgroundColor: accentColor,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -500,6 +511,8 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = _accentColor;
+
     return Container(
       decoration: BoxDecoration(
         color: _backgroundColor,
@@ -550,19 +563,19 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.12),
+                        color: _accentWithAlpha(0.12),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.green.withValues(alpha: 0.28),
+                          color: _accentWithAlpha(0.28),
                         ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             '当前已设置',
                             style: TextStyle(
-                              color: Colors.green,
+                              color: accentColor,
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                             ),
@@ -659,8 +672,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide:
-                                    const BorderSide(color: Colors.green),
+                                borderSide: BorderSide(color: accentColor),
                               ),
                             ),
                             onSubmitted: (_) => _handleDesktopCustomMinutes(),
@@ -674,7 +686,7 @@ class _PlayerSleepTimerPanelState extends State<PlayerSleepTimerPanel> {
                                 ? null
                                 : _handleDesktopCustomMinutes,
                             style: FilledButton.styleFrom(
-                              backgroundColor: Colors.green,
+                              backgroundColor: accentColor,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),

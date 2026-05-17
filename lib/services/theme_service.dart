@@ -1,13 +1,71 @@
 import 'package:flutter/material.dart';
 import 'dart:io' show Platform;
 import 'package:macos_window_utils/macos_window_utils.dart';
+import '../models/app_theme_scheme.dart';
+import 'user_data_service.dart';
 
 class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.system;
+  AppThemeScheme _appThemeScheme = kDefaultAppThemeScheme;
   Brightness _lastPlatformBrightness =
       WidgetsBinding.instance.platformDispatcher.platformBrightness;
 
   ThemeMode get themeMode => _themeMode;
+  AppThemeScheme get appThemeScheme => _appThemeScheme;
+  Color get accentColor => _appThemeScheme.seedColorFor(
+        isDarkMode ? Brightness.dark : Brightness.light,
+      );
+
+  Color get lightScaffoldBackground => const Color(0xFFF8F9FA);
+  Color get darkScaffoldBackground => const Color(0xFF121212);
+
+  Color accentWithAlpha(double alpha, {Brightness? brightness}) {
+    final targetBrightness =
+        brightness ?? (isDarkMode ? Brightness.dark : Brightness.light);
+    return _appThemeScheme
+        .seedColorFor(targetBrightness)
+        .withValues(alpha: alpha.clamp(0.0, 1.0));
+  }
+
+  Color accentTint(double amount, {Brightness? brightness, Color? baseColor}) {
+    final targetBrightness =
+        brightness ?? (isDarkMode ? Brightness.dark : Brightness.light);
+    final resolvedBaseColor = baseColor ??
+        (targetBrightness == Brightness.dark
+            ? darkScaffoldBackground
+            : lightScaffoldBackground);
+
+    return Color.lerp(
+      resolvedBaseColor,
+      _appThemeScheme.seedColorFor(targetBrightness),
+      amount.clamp(0.0, 1.0),
+    )!;
+  }
+
+  List<Color> get lightScaffoldGradientColors => [
+        accentTint(0.12, brightness: Brightness.light),
+        accentTint(0.1,
+            brightness: Brightness.light,
+            baseColor: const Color(0xFFF2F7FB)),
+        accentTint(0.06,
+            brightness: Brightness.light,
+            baseColor: const Color(0xFFF7F7F3)),
+        accentTint(0.08,
+            brightness: Brightness.light,
+            baseColor: const Color(0xFFE9ECEF)),
+        accentTint(0.1,
+            brightness: Brightness.light,
+            baseColor: const Color(0xFFDDE6ED)),
+        accentTint(0.14,
+            brightness: Brightness.light,
+            baseColor: const Color(0xFFD3DDE6)),
+      ];
+
+  Color get accentHoverColor => Color.lerp(
+        accentColor,
+        isDarkMode ? Colors.white : Colors.black,
+        isDarkMode ? 0.16 : 0.1,
+      )!;
   bool get isDarkMode {
     if (_themeMode == ThemeMode.dark) return true;
     if (_themeMode == ThemeMode.light) return false;
@@ -60,6 +118,7 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
   void _loadTheme() async {
     // 每次启动都默认跟随系统主题，不保存用户的手动选择
     _themeMode = ThemeMode.system;
+    _appThemeScheme = await UserDataService.getAppThemeScheme();
     _lastPlatformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     notifyListeners();
@@ -71,6 +130,16 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
     _lastPlatformBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     // 不再保存到 SharedPreferences，每次启动都重新遵循系统主题
+    notifyListeners();
+    _updateMacOSWindowAppearance();
+  }
+
+  Future<void> setAppThemeScheme(AppThemeScheme scheme) async {
+    if (_appThemeScheme == scheme) {
+      return;
+    }
+    _appThemeScheme = scheme;
+    await UserDataService.saveAppThemeScheme(scheme);
     notifyListeners();
     _updateMacOSWindowAppearance();
   }
@@ -113,60 +182,66 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   ThemeData get lightTheme {
+    final seedColor = _appThemeScheme.seedColorFor(Brightness.light);
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.light,
+    );
+    final titleColor = colorScheme.onSurface;
+    final bodyColor = colorScheme.onSurface;
+    final subColor = colorScheme.onSurfaceVariant;
+
     // Windows 下使用微软雅黑以获得更好的中文渲染
     final textTheme = Platform.isWindows
         ? ThemeData.light().textTheme.copyWith(
-              bodyLarge: const TextStyle(
-                color: Color(0xFF2c3e50),
+              bodyLarge: TextStyle(
+                color: bodyColor,
                 fontWeight: FontWeight.w400,
                 fontFamily: 'Microsoft YaHei',
               ),
-              bodyMedium: const TextStyle(
-                color: Color(0xFF2c3e50),
+              bodyMedium: TextStyle(
+                color: bodyColor,
                 fontWeight: FontWeight.w400,
                 fontFamily: 'Microsoft YaHei',
               ),
-              bodySmall: const TextStyle(
-                color: Color(0xFF7f8c8d),
+              bodySmall: TextStyle(
+                color: subColor,
                 fontWeight: FontWeight.w400,
                 fontFamily: 'Microsoft YaHei',
               ),
-              titleLarge: const TextStyle(
-                color: Color(0xFF2c3e50),
+              titleLarge: TextStyle(
+                color: titleColor,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Microsoft YaHei',
               ),
-              titleMedium: const TextStyle(
-                color: Color(0xFF2c3e50),
+              titleMedium: TextStyle(
+                color: titleColor,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Microsoft YaHei',
               ),
-              titleSmall: const TextStyle(
-                color: Color(0xFF2c3e50),
+              titleSmall: TextStyle(
+                color: titleColor,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Microsoft YaHei',
               ),
             )
-        : const TextTheme(
-            bodyLarge: TextStyle(color: Color(0xFF2c3e50)),
-            bodyMedium: TextStyle(color: Color(0xFF2c3e50)),
-            bodySmall: TextStyle(color: Color(0xFF7f8c8d)),
-            titleLarge: TextStyle(color: Color(0xFF2c3e50)),
-            titleMedium: TextStyle(color: Color(0xFF2c3e50)),
-            titleSmall: TextStyle(color: Color(0xFF2c3e50)),
+        : TextTheme(
+            bodyLarge: TextStyle(color: bodyColor),
+            bodyMedium: TextStyle(color: bodyColor),
+            bodySmall: TextStyle(color: subColor),
+            titleLarge: TextStyle(color: titleColor),
+            titleMedium: TextStyle(color: titleColor),
+            titleSmall: TextStyle(color: titleColor),
           );
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF2c3e50),
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: const Color(0xFFf8f9fa),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFffffff),
-        foregroundColor: Color(0xFF2c3e50),
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: lightScaffoldBackground,
+      appBarTheme: AppBarTheme(
+        backgroundColor: colorScheme.surface,
+        foregroundColor: titleColor,
         elevation: 0,
       ),
       cardTheme: const CardThemeData(
@@ -179,6 +254,12 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   ThemeData get darkTheme {
+    final seedColor = _appThemeScheme.seedColorFor(Brightness.dark);
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: seedColor,
+      brightness: Brightness.dark,
+    );
+
     // Windows 下使用微软雅黑以获得更好的中文渲染
     final textTheme = Platform.isWindows
         ? ThemeData.dark().textTheme.copyWith(
@@ -225,11 +306,8 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF2c3e50),
-        brightness: Brightness.dark,
-      ),
-      scaffoldBackgroundColor: const Color(0xFF121212),
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: darkScaffoldBackground,
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF1e1e1e),
         foregroundColor: Color(0xFFffffff),

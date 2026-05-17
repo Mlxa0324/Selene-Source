@@ -1135,6 +1135,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildMiniProgressBar() {
+    final accentColor = Theme.of(context).colorScheme.primary;
     final double value = widget.player.state.duration.inMilliseconds > 0
         ? widget.player.state.position.inMilliseconds /
             widget.player.state.duration.inMilliseconds
@@ -1160,7 +1161,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             child: FractionallySizedBox(
               widthFactor: value.clamp(0.0, 1.0),
               child: Container(
-                color: Colors.green.withValues(alpha: 0.6),
+                color: accentColor.withValues(alpha: 0.6),
               ),
             ),
           ),
@@ -1289,6 +1290,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildCastButton() {
+    final accentColor = Theme.of(context).colorScheme.primary;
     final iconSize = _isEffectiveFullscreen ? 24.0 : 20.0;
 
     return Positioned(
@@ -1315,7 +1317,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                     child: Icon(
                       Icons.timer_outlined,
                       color: widget.hasActiveSleepTimer
-                          ? Colors.green
+                          ? accentColor
                           : Colors.white,
                       size: iconSize,
                     ),
@@ -1391,6 +1393,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildBatteryBox() {
+    final accentColor = Theme.of(context).colorScheme.primary;
     final isCharging = _batteryState == BatteryState.charging ||
         _batteryState == BatteryState.full;
     final safeBatteryLevel = _batteryLevel.clamp(0, 100).toDouble();
@@ -1406,7 +1409,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
           decoration: BoxDecoration(
             border: Border.all(
                 color: isCharging
-                    ? Colors.green.withOpacity(0.7)
+                    ? accentColor.withOpacity(0.7)
                     : Colors.white.withOpacity(0.4),
                 width: 0.8),
             borderRadius: BorderRadius.circular(2),
@@ -1426,7 +1429,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                 child: Container(
                   decoration: BoxDecoration(
                     color: isCharging
-                        ? Colors.green
+                        ? accentColor
                         : (safeBatteryLevel <= 20 ? Colors.red : Colors.white),
                     borderRadius: BorderRadius.circular(0.5),
                   ),
@@ -1450,7 +1453,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
           height: 4,
           decoration: BoxDecoration(
             color: isCharging
-                ? Colors.green.withOpacity(0.7)
+                ? accentColor.withOpacity(0.7)
                 : Colors.white.withOpacity(0.4),
             borderRadius: const BorderRadius.only(
               topRight: Radius.circular(1),

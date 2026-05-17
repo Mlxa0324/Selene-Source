@@ -1,3 +1,4 @@
+import 'package:selene/models/app_theme_scheme.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -56,5 +57,24 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('playback_preload_level_v1'), 'medium');
+  });
+
+  test('getAppThemeScheme defaults to classic green when nothing is stored',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+
+    expect(
+      await UserDataService.getAppThemeScheme(),
+      AppThemeScheme.classicGreen,
+    );
+  });
+
+  test('saveAppThemeScheme writes the selected theme scheme key', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    await UserDataService.saveAppThemeScheme(AppThemeScheme.oceanBlue);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('app_theme_scheme_v1'), 'ocean_blue');
   });
 }

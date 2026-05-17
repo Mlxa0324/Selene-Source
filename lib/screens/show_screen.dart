@@ -480,10 +480,11 @@ class _ShowScreenState extends State<ShowScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return StyledRefreshIndicator(
       onRefresh: _refreshShowsData,
       refreshText: '刷新综艺数据...',
-      primaryColor: const Color(0xFF27AE60),
+      primaryColor: accentColor,
       child: SingleChildScrollView(
         controller: _scrollController,
         child: Column(

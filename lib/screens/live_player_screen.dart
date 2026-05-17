@@ -1216,7 +1216,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
           child: ListTile(
             key: itemKey,
             selected: isSelected,
-            selectedTileColor: const Color(0xFF27ae60).withOpacity(0.1),
+            selectedTileColor: themeService.accentWithAlpha(
+              themeService.isDarkMode ? 0.2 : 0.12,
+            ),
             visualDensity: const VisualDensity(vertical: -1),
             leading: channel.logo.isNotEmpty
                 ? AspectRatio(
@@ -1267,7 +1269,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
                 fontSize: 14,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                 color: isSelected
-                    ? const Color(0xFF27ae60)
+                    ? themeService.accentColor
                     : themeService.isDarkMode
                         ? Colors.white
                         : const Color(0xFF2c3e50),
@@ -1451,6 +1453,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         backgroundColor: Colors.transparent,
         isScrollControlled: true,
         builder: (context) {
+          final accentColor = Theme.of(context).colorScheme.primary;
           final screenWidth = MediaQuery.of(context).size.width;
           final modalWidth =
               DeviceUtils.isTablet(context) ? screenWidth * 0.5 : screenWidth;
@@ -1512,7 +1515,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
                                 alignment: Alignment.centerLeft, // 内容左对齐
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? const Color(0xFF27AE60)
+                                      ? accentColor
                                       : Theme.of(context)
                                           .chipTheme
                                           .backgroundColor,
@@ -2029,16 +2032,14 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
 
     if (isLive) {
       // 正在播放 - 绿色背景 + 绿色边框
-      backgroundColor = themeService.isDarkMode
-          ? const Color(0xFF27ae60).withOpacity(0.2)
-          : const Color(0xFF27ae60).withOpacity(0.1);
-      borderColor = const Color(0xFF27ae60).withOpacity(0.3);
-      textColor = themeService.isDarkMode
-          ? const Color(0xFF4ade80)
-          : const Color(0xFF16a34a);
-      timeColor = themeService.isDarkMode
-          ? const Color(0xFF4ade80)
-          : const Color(0xFF16a34a);
+      backgroundColor = themeService.accentWithAlpha(
+        themeService.isDarkMode ? 0.2 : 0.12,
+      );
+      borderColor = themeService.accentWithAlpha(
+        themeService.isDarkMode ? 0.38 : 0.26,
+      );
+      textColor = themeService.accentColor;
+      timeColor = themeService.accentColor;
     } else if (isPast) {
       // 过去的节目 - 灰色背景 + 灰色边框
       backgroundColor = themeService.isDarkMode
@@ -2103,7 +2104,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
                       width: 4,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF27ae60),
+                        color: themeService.accentColor,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -2180,14 +2181,11 @@ class _HoverButtonState extends State<_HoverButton> {
           duration: const Duration(milliseconds: 200),
           child: ColorFiltered(
             colorFilter: (isPC && _isHovered)
-                ? const ColorFilter.mode(
-                    Colors.green,
+                ? ColorFilter.mode(
+                    Theme.of(context).colorScheme.primary,
                     BlendMode.modulate,
                   )
-                : const ColorFilter.mode(
-                    Colors.white,
-                    BlendMode.modulate,
-                  ),
+                : const ColorFilter.mode(Colors.white, BlendMode.modulate),
             child: widget.child,
           ),
         ),

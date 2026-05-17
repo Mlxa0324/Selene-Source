@@ -1,7 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
+import 'package:selene/models/app_theme_scheme.dart';
+import 'package:selene/services/theme_service.dart';
 import 'package:selene/widgets/player_sleep_timer_panel.dart';
 
 void main() {
@@ -165,6 +168,40 @@ void main() {
 
       expect(submittedMinutes, 45);
     });
+
+    testWidgets('uses the active theme color for quick action surfaces',
+        (tester) async {
+      final accent = ColorScheme.fromSeed(
+        seedColor: AppThemeScheme.oceanBlue.lightSeedColor,
+        brightness: Brightness.light,
+      ).primary;
+
+      await _pumpPanel(
+        tester,
+        theme: ThemeData(
+          brightness: Brightness.light,
+          platform: TargetPlatform.android,
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: AppThemeScheme.oceanBlue.lightSeedColor,
+            brightness: Brightness.light,
+          ),
+        ),
+      );
+
+      final quickButton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '设置分钟数'),
+      );
+      final quickStyle =
+          quickButton.style!.backgroundColor!.resolve(<WidgetState>{});
+      expect(quickStyle, equals(accent));
+
+      final outlineButton = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, '调整分钟数'),
+      );
+      final outlineColor =
+          outlineButton.style!.foregroundColor!.resolve(<WidgetState>{});
+      expect(outlineColor, equals(accent));
+    });
   });
 }
 
@@ -179,18 +216,21 @@ Future<void> _pumpPanel(
   await tester.binding.setSurfaceSize(const Size(900, 1200));
 
   await tester.pumpWidget(
-    MaterialApp(
-      theme: theme,
-      home: Scaffold(
-        body: SizedBox.expand(
-          child: PlayerSleepTimerPanel(
-            theme: theme,
-            sideSheet: false,
-            canExitApp: true,
-            scheduledAt: scheduledAt,
-            onSetMinutes: onSetMinutes ?? (_) async => false,
-            onSetTimeOfDay: onSetTimeOfDay ?? (_) async => false,
-            onCancelTimer: () async => false,
+    ChangeNotifierProvider(
+      create: (_) => ThemeService(),
+      child: MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: SizedBox.expand(
+            child: PlayerSleepTimerPanel(
+              theme: theme,
+              sideSheet: false,
+              canExitApp: true,
+              scheduledAt: scheduledAt,
+              onSetMinutes: onSetMinutes ?? (_) async => false,
+              onSetTimeOfDay: onSetTimeOfDay ?? (_) async => false,
+              onCancelTimer: () async => false,
+            ),
           ),
         ),
       ),

@@ -22,7 +22,7 @@ class CustomRefreshIndicator extends StatelessWidget {
       builder: (context, themeService, child) {
         return RefreshIndicator(
           onRefresh: onRefresh,
-          color: const Color(0xFF27AE60), // 绿色主题
+          color: themeService.accentColor,
           backgroundColor: themeService.isDarkMode 
               ? const Color(0xFF1e1e1e) 
               : Colors.white,
@@ -52,7 +52,7 @@ class CustomRefreshIndicatorContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ThemeService>(
       builder: (context, themeService, child) {
-        final indicatorColor = color ?? const Color(0xFF27AE60); // 绿色主题
+        final indicatorColor = color ?? themeService.accentColor;
         
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -117,7 +117,7 @@ class StyledRefreshIndicator extends StatelessWidget {
       builder: (context, themeService, child) {
         return RefreshIndicator(
           onRefresh: onRefresh,
-          color: primaryColor ?? const Color(0xFF27AE60), // 默认绿色主题
+          color: primaryColor ?? themeService.accentColor,
           backgroundColor: backgroundColor ?? (themeService.isDarkMode 
               ? const Color(0xFF1e1e1e) 
               : Colors.white),

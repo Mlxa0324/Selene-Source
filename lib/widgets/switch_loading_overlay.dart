@@ -21,6 +21,7 @@ class SwitchLoadingOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isVisible) return const SizedBox.shrink();
+    final accentColor = Theme.of(context).colorScheme.primary;
 
     // 💡 仅在全屏模式下且非 PC 平台才需要计算状态栏高度
     final double topPadding = (isFullscreen && !DeviceUtils.isPC()) 
@@ -71,7 +72,7 @@ class SwitchLoadingOverlay extends StatelessWidget {
                           width: 78,
                           height: 78,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2ecc71).withOpacity(0.3),
+                            color: accentColor.withValues(alpha: 0.3),
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
@@ -81,10 +82,13 @@ class SwitchLoadingOverlay extends StatelessWidget {
                         width: 62,
                         height: 62,
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
+                          gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [Color(0xFF2ecc71), Color(0xFF27ae60)],
+                            colors: [
+                              Color.lerp(accentColor, Colors.white, 0.12)!,
+                              accentColor,
+                            ],
                           ),
                           borderRadius: BorderRadius.circular(13),
                         ),

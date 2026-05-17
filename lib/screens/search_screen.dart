@@ -704,11 +704,13 @@ class _SearchScreenState extends State<SearchScreen>
                 animationValue,
               )!;
             } else if (DeviceUtils.isPC() && isHovered) {
-              backgroundColor = themeService.isDarkMode
-                  ? const Color(0xFF1e3a28)
-                  : const Color(0xFFe8f5e9);
-              textColor = const Color(0xFF27ae60);
-              borderColor = const Color(0xFF52c77a);
+              backgroundColor = themeService.accentWithAlpha(
+                themeService.isDarkMode ? 0.22 : 0.12,
+              );
+              textColor = themeService.accentColor;
+              borderColor = themeService.accentWithAlpha(
+                themeService.isDarkMode ? 0.48 : 0.3,
+              );
             } else {
               backgroundColor = themeService.isDarkMode
                   ? const Color(0xFF1e1e1e)
@@ -958,7 +960,7 @@ class _SearchScreenState extends State<SearchScreen>
                               _useAggregatedView = value;
                             });
                           },
-                          activeColor: const Color(0xFF27ae60),
+                          activeColor: themeService.accentColor,
                           inactiveColor: themeService.isDarkMode
                               ? const Color(0xFF444444)
                               : const Color(0xFFcccccc),
@@ -1389,6 +1391,7 @@ class _SearchScreenState extends State<SearchScreen>
       {bool isFirst = false}) {
     bool isDefault = selectedValue == 'all';
     bool isHovered = _hoveredFilterPill == title;
+    final accentColor = Theme.of(context).colorScheme.primary;
 
     return MouseRegion(
       cursor: DeviceUtils.isPC() ? SystemMouseCursors.click : MouseCursor.defer,
@@ -1424,7 +1427,7 @@ class _SearchScreenState extends State<SearchScreen>
                 style: FontUtils.poppins(
                   fontSize: 13,
                   color: (DeviceUtils.isPC() && isHovered) || !isDefault
-                      ? const Color(0xFF27AE60)
+                      ? accentColor
                       : Theme.of(context).textTheme.bodySmall?.color,
                   fontWeight: (DeviceUtils.isPC() && isHovered) || !isDefault
                       ? FontWeight.w500
@@ -1436,7 +1439,7 @@ class _SearchScreenState extends State<SearchScreen>
                 Icons.arrow_drop_down,
                 size: 18,
                 color: (DeviceUtils.isPC() && isHovered) || !isDefault
-                    ? const Color(0xFF27AE60)
+                    ? accentColor
                     : Theme.of(context).textTheme.bodySmall?.color,
               ),
             ],
@@ -1469,6 +1472,7 @@ class _SearchScreenState extends State<SearchScreen>
         backgroundColor: Colors.transparent,
         isScrollControlled: true,
         builder: (context) {
+          final accentColor = Theme.of(context).colorScheme.primary;
           final screenWidth = MediaQuery.of(context).size.width;
           final modalWidth =
               DeviceUtils.isTablet(context) ? screenWidth * 0.5 : screenWidth;
@@ -1530,7 +1534,7 @@ class _SearchScreenState extends State<SearchScreen>
                                 alignment: Alignment.centerLeft, // 内容左对齐
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? const Color(0xFF27AE60)
+                                      ? accentColor
                                       : Theme.of(context)
                                           .chipTheme
                                           .backgroundColor,
@@ -1561,6 +1565,7 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   Widget _buildYearSortButton() {
+    final accentColor = Theme.of(context).colorScheme.primary;
     IconData icon;
     String text;
     switch (_yearSortOrder) {
@@ -1622,7 +1627,7 @@ class _SearchScreenState extends State<SearchScreen>
                   fontSize: 13,
                   color:
                       (DeviceUtils.isPC() && _isYearSortHovered) || !isDefault
-                          ? const Color(0xFF27AE60)
+                          ? accentColor
                           : Theme.of(context).textTheme.bodySmall?.color,
                   fontWeight:
                       (DeviceUtils.isPC() && _isYearSortHovered) || !isDefault
@@ -1635,7 +1640,7 @@ class _SearchScreenState extends State<SearchScreen>
                 icon,
                 size: 16,
                 color: (DeviceUtils.isPC() && _isYearSortHovered) || !isDefault
-                    ? const Color(0xFF27AE60)
+                    ? accentColor
                     : Theme.of(context).textTheme.bodySmall?.color,
               ),
             ],

@@ -532,7 +532,7 @@ class _SourceBrowserScreenState extends State<SourceBrowserScreen>
     return Consumer<ThemeService>(
       builder: (context, themeService, child) {
         final isDarkMode = themeService.isDarkMode;
-        const accent = Color(0xFF27ae60);
+        final accent = themeService.accentColor;
         final isDesktopStyle = widget.useDesktopStyleOverride ??
             (DeviceUtils.isTablet(context) || DeviceUtils.isPC());
 

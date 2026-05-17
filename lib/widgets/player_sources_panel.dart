@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 import '../models/search_result.dart';
+import '../services/theme_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 
@@ -144,6 +146,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
 
   @override
   Widget build(BuildContext context) {
+    final themeService = context.watch<ThemeService>();
     final isDarkMode = widget.theme.brightness == Brightness.dark;
     final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode
@@ -186,7 +189,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                           Icons.refresh,
                           size: 20,
                           color: _isRefreshing
-                              ? Colors.green
+                              ? themeService.accentColor
                               : textColor.withOpacity(0.6),
                         ),
                       ),
@@ -347,8 +350,22 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
 
   @override
   Widget build(BuildContext context) {
+    final themeService = context.watch<ThemeService>();
     final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
     final itemHeight = widget.isCompact ? 84.0 : 100.0;
+    final accentColor = themeService.accentColor;
+    final selectedSurface = widget.isDarkMode
+        ? accentColor.withValues(alpha: 0.14)
+        : Color.lerp(Colors.white, accentColor, 0.035)!;
+    final selectedBorder = widget.isDarkMode
+        ? accentColor.withValues(alpha: 0.5)
+        : Color.lerp(Colors.white, accentColor, 0.42)!;
+    final idleSurface = widget.isDarkMode
+        ? Colors.white.withOpacity(0.05)
+        : Colors.white.withOpacity(0.92);
+    final hoverSurface = widget.isDarkMode
+        ? Colors.white.withOpacity(0.1)
+        : const Color(0xFFF8FAFC);
 
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrent)
@@ -371,18 +388,28 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
           height: itemHeight,
           decoration: BoxDecoration(
             color: widget.isCurrent
-                ? Colors.green.withOpacity(0.1)
+                ? selectedSurface
                 : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode
-                        ? Colors.white10
-                        : Colors.black.withOpacity(0.05))
-                    : (widget.isDarkMode
-                        ? Colors.white.withOpacity(0.05)
-                        : Colors.black.withOpacity(0.03))),
+                    ? hoverSurface
+                    : idleSurface),
             borderRadius: BorderRadius.circular(10),
-            border: widget.isCurrent
-                ? Border.all(color: Colors.green, width: 1.5)
-                : Border.all(color: Colors.transparent, width: 1.5),
+            border: Border.all(
+              color: widget.isCurrent
+                  ? selectedBorder
+                  : (widget.isDarkMode
+                      ? Colors.white.withOpacity(0.08)
+                      : const Color(0xFFE7ECF2)),
+              width: widget.isCurrent ? 1.1 : 0.9,
+            ),
+            boxShadow: widget.isDarkMode
+                ? null
+                : [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Padding(
             padding: const EdgeInsets.all(8.0),
@@ -457,7 +484,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                               Text(
                                 widget.speedInfo!.loadSpeed,
                                 style: TextStyle(
-                                    color: Colors.green,
+                                    color: accentColor,
                                     fontSize: widget.isCompact ? 11 : 12),
                               ),
                             const SizedBox(width: 8),
@@ -482,13 +509,25 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: widget.isDarkMode
+                          ? accentColor.withValues(alpha: 0.12)
+                          : Color.lerp(Colors.white, accentColor, 0.05)!,
                       borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: widget.isDarkMode
+                            ? accentColor.withValues(alpha: 0.2)
+                            : Color.lerp(
+                                Colors.white,
+                                accentColor,
+                                0.22,
+                              )!,
+                        width: 0.8,
+                      ),
                     ),
                     child: Text(
                       widget.speedInfo!.quality,
                       style: TextStyle(
-                          color: Colors.green,
+                          color: accentColor,
                           fontSize: widget.isCompact ? 10 : 11,
                           fontWeight: FontWeight.bold),
                     ),

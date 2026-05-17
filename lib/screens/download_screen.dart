@@ -309,6 +309,7 @@ class _DownloadScreenState extends State<DownloadScreen>
   Widget build(BuildContext context) {
     final themeService = context.watch<ThemeService>();
     final isDarkMode = themeService.isDarkMode;
+    final accentColor = themeService.accentColor;
     final downloadService = context.watch<DownloadService>();
     final tasks = downloadService.tasks;
 
@@ -501,8 +502,8 @@ class _DownloadScreenState extends State<DownloadScreen>
         Tab(text: "下载中 (${downloadingTasks.length})"),
         Tab(text: "已完成 (${completedTasks.length})"),
       ],
-      indicatorColor: Colors.green,
-      labelColor: Colors.green,
+      indicatorColor: accentColor,
+      labelColor: accentColor,
       unselectedLabelColor: isDarkMode ? Colors.white38 : Colors.black38,
       indicatorSize: TabBarIndicatorSize.label,
       dividerColor: Colors.transparent,
@@ -573,6 +574,7 @@ class _DownloadScreenState extends State<DownloadScreen>
 
   Widget _buildGroup(BuildContext context, String title,
       List<DownloadTask> group, bool isDarkMode) {
+    final accentColor = context.read<ThemeService>().accentColor;
     final bool isExpanded = _expandedTitles.contains(title);
     final completedCount =
         group.where((t) => t.status == DownloadStatus.completed).length;
@@ -651,7 +653,7 @@ class _DownloadScreenState extends State<DownloadScreen>
                           await _playOfflineVideo(context, continueTask, group);
                         },
                         style: TextButton.styleFrom(
-                          foregroundColor: Colors.green,
+                          foregroundColor: accentColor,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
                             vertical: 6,
@@ -685,6 +687,7 @@ class _DownloadScreenState extends State<DownloadScreen>
   Widget _buildDownloadItem(BuildContext context, DownloadTask task,
       List<DownloadTask> allEpisodes, bool isDarkMode) {
     final downloadService = context.read<DownloadService>();
+    final accentColor = context.read<ThemeService>().accentColor;
     final isSelected = _selectedIds.contains(task.id);
 
     return Container(
@@ -696,7 +699,7 @@ class _DownloadScreenState extends State<DownloadScreen>
         color: isDarkMode ? Colors.white.withOpacity(0.03) : Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: _isEditing && isSelected
-            ? Border.all(color: Colors.green, width: 2)
+            ? Border.all(color: accentColor, width: 2)
             : Border.all(
                 color: isDarkMode
                     ? Colors.white.withOpacity(0.05)
@@ -745,7 +748,7 @@ class _DownloadScreenState extends State<DownloadScreen>
                         }
                       });
                     },
-                    activeColor: Colors.green,
+                    activeColor: accentColor,
                   ),
                   const SizedBox(width: 4),
                 ],
@@ -785,7 +788,7 @@ class _DownloadScreenState extends State<DownloadScreen>
                         valueColor: AlwaysStoppedAnimation<Color>(
                           task.status == DownloadStatus.failed
                               ? Colors.red
-                              : Colors.green,
+                              : accentColor,
                         ),
                         minHeight: 2,
                         borderRadius: BorderRadius.circular(1),
@@ -810,9 +813,9 @@ class _DownloadScreenState extends State<DownloadScreen>
                           if (task.status == DownloadStatus.downloading)
                             Text(
                               _formatSpeed(task.speed),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.green,
+                                color: accentColor,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -856,11 +859,12 @@ class _DownloadScreenState extends State<DownloadScreen>
   }
 
   Color _getStatusColor(DownloadTask task, bool isDarkMode) {
+    final accentColor = context.read<ThemeService>().accentColor;
     switch (task.status) {
       case DownloadStatus.failed:
         return Colors.red;
       case DownloadStatus.completed:
-        return Colors.green;
+        return accentColor;
       default:
         return isDarkMode ? Colors.white38 : Colors.black38;
     }

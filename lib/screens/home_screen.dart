@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../widgets/continue_watching_section.dart';
 import '../widgets/hot_movies_section.dart';
@@ -20,6 +21,7 @@ import '../utils/font_utils.dart';
 import '../services/page_cache_service.dart';
 import '../services/version_service.dart';
 import '../widgets/update_dialog.dart';
+import '../services/theme_service.dart';
 import '../services/user_data_service.dart';
 import 'movie_screen.dart';
 import 'tv_screen.dart';
@@ -287,10 +289,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 构建首页标签内容
   Widget _buildHomeTabContent() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return StyledRefreshIndicator(
       onRefresh: _refreshHomeData,
       refreshText: '刷新中...',
-      primaryColor: const Color(0xFF27AE60),
+      primaryColor: accentColor,
       child: SingleChildScrollView(
         child: Column(
           children: [
@@ -410,10 +413,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 构建播放历史标签内容
   Widget _buildHistoryTabContent() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return StyledRefreshIndicator(
       onRefresh: _refreshHomeData,
       refreshText: '刷新中...',
-      primaryColor: const Color(0xFF27AE60),
+      primaryColor: accentColor,
       child: SingleChildScrollView(
         child: Column(
           children: [
@@ -430,10 +434,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 构建收藏夹标签内容
   Widget _buildFavoritesTabContent() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return StyledRefreshIndicator(
       onRefresh: _refreshHomeData,
       refreshText: '刷新中...',
-      primaryColor: const Color(0xFF27AE60),
+      primaryColor: accentColor,
       child: SingleChildScrollView(
         child: Column(
           children: [

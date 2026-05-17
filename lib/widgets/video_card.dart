@@ -239,7 +239,7 @@ class _VideoCardState extends State<VideoCard> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 7, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF27ae60),
+                                color: themeService.accentColor,
                                 borderRadius: BorderRadius.circular(5),
                               ),
                               child: Text(
@@ -272,8 +272,8 @@ class _VideoCardState extends State<VideoCard> {
                               alignment: Alignment.centerLeft,
                               widthFactor: widget.videoInfo.progressPercentage,
                               child: Container(
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF27ae60),
+                                decoration: BoxDecoration(
+                                  color: themeService.accentColor,
                                   borderRadius: BorderRadius.only(
                                     bottomLeft: Radius.circular(8),
                                     bottomRight: Radius.circular(8),
@@ -309,7 +309,7 @@ class _VideoCardState extends State<VideoCard> {
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         color: _isPlayButtonHovered
-                                            ? const Color(0xFF27ae60)
+                                            ? themeService.accentColor
                                             : Colors.transparent,
                                         border: Border.all(
                                           color: Colors.white,
@@ -354,8 +354,8 @@ class _VideoCardState extends State<VideoCard> {
                                     child: Container(
                                       width: 33,
                                       height: 33,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF27ae60),
+                                      decoration: BoxDecoration(
+                                        color: themeService.accentColor,
                                         shape: BoxShape.circle,
                                       ),
                                       child: const Icon(
@@ -534,7 +534,7 @@ class _VideoCardState extends State<VideoCard> {
                             fontSize: width < 100 ? 12 : 13, // 根据宽度调整字体大小，调大字体
                             fontWeight: FontWeight.w500,
                             color: isPC && _isHovered
-                                ? Colors.green
+                                ? themeService.accentColor
                                 : (themeService.isDarkMode
                                     ? const Color(0xFFffffff)
                                     : const Color(0xFF2c3e50)),
@@ -557,7 +557,7 @@ class _VideoCardState extends State<VideoCard> {
                             decoration: BoxDecoration(
                               border: Border.all(
                                 color: isPC && _isHovered
-                                    ? Colors.green
+                                    ? themeService.accentColor
                                     : const Color(0xFF7f8c8d),
                                 width: 0.8,
                               ),
@@ -572,7 +572,7 @@ class _VideoCardState extends State<VideoCard> {
                                 fontSize:
                                     width < 100 ? 11 : 12, // 根据宽度调整字体大小，调大字体
                                 color: isPC && _isHovered
-                                    ? Colors.green
+                                    ? themeService.accentColor
                                     : (widget.from == 'agg'
                                         ? const Color(0xFF9b59b6) // 聚合模式用紫色文字
                                         : const Color(0xFF7f8c8d)), // 其他模式用灰色文字

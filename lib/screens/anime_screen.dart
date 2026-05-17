@@ -557,10 +557,11 @@ class _AnimeScreenState extends State<AnimeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return StyledRefreshIndicator(
       onRefresh: _refreshAnimeData,
       refreshText: '刷新动漫数据...',
-      primaryColor: const Color(0xFF27AE60),
+      primaryColor: accentColor,
       child: SingleChildScrollView(
         controller: _scrollController,
         child: Column(

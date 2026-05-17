@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/theme_service.dart';
 import '../utils/font_utils.dart';
 
 class SelectorOption {
@@ -34,14 +36,15 @@ class _FilterPillHoverState extends State<FilterPillHover> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = context.watch<ThemeService>().accentColor;
     // 计算颜色：如果是PC且isDefault且hover，显示绿色；否则按原逻辑
     Color textColor;
     if (widget.isPC && widget.isDefault && _isHovered) {
-      textColor = const Color(0xFF27AE60);
+      textColor = accentColor;
     } else if (widget.isDefault) {
       textColor = Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey;
     } else {
-      textColor = const Color(0xFF27AE60);
+      textColor = accentColor;
     }
 
     return MouseRegion(
@@ -107,12 +110,13 @@ class _FilterOptionHoverState extends State<FilterOptionHover> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = context.watch<ThemeService>().accentColor;
     // 计算颜色：如果选中显示白色，如果PC且未选中且hover显示绿色，否则默认
     Color textColor;
     if (widget.isSelected) {
       textColor = Colors.white;
     } else if (widget.isPC && _isHovered) {
-      textColor = const Color(0xFF27AE60);
+      textColor = accentColor;
     } else {
       textColor = Theme.of(context).textTheme.bodyMedium?.color ?? Colors.black;
     }
@@ -134,7 +138,7 @@ class _FilterOptionHoverState extends State<FilterOptionHover> {
               : null,
           decoration: BoxDecoration(
             color: widget.isSelected
-                ? const Color(0xFF27AE60)
+                ? accentColor
                 : Theme.of(context).chipTheme.backgroundColor,
             borderRadius: BorderRadius.circular(8),
           ),

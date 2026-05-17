@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/download_task.dart';
 import '../services/download_service.dart';
+import '../services/theme_service.dart';
 import 'package:provider/provider.dart';
 import '../screens/download_screen.dart';
 import 'app_confirm_dialog.dart';
@@ -374,6 +375,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
   }
 
   Widget _buildDownloadingAnimation() {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return AnimatedBuilder(
       animation: _animController,
       builder: (context, child) {
@@ -384,9 +386,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
         try {
           animValue = _animController.value;
         } catch (_) {
-          return const Icon(
+          return Icon(
             Icons.keyboard_double_arrow_down,
-            color: Colors.green,
+            color: accentColor,
             size: 20,
           );
         }
@@ -395,9 +397,9 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
           offset: Offset(0, 3 * animValue),
           child: Opacity(
             opacity: 1.0 - animValue,
-            child: const Icon(
+            child: Icon(
               Icons.keyboard_double_arrow_down,
-              color: Colors.green,
+              color: accentColor,
               size: 20,
             ),
           ),
@@ -504,6 +506,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
   @override
   Widget build(BuildContext context) {
+    final themeService = context.watch<ThemeService>();
+    final accentColor = themeService.accentColor;
     final isDarkMode = widget.theme.brightness == Brightness.dark;
     final backgroundColor = isDarkMode ? const Color(0xFF121212) : Colors.white;
     final textColor = isDarkMode ? Colors.white : Colors.black87;
@@ -584,13 +588,13 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                                 });
                               }
                             },
-                            selectedColor: Colors.green.withOpacity(0.2),
+                            selectedColor: themeService.accentWithAlpha(0.2),
                             backgroundColor: isDarkMode
                                 ? Colors.white10
                                 : Colors.black.withOpacity(0.05),
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? Colors.green
+                                  ? accentColor
                                   : textColor.withOpacity(0.7),
                               fontSize: 13,
                               fontWeight: isSelected
@@ -601,7 +605,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
                                 color: isSelected
-                                    ? Colors.green
+                                    ? accentColor
                                     : Colors.transparent,
                               ),
                             ),
@@ -718,6 +722,19 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
 
                     final bool isEffectivelySelected =
                         isSelected || isDownloaded || isInQueue;
+                    final selectedSurface = isDarkMode
+                        ? accentColor.withValues(alpha: 0.14)
+                        : Color.lerp(Colors.white, accentColor, 0.04)!;
+                    final currentSurface = isDarkMode
+                        ? accentColor.withValues(alpha: 0.1)
+                        : Color.lerp(Colors.white, accentColor, 0.025)!;
+                    final selectedBorder = isDarkMode
+                        ? accentColor.withValues(alpha: 0.48)
+                        : Color.lerp(
+                            Colors.white,
+                            accentColor,
+                            0.4,
+                          )!;
 
                     return GestureDetector(
                       onTap: () {
@@ -765,23 +782,38 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                             width: double.infinity,
                             height: double.infinity,
                             decoration: BoxDecoration(
-                              // 💡 优化：手动选中颜色正常，仅播放颜色变淡
                               color: isEffectivelySelected
-                                  ? Colors.green.withOpacity(0.2)
+                                  ? selectedSurface
                                   : (isCurrentPlaying
-                                      ? Colors.green.withOpacity(0.08)
+                                      ? currentSurface
                                       : (isDarkMode
                                           ? Colors.white10
-                                          : Colors.black.withOpacity(0.05))),
+                                          : Colors.white.withOpacity(0.9))),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
                                 color: isEffectivelySelected
-                                    ? Colors.green
+                                    ? selectedBorder
                                     : (isCurrentPlaying
-                                        ? Colors.green.withOpacity(0.4)
-                                        : Colors.transparent),
-                                width: 1.5,
+                                        ? selectedBorder.withValues(
+                                            alpha: isDarkMode ? 0.35 : 0.28,
+                                          )
+                                        : (isDarkMode
+                                            ? Colors.white.withOpacity(0.08)
+                                            : const Color(0xFFE7ECF2))),
+                                width: (isEffectivelySelected || isCurrentPlaying)
+                                    ? 1.1
+                                    : 0.9,
                               ),
+                              boxShadow: isDarkMode
+                                  ? null
+                                  : [
+                                      BoxShadow(
+                                        color: const Color(0xFF0F172A)
+                                            .withValues(alpha: 0.025),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
                             ),
                             child: Center(
                               child: Padding(
@@ -791,7 +823,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                                   style: TextStyle(
                                     color: (isEffectivelySelected ||
                                             isCurrentPlaying)
-                                        ? Colors.green
+                                        ? accentColor
                                         : textColor,
                                     fontSize: 13,
                                     height: gridLayout.titleMaxLines > 2
@@ -809,25 +841,25 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                           ),
                           // 💡 新增：正在播放标记
                           if (isCurrentPlaying)
-                            const Positioned(
+                            Positioned(
                               top: 3,
                               right: 5,
                               child: Text(
                                 '正在播放',
                                 style: TextStyle(
-                                  color: Colors.green,
+                                  color: accentColor,
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ),
                           if (isDownloaded)
-                            const Positioned(
+                            Positioned(
                               right: 4,
                               bottom: 4,
                               child: Icon(
                                 Icons.check_circle,
-                                color: Colors.green,
+                                color: accentColor,
                                 size: 16,
                               ),
                             ),
@@ -844,8 +876,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                                       padding: const EdgeInsets.only(bottom: 1),
                                       child: Text(
                                         '${(task.progress * 100).toInt()}%',
-                                        style: const TextStyle(
-                                          color: Colors.green,
+                                        style: TextStyle(
+                                          color: accentColor,
                                           fontSize: 11,
                                         ),
                                       ),
@@ -882,7 +914,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
+                  color: themeService.accentWithAlpha(0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
@@ -890,14 +922,14 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                   children: [
                     Icon(
                       Icons.download_for_offline_outlined,
-                      color: Colors.green,
+                      color: accentColor,
                       size: widget.isCompact ? 18 : 20,
                     ),
                     const SizedBox(width: 5),
                     Text(
                       '查看缓存',
                       style: TextStyle(
-                        color: Colors.green,
+                        color: accentColor,
                         fontSize: widget.isCompact ? 13 : 14,
                         fontWeight: FontWeight.bold,
                       ),
@@ -918,8 +950,8 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                   child: OutlinedButton(
                     onPressed: _selectAll,
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Colors.green),
-                      foregroundColor: Colors.green,
+                      side: BorderSide(color: accentColor),
+                      foregroundColor: accentColor,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -939,7 +971,7 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                   child: ElevatedButton(
                     onPressed: _selectedIndices.isEmpty ? null : _startDownload,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
+                      backgroundColor: accentColor,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: Colors.grey.withOpacity(0.3),
                       elevation: 0,

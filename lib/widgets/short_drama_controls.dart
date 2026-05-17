@@ -783,6 +783,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
     final Color subColor = isDark ? Colors.white54 : Colors.black54;
     final Color itemBgColor = isDark ? Colors.white10 : Colors.grey[200]!;
     final Color iconBtnColor = isDark ? Colors.white : Colors.black87;
+    final Color accentColor = Theme.of(context).colorScheme.primary;
 
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -813,7 +814,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
               if (widget.onSleepTimerPressed != null)
                 _buildActionButton(Icons.timer_outlined, '定时',
                     iconColor: widget.hasActiveSleepTimer
-                        ? Colors.green
+                        ? accentColor
                         : iconBtnColor,
                     labelColor: subColor,
                     onTap: widget.onSleepTimerPressed),
@@ -849,7 +850,7 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isSelected ? Colors.green : itemBgColor,
+                    color: isSelected ? accentColor : itemBgColor,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text('${s}x',
@@ -889,13 +890,13 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                     const SizedBox(width: 8), // 💡 缩小间距
                     GestureDetector(
                       onTap: widget.onDanmakuPressed,
-                      child: const Row(
+                      child: Row(
                         children: [
                           Text('设置',
-                              style:
-                                  TextStyle(color: Colors.green, fontSize: 13)),
+                              style: TextStyle(
+                                  color: accentColor, fontSize: 13)),
                           Icon(Icons.chevron_right,
-                              color: Colors.green, size: 16),
+                              color: accentColor, size: 16),
                         ],
                       ),
                     ),
@@ -912,13 +913,13 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                 children: [
                   GestureDetector(
                     onTap: widget.onDanmakuMatchPressed,
-                    child: const Row(
+                    child: Row(
                       children: [
                         Text('搜索',
-                            style:
-                                TextStyle(color: Colors.green, fontSize: 13)),
+                            style: TextStyle(
+                                color: accentColor, fontSize: 13)),
                         Icon(Icons.chevron_right,
-                            color: Colors.green, size: 16),
+                            color: accentColor, size: 16),
                       ],
                     ),
                   ),

@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../services/theme_service.dart';
 import '../utils/device_utils.dart';
 
 class PlayerEpisodesPanel extends StatefulWidget {
@@ -322,6 +324,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final themeService = context.watch<ThemeService>();
     final isDarkMode = widget.theme.brightness == Brightness.dark;
     final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode
@@ -427,13 +430,13 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                                 }
                               });
                             },
-                            selectedColor: Colors.green.withValues(alpha: 0.2),
+                            selectedColor: themeService.accentWithAlpha(0.2),
                             backgroundColor: isDarkMode
                                 ? Colors.white10
                                 : Colors.black.withValues(alpha: 0.05),
                             labelStyle: TextStyle(
                               color: isSelected
-                                  ? Colors.green
+                                  ? themeService.accentColor
                                   : textColor.withValues(alpha: 0.7),
                               fontSize: 13,
                               fontWeight: isSelected
@@ -444,7 +447,7 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
                                 color: isSelected
-                                    ? Colors.green
+                                    ? themeService.accentColor
                                     : Colors.transparent,
                               ),
                             ),
@@ -637,8 +640,22 @@ class _EpisodePanelItemWithHoverState
 
   @override
   Widget build(BuildContext context) {
+    final themeService = context.watch<ThemeService>();
+    final accentColor = themeService.accentColor;
+    final selectedSurface = widget.isDarkMode
+        ? accentColor.withValues(alpha: 0.14)
+        : Color.lerp(Colors.white, accentColor, 0.04)!;
+    final selectedBorder = widget.isDarkMode
+        ? accentColor.withValues(alpha: 0.48)
+        : Color.lerp(Colors.white, accentColor, 0.42)!;
+    final hoverSurface = widget.isDarkMode
+        ? Colors.white.withOpacity(0.1)
+        : const Color(0xFFF8FAFC);
+    final idleSurface = widget.isDarkMode
+        ? Colors.white12
+        : Colors.white.withValues(alpha: 0.88);
     final Color textColor = widget.isCurrentEpisode
-        ? Colors.green
+        ? accentColor
         : (widget.isDarkMode ? Colors.white70 : Colors.black87);
 
     return MouseRegion(
@@ -662,18 +679,28 @@ class _EpisodePanelItemWithHoverState
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
             color: widget.isCurrentEpisode
-                ? Colors.green.withValues(alpha: 0.2)
+                ? selectedSurface
                 : (_isHovering && DeviceUtils.isPC()
-                    ? (widget.isDarkMode
-                        ? const Color(0x30E9F4F4)
-                        : const Color(0xFFE8F5E9))
-                    : (widget.isDarkMode
-                        ? Colors.white12
-                        : Colors.black.withValues(alpha: 0.05))),
+                    ? hoverSurface
+                    : idleSurface),
             borderRadius: BorderRadius.circular(10),
-            border: widget.isCurrentEpisode
-                ? Border.all(color: Colors.green, width: 1.5)
-                : null,
+            border: Border.all(
+              color: widget.isCurrentEpisode
+                  ? selectedBorder
+                  : (widget.isDarkMode
+                      ? Colors.white.withOpacity(0.08)
+                      : const Color(0xFFE7ECF2)),
+              width: widget.isCurrentEpisode ? 1.1 : 0.9,
+            ),
+            boxShadow: widget.isDarkMode
+                ? null
+                : [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.025),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           alignment: Alignment.center,
           child: Padding(

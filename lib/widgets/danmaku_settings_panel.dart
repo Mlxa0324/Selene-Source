@@ -42,6 +42,9 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
         : Colors.white.withOpacity(0.95);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
     final subTextColor = isDarkMode ? Colors.white54 : Colors.black54;
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentSurface = accentColor.withValues(alpha: 0.2);
+    final accentTrack = accentColor.withValues(alpha: 0.3);
 
     return Container(
       width: 320,
@@ -226,6 +229,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
 
   Widget _buildSwitchRow(
       String title, bool value, Color textColor, Function(bool) onChanged) {
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentTrack = accentColor.withValues(alpha: 0.3);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -242,8 +247,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
               child: Switch(
                 value: value,
                 onChanged: onChanged,
-                activeColor: Colors.green,
-                activeTrackColor: Colors.green.withOpacity(0.3),
+                activeColor: accentColor,
+                activeTrackColor: accentTrack,
               ),
             ),
           ),
@@ -263,6 +268,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
     required String valueLabel,
     bool reverse = false,
   }) {
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentSurface = accentColor.withValues(alpha: 0.2);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -280,10 +287,10 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
                 trackHeight: 2,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                activeTrackColor: Colors.green,
+                activeTrackColor: accentColor,
                 inactiveTrackColor: textColor.withOpacity(0.1),
-                thumbColor: Colors.green,
-                overlayColor: Colors.green.withOpacity(0.2),
+                thumbColor: accentColor,
+                overlayColor: accentSurface,
               ),
               child: Slider(
                 value: value.clamp(min, max),
@@ -308,6 +315,8 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
 
   Widget _buildBlockTextButton(
       String text, bool isSelected, bool isDarkMode, Function(bool) onTap) {
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentSurface = accentColor.withValues(alpha: 0.2);
     return GestureDetector(
       onTap: () => onTap(!isSelected),
       child: Container(
@@ -315,17 +324,18 @@ class _DanmakuSettingsPanelState extends State<DanmakuSettingsPanel> {
         height: 32,
         decoration: BoxDecoration(
           color: isSelected
-              ? Colors.green.withOpacity(0.2)
+              ? accentSurface
               : (isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05)),
           borderRadius: BorderRadius.circular(4),
-          border: isSelected ? Border.all(color: Colors.green, width: 1) : null,
+          border:
+              isSelected ? Border.all(color: accentColor, width: 1) : null,
         ),
         child: Center(
           child: Text(
             text,
             style: TextStyle(
               color: isSelected
-                  ? Colors.green
+                  ? accentColor
                   : (isDarkMode ? Colors.white70 : Colors.black54),
               fontSize: 13,
             ),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/app_theme_scheme.dart';
 import '../models/playback_preload.dart';
 import '../models/search_result.dart';
 
@@ -98,6 +99,9 @@ class UserDataService {
 
   /// 是否显示源浏览器入口 Key
   static const String _showSourceBrowserKey = 'show_source_browser_v1';
+
+  /// 全局主题色方案 Key
+  static const String _appThemeSchemeKey = 'app_theme_scheme_v1';
 
   /// 源浏览器当前选中的数据源 Key
   static const String _sourceBrowserCurrentSourceKey =
@@ -873,6 +877,20 @@ class UserDataService {
   static Future<bool> getShowSourceBrowser() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_showSourceBrowserKey) ?? false;
+  }
+
+  // 保存全局主题色方案
+  static Future<void> saveAppThemeScheme(AppThemeScheme scheme) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_appThemeSchemeKey, scheme.storageValue);
+  }
+
+  // 获取全局主题色方案（默认为经典影院绿）
+  static Future<AppThemeScheme> getAppThemeScheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    return AppThemeScheme.fromStorageValue(
+      prefs.getString(_appThemeSchemeKey),
+    );
   }
 
   // 保存源浏览器当前数据源

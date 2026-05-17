@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
+import 'package:selene/services/theme_service.dart';
 import 'package:selene/widgets/player_episodes_panel.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 
@@ -10,28 +12,31 @@ void main() {
     bool? changedValue;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: PlayerSettingsPanel(
-            theme: ThemeData.dark(),
-            currentFitType: VideoFitType.contain,
-            currentLongPressSpeed: 2.0,
-            progressMode: ProgressDisplayMode.none,
-            showSystemTime: false,
-            hideCenterControlsWithBars: true,
-            skipIntro: 0,
-            skipOutro: 0,
-            videoPosition: 0,
-            videoDuration: 0,
-            onFitTypeChanged: (_) {},
-            onLongPressSpeedChanged: (_) {},
-            onProgressModeChanged: (_) {},
-            onShowSystemTimeChanged: (_) {},
-            onHideCenterControlsWithBarsChanged: (value) {
-              changedValue = value;
-            },
-            onSkipIntroChanged: (_) {},
-            onSkipOutroChanged: (_) {},
+      ChangeNotifierProvider(
+        create: (_) => ThemeService(),
+        child: MaterialApp(
+          home: Scaffold(
+            body: PlayerSettingsPanel(
+              theme: ThemeData.dark(),
+              currentFitType: VideoFitType.contain,
+              currentLongPressSpeed: 2.0,
+              progressMode: ProgressDisplayMode.none,
+              showSystemTime: false,
+              hideCenterControlsWithBars: true,
+              skipIntro: 0,
+              skipOutro: 0,
+              videoPosition: 0,
+              videoDuration: 0,
+              onFitTypeChanged: (_) {},
+              onLongPressSpeedChanged: (_) {},
+              onProgressModeChanged: (_) {},
+              onShowSystemTimeChanged: (_) {},
+              onHideCenterControlsWithBarsChanged: (value) {
+                changedValue = value;
+              },
+              onSkipIntroChanged: (_) {},
+              onSkipOutroChanged: (_) {},
+            ),
           ),
         ),
       ),

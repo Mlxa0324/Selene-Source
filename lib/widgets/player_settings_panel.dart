@@ -61,6 +61,8 @@ class PlayerSettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = theme.colorScheme.primary;
+    final accentSurfaceColor = accentColor.withOpacity(0.2);
     final isDarkMode = theme.brightness == Brightness.dark;
     final opacity = backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode
@@ -112,23 +114,31 @@ class PlayerSettingsPanel extends StatelessWidget {
                   // 画面设置
                   _buildSectionHeader('画面比例', subTextColor),
                   const SizedBox(height: 10),
-                  _buildFitTypeSelector(isDarkMode),
+                  _buildFitTypeSelector(
+                    isDarkMode,
+                    accentColor,
+                    accentSurfaceColor,
+                  ),
 
                   const SizedBox(height: 20),
 
                   _buildSectionHeader('长按倍速', subTextColor),
                   const SizedBox(height: 10),
-                  _buildLongPressSpeedSelector(isDarkMode),
+                  _buildLongPressSpeedSelector(
+                    isDarkMode,
+                    accentColor,
+                    accentSurfaceColor,
+                  ),
                   const SizedBox(height: 20),
 
                   // 自动跳过
                   _buildSectionHeader('自动跳过', subTextColor),
                   const SizedBox(height: 10),
                   _buildSkipSlider('跳过片头', skipIntro, 300, onSkipIntroChanged,
-                      textColor, subTextColor,
+                      textColor, subTextColor, accentColor,
                       isIntro: true),
                   _buildSkipSlider('跳过片尾', skipOutro, 300, onSkipOutroChanged,
-                      textColor, subTextColor,
+                      textColor, subTextColor, accentColor,
                       isIntro: false),
 
                   const SizedBox(height: 20),
@@ -136,7 +146,11 @@ class PlayerSettingsPanel extends StatelessWidget {
                   // 功能增强
                   _buildSectionHeader('功能增强', subTextColor),
                   const SizedBox(height: 10),
-                  _buildCenterControlsSwitch(textColor, subTextColor),
+                  _buildCenterControlsSwitch(
+                    textColor,
+                    subTextColor,
+                    accentColor,
+                  ),
                   // const SizedBox(height: 10),
                   // _buildSystemTimeSwitch(isDarkMode, textColor, subTextColor),
 
@@ -145,7 +159,11 @@ class PlayerSettingsPanel extends StatelessWidget {
                   // 播放进度
                   _buildSectionHeader('显示播放进度 (控制栏隐藏时)', subTextColor),
                   const SizedBox(height: 10),
-                  _buildProgressModeSelector(isDarkMode),
+                  _buildProgressModeSelector(
+                    isDarkMode,
+                    accentColor,
+                    accentSurfaceColor,
+                  ),
 
                   const SizedBox(height: 32),
                 ],
@@ -181,7 +199,8 @@ class PlayerSettingsPanel extends StatelessWidget {
     double max,
     Function(int) onChanged,
     Color textColor,
-    Color subTextColor, {
+    Color subTextColor,
+    Color accentColor, {
     required bool isIntro,
   }) {
     return Padding(
@@ -205,10 +224,10 @@ class PlayerSettingsPanel extends StatelessWidget {
                         const RoundSliderThumbShape(enabledThumbRadius: 6),
                     overlayShape:
                         const RoundSliderOverlayShape(overlayRadius: 14),
-                    activeTrackColor: Colors.green,
+                    activeTrackColor: accentColor,
                     inactiveTrackColor: textColor.withOpacity(0.1),
-                    thumbColor: Colors.green,
-                    overlayColor: Colors.green.withOpacity(0.2),
+                    thumbColor: accentColor,
+                    overlayColor: accentColor.withOpacity(0.2),
                   ),
                   child: Slider(
                     value: value.toDouble().clamp(0.0, max),
@@ -257,7 +276,7 @@ class PlayerSettingsPanel extends StatelessWidget {
                       }
                     }
                   },
-                  color: Colors.green,
+                  color: accentColor,
                 ),
                 const SizedBox(width: 12),
                 _buildTextButton(
@@ -319,7 +338,11 @@ class PlayerSettingsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildFitTypeSelector(bool isDarkMode) {
+  Widget _buildFitTypeSelector(
+    bool isDarkMode,
+    Color accentColor,
+    Color accentSurfaceColor,
+  ) {
     final fitTypes = [
       (VideoFitType.contain, '适应'),
       (VideoFitType.fill, '填充'),
@@ -336,13 +359,19 @@ class PlayerSettingsPanel extends StatelessWidget {
           isSelected: isSelected,
           isDarkMode: isDarkMode,
           label: item.$2,
+          accentColor: accentColor,
+          accentSurfaceColor: accentSurfaceColor,
           onTap: () => onFitTypeChanged(item.$1),
         );
       }).toList(),
     );
   }
 
-  Widget _buildLongPressSpeedSelector(bool isDarkMode) {
+  Widget _buildLongPressSpeedSelector(
+    bool isDarkMode,
+    Color accentColor,
+    Color accentSurfaceColor,
+  ) {
     final speeds = [2.0, 2.5, 3.0];
 
     return Wrap(
@@ -354,13 +383,19 @@ class PlayerSettingsPanel extends StatelessWidget {
           isSelected: isSelected,
           isDarkMode: isDarkMode,
           label: '${speed}x',
+          accentColor: accentColor,
+          accentSurfaceColor: accentSurfaceColor,
           onTap: () => onLongPressSpeedChanged(speed),
         );
       }).toList(),
     );
   }
 
-  Widget _buildProgressModeSelector(bool isDarkMode) {
+  Widget _buildProgressModeSelector(
+    bool isDarkMode,
+    Color accentColor,
+    Color accentSurfaceColor,
+  ) {
     final modes = [
       (ProgressDisplayMode.none, '关闭'),
       (ProgressDisplayMode.time, '时间'),
@@ -376,13 +411,19 @@ class PlayerSettingsPanel extends StatelessWidget {
           isSelected: isSelected,
           isDarkMode: isDarkMode,
           label: item.$2,
+          accentColor: accentColor,
+          accentSurfaceColor: accentSurfaceColor,
           onTap: () => onProgressModeChanged(item.$1),
         );
       }).toList(),
     );
   }
 
-  Widget _buildCenterControlsSwitch(Color textColor, Color subTextColor) {
+  Widget _buildCenterControlsSwitch(
+    Color textColor,
+    Color subTextColor,
+    Color accentColor,
+  ) {
     return _buildSwitchRow(
       title: '中间按钮跟随隐藏',
       subtitle: '关闭后，暂停时中间三个按钮会保留',
@@ -390,6 +431,8 @@ class PlayerSettingsPanel extends StatelessWidget {
       onChanged: onHideCenterControlsWithBarsChanged,
       textColor: textColor,
       subTextColor: subTextColor,
+      activeThumbColor: accentColor,
+      activeTrackColor: accentColor.withOpacity(0.3),
     );
   }
 
@@ -400,6 +443,8 @@ class PlayerSettingsPanel extends StatelessWidget {
     required ValueChanged<bool> onChanged,
     required Color textColor,
     required Color subTextColor,
+    required Color activeThumbColor,
+    required Color activeTrackColor,
   }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -433,8 +478,8 @@ class PlayerSettingsPanel extends StatelessWidget {
             child: Switch(
               value: value,
               onChanged: onChanged,
-              activeThumbColor: Colors.green,
-              activeTrackColor: Colors.green.withValues(alpha: 0.3),
+              activeThumbColor: activeThumbColor,
+              activeTrackColor: activeTrackColor,
             ),
           ),
         )
@@ -447,12 +492,16 @@ class _SettingsItemWithHover extends StatefulWidget {
   final bool isSelected;
   final bool isDarkMode;
   final String label;
+  final Color accentColor;
+  final Color accentSurfaceColor;
   final VoidCallback onTap;
 
   const _SettingsItemWithHover({
     required this.isSelected,
     required this.isDarkMode,
     required this.label,
+    required this.accentColor,
+    required this.accentSurfaceColor,
     required this.onTap,
   });
 
@@ -480,13 +529,13 @@ class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
           height: 32,
           decoration: BoxDecoration(
             color: widget.isSelected
-                ? Colors.green.withOpacity(0.2)
+                ? widget.accentSurfaceColor
                 : (widget.isDarkMode
                     ? Colors.white12
                     : Colors.black.withOpacity(0.05)),
             borderRadius: BorderRadius.circular(6),
             border: widget.isSelected
-                ? Border.all(color: Colors.green, width: 1.5)
+                ? Border.all(color: widget.accentColor, width: 1.5)
                 : null,
           ),
           child: Center(
@@ -494,7 +543,7 @@ class _SettingsItemWithHoverState extends State<_SettingsItemWithHover> {
               widget.label,
               style: TextStyle(
                 color: widget.isSelected
-                    ? Colors.green
+                    ? widget.accentColor
                     : (widget.isDarkMode ? Colors.white70 : Colors.black87),
                 fontWeight:
                     widget.isSelected ? FontWeight.bold : FontWeight.normal,

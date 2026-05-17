@@ -1464,7 +1464,7 @@ class _VideoMenuBottomSheetState extends State<VideoMenuBottomSheet>
             context,
             themeService,
             icon: Icons.play_circle_fill,
-            iconColor: const Color(0xFF27AE60),
+            iconColor: themeService.accentColor,
             title: '播放',
             subtitle: _getEpisodeSubtitle(),
             onTap: () {
@@ -1502,7 +1502,7 @@ class _VideoMenuBottomSheetState extends State<VideoMenuBottomSheet>
             context,
             themeService,
             icon: Icons.play_circle_fill,
-            iconColor: const Color(0xFF27AE60),
+            iconColor: themeService.accentColor,
             title: '播放',
             subtitle: _getEpisodeSubtitle(),
             onTap: () {
@@ -1539,7 +1539,7 @@ class _VideoMenuBottomSheetState extends State<VideoMenuBottomSheet>
             context,
             themeService,
             icon: Icons.play_circle_fill,
-            iconColor: const Color(0xFF27AE60),
+            iconColor: themeService.accentColor,
             title: '播放',
             subtitle: _getEpisodeSubtitle(),
             onTap: () {
@@ -1571,7 +1571,7 @@ class _VideoMenuBottomSheetState extends State<VideoMenuBottomSheet>
           context,
           themeService,
           icon: Icons.play_circle_fill,
-          iconColor: const Color(0xFF27AE60),
+          iconColor: themeService.accentColor,
           title: '播放',
           subtitle: _getEpisodeSubtitle(),
           onTap: () {
@@ -1612,7 +1612,7 @@ class _VideoMenuBottomSheetState extends State<VideoMenuBottomSheet>
           context,
           themeService,
           icon: Icons.play_circle_fill,
-          iconColor: const Color(0xFF27AE60),
+          iconColor: themeService.accentColor,
           title: '播放',
           subtitle: _getEpisodeSubtitle(),
           onTap: () {
@@ -1688,7 +1688,7 @@ class _VideoMenuBottomSheetState extends State<VideoMenuBottomSheet>
           context,
           themeService,
           icon: Icons.play_circle_fill,
-          iconColor: const Color(0xFF27AE60),
+          iconColor: themeService.accentColor,
           title: '播放',
           subtitle: _getEpisodeSubtitle(),
           onTap: () {

@@ -386,15 +386,15 @@ class _LiveScreenState extends State<LiveScreen>
                   width: 32,
                   height: 32,
                   child: Center(
-                    child: RotationTransition(
+                      child: RotationTransition(
                       turns: _refreshIconController,
                       child: Icon(
                         Icons.refresh,
                         size: 20,
                         color: _isRefreshing
-                            ? const Color(0xFF27ae60)
+                            ? themeService.accentColor
                             : (DeviceUtils.isPC() && _isRefreshButtonHovered
-                                ? const Color(0xFF27ae60)
+                                ? themeService.accentColor
                                 : (themeService.isDarkMode
                                     ? Colors.grey[600]
                                     : Colors.grey[500])),
@@ -457,6 +457,7 @@ class _LiveScreenState extends State<LiveScreen>
         backgroundColor: Colors.transparent,
         isScrollControlled: true,
         builder: (context) {
+          final accentColor = Theme.of(context).colorScheme.primary;
           final screenWidth = MediaQuery.of(context).size.width;
           final modalWidth =
               DeviceUtils.isTablet(context) ? screenWidth * 0.5 : screenWidth;
@@ -518,7 +519,7 @@ class _LiveScreenState extends State<LiveScreen>
                                 alignment: Alignment.centerLeft, // 内容左对齐
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? const Color(0xFF27AE60)
+                                      ? accentColor
                                       : Theme.of(context)
                                           .chipTheme
                                           .backgroundColor,
@@ -553,8 +554,9 @@ class _LiveScreenState extends State<LiveScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF27ae60)),
+          CircularProgressIndicator(
+            valueColor:
+                AlwaysStoppedAnimation<Color>(themeService.accentColor),
           ),
           const SizedBox(height: 16),
           Text(
@@ -575,8 +577,9 @@ class _LiveScreenState extends State<LiveScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF27ae60)),
+          CircularProgressIndicator(
+            valueColor:
+                AlwaysStoppedAnimation<Color>(themeService.accentColor),
           ),
           const SizedBox(height: 16),
           Text(
@@ -617,7 +620,7 @@ class _LiveScreenState extends State<LiveScreen>
           ElevatedButton(
             onPressed: refreshChannels,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF27ae60),
+              backgroundColor: themeService.accentColor,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -807,7 +810,7 @@ class _LiveChannelCardState extends State<_LiveChannelCard> {
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: isPC && _isHovered
-                      ? const Color(0xFF27ae60)
+                      ? widget.themeService.accentColor
                       : (widget.themeService.isDarkMode
                           ? Colors.white
                           : const Color(0xFF2c3e50)),

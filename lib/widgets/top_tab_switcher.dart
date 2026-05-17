@@ -259,7 +259,7 @@ class _TopTabSwitcherState extends State<TopTabSwitcher>
 
               // PC端悬停时文字变绿色
               if (isPC && isHovering) {
-                textColor = const Color(0xFF27AE60);
+                textColor = themeService.accentColor;
               }
 
               return Center(

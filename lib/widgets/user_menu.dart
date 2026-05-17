@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 import 'package:selene/services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/app_theme_scheme.dart';
 import '../models/playback_preload.dart';
 import '../services/user_data_service.dart';
 import '../screens/login_screen.dart';
@@ -14,6 +16,7 @@ import '../services/page_cache_service.dart';
 import '../services/live_service.dart';
 import '../services/version_service.dart';
 import '../services/danmaku_service.dart';
+import '../services/theme_service.dart';
 import '../screens/download_screen.dart';
 import '../screens/home_screen.dart';
 import '../utils/device_utils.dart';
@@ -39,6 +42,7 @@ class UserMenu extends StatefulWidget {
 class _UserMenuState extends State<UserMenu> {
   static const List<PlaybackPreloadLevel> _preloadLevels =
       PlaybackPreloadLevel.values;
+  static const List<AppThemeScheme> _appThemeSchemes = AppThemeScheme.values;
 
   String _serverUrl = '';
   String? _username;
@@ -52,6 +56,7 @@ class _UserMenuState extends State<UserMenu> {
   bool _localSearch = false;
   bool _isLocalMode = false;
   bool _adFilterEnabled = false;
+  AppThemeScheme _appThemeScheme = kDefaultAppThemeScheme;
   PlaybackPreloadLevel _playbackPreloadLevel = kDefaultPlaybackPreloadLevel;
   bool _showLive = false;
   bool _showSourceBrowser = false;
@@ -89,6 +94,7 @@ class _UserMenuState extends State<UserMenu> {
     final preferSpeedTest = await UserDataService.getPreferSpeedTest();
     final localSearch = await UserDataService.getLocalSearch();
     final adFilterEnabled = await UserDataService.getAdFilterEnabled();
+    final appThemeScheme = await UserDataService.getAppThemeScheme();
     final playbackPreloadLevel =
         await UserDataService.getPlaybackPreloadLevel();
     final showLive = await UserDataService.getShowLive();
@@ -108,6 +114,7 @@ class _UserMenuState extends State<UserMenu> {
         _preferSpeedTest = preferSpeedTest;
         _localSearch = localSearch;
         _adFilterEnabled = adFilterEnabled;
+        _appThemeScheme = appThemeScheme;
         _playbackPreloadLevel = playbackPreloadLevel;
         _showLive = showLive;
         _showSourceBrowser = showSourceBrowser;
@@ -560,7 +567,7 @@ class _UserMenuState extends State<UserMenu> {
               '当前已是最新版本',
               style: FontUtils.poppins(color: Colors.white),
             ),
-            backgroundColor: const Color(0xFF27AE60),
+            backgroundColor: context.read<ThemeService>().accentColor,
           ),
         );
       }
@@ -625,12 +632,14 @@ class _UserMenuState extends State<UserMenu> {
     required List<String> options,
     required Future<void> Function(String) onChanged,
     required IconData icon,
+    Key? optionKey,
   }) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => _showOptionDialog(title, currentValue, options, onChanged),
         child: Container(
+          key: optionKey,
           padding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 10,
@@ -1124,12 +1133,13 @@ class _UserMenuState extends State<UserMenu> {
   }
 
   Widget _buildPreloadLevelOption() {
+    final themeService = context.watch<ThemeService>();
     final isDarkMode = widget.isDarkMode;
     final screenWidth = MediaQuery.of(context).size.width;
     final useRoomyLayout = screenWidth >= DeviceUtils.tabletMinWidth;
     final idleBackground =
         isDarkMode ? const Color(0xFF111827) : const Color(0xFFF3F4F6);
-    const activeBackground = Color(0xFF10B981);
+    final activeBackground = themeService.accentColor;
     final idleText =
         isDarkMode ? const Color(0xFFD1D5DB) : const Color(0xFF4B5563);
     const activeText = Colors.white;
@@ -1662,6 +1672,8 @@ class _UserMenuState extends State<UserMenu> {
   }
 
   Widget _buildSettingsPage() {
+    final themeService = context.watch<ThemeService>();
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1699,6 +1711,26 @@ class _UserMenuState extends State<UserMenu> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                _buildOptionSelector(
+                  title: '主题色',
+                  currentValue: _appThemeScheme.label,
+                  options: _appThemeSchemes
+                      .map((scheme) => scheme.label)
+                      .toList(growable: false),
+                  onChanged: (value) async {
+                    final selectedScheme = _appThemeSchemes.firstWhere(
+                      (scheme) => scheme.label == value,
+                      orElse: () => kDefaultAppThemeScheme,
+                    );
+                    await themeService.setAppThemeScheme(selectedScheme);
+                    if (!mounted) {
+                      return;
+                    }
+                    setState(() => _appThemeScheme = selectedScheme);
+                  },
+                  icon: LucideIcons.palette,
+                  optionKey: const ValueKey('app-settings-theme-color-option'),
+                ),
                 _buildOptionSelector(
                   title: '豆瓣数据源',
                   currentValue: _doubanDataSource,

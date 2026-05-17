@@ -270,6 +270,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     final subTextColor = isDarkMode ? Colors.white38 : Colors.black38;
     final inputColor =
         isDarkMode ? Colors.white12 : Colors.black.withOpacity(0.05);
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentSurface = accentColor.withValues(alpha: 0.1);
+    final accentBorder = accentColor.withValues(alpha: 0.2);
 
     final isPortrait =
         MediaQuery.of(context).orientation == Orientation.portrait;
@@ -328,8 +331,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       tooltip: '定位到当前弹幕',
-                      icon: const Icon(Icons.location_searching,
-                          color: Colors.green, size: 18),
+                      icon: Icon(Icons.location_searching,
+                          color: accentColor, size: 18),
                       onPressed: () {
                         unawaited(_locateToCurrent());
                       },
@@ -383,8 +386,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                     contentPadding: EdgeInsets.zero,
                     suffixIcon: IconButton(
                       padding: EdgeInsets.zero,
-                      icon:
-                          const Icon(Icons.send, color: Colors.green, size: 17),
+                      icon: Icon(Icons.send, color: accentColor, size: 17),
                       onPressed: _onSearch,
                     ),
                   ),
@@ -396,9 +398,9 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
             // 可滚动区域
             Expanded(
               child: _isLoading
-                  ? const Center(
+                  ? Center(
                       child: CircularProgressIndicator(
-                          color: Colors.green, strokeWidth: 2))
+                          color: accentColor, strokeWidth: 2))
                   : _errorMessage != null
                       ? Center(
                           child: Text(_errorMessage!,
@@ -434,6 +436,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
 
   Widget _buildAnimeItem(DanmakuSearchAnime anime, bool isDarkMode,
       Color textColor, Color subTextColor) {
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentBorder = accentColor.withValues(alpha: 0.2);
     bool hasSelected = _selectedAnimeId == anime.animeId &&
         anime.episodes.any((e) => e.episodeId == widget.currentEpisodeId);
 
@@ -450,7 +454,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
         color: textColor.withOpacity(0.03),
         borderRadius: BorderRadius.circular(8),
         border: hasSelected
-            ? Border.all(color: Colors.green.withOpacity(0.2), width: 1)
+            ? Border.all(color: accentBorder, width: 1)
             : null,
       ),
       child: Stack(
@@ -463,7 +467,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
               child: Container(
                 width: 3,
                 decoration: BoxDecoration(
-                  color: Colors.green,
+                  color: accentColor,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -521,6 +525,8 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
     Color textColor,
     Color subTextColor,
   ) {
+    final accentColor = widget.theme.colorScheme.primary;
+    final accentSurface = accentColor.withValues(alpha: 0.1);
     bool isSelected = _selectedAnimeId == animeId &&
         episode.episodeId == widget.currentEpisodeId;
     final selectedCommentCount =
@@ -553,7 +559,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.green.withOpacity(0.1) : null,
+            color: isSelected ? accentSurface : null,
             border: Border(
                 bottom:
                     BorderSide(color: textColor.withOpacity(0.05), width: 0.5)),
@@ -565,7 +571,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                   episode.episodeTitle,
                   style: TextStyle(
                     color:
-                        isSelected ? Colors.green : textColor.withOpacity(0.7),
+                        isSelected ? accentColor : textColor.withOpacity(0.7),
                     fontSize: 13,
                     fontWeight:
                         isSelected ? FontWeight.bold : FontWeight.normal,
@@ -576,7 +582,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 Text(
                   '$selectedCommentCount条',
                   style: TextStyle(
-                    color: isSelected ? Colors.green : subTextColor,
+                    color: isSelected ? accentColor : subTextColor,
                     fontSize: 12,
                     fontWeight:
                         isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -585,7 +591,7 @@ class _DanmakuMatchPanelState extends State<DanmakuMatchPanel> {
                 const SizedBox(width: 8),
               ],
               if (isSelected)
-                const Icon(Icons.check_circle, color: Colors.green, size: 14),
+                Icon(Icons.check_circle, color: accentColor, size: 14),
             ],
           ),
         ),

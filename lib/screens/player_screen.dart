@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/video_info.dart';
 import '../widgets/video_menu_bottom_sheet.dart';
@@ -25,6 +26,7 @@ import '../models/play_record.dart';
 import '../services/page_cache_service.dart';
 import '../services/local_mode_storage_service.dart';
 import '../services/download_service.dart';
+import '../services/theme_service.dart';
 import '../services/fullscreen_orientation_controller.dart';
 import '../widgets/switch_loading_overlay.dart';
 import '../widgets/dlna_player.dart';
@@ -3759,7 +3761,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       child: Text(
                         currentDetail!.class_!,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: const Color(0xFF2ecc71),
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 1,
@@ -4564,16 +4566,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                 child: _HoverButton(
                   onTap: _isRefreshing ? null : _refreshSourcesSpeed,
                   enabled: !_isRefreshing,
-                  child: RotationTransition(
-                    turns: _refreshAnimationController,
-                    child: Icon(
-                      Icons.refresh,
-                      size: 22,
-                      color: _isRefreshing
-                          ? Colors.green
-                          : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
-                    ),
-                  ),
+                      child: RotationTransition(
+                        turns: _refreshAnimationController,
+                        child: Icon(
+                          Icons.refresh,
+                          size: 22,
+                          color: _isRefreshing
+                              ? Theme.of(context).colorScheme.primary
+                              : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
+                        ),
+                      ),
                 ),
               ),
 
@@ -5795,7 +5797,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                             _onBackPressed();
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
+                            backgroundColor: Theme.of(context).colorScheme.primary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -6375,6 +6377,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 构建加载覆盖层
   Widget _buildLoadingOverlay(ThemeData theme) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    final themeService = context.watch<ThemeService>();
+    final accentColor = themeService.accentColor;
 
     // macOS 下需要额外的顶部 padding 来避免与透明标题栏重叠
     final topPadding = DeviceUtils.isMacOS()
@@ -6387,17 +6391,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       decoration: BoxDecoration(
         gradient: isDarkMode
             ? null
-            : const LinearGradient(
+            : LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFFe6f3fb),
-                  Color(0xFFeaf3f7),
-                  Color(0xFFf7f7f3),
-                  Color(0xFFe9ecef),
-                  Color(0xFFdbe3ea),
-                  Color(0xFFd3dde6),
-                ],
+                colors: themeService.lightScaffoldGradientColors,
                 stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
               ),
         color: isDarkMode ? Colors.black : null,
@@ -6431,7 +6428,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         width: 100,
                         height: 100,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2ecc71).withOpacity(0.3),
+                          color: themeService.accentWithAlpha(0.3),
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
@@ -6441,10 +6438,20 @@ class _PlayerScreenState extends State<PlayerScreen>
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
+                        gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [Color(0xFF2ecc71), Color(0xFF27ae60)],
+                          colors: [
+                            themeService.accentTint(
+                              0.82,
+                              brightness:
+                                  isDarkMode ? Brightness.dark : Brightness.light,
+                              baseColor: isDarkMode
+                                  ? const Color(0xFF111111)
+                                  : Colors.white,
+                            ),
+                            accentColor,
+                          ],
                         ),
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -6471,7 +6478,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     widthFactor: _loadingProgress,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2ecc71),
+                        color: accentColor,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -6574,6 +6581,13 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+    final accentSurface = widget.isDarkMode
+        ? accentColor.withOpacity(0.14)
+        : Color.lerp(Colors.white, accentColor, 0.04)!;
+    final accentBorder = widget.isDarkMode
+        ? accentColor.withOpacity(0.48)
+        : Color.lerp(Colors.white, accentColor, 0.42)!;
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrentEpisode)
           ? SystemMouseCursors.click
@@ -6593,21 +6607,32 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
         child: Container(
           decoration: BoxDecoration(
             color: widget.isCurrentEpisode
-                ? Colors.green.withOpacity(0.1)
+                ? accentSurface
                 : (widget.isDarkMode
                     ? (_isHovering
                         ? Colors.white.withOpacity(0.15)
                         : Colors.white.withOpacity(0.08))
-                    : Colors.white.withOpacity(0.7)),
-            borderRadius: BorderRadius.circular(10),
+                    : (_isHovering
+                        ? const Color(0xFFF8FAFC)
+                        : Colors.white.withOpacity(0.92))),
+            borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: widget.isCurrentEpisode
-                  ? Colors.green
+                  ? accentBorder
                   : (widget.isDarkMode
                       ? Colors.white.withOpacity(0.15)
                       : const Color(0xFFE5E7EB)),
-              width: widget.isCurrentEpisode ? 1.5 : 1.0,
+              width: widget.isCurrentEpisode ? 1.05 : 0.9,
             ),
+            boxShadow: widget.isDarkMode
+                ? null
+                : [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withOpacity(0.025),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Stack(
             children: [
@@ -6619,7 +6644,7 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                   '${widget.episodeIndex + 1}',
                   style: TextStyle(
                     color: widget.isCurrentEpisode
-                        ? Colors.green
+                        ? accentColor
                         : (widget.isDarkMode ? Colors.white70 : Colors.black45),
                     fontSize: 10,
                     fontWeight: FontWeight.w400,
@@ -6634,11 +6659,11 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                     widget.episodeTitle,
                     style: TextStyle(
                       color: widget.isCurrentEpisode
-                          ? Colors.green
+                          ? accentColor
                           : (widget.isDarkMode ? Colors.white : Colors.black87),
                       fontSize: 14,
                       fontWeight: widget.isCurrentEpisode
-                          ? FontWeight.w600
+                          ? FontWeight.w500
                           : FontWeight.w400,
                     ),
                     textAlign: TextAlign.center,
@@ -6680,6 +6705,13 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = Theme.of(context).colorScheme.primary;
+    final accentSurface = widget.isDarkMode
+        ? accentColor.withOpacity(0.14)
+        : Color.lerp(Colors.white, accentColor, 0.04)!;
+    final accentBorder = widget.isDarkMode
+        ? accentColor.withOpacity(0.48)
+        : Color.lerp(Colors.white, accentColor, 0.42)!;
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrentSource)
           ? SystemMouseCursors.click
@@ -6699,21 +6731,32 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
         child: Container(
           decoration: BoxDecoration(
             color: widget.isCurrentSource
-                ? Colors.green.withOpacity(0.1)
+                ? accentSurface
                 : (widget.isDarkMode
                     ? (_isHovering
                         ? Colors.white.withOpacity(0.15)
                         : Colors.white.withOpacity(0.08))
-                    : Colors.white.withOpacity(0.7)),
-            borderRadius: BorderRadius.circular(10),
+                    : (_isHovering
+                        ? const Color(0xFFF8FAFC)
+                        : Colors.white.withOpacity(0.92))),
+            borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: widget.isCurrentSource
-                  ? Colors.green
+                  ? accentBorder
                   : (widget.isDarkMode
                       ? Colors.white.withOpacity(0.15)
                       : const Color(0xFFE5E7EB)),
-              width: widget.isCurrentSource ? 1.5 : 1.0,
+              width: widget.isCurrentSource ? 1.05 : 0.9,
             ),
+            boxShadow: widget.isDarkMode
+                ? null
+                : [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withOpacity(0.025),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Stack(
             children: [
@@ -6726,7 +6769,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                     '${widget.source.episodes.length}集',
                     style: TextStyle(
                       color: widget.isCurrentSource
-                          ? Colors.green
+                          ? accentColor
                           : (widget.isDarkMode
                               ? Colors.grey[400]
                               : Colors.grey[500]),
@@ -6744,11 +6787,11 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                     widget.source.sourceName,
                     style: FontUtils.poppins(
                       color: widget.isCurrentSource
-                          ? Colors.green
+                          ? accentColor
                           : (widget.isDarkMode ? Colors.white : Colors.black87),
                       fontSize: 13,
                       fontWeight: widget.isCurrentSource
-                          ? FontWeight.w600
+                          ? FontWeight.w500
                           : FontWeight.w400,
                     ),
                     textAlign: TextAlign.center,
@@ -6768,7 +6811,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                     widget.speedInfo!.quality,
                     style: TextStyle(
                       color: widget.isCurrentSource
-                          ? Colors.green
+                          ? accentColor
                           : (widget.isDarkMode
                               ? Colors.grey[400]
                               : Colors.grey[500]),
@@ -6789,7 +6832,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                     widget.speedInfo!.loadSpeed,
                     style: TextStyle(
                       color: widget.isCurrentSource
-                          ? Colors.green
+                          ? accentColor
                           : (widget.isDarkMode
                               ? Colors.grey[400]
                               : Colors.grey[500]),
@@ -6841,14 +6884,11 @@ class _HoverButtonState extends State<_HoverButton> {
           duration: const Duration(milliseconds: 200),
           child: ColorFiltered(
             colorFilter: (isPC && _isHovered && widget.enabled)
-                ? const ColorFilter.mode(
-                    Colors.green,
+                ? ColorFilter.mode(
+                    Theme.of(context).colorScheme.primary,
                     BlendMode.modulate,
                   )
-                : const ColorFilter.mode(
-                    Colors.white,
-                    BlendMode.modulate,
-                  ),
+                : const ColorFilter.mode(Colors.white, BlendMode.modulate),
             child: widget.child,
           ),
         ),

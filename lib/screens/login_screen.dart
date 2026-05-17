@@ -6,10 +6,12 @@ import 'dart:async';
 import '../services/user_data_service.dart';
 import '../services/local_mode_storage_service.dart';
 import '../services/subscription_service.dart';
+import '../services/theme_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
 import '../widgets/windows_title_bar.dart';
 import 'home_screen.dart';
+import 'package:provider/provider.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -99,9 +101,10 @@ class _LoginScreenState extends State<LoginScreen> {
         _validateForm();
         _logoTapCount = 0;
       });
+      final accentColor = context.read<ThemeService>().accentColor;
       _showToast(
         _isLocalMode ? '已切换到本地模式' : '已切换到服务器模式',
-        const Color(0xFF27ae60),
+        accentColor,
       );
     } else {
       // 设置新的计时器，2秒后重置计数

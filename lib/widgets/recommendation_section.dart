@@ -221,7 +221,7 @@ class _RecommendationSectionState extends State<RecommendationSection> {
                         style: FontUtils.poppins(
                           fontSize: 14,
                           color: DeviceUtils.isPC() && _isMoreButtonHovered
-                              ? const Color(0xFF27ae60) // hover 时绿色
+                              ? Theme.of(context).colorScheme.primary
                               : const Color(0xFF7f8c8d),
                         ),
                       ),

@@ -496,10 +496,11 @@ class _MovieScreenState extends State<MovieScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accentColor = context.watch<ThemeService>().accentColor;
     return StyledRefreshIndicator(
       onRefresh: _refreshMoviesData,
       refreshText: '刷新电影数据...',
-      primaryColor: const Color(0xFF27AE60),
+      primaryColor: accentColor,
       child: SingleChildScrollView(
         controller: _scrollController,
         child: Column(

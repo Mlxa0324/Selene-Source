@@ -318,17 +318,10 @@ class _MainLayoutState extends State<MainLayout> {
                               : null,
                           gradient: themeService.isDarkMode
                               ? null
-                              : const LinearGradient(
+                              : LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xFFe6f3fb), // 浅色模式渐变
-                                    Color(0xFFeaf3f7),
-                                    Color(0xFFf7f7f3),
-                                    Color(0xFFe9ecef),
-                                    Color(0xFFdbe3ea),
-                                    Color(0xFFd3dde6),
-                                  ],
+                                  colors: themeService.lightScaffoldGradientColors,
                                   stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
                                 ),
                         ),
@@ -623,11 +616,11 @@ class _MainLayoutState extends State<MainLayout> {
                                       : const Color(0xFFe0e0e0))
                                   : Colors.transparent,
                             ),
-                            child: Icon(
+                          child: Icon(
                               LucideIcons.search,
                               color: (widget.searchQuery?.trim().isNotEmpty ??
                                       false)
-                                  ? const Color(0xFF27ae60)
+                                  ? themeService.accentColor
                                   : themeService.isDarkMode
                                       ? const Color(0xFFb0b0b0)
                                       : const Color(0xFF7f8c8d),
@@ -1021,9 +1014,9 @@ class _MainLayoutState extends State<MainLayout> {
                         Icon(
                           item['icon'],
                           color: isSelected
-                              ? const Color(0xFF27ae60)
+                              ? themeService.accentColor
                               : isHovered
-                                  ? const Color(0xFF52c77a) // hover 时的浅绿色
+                                  ? themeService.accentHoverColor
                                   : themeService.isDarkMode
                                       ? const Color(0xFFb0b0b0)
                                       : const Color(0xFF7f8c8d),
@@ -1037,9 +1030,9 @@ class _MainLayoutState extends State<MainLayout> {
                             fontWeight:
                                 isSelected ? FontWeight.w600 : FontWeight.w400,
                             color: isSelected
-                                ? const Color(0xFF27ae60)
+                                ? themeService.accentColor
                                 : isHovered
-                                    ? const Color(0xFF52c77a) // hover 时的浅绿色
+                                    ? themeService.accentHoverColor
                                     : themeService.isDarkMode
                                         ? const Color(0xFFb0b0b0)
                                         : const Color(0xFF7f8c8d),

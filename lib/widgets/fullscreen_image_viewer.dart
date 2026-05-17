@@ -257,13 +257,15 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
       );
 
       if (mounted) {
+        final themeService = Provider.of<ThemeService>(context, listen: false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               '图片已保存到相册',
               style: FontUtils.poppins(color: Colors.white),
             ),
-            backgroundColor: Colors.green.withValues(alpha: 0.8),
+            backgroundColor:
+                themeService.accentColor.withValues(alpha: 0.8),
             duration: const Duration(seconds: 2),
           ),
         );

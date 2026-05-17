@@ -18,6 +18,8 @@ class UpdateDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ThemeService>(
       builder: (context, themeService, child) {
+        final accentColor = themeService.accentColor;
+        final accentSurface = themeService.accentWithAlpha(0.12);
         return Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -60,13 +62,13 @@ class UpdateDialog extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF27AE60).withOpacity(0.1),
+                          color: accentSurface,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.rocket_launch_rounded,
                           size: 40,
-                          color: Color(0xFF27AE60),
+                          color: accentColor,
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -125,7 +127,7 @@ class UpdateDialog extends StatelessWidget {
                               '最新版本',
                               versionInfo.latestVersion,
                               Icons.new_releases_rounded,
-                              const Color(0xFF27AE60),
+                              accentColor,
                             ),
                           ],
                         ),
@@ -136,10 +138,10 @@ class UpdateDialog extends StatelessWidget {
                         const SizedBox(height: 16),
                         Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.article_outlined,
                               size: 18,
-                              color: Color(0xFF27AE60),
+                              color: accentColor,
                             ),
                             const SizedBox(width: 6),
                             Text(
@@ -216,7 +218,7 @@ class UpdateDialog extends StatelessWidget {
                             ),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF27AE60),
+                            backgroundColor: accentColor,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
@@ -255,7 +257,7 @@ class UpdateDialog extends StatelessWidget {
                                 Navigator.of(context).pop();
                               },
                               style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF27AE60),
+                                foregroundColor: accentColor,
                               ),
                               child: Text(
                                 '稍后',

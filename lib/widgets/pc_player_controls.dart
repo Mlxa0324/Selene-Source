@@ -1747,6 +1747,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     required ValueChanged<double> onChanged,
     bool reverse = false,
   }) {
+    final accentColor = Theme.of(context).colorScheme.primary;
     final displayValue = reverse ? (max - (value - min)) : value;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -1771,9 +1772,9 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
               trackHeight: 2,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-              activeTrackColor: Colors.greenAccent,
+              activeTrackColor: accentColor,
               inactiveTrackColor: Colors.white24,
-              thumbColor: Colors.greenAccent,
+              thumbColor: accentColor,
             ),
             child: Slider(
               value: displayValue,
@@ -1786,7 +1787,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
               divisions: 20,
               label: valueLabel,
               inactiveColor: Colors.white24,
-              activeColor: Colors.greenAccent,
+              activeColor: accentColor,
             ),
           ),
         ],
@@ -1799,22 +1800,23 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final accentColor = Theme.of(context).colorScheme.primary;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color:
-              selected ? Colors.green.withValues(alpha: 0.2) : Colors.white10,
+              selected ? accentColor.withValues(alpha: 0.2) : Colors.white10,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? Colors.greenAccent : Colors.white24,
+            color: selected ? accentColor : Colors.white24,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.greenAccent : Colors.white70,
+            color: selected ? accentColor : Colors.white70,
             fontSize: 11,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
           ),
