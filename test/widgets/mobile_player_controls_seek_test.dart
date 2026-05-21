@@ -10,6 +10,54 @@ import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
+  testWidgets('double tap shows hidden mobile controls after resuming playback',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter(playing: false);
+    addTearDown(player.dispose);
+    final visibilityEvents = <bool>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: visibilityEvents.add,
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    visibilityEvents.clear();
+
+    const tapPoint = Offset(24, 300);
+
+    final hideGesture = await tester.startGesture(tapPoint);
+    await hideGesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(visibilityEvents, [false]);
+
+    final firstTap = await tester.startGesture(tapPoint);
+    await firstTap.up();
+    await tester.pump(const Duration(milliseconds: 100));
+    final secondTap = await tester.startGesture(tapPoint);
+    await secondTap.up();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(player.state.playing, isTrue);
+    expect(visibilityEvents, [false, true]);
+  });
+
   testWidgets('notifies parent after a delayed mobile seek completes',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -426,11 +474,13 @@ class _FakePlayerAdapter implements PlayerAdapter {
   _FakePlayerAdapter({
     this.seekCompleter,
     this.emitSeekPositionToStream = true,
+    bool playing = true,
     Duration? position,
     Duration? duration,
     List<PlayerCachedRange>? cachedRanges,
   })  : _stream = _FakePlayerStream(),
         _state = _FakePlayerState(
+          playingValue: playing,
           positionValue: position ?? Duration.zero,
           durationValue: duration ?? const Duration(minutes: 12),
           cachedRangesValue: cachedRanges ?? const [],
@@ -568,6 +618,7 @@ class _FakePlayerStream implements PlayerAdapterStream {
 
 class _FakePlayerState implements PlayerAdapterState {
   _FakePlayerState({
+    this.playingValue = true,
     this.positionValue = Duration.zero,
     this.durationValue = const Duration(minutes: 12),
     this.cachedRangesValue = const [],

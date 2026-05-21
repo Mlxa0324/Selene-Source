@@ -732,16 +732,9 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       _hideTimer?.cancel(); // 暂停状态不自动隐藏
     } else {
       // 暂停中 -> 播放
-      // 💡 严格判断：记录操作前的可见性，如果本就是隐藏的，直接播放，不触碰 UI 状态以避免闪烁
-      final bool wasVisible = _controlsVisible;
-
       await widget.player.play();
-
-      if (wasVisible) {
-        setState(() => _controlsVisible = false);
-        widget.onControlsVisibilityChanged(false);
-      }
-      _hideTimer?.cancel();
+      // 双击恢复播放后，顺手把按钮组拉出来，保持和 B 站类似的反馈感。
+      _onUserInteraction();
     }
   }
 
