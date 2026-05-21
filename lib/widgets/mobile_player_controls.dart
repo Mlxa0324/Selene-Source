@@ -723,18 +723,16 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Future<void> _togglePlayPause() async {
     if (_isPlaying) {
-      // 播放中 -> 暂停：显示按钮组
-      _onUserInteraction();
+      // 播放中双击只暂停，不改变按钮组显隐状态。
       await widget.player.pause();
       widget.onPause?.call();
-      setState(() => _controlsVisible = true);
-      widget.onControlsVisibilityChanged(true);
       _hideTimer?.cancel(); // 暂停状态不自动隐藏
     } else {
-      // 暂停中 -> 播放
+      // 暂停中双击只恢复播放，按钮组显隐仍交给单击处理。
       await widget.player.play();
-      // 双击恢复播放后，顺手把按钮组拉出来，保持和 B 站类似的反馈感。
-      _onUserInteraction();
+      if (_controlsVisible) {
+        _startHideTimer();
+      }
     }
   }
 

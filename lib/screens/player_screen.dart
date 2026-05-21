@@ -6451,7 +6451,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                       child: Center(
                         child: Text(
                           _loadingEmoji,
-                          style: const TextStyle(fontSize: 24),
+                          style: TextStyle(
+                            fontSize: 24,
+                            color: accentColor,
+                          ),
                         ),
                       ),
                     ),

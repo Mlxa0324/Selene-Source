@@ -87,6 +87,7 @@ void main() {
     gestureLayer.onTap!();
     await tester.pump();
 
+    expect(controlsVisibility, [false]);
     expect(player.pauseCalls, 0);
     expect(player.playCalls, 0);
 
@@ -96,6 +97,7 @@ void main() {
 
     expect(player.pauseCalls, 1);
     expect(player.state.playing, isFalse);
+    expect(controlsVisibility, [false]);
   });
 }
 

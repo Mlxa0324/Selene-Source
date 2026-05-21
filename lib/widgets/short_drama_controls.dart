@@ -231,7 +231,6 @@ class ShortDramaControlsState extends State<ShortDramaControls>
     } else {
       await widget.player.play();
     }
-    _setControlsVisible(true);
   }
 
   void _showEpisodesDialog() {

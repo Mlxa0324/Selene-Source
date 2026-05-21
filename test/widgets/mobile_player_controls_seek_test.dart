@@ -10,7 +10,7 @@ import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
-  testWidgets('double tap shows hidden mobile controls after resuming playback',
+  testWidgets('double tap keeps hidden mobile controls after resuming playback',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(400, 800));
@@ -55,7 +55,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(player.state.playing, isTrue);
-    expect(visibilityEvents, [false, true]);
+    expect(visibilityEvents, [false]);
   });
 
   testWidgets('notifies parent after a delayed mobile seek completes',
