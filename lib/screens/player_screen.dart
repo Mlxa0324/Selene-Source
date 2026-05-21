@@ -251,6 +251,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   StreamSubscription<MobileInterfaceOrientation>?
       _physicalOrientationSubscription; // 物理方向监听订阅
   Timer? _landscapeRotationSuggestionTimer; // 横屏提示按钮自动隐藏计时器
+  int _iosLandscapeSuggestionRefreshSerial = 0; // iOS 界面方向延迟刷新序号
   bool? _androidAutoRotateEnabled; // Android 系统自动旋转开关状态
   bool _showLandscapeRotationSuggestion = false; // 是否显示横屏旋转提示按钮
   MobileInterfaceOrientation _lastPhysicalOrientation =
@@ -483,6 +484,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.didChangeMetrics();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _isClosing) return;
+      var shouldUpdateLandscapeSuggestion = true;
       if (_playerRotationLocked) {
         final cachedTarget = PlayerRotationLockPolicy.resolveCachedLockTarget(
           currentLockedOrientations: _lockedPlayerOrientations,
@@ -497,9 +499,17 @@ class _PlayerScreenState extends State<PlayerScreen>
           unawaited(_applyPlayerRotationLock(readCurrentOrientation: true));
         }
       } else if (Platform.isIOS) {
-        unawaited(_refreshLastKnownPlayerInterfaceOrientation());
+        // iOS 横屏切换后先刷新当前界面方向，避免系统已转屏时误弹手动按钮。
+        shouldUpdateLandscapeSuggestion = false;
+        unawaited(
+          _refreshIosLandscapeSuggestionAfterInterfaceSettles(
+            delay: Duration.zero,
+          ),
+        );
       }
-      _updateLandscapeRotationSuggestionVisibility();
+      if (shouldUpdateLandscapeSuggestion) {
+        _updateLandscapeRotationSuggestionVisibility();
+      }
       _refreshDanmakuOptionForPlayback(reason: 'metrics_changed');
     });
   }
@@ -1025,11 +1035,15 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 启动物理方向监听，用于系统旋转关闭时显示手动横屏入口。
   void _startLandscapeRotationSuggestionWatcher() {
-    if (DeviceUtils.isPC() || !Platform.isAndroid) {
+    if (DeviceUtils.isPC() || !(Platform.isAndroid || Platform.isIOS)) {
       return;
     }
 
-    unawaited(_refreshAndroidAutoRotateEnabled());
+    if (Platform.isAndroid) {
+      unawaited(_refreshAndroidAutoRotateEnabled());
+    } else {
+      unawaited(_refreshLastKnownPlayerInterfaceOrientation());
+    }
     _physicalOrientationSubscription = const MobileOrientationService()
         .watchPhysicalDeviceOrientation()
         .listen(
@@ -1067,6 +1081,37 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     _lastPhysicalOrientation = orientation;
+    if (Platform.isIOS) {
+      // iOS 不能读取系统旋转锁状态，延迟读取界面方向来判断系统是否已经自动旋转。
+      _hideLandscapeRotationSuggestion();
+      unawaited(
+        _refreshIosLandscapeSuggestionAfterInterfaceSettles(),
+      );
+      return;
+    }
+
+    _updateLandscapeRotationSuggestionVisibility(resetHideTimer: true);
+  }
+
+  /// 等待 iOS 系统完成方向判定后刷新横屏提示状态。
+  ///
+  /// [delay] 等待系统方向完成更新的时间。
+  Future<void> _refreshIosLandscapeSuggestionAfterInterfaceSettles({
+    Duration delay = const Duration(milliseconds: 300),
+  }) async {
+    final serial = ++_iosLandscapeSuggestionRefreshSerial;
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
+    if (!mounted || serial != _iosLandscapeSuggestionRefreshSerial) {
+      return;
+    }
+
+    // 旋转锁关闭时界面方向会随系统更新，旋转锁开启时会保留原横屏侧。
+    await _refreshLastKnownPlayerInterfaceOrientation();
+    if (!mounted || serial != _iosLandscapeSuggestionRefreshSerial) {
+      return;
+    }
     _updateLandscapeRotationSuggestionVisibility(resetHideTimer: true);
   }
 
@@ -1091,6 +1136,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       androidAutoRotateEnabled: _androidAutoRotateEnabled,
       isCurrentInterfacePortrait: _isCurrentInterfacePortrait(),
       physicalOrientation: _lastPhysicalOrientation,
+      currentInterfaceOrientation: _lastKnownPlayerInterfaceOrientation ??
+          MobileInterfaceOrientation.unknown,
       currentFullscreenOrientations: _lastAppliedFullscreenOrientations,
     );
   }

@@ -204,4 +204,33 @@ void main() {
       ]),
     );
   });
+
+  test('reads physical orientation stream on iOS', () async {
+    const channel = EventChannel('selene/physical_orientation');
+    final events = <ByteData?>[
+      const StandardMethodCodec().encodeSuccessEnvelope('landscapeLeft'),
+    ];
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler(channel.name, null);
+    });
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler(channel.name, (message) async {
+      for (final event in events) {
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(channel.name, event, (_) {});
+      }
+      return const StandardMethodCodec().encodeSuccessEnvelope(null);
+    });
+
+    await expectLater(
+      const MobileOrientationService().watchPhysicalDeviceOrientation(),
+      emits(MobileInterfaceOrientation.landscapeLeft),
+    );
+  });
 }

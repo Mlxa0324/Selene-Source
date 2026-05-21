@@ -17,6 +17,7 @@ void main() {
           androidAutoRotateEnabled: false,
           isCurrentInterfacePortrait: true,
           physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation: MobileInterfaceOrientation.unknown,
           currentFullscreenOrientations: null,
         ),
         isFalse,
@@ -35,6 +36,7 @@ void main() {
           androidAutoRotateEnabled: false,
           isCurrentInterfacePortrait: false,
           physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation: MobileInterfaceOrientation.unknown,
           currentFullscreenOrientations: const [
             DeviceOrientation.landscapeRight,
           ],
@@ -55,6 +57,7 @@ void main() {
           androidAutoRotateEnabled: false,
           isCurrentInterfacePortrait: false,
           physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation: MobileInterfaceOrientation.unknown,
           currentFullscreenOrientations: const [
             DeviceOrientation.landscapeLeft,
           ],
@@ -75,6 +78,7 @@ void main() {
           androidAutoRotateEnabled: true,
           isCurrentInterfacePortrait: true,
           physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation: MobileInterfaceOrientation.unknown,
           currentFullscreenOrientations: const [
             DeviceOrientation.landscapeRight,
           ],
@@ -95,7 +99,55 @@ void main() {
           androidAutoRotateEnabled: false,
           isCurrentInterfacePortrait: true,
           physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation: MobileInterfaceOrientation.unknown,
           currentFullscreenOrientations: const [
+            DeviceOrientation.landscapeRight,
+          ],
+        ),
+        isFalse,
+      );
+    });
+
+    test('shows on iOS fullscreen when physical side differs from interface',
+        () {
+      expect(
+        LandscapeRotationSuggestionPolicy.shouldShow(
+          platform: TargetPlatform.iOS,
+          isTablet: false,
+          isShortDramaPortraitFlow: false,
+          isFullscreen: true,
+          isEnteringLandscapeFullscreen: false,
+          isPlayerRotationLocked: false,
+          androidAutoRotateEnabled: null,
+          isCurrentInterfacePortrait: false,
+          physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation:
+              MobileInterfaceOrientation.landscapeRight,
+          currentFullscreenOrientations: const [
+            DeviceOrientation.landscapeLeft,
+            DeviceOrientation.landscapeRight,
+          ],
+        ),
+        isTrue,
+      );
+    });
+
+    test('hides on iOS fullscreen when system already matched physical side',
+        () {
+      expect(
+        LandscapeRotationSuggestionPolicy.shouldShow(
+          platform: TargetPlatform.iOS,
+          isTablet: false,
+          isShortDramaPortraitFlow: false,
+          isFullscreen: true,
+          isEnteringLandscapeFullscreen: false,
+          isPlayerRotationLocked: false,
+          androidAutoRotateEnabled: null,
+          isCurrentInterfacePortrait: false,
+          physicalOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentInterfaceOrientation: MobileInterfaceOrientation.landscapeLeft,
+          currentFullscreenOrientations: const [
+            DeviceOrientation.landscapeLeft,
             DeviceOrientation.landscapeRight,
           ],
         ),

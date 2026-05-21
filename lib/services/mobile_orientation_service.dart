@@ -9,7 +9,7 @@ abstract class MobileOrientationServiceProtocol {
   /// 读取当前界面方向，用于全屏后锁定播放器方向。
   Future<MobileInterfaceOrientation> getCurrentInterfaceOrientation();
 
-  /// 监听物理设备方向，用于系统旋转关闭时提示手动横屏。
+  /// 监听物理设备方向，用于移动端系统未自动转屏时提示手动横屏。
   Stream<MobileInterfaceOrientation> watchPhysicalDeviceOrientation();
 }
 
@@ -51,7 +51,8 @@ class MobileOrientationService implements MobileOrientationServiceProtocol {
 
   @override
   Stream<MobileInterfaceOrientation> watchPhysicalDeviceOrientation() {
-    if (defaultTargetPlatform != TargetPlatform.android) {
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
       return const Stream<MobileInterfaceOrientation>.empty();
     }
 
