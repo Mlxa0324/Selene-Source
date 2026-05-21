@@ -171,4 +171,9 @@ class _FakeMobileOrientationService
     autoRotateReadCount += 1;
     return autoRotateEnabled;
   }
+
+  @override
+  Stream<MobileInterfaceOrientation> watchPhysicalDeviceOrientation() {
+    return const Stream<MobileInterfaceOrientation>.empty();
+  }
 }

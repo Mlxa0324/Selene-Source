@@ -169,4 +169,39 @@ void main() {
     );
     expect(invokedMethods, ['getCurrentInterfaceOrientation']);
   });
+
+  test('maps physical orientation stream strings into enum values', () async {
+    const channel = EventChannel('selene/physical_orientation');
+    final events = <ByteData?>[
+      const StandardMethodCodec().encodeSuccessEnvelope('portraitUp'),
+      const StandardMethodCodec().encodeSuccessEnvelope('landscapeRight'),
+      const StandardMethodCodec().encodeSuccessEnvelope('landscapeRight'),
+      const StandardMethodCodec().encodeSuccessEnvelope('unknown'),
+    ];
+
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMessageHandler(channel.name, null);
+    });
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMessageHandler(channel.name, (message) async {
+      for (final event in events) {
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(channel.name, event, (_) {});
+      }
+      return const StandardMethodCodec().encodeSuccessEnvelope(null);
+    });
+
+    await expectLater(
+      const MobileOrientationService().watchPhysicalDeviceOrientation(),
+      emitsInOrder([
+        MobileInterfaceOrientation.portraitUp,
+        MobileInterfaceOrientation.landscapeRight,
+      ]),
+    );
+  });
 }

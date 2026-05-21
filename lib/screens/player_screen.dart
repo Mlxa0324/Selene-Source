@@ -32,6 +32,7 @@ import '../widgets/dlna_device_dialog.dart';
 import '../services/mobile_orientation_service.dart';
 import '../utils/device_utils.dart';
 import '../utils/fullscreen_orientation_policy.dart';
+import '../utils/landscape_rotation_suggestion_policy.dart';
 import '../utils/player_rotation_lock_policy.dart';
 import '../widgets/player_details_panel.dart';
 import '../widgets/player_episodes_panel.dart';
@@ -247,6 +248,13 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _playerRotationLocked = false;
   List<DeviceOrientation>? _lockedPlayerOrientations;
   MobileInterfaceOrientation? _lastKnownPlayerInterfaceOrientation;
+  StreamSubscription<MobileInterfaceOrientation>?
+      _physicalOrientationSubscription; // 物理方向监听订阅
+  Timer? _landscapeRotationSuggestionTimer; // 横屏提示按钮自动隐藏计时器
+  bool? _androidAutoRotateEnabled; // Android 系统自动旋转开关状态
+  bool _showLandscapeRotationSuggestion = false; // 是否显示横屏旋转提示按钮
+  MobileInterfaceOrientation _lastPhysicalOrientation =
+      MobileInterfaceOrientation.unknown; // 最近一次物理设备方向
 
   // 侧边面板显示状态
   bool _isEpisodesPanelVisible = false;
@@ -467,6 +475,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     // 加载通用播放设置
     _loadPlayerGeneralSettings();
     _setKeepScreenOn(true);
+    _startLandscapeRotationSuggestionWatcher();
   }
 
   @override
@@ -490,6 +499,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       } else if (Platform.isIOS) {
         unawaited(_refreshLastKnownPlayerInterfaceOrientation());
       }
+      _updateLandscapeRotationSuggestionVisibility();
       _refreshDanmakuOptionForPlayback(reason: 'metrics_changed');
     });
   }
@@ -1013,6 +1023,146 @@ class _PlayerScreenState extends State<PlayerScreen>
     await _readCurrentInterfaceOrientation();
   }
 
+  /// 启动物理方向监听，用于系统旋转关闭时显示手动横屏入口。
+  void _startLandscapeRotationSuggestionWatcher() {
+    if (DeviceUtils.isPC() || !Platform.isAndroid) {
+      return;
+    }
+
+    unawaited(_refreshAndroidAutoRotateEnabled());
+    _physicalOrientationSubscription = const MobileOrientationService()
+        .watchPhysicalDeviceOrientation()
+        .listen(
+      _handlePhysicalOrientationChanged,
+      onError: (_) {
+        _hideLandscapeRotationSuggestion();
+      },
+    );
+  }
+
+  /// 刷新 Android 系统自动旋转开关状态。
+  Future<void> _refreshAndroidAutoRotateEnabled() async {
+    if (DeviceUtils.isPC() || !Platform.isAndroid) {
+      return;
+    }
+
+    final enabled =
+        await const MobileOrientationService().getSystemAutoRotateEnabled();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _androidAutoRotateEnabled = enabled;
+    });
+    _updateLandscapeRotationSuggestionVisibility();
+  }
+
+  /// 接收物理方向变化并更新横屏提示按钮。
+  void _handlePhysicalOrientationChanged(
+    MobileInterfaceOrientation orientation,
+  ) {
+    if (!mounted) {
+      return;
+    }
+
+    _lastPhysicalOrientation = orientation;
+    _updateLandscapeRotationSuggestionVisibility(resetHideTimer: true);
+  }
+
+  /// 判断当前界面是否仍处于竖屏布局。
+  bool _isCurrentInterfacePortrait() {
+    final size = MediaQuery.maybeOf(context)?.size;
+    if (size == null || size == Size.zero) {
+      return true;
+    }
+    return size.height >= size.width;
+  }
+
+  /// 判断当前是否允许显示横屏旋转提示按钮。
+  bool _shouldShowLandscapeRotationSuggestion() {
+    return LandscapeRotationSuggestionPolicy.shouldShow(
+      platform: defaultTargetPlatform,
+      isTablet: _isTablet,
+      isShortDramaPortraitFlow: _isShortDrama,
+      isFullscreen: _isFullscreen,
+      isEnteringLandscapeFullscreen: _isEnteringLandscapeFullscreen,
+      isPlayerRotationLocked: _playerRotationLocked,
+      androidAutoRotateEnabled: _androidAutoRotateEnabled,
+      isCurrentInterfacePortrait: _isCurrentInterfacePortrait(),
+      physicalOrientation: _lastPhysicalOrientation,
+      currentFullscreenOrientations: _lastAppliedFullscreenOrientations,
+    );
+  }
+
+  /// 根据最新场景显示或隐藏横屏旋转提示按钮。
+  void _updateLandscapeRotationSuggestionVisibility({
+    bool resetHideTimer = false,
+  }) {
+    if (!mounted) {
+      return;
+    }
+
+    final shouldShow = _shouldShowLandscapeRotationSuggestion();
+    if (!shouldShow) {
+      _hideLandscapeRotationSuggestion();
+      return;
+    }
+
+    if (!_showLandscapeRotationSuggestion) {
+      setState(() {
+        _showLandscapeRotationSuggestion = true;
+      });
+    }
+
+    if (resetHideTimer) {
+      _scheduleLandscapeRotationSuggestionHide();
+    }
+  }
+
+  /// 重新安排横屏提示按钮 2 秒后自动消失。
+  void _scheduleLandscapeRotationSuggestionHide() {
+    _landscapeRotationSuggestionTimer?.cancel();
+    _landscapeRotationSuggestionTimer = Timer(const Duration(seconds: 2), () {
+      _hideLandscapeRotationSuggestion();
+    });
+  }
+
+  /// 隐藏横屏旋转提示按钮。
+  void _hideLandscapeRotationSuggestion() {
+    _landscapeRotationSuggestionTimer?.cancel();
+    _landscapeRotationSuggestionTimer = null;
+    if (!mounted || !_showLandscapeRotationSuggestion) {
+      return;
+    }
+    setState(() {
+      _showLandscapeRotationSuggestion = false;
+    });
+  }
+
+  /// 点击横屏提示按钮后切换到当前物理横屏方向。
+  Future<void> _handleLandscapeRotationSuggestionPressed() async {
+    _hideLandscapeRotationSuggestion();
+    final targetOrientation =
+        LandscapeRotationSuggestionPolicy.resolveTargetOrientation(
+      _lastPhysicalOrientation,
+    );
+    if (targetOrientation == null) {
+      return;
+    }
+
+    final targetOrientations = [targetOrientation];
+    await SystemChrome.setPreferredOrientations(targetOrientations);
+    _lastAppliedFullscreenOrientations = targetOrientations;
+    _lastKnownPlayerInterfaceOrientation = switch (targetOrientation) {
+      DeviceOrientation.landscapeLeft =>
+        MobileInterfaceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight =>
+        MobileInterfaceOrientation.landscapeRight,
+      _ => _lastKnownPlayerInterfaceOrientation,
+    };
+  }
+
   Future<void> _applyPlayerRotationLock({
     bool readCurrentOrientation = false,
     bool preferCurrentObservedOrientation = false,
@@ -1109,6 +1259,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     if (isLocked) {
+      _hideLandscapeRotationSuggestion();
       _lockedPlayerOrientations = null;
       await _applyPlayerRotationLock(
         readCurrentOrientation: true,
@@ -1117,6 +1268,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else {
       _lockedPlayerOrientations = null;
       await _restoreUnlockedPlayerOrientations();
+      _updateLandscapeRotationSuggestionVisibility();
     }
   }
 
@@ -1814,6 +1966,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
         _lastSaveTime = null;
         _lastSavePosition = null;
+        unawaited(_refreshAndroidAutoRotateEnabled());
         break;
       case AppLifecycleState.hidden:
         break;
@@ -2199,6 +2352,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     if (isFullscreen) {
+      _hideLandscapeRotationSuggestion();
       if (_isShortDrama) {
         setState(() {
           _isFullscreen = true;
@@ -2291,6 +2445,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
 
+    _updateLandscapeRotationSuggestionVisibility();
     _scrollToCurrentEpisode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -5967,6 +6122,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     _saveProgress(force: true, scene: '页面销毁');
     // 取消超时计时器
     _loadingTimeoutTimer?.cancel();
+    _physicalOrientationSubscription?.cancel();
+    _landscapeRotationSuggestionTimer?.cancel();
     // 移除视频进度监听器
     _removeVideoProgressListener();
     // 移除应用生命周期监听器
@@ -6150,6 +6307,67 @@ class _PlayerScreenState extends State<PlayerScreen>
         : math.min(playerHeightByAspect, maxPlayerHeight);
   }
 
+  /// 构建带横屏提示按钮的播放器内容。
+  Widget _buildPlayerWithLandscapeRotationSuggestion() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _buildPlayerWidget(),
+        _buildLandscapeRotationSuggestionButton(),
+      ],
+    );
+  }
+
+  /// 构建系统旋转关闭时的横屏提示按钮。
+  Widget _buildLandscapeRotationSuggestionButton() {
+    final visible = _showLandscapeRotationSuggestion &&
+        _shouldShowLandscapeRotationSuggestion();
+
+    return Positioned(
+      right: 16,
+      bottom: 16,
+      child: AnimatedOpacity(
+        opacity: visible ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 150),
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: Tooltip(
+            message: '旋转到横屏',
+            child: GestureDetector(
+              onTap: _handleLandscapeRotationSuggestionPressed,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.68),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    width: 0.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.24),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.screen_rotation_alt,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildPlayerLayer(
     ThemeData theme,
     BoxConstraints? stackConstraints,
@@ -6182,7 +6400,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               child: Container(
                 // key: _playerKey,
                 color: Colors.black,
-                child: _buildPlayerWidget(),
+                child: _buildPlayerWithLandscapeRotationSuggestion(),
               ),
             ),
           ],
@@ -6195,7 +6413,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           top: 0,
           child: Container(
             color: Colors.black,
-            child: _buildPlayerWidget(),
+            child: _buildPlayerWithLandscapeRotationSuggestion(),
           ),
         );
       }
@@ -6220,7 +6438,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: Container(
             // key: _playerKey,
             color: Colors.black,
-            child: _buildPlayerWidget(),
+            child: _buildPlayerWithLandscapeRotationSuggestion(),
           ),
         );
       } else if (_isPortraitTablet) {
@@ -6236,7 +6454,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: Container(
             // key: _playerKey,
             color: Colors.black,
-            child: _buildPlayerWidget(),
+            child: _buildPlayerWithLandscapeRotationSuggestion(),
           ),
         );
       } else {
@@ -6247,7 +6465,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             top: 0,
             child: Container(
               color: Colors.black,
-              child: _buildPlayerWidget(),
+              child: _buildPlayerWithLandscapeRotationSuggestion(),
             ),
           );
         }
@@ -6262,7 +6480,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           height: playerHeight,
           child: Container(
             color: Colors.black,
-            child: _buildPlayerWidget(),
+            child: _buildPlayerWithLandscapeRotationSuggestion(),
           ),
         );
       }

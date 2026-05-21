@@ -9,10 +9,12 @@ import android.graphics.drawable.Icon
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
@@ -21,11 +23,13 @@ class MainActivity : FlutterActivity() {
     private val pipControlChannelName = "org.moontechlab.selene/pip_controls"
     private val sleepTimerChannelName = "org.moontechlab.selene/sleep_timer"
     private val orientationChannelName = "selene/orientation"
+    private val physicalOrientationChannelName = "selene/physical_orientation"
 
     private lateinit var pipControlChannel: MethodChannel
     private var pipIsPlaying: Boolean = true
     private var pipHasPrevious: Boolean = false
     private var pipHasNext: Boolean = false
+    private var physicalOrientationListener: OrientationEventListener? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -88,6 +92,40 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, physicalOrientationChannelName)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    physicalOrientationListener?.disable()
+                    physicalOrientationListener =
+                        object : OrientationEventListener(this@MainActivity) {
+                            private var lastOrientation: String? = null
+
+                            override fun onOrientationChanged(orientation: Int) {
+                                val physicalOrientation =
+                                    resolvePhysicalDeviceOrientation(orientation) ?: return
+                                if (physicalOrientation == lastOrientation) {
+                                    return
+                                }
+                                lastOrientation = physicalOrientation
+                                runOnUiThread {
+                                    events?.success(physicalOrientation)
+                                }
+                            }
+                        }
+
+                    if (physicalOrientationListener?.canDetectOrientation() == true) {
+                        physicalOrientationListener?.enable()
+                    } else {
+                        events?.error("unavailable", "设备不支持物理方向检测", null)
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    physicalOrientationListener?.disable()
+                    physicalOrientationListener = null
+                }
+            })
 
         pipControlChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, pipControlChannelName)
@@ -267,6 +305,20 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun resolvePhysicalDeviceOrientation(orientation: Int): String? {
+        if (orientation == OrientationEventListener.ORIENTATION_UNKNOWN) {
+            return null
+        }
+
+        return when {
+            orientation >= 315 || orientation < 45 -> "portraitUp"
+            orientation >= 45 && orientation < 135 -> "landscapeRight"
+            orientation >= 135 && orientation < 225 -> "portraitDown"
+            orientation >= 225 && orientation < 315 -> "landscapeLeft"
+            else -> null
+        }
+    }
+
     private fun getCurrentDisplayRotation(): Int? {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             display?.rotation
@@ -294,6 +346,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        physicalOrientationListener?.disable()
+        physicalOrientationListener = null
         setPipActionHandler(null)
         super.onDestroy()
     }
