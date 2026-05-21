@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/gestures.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -189,6 +187,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   Timer? _hideTimer;
   Timer? _dragPositionCleanupTimer;
   bool _controlsVisible = true;
+  bool _keepControlsHiddenForNextPause = false; // 双击暂停时保留按钮组隐藏态
   bool _isLongPressing = false;
   double _originalPlaybackSpeed = 1.0;
   Duration? _dragPosition;
@@ -334,6 +333,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
       }
       if (playing && _controlsVisible) {
         _startHideTimer();
+      }
+      if (!playing && _keepControlsHiddenForNextPause) {
+        _keepControlsHiddenForNextPause = false; // 本次双击暂停已消费隐藏保护
+        _hideTimer?.cancel();
+        return;
       }
       if (!playing &&
           shouldIgnoreTransientPauseUi(
@@ -578,8 +582,12 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   void _onSwipeUpdate(DragUpdateDetails details) {
-    if (_isLocked || !_isSeekingViaSwipe || widget.live || _screenSize == null)
+    if (_isLocked ||
+        !_isSeekingViaSwipe ||
+        widget.live ||
+        _screenSize == null) {
       return;
+    }
 
     // 💡 优化：横屏全屏时，如果向上或向下滑动的趋势明显（dy 绝对值较大），视为尝试拉出系统栏或进入小窗，停止进度调节
     if (_isEffectiveFullscreen &&
@@ -723,25 +731,17 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
 
   Future<void> _togglePlayPause() async {
     if (_isPlaying) {
-      // 播放中 -> 暂停：显示按钮组
-      _onUserInteraction();
+      // 播放中 -> 暂停：隐藏态双击不唤出按钮组
+      _keepControlsHiddenForNextPause = !_controlsVisible; // 仅隐藏态双击暂停时拦截弹层
       await widget.player.pause();
       widget.onPause?.call();
-      setState(() => _controlsVisible = true);
-      widget.onControlsVisibilityChanged(true);
       _hideTimer?.cancel(); // 暂停状态不自动隐藏
     } else {
-      // 暂停中 -> 播放
-      // 💡 严格判断：记录操作前的可见性，如果本就是隐藏的，直接播放，不触碰 UI 状态以避免闪烁
-      final bool wasVisible = _controlsVisible;
-
+      // 暂停中 -> 播放：不主动改动按钮组显隐
       await widget.player.play();
-
-      if (wasVisible) {
-        setState(() => _controlsVisible = false);
-        widget.onControlsVisibilityChanged(false);
+      if (_controlsVisible) {
+        _startHideTimer();
       }
-      _hideTimer?.cancel();
     }
   }
 
@@ -957,10 +957,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.7),
+            color: Colors.black.withValues(alpha: 0.7),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               width: 0.5,
             ),
           ),
@@ -990,14 +990,11 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
   }
 
   Widget _buildGestureLayer() {
-    final GestureLongPressStartCallback? handleLongPressStart =
-        _onLongPressStart;
-    final GestureLongPressEndCallback? handleLongPressEnd = _onLongPressEnd;
-    final GestureLongPressCancelCallback? handleLongPressCancel = () {
+    void handleLongPressCancel() {
       if (_isLongPressing) {
         _onLongPressEnd(const LongPressEndDetails());
       }
-    };
+    }
 
     return Positioned.fill(
       child: Row(
@@ -1008,8 +1005,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               child: GestureDetector(
                 onTap: _toggleControlsVisibility,
                 onDoubleTap: _togglePlayPause,
-                onLongPressStart: handleLongPressStart,
-                onLongPressEnd: handleLongPressEnd,
+                onLongPressStart: _onLongPressStart,
+                onLongPressEnd: _onLongPressEnd,
                 onLongPressCancel: handleLongPressCancel,
                 onHorizontalDragStart: _onSwipeStart,
                 onHorizontalDragUpdate: _onSwipeUpdate,
@@ -1025,8 +1022,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
             child: GestureDetector(
               onTap: _toggleControlsVisibility,
               onDoubleTap: _togglePlayPause,
-              onLongPressStart: handleLongPressStart,
-              onLongPressEnd: handleLongPressEnd,
+              onLongPressStart: _onLongPressStart,
+              onLongPressEnd: _onLongPressEnd,
               onLongPressCancel: handleLongPressCancel,
               onHorizontalDragStart: _onSwipeStart,
               onHorizontalDragUpdate: _onSwipeUpdate,
@@ -1040,8 +1037,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               child: GestureDetector(
                 onTap: _toggleControlsVisibility,
                 onDoubleTap: _togglePlayPause,
-                onLongPressStart: handleLongPressStart,
-                onLongPressEnd: handleLongPressEnd,
+                onLongPressStart: _onLongPressStart,
+                onLongPressEnd: _onLongPressEnd,
                 onLongPressCancel: handleLongPressCancel,
                 onHorizontalDragStart: _onSwipeStart,
                 onHorizontalDragUpdate: _onSwipeUpdate,
@@ -1406,8 +1403,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
           decoration: BoxDecoration(
             border: Border.all(
                 color: isCharging
-                    ? Colors.green.withOpacity(0.7)
-                    : Colors.white.withOpacity(0.4),
+                    ? Colors.green.withValues(alpha: 0.7)
+                    : Colors.white.withValues(alpha: 0.4),
                 width: 0.8),
             borderRadius: BorderRadius.circular(2),
           ),
@@ -1416,7 +1413,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
               // 背景微弱填充
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(0.5),
                 ),
               ),
@@ -1450,8 +1447,8 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
           height: 4,
           decoration: BoxDecoration(
             color: isCharging
-                ? Colors.green.withOpacity(0.7)
-                : Colors.white.withOpacity(0.4),
+                ? Colors.green.withValues(alpha: 0.7)
+                : Colors.white.withValues(alpha: 0.4),
             borderRadius: const BorderRadius.only(
               topRight: Radius.circular(1),
               bottomRight: Radius.circular(1),
@@ -1460,19 +1457,6 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
         ),
       ],
     );
-  }
-
-  IconData _getBatteryIcon() {
-    if (_batteryState == BatteryState.charging)
-      return Icons.battery_charging_full;
-    if (_batteryLevel <= 10) return Icons.battery_0_bar;
-    if (_batteryLevel <= 20) return Icons.battery_1_bar;
-    if (_batteryLevel <= 30) return Icons.battery_2_bar;
-    if (_batteryLevel <= 50) return Icons.battery_3_bar;
-    if (_batteryLevel <= 70) return Icons.battery_4_bar;
-    if (_batteryLevel <= 80) return Icons.battery_5_bar;
-    if (_batteryLevel <= 90) return Icons.battery_6_bar;
-    return Icons.battery_full;
   }
 
   Widget _buildCenterPlayPause() {
@@ -1952,10 +1936,10 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(20), // 圆角药丸形状
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.2),
+                      color: Colors.white.withValues(alpha: 0.2),
                       width: 0.5,
                     ),
                   ),
@@ -2245,7 +2229,9 @@ class _MobileVideoProgressBarState extends State<_MobileVideoProgressBar> {
               if (details.localPosition.dy < _mobileProgressBarEdgeGuard ||
                   details.localPosition.dy >
                       (_mobileProgressBarTouchHeight -
-                          _mobileProgressBarEdgeGuard)) return;
+                          _mobileProgressBarEdgeGuard)) {
+                return;
+              }
 
               _isDragging = true;
               widget.onDragStart?.call();

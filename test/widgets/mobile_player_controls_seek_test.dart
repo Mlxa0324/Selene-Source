@@ -10,6 +10,102 @@ import 'package:selene/widgets/mobile_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 
 void main() {
+  testWidgets('double tap keeps hidden mobile controls after pausing playback',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter(playing: true);
+    addTearDown(player.dispose);
+
+    final visibilityEvents = <bool>[];
+    var pauseCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: visibilityEvents.add,
+            onFullscreenChange: (_) {},
+            onPause: () => pauseCount++,
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    visibilityEvents.clear();
+
+    const tapPoint = Offset(24, 300);
+    final hideGesture = await tester.startGesture(tapPoint);
+    await hideGesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(visibilityEvents, [false]);
+
+    visibilityEvents.clear();
+
+    final firstTap = await tester.startGesture(tapPoint);
+    await firstTap.up();
+    await tester.pump(const Duration(milliseconds: 100));
+    final secondTap = await tester.startGesture(tapPoint);
+    await secondTap.up();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(player.state.playing, isFalse);
+    expect(pauseCount, 1);
+    expect(visibilityEvents, isEmpty);
+  });
+
+  testWidgets(
+      'double tap keeps visible mobile controls after resuming playback',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+
+    final player = _FakePlayerAdapter(playing: false);
+    addTearDown(player.dispose);
+
+    final visibilityEvents = <bool>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MobilePlayerControls(
+            player: player,
+            onControlsVisibilityChanged: visibilityEvents.add,
+            onFullscreenChange: (_) {},
+            videoUrl: 'https://example.com/video.m3u8',
+            playbackSpeedListenable: ValueNotifier<double>(1.0),
+            onSetSpeed: (_) async {},
+            onEnterPipMode: () async {},
+            isPipMode: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    visibilityEvents.clear();
+
+    const tapPoint = Offset(24, 300);
+    final firstTap = await tester.startGesture(tapPoint);
+    await firstTap.up();
+    await tester.pump(const Duration(milliseconds: 100));
+    final secondTap = await tester.startGesture(tapPoint);
+    await secondTap.up();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(player.state.playing, isTrue);
+    expect(visibilityEvents, isEmpty);
+  });
+
   testWidgets('notifies parent after a delayed mobile seek completes',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -429,8 +525,10 @@ class _FakePlayerAdapter implements PlayerAdapter {
     Duration? position,
     Duration? duration,
     List<PlayerCachedRange>? cachedRanges,
+    bool playing = true,
   })  : _stream = _FakePlayerStream(),
         _state = _FakePlayerState(
+          playingValue: playing,
           positionValue: position ?? Duration.zero,
           durationValue: duration ?? const Duration(minutes: 12),
           cachedRangesValue: cachedRanges ?? const [],
@@ -568,12 +666,13 @@ class _FakePlayerStream implements PlayerAdapterStream {
 
 class _FakePlayerState implements PlayerAdapterState {
   _FakePlayerState({
+    this.playingValue = true,
     this.positionValue = Duration.zero,
     this.durationValue = const Duration(minutes: 12),
     this.cachedRangesValue = const [],
   });
 
-  bool playingValue = true;
+  bool playingValue;
   Duration positionValue;
   Duration durationValue;
   Duration bufferValue = Duration.zero;
