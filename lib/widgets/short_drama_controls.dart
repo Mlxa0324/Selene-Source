@@ -96,6 +96,7 @@ class ShortDramaControls extends StatefulWidget {
 class ShortDramaControlsState extends State<ShortDramaControls>
     with TickerProviderStateMixin {
   bool _isPlaying = true;
+  bool _controlsVisible = true;
   bool _isDragging = false;
   Duration? _dragPosition;
   double _originalSpeed = 1.0;
@@ -203,13 +204,34 @@ class ShortDramaControlsState extends State<ShortDramaControls>
   }
 
   void _handleTap() {
+    _toggleControlsVisibility();
+  }
+
+  void _setControlsVisible(bool visible) {
+    if (!mounted || _controlsVisible == visible) {
+      return;
+    }
+
+    setState(() {
+      _controlsVisible = visible;
+    });
+    widget.onControlsVisibilityChanged(visible);
+  }
+
+  void _toggleControlsVisibility() {
+    _setControlsVisible(!_controlsVisible);
+  }
+
+  Future<void> _togglePlayPause() async {
     // 直接读取播放器实时状态，解决本地变量同步滞后的问题
     final bool isActuallyPlaying = widget.player.state.playing;
     if (isActuallyPlaying) {
-      widget.player.pause();
+      await widget.player.pause();
+      widget.onPause?.call();
     } else {
-      widget.player.play();
+      await widget.player.play();
     }
+    _setControlsVisible(true);
   }
 
   void _showEpisodesDialog() {
@@ -444,6 +466,7 @@ class ShortDramaControlsState extends State<ShortDramaControls>
     return Positioned.fill(
       child: GestureDetector(
         onTap: _handleTap,
+        onDoubleTap: () => unawaited(_togglePlayPause()),
         // 💡 移除 onVerticalDragEnd，交给 PageView 处理
         onLongPressStart: (details) {
           final screenWidth = MediaQuery.of(context).size.width;
@@ -494,37 +517,40 @@ class ShortDramaControlsState extends State<ShortDramaControls>
       left: 0,
       right: 0,
       child: AnimatedOpacity(
-        opacity: widget.isPipMode ? 0.0 : 1.0,
+        opacity: widget.isPipMode ? 0.0 : (_controlsVisible ? 1.0 : 0.0),
         duration: const Duration(milliseconds: 300),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new,
-                    color: Colors.white, size: 20),
-                onPressed: widget.onBackPressed,
-              ),
-              Expanded(
-                child: Text(
-                  widget.videoTitle ?? '',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    shadows: [
-                      Shadow(
-                        offset: Offset(0, 1),
-                        blurRadius: 3.0,
-                        color: Colors.black,
-                      ),
-                    ],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        child: IgnorePointer(
+          ignoring: !_controlsVisible,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new,
+                      color: Colors.white, size: 20),
+                  onPressed: widget.onBackPressed,
                 ),
-              ),
-            ],
+                Expanded(
+                  child: Text(
+                    widget.videoTitle ?? '',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(0, 1),
+                          blurRadius: 3.0,
+                          color: Colors.black,
+                        ),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -537,16 +563,19 @@ class ShortDramaControlsState extends State<ShortDramaControls>
       left: 0,
       right: 0,
       child: AnimatedOpacity(
-        opacity: widget.isPipMode ? 0.0 : 1.0,
+        opacity: widget.isPipMode ? 0.0 : (_controlsVisible ? 1.0 : 0.0),
         duration: const Duration(milliseconds: 300),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildProgressBar(),
-            const SizedBox(height: 8),
-            _buildActionButtons(),
-            SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
-          ],
+        child: IgnorePointer(
+          ignoring: !_controlsVisible,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildProgressBar(),
+              const SizedBox(height: 8),
+              _buildActionButtons(),
+              SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
+            ],
+          ),
         ),
       ),
     );
@@ -813,9 +842,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                   onTap: widget.onFavoriteToggle),
               if (widget.onSleepTimerPressed != null)
                 _buildActionButton(Icons.timer_outlined, '定时',
-                    iconColor: widget.hasActiveSleepTimer
-                        ? accentColor
-                        : iconBtnColor,
+                    iconColor:
+                        widget.hasActiveSleepTimer ? accentColor : iconBtnColor,
                     labelColor: subColor,
                     onTap: widget.onSleepTimerPressed),
               _buildActionButton(LucideIcons.monitorPlay, '投屏',
@@ -893,8 +921,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                       child: Row(
                         children: [
                           Text('设置',
-                              style: TextStyle(
-                                  color: accentColor, fontSize: 13)),
+                              style:
+                                  TextStyle(color: accentColor, fontSize: 13)),
                           Icon(Icons.chevron_right,
                               color: accentColor, size: 16),
                         ],
@@ -916,10 +944,8 @@ class _ShortDramaSettingsSheetState extends State<_ShortDramaSettingsSheet> {
                     child: Row(
                       children: [
                         Text('搜索',
-                            style: TextStyle(
-                                color: accentColor, fontSize: 13)),
-                        Icon(Icons.chevron_right,
-                            color: accentColor, size: 16),
+                            style: TextStyle(color: accentColor, fontSize: 13)),
+                        Icon(Icons.chevron_right, color: accentColor, size: 16),
                       ],
                     ),
                   ),

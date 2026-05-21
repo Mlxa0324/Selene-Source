@@ -3,146 +3,122 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
-import 'package:provider/provider.dart';
 
 import 'package:selene/models/player_cached_range.dart';
-import 'package:selene/models/search_result.dart';
-import 'package:selene/services/theme_service.dart';
+import 'package:selene/widgets/pc_player_controls.dart';
 import 'package:selene/widgets/player_adapter.dart';
 import 'package:selene/widgets/short_drama_controls.dart';
 
 void main() {
-  group('short drama dialog styling', () {
-    testWidgets(
-        'episodes sheet keeps player area visible with transparent barrier',
-        (tester) async {
-      await _pumpShortDramaControls(tester, theme: ThemeData.light());
+  testWidgets('desktop blank area pauses only on double tap', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(900, 600));
 
-      await tester.tap(find.textContaining('选集 ·'));
-      await tester.pumpAndSettle();
+    final player = _FakePlayerAdapter();
+    addTearDown(player.dispose);
+    final fullscreenChanges = <bool>[];
+    var pauseCallbacks = 0;
 
-      expect(
-        _currentBarrierColor(tester),
-        anyOf(isNull, equals(Colors.transparent)),
-      );
-    });
-
-    testWidgets(
-        'settings sheet keeps player visible while using an opaque dark background',
-        (tester) async {
-      await _pumpShortDramaControls(tester, theme: ThemeData.dark());
-
-      await tester.longPressAt(const Offset(200, 200));
-      await tester.pumpAndSettle();
-
-      expect(
-        _currentBarrierColor(tester),
-        anyOf(isNull, equals(Colors.transparent)),
-      );
-
-      final decoration = _panelDecoration(
-        tester,
-        find.byWidgetPredicate(
-          (widget) =>
-              widget.runtimeType.toString() == '_ShortDramaSettingsSheet',
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox.expand(
+            child: PCPlayerControls(
+              player: player,
+              videoUrl: 'https://example.com/video.m3u8',
+              playbackSpeedListenable: ValueNotifier<double>(1.0),
+              onSetSpeed: (_) async {},
+              onPause: () => pauseCallbacks++,
+              onFullscreenChange: fullscreenChanges.add,
+            ),
+          ),
         ),
-      );
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(decoration.color, equals(Colors.black));
-    });
+    final blankAreaGesture = _desktopBlankAreaGesture(tester);
+
+    blankAreaGesture.onTap!();
+    await tester.pump();
+
+    expect(player.pauseCalls, 0);
+    expect(player.playCalls, 0);
+    expect(pauseCallbacks, 0);
+
+    blankAreaGesture.onDoubleTap!();
+    await tester.pump();
+
+    expect(player.pauseCalls, 1);
+    expect(player.state.playing, isFalse);
+    expect(pauseCallbacks, 1);
+    expect(fullscreenChanges, isEmpty);
   });
-}
 
-BoxDecoration _panelDecoration(WidgetTester tester, Finder panelFinder) {
-  final containers = tester.widgetList<Container>(
-    find.descendant(
-      of: panelFinder,
-      matching: find.byType(Container),
-    ),
-  );
+  testWidgets('short drama layer pauses only on double tap', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(420, 900));
 
-  for (final container in containers) {
-    final decoration = container.decoration;
-    if (decoration is BoxDecoration) {
-      return decoration;
-    }
-  }
+    final player = _FakePlayerAdapter();
+    addTearDown(player.dispose);
+    final controlsVisibility = <bool>[];
 
-  throw StateError('No decorated container found for $panelFinder');
-}
-
-Color? _currentBarrierColor(WidgetTester tester) {
-  final barriers = tester.widgetList<Widget>(
-    find.byWidgetPredicate(
-      (widget) => widget is ModalBarrier || widget is AnimatedModalBarrier,
-    ),
-  );
-
-  for (final barrier in barriers.toList().reversed) {
-    if (barrier is AnimatedModalBarrier) {
-      return barrier.color.value;
-    }
-    if (barrier is ModalBarrier) {
-      return barrier.color;
-    }
-  }
-
-  throw StateError('No modal barrier found');
-}
-
-Future<void> _pumpShortDramaControls(
-  WidgetTester tester, {
-  required ThemeData theme,
-}) async {
-  addTearDown(() => tester.binding.setSurfaceSize(null));
-  await tester.binding.setSurfaceSize(const Size(600, 1000));
-
-  final player = _FakePlayerAdapter();
-
-  await tester.pumpWidget(
-    ChangeNotifierProvider(
-      create: (_) => ThemeService(),
-      child: MaterialApp(
-        theme: theme,
+    await tester.pumpWidget(
+      MaterialApp(
         home: Scaffold(
           body: SizedBox.expand(
             child: ShortDramaControls(
               player: player,
-              onControlsVisibilityChanged: (_) {},
+              onControlsVisibilityChanged: controlsVisibility.add,
               onFullscreenChange: (_) {},
               videoUrl: 'https://example.com/video.m3u8',
-              videoTitle: '测试短剧',
-              currentEpisodeIndex: 0,
-              totalEpisodes: 3,
-              episodesTitles: const ['第1集', '第2集', '第3集'],
-              currentSource: 'source-a',
-              currentId: 'id-1',
-              allSources: [
-                SearchResult(
-                  id: 'id-1',
-                  title: '测试短剧',
-                  poster: '',
-                  episodes: const ['ep1', 'ep2', 'ep3'],
-                  episodesTitles: const ['第1集', '第2集', '第3集'],
-                  source: 'source-a',
-                  sourceName: '测试源',
-                  year: '2026',
-                ),
-              ],
               playbackSpeedListenable: ValueNotifier<double>(1.0),
               onSetSpeed: (_) async {},
-              isFavorite: false,
-              onFavoriteToggle: () {},
-              onCastPressed: () {},
               videoCover: '',
             ),
           ),
         ),
       ),
+    );
+    await tester.pumpAndSettle();
+
+    final gestureLayer = _shortDramaGestureLayer(tester);
+
+    gestureLayer.onTap!();
+    await tester.pump();
+
+    expect(player.pauseCalls, 0);
+    expect(player.playCalls, 0);
+
+    expect(gestureLayer.onDoubleTap, isNotNull);
+    gestureLayer.onDoubleTap!();
+    await tester.pump();
+
+    expect(player.pauseCalls, 1);
+    expect(player.state.playing, isFalse);
+  });
+}
+
+GestureDetector _desktopBlankAreaGesture(WidgetTester tester) {
+  return tester.widget<GestureDetector>(
+    find.byWidgetPredicate(
+      (widget) =>
+          widget is GestureDetector &&
+          widget.onHorizontalDragStart != null &&
+          widget.onDoubleTap != null,
     ),
   );
+}
 
-  await tester.pumpAndSettle();
+GestureDetector _shortDramaGestureLayer(WidgetTester tester) {
+  return tester.widget<GestureDetector>(
+    find.byWidgetPredicate(
+      (widget) =>
+          widget is GestureDetector &&
+          widget.onLongPressStart != null &&
+          widget.behavior == HitTestBehavior.opaque,
+    ),
+  );
 }
 
 class _FakePlayerAdapter implements PlayerAdapter {
@@ -152,12 +128,14 @@ class _FakePlayerAdapter implements PlayerAdapter {
 
   final _FakePlayerStream _stream;
   final _FakePlayerState _state;
+  int playCalls = 0;
+  int pauseCalls = 0;
 
   @override
   PlayerAdapterStream get stream => _stream;
 
   @override
-  PlayerAdapterState get state => _state;
+  _FakePlayerState get state => _state;
 
   @override
   Widget buildVideo(
@@ -176,12 +154,14 @@ class _FakePlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> pause() async {
+    pauseCalls++;
     _state.playingValue = false;
     _stream.playingController.add(false);
   }
 
   @override
   Future<void> play() async {
+    playCalls++;
     _state.playingValue = true;
     _stream.playingController.add(true);
   }
@@ -265,19 +245,16 @@ class _FakePlayerState implements PlayerAdapterState {
   bool playingValue = true;
   Duration positionValue = Duration.zero;
   Duration durationValue = const Duration(minutes: 12);
-  Duration bufferValue = Duration.zero;
+  Duration bufferValue = const Duration(minutes: 2);
   List<PlayerCachedRange> cachedRangesValue = const [];
   double volumeValue = 100;
   double rateValue = 1.0;
-  bool bufferingValue = false;
-  double widthValue = 1920;
-  double heightValue = 1080;
 
   @override
   Duration get buffer => bufferValue;
 
   @override
-  bool get buffering => bufferingValue;
+  bool get buffering => false;
 
   @override
   List<PlayerCachedRange> get cachedRanges => cachedRangesValue;
@@ -286,7 +263,7 @@ class _FakePlayerState implements PlayerAdapterState {
   Duration get duration => durationValue;
 
   @override
-  double get height => heightValue;
+  double get height => 1080;
 
   @override
   bool get playing => playingValue;
@@ -301,5 +278,5 @@ class _FakePlayerState implements PlayerAdapterState {
   double get volume => volumeValue;
 
   @override
-  double get width => widthValue;
+  double get width => 1920;
 }

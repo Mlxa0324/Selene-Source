@@ -23,8 +23,8 @@ import 'player_adapter.dart';
   if (range == null) {
     return null;
   }
-  final start = (range.start.inMilliseconds / duration.inMilliseconds)
-      .clamp(0.0, 1.0);
+  final start =
+      (range.start.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
   final end =
       (range.end.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0);
   if (end <= start) {
@@ -580,24 +580,24 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
     if (widget.live) {
       return;
     }
-    // 单击空白区域切换播放/暂停
+    // 单击空白区域只唤出控制层，避免误触直接打断播放。
+    _onUserInteraction();
+  }
+
+  void _onBlankAreaDoubleTap() {
+    if (widget.live) {
+      return;
+    }
+    _traceFullscreenEvent('double_tap');
+    // 双击空白区域切换播放/暂停，行为对齐常见短视频播放器。
     if (widget.player.state.playing) {
       widget.player.pause();
       widget.onPause?.call();
     } else {
       widget.player.play();
     }
+    _onUserInteraction();
     setState(() {});
-  }
-
-  void _onBlankAreaDoubleTap() {
-    _traceFullscreenEvent('double_tap');
-    // 双击空白区域切换全屏
-    // 如果在网页全屏模式，先切换到真全屏
-    if (_isWebFullscreen && !_isFullscreen) {
-      _toggleWebFullscreen();
-    }
-    _toggleFullscreen();
   }
 
   void _onSeekStart() {
@@ -1806,8 +1806,7 @@ class _PCPlayerControlsState extends State<PCPlayerControls> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color:
-              selected ? accentColor.withValues(alpha: 0.2) : Colors.white10,
+          color: selected ? accentColor.withValues(alpha: 0.2) : Colors.white10,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: selected ? accentColor : Colors.white24,
@@ -2170,9 +2169,8 @@ class _CustomVideoProgressBarState extends State<CustomVideoProgressBar> {
                           top: _desktopProgressBarTrackTop,
                           child: IgnorePointer(
                             child: Container(
-                              width:
-                                  (cachedSegment.end - cachedSegment.start) *
-                                      progressWidth,
+                              width: (cachedSegment.end - cachedSegment.start) *
+                                  progressWidth,
                               height: _desktopProgressBarTrackHeight,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(
