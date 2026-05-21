@@ -3647,6 +3647,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 构建视频详情展示区域
   Widget _buildVideoDetailSection(ThemeData theme) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    final themeService = context.watch<ThemeService>();
 
     if (currentDetail == null) {
       return Container(
@@ -3761,7 +3762,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       child: Text(
                         currentDetail!.class_!,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
+                          color: themeService.accentColor,
                           fontWeight: FontWeight.w500,
                         ),
                         maxLines: 1,
