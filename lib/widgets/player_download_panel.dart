@@ -588,10 +588,16 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                                 });
                               }
                             },
-                            selectedColor: themeService.accentWithAlpha(0.2),
+                            selectedColor: isDarkMode
+                                ? themeService.accentWithAlpha(0.14)
+                                : Color.lerp(
+                                    Colors.white,
+                                    accentColor,
+                                    0.045,
+                                  ),
                             backgroundColor: isDarkMode
                                 ? Colors.white10
-                                : Colors.black.withOpacity(0.05),
+                                : Colors.white.withOpacity(0.92),
                             labelStyle: TextStyle(
                               color: isSelected
                                   ? accentColor
@@ -605,8 +611,16 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
                                 color: isSelected
-                                    ? accentColor
-                                    : Colors.transparent,
+                                    ? (isDarkMode
+                                        ? accentColor.withValues(alpha: 0.75)
+                                        : Color.lerp(
+                                            Colors.white,
+                                            accentColor,
+                                            0.42,
+                                          )!)
+                                    : (isDarkMode
+                                        ? Colors.transparent
+                                        : const Color(0xFFE7ECF2)),
                               ),
                             ),
                             showCheckmark: false,
@@ -800,9 +814,10 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                                         : (isDarkMode
                                             ? Colors.white.withOpacity(0.08)
                                             : const Color(0xFFE7ECF2))),
-                                width: (isEffectivelySelected || isCurrentPlaying)
-                                    ? 1.1
-                                    : 0.9,
+                                width:
+                                    (isEffectivelySelected || isCurrentPlaying)
+                                        ? 1.1
+                                        : 0.9,
                               ),
                               boxShadow: isDarkMode
                                   ? null
@@ -914,8 +929,16 @@ class _PlayerDownloadPanelState extends State<PlayerDownloadPanel>
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(
-                  color: themeService.accentWithAlpha(0.1),
+                  color: isDarkMode
+                      ? themeService.accentWithAlpha(0.12)
+                      : Color.lerp(Colors.white, accentColor, 0.04),
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDarkMode
+                        ? themeService.accentWithAlpha(0.24)
+                        : Color.lerp(Colors.white, accentColor, 0.34)!,
+                    width: 0.9,
+                  ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,

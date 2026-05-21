@@ -654,7 +654,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     Navigator.of(context).pop();
   }
 
-  Color _macOSTopBarColor(ThemeData theme) {
+  Color _macOSTopBarColor(ThemeData theme, ThemeService themeService) {
     if (!DeviceUtils.isMacOS()) {
       return Colors.black;
     }
@@ -663,7 +663,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
       return theme.scaffoldBackgroundColor;
     }
 
-    return const Color(0xFFe6f3fb);
+    return themeService.lightScaffoldGradientColors.first;
   }
 
   @override
@@ -671,8 +671,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
     final themeService = context.watch<ThemeService>();
-    final topSafeAreaColor =
-        Platform.isMacOS ? _macOSTopBarColor(theme) : Colors.black;
+    final topSafeAreaColor = Platform.isMacOS
+        ? _macOSTopBarColor(theme, themeService)
+        : Colors.black;
 
     return PopScope(
       canPop: false,
@@ -696,18 +697,11 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
             decoration: BoxDecoration(
               gradient: isDarkMode
                   ? null
-                  : const LinearGradient(
+                  : LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0xFFe6f3fb),
-                        Color(0xFFeaf3f7),
-                        Color(0xFFf7f7f3),
-                        Color(0xFFe9ecef),
-                        Color(0xFFdbe3ea),
-                        Color(0xFFd3dde6),
-                      ],
-                      stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                      colors: themeService.lightScaffoldGradientColors,
+                      stops: const [0.0, 0.32, 0.66, 1.0],
                     ),
               color: isDarkMode ? theme.scaffoldBackgroundColor : null,
             ),
@@ -935,7 +929,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         // macOS/状态栏黑色背景
         Container(
           height: statusBarHeight + macOSPadding,
-          color: _macOSTopBarColor(theme),
+          color: _macOSTopBarColor(theme, themeService),
         ),
         // 播放器占位
         SizedBox(height: playerHeight),
@@ -967,7 +961,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         // macOS/状态栏黑色背景
         Container(
           height: statusBarHeight + macOSPadding,
-          color: _macOSTopBarColor(theme),
+          color: _macOSTopBarColor(theme, themeService),
         ),
         Expanded(
           child: Row(
@@ -1050,7 +1044,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
         // macOS/状态栏黑色背景
         Container(
           height: statusBarHeight + macOSPadding,
-          color: _macOSTopBarColor(theme),
+          color: _macOSTopBarColor(theme, themeService),
         ),
         // 播放器占位
         SizedBox(height: playerHeight),
@@ -1820,13 +1814,9 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     Color timeColor;
 
     if (isLive) {
-      // 正在播放 - 绿色
-      textColor = themeService.isDarkMode
-          ? const Color(0xFF4ade80)
-          : const Color(0xFF16a34a);
-      timeColor = themeService.isDarkMode
-          ? const Color(0xFF4ade80)
-          : const Color(0xFF16a34a);
+      // 正在播放 - 主题色
+      textColor = themeService.accentColor;
+      timeColor = themeService.accentColor;
     } else if (isPast) {
       // 过去的节目 - 灰色
       textColor = themeService.isDarkMode
@@ -2031,7 +2021,7 @@ class _LivePlayerScreenState extends State<LivePlayerScreen>
     Color timeColor;
 
     if (isLive) {
-      // 正在播放 - 绿色背景 + 绿色边框
+      // 正在播放 - 主题色背景 + 主题色边框
       backgroundColor = themeService.accentWithAlpha(
         themeService.isDarkMode ? 0.2 : 0.12,
       );

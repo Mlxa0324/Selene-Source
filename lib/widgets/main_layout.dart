@@ -321,8 +321,9 @@ class _MainLayoutState extends State<MainLayout> {
                               : LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
-                                  colors: themeService.lightScaffoldGradientColors,
-                                  stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                                  colors:
+                                      themeService.lightScaffoldGradientColors,
+                                  stops: const [0.0, 0.32, 0.66, 1.0],
                                 ),
                         ),
                         child: Column(
@@ -351,17 +352,18 @@ class _MainLayoutState extends State<MainLayout> {
                   ],
                 ),
                 // 用户菜单覆盖层 - 现在会覆盖整个屏幕包括navbar
-                        if (_showUserMenu)
-                          UserMenu(
-                            isDarkMode: themeService.isDarkMode,
-                            onClose: () {
-                              setState(() {
-                                _showUserMenu = false;
-                              });
-                              _loadNavFeatureToggles();
-                              widget.onMenuSettingsChanged?.call();
-                            },
-                          ),              ],
+                if (_showUserMenu)
+                  UserMenu(
+                    isDarkMode: themeService.isDarkMode,
+                    onClose: () {
+                      setState(() {
+                        _showUserMenu = false;
+                      });
+                      _loadNavFeatureToggles();
+                      widget.onMenuSettingsChanged?.call();
+                    },
+                  ),
+              ],
             ),
           ),
         );
@@ -475,51 +477,51 @@ class _MainLayoutState extends State<MainLayout> {
               ),
             ),
           ),
-                    // 完全居中的 Logo
-                    Center(
-                      child: GestureDetector(
-                        onTap: widget.onHomeTap,
-                        behavior: HitTestBehavior.opaque,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Selene',
-                              style: FontUtils.sourceCodePro(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w400,
-                                color: themeService.isDarkMode
-                                    ? Colors.white
-                                    : const Color(0xFF2c3e50),
-                                letterSpacing: 1.5,
-                              ),
-                            ),
-                            if (widget.isOffline) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF5A05D),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  '离线',
-                                  style: FontUtils.poppins(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+          // 完全居中的 Logo
+          Center(
+            child: GestureDetector(
+              onTap: widget.onHomeTap,
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Selene',
+                    style: FontUtils.sourceCodePro(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w400,
+                      color: themeService.isDarkMode
+                          ? Colors.white
+                          : const Color(0xFF2c3e50),
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  if (widget.isOffline) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5A05D),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '离线',
+                        style: FontUtils.poppins(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
                         ),
                       ),
                     ),
-          
+                  ],
+                ],
+              ),
+            ),
+          ),
+
           // 右侧按钮组
           Positioned(
             right: 0,
@@ -616,7 +618,7 @@ class _MainLayoutState extends State<MainLayout> {
                                       : const Color(0xFFe0e0e0))
                                   : Colors.transparent,
                             ),
-                          child: Icon(
+                            child: Icon(
                               LucideIcons.search,
                               color: (widget.searchQuery?.trim().isNotEmpty ??
                                       false)

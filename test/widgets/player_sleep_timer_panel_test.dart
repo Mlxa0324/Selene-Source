@@ -172,7 +172,7 @@ void main() {
     testWidgets('uses the active theme color for quick action surfaces',
         (tester) async {
       final accent = ColorScheme.fromSeed(
-        seedColor: AppThemeScheme.oceanBlue.lightSeedColor,
+        seedColor: const Color(0xFF0393E7),
         brightness: Brightness.light,
       ).primary;
 
@@ -182,7 +182,7 @@ void main() {
           brightness: Brightness.light,
           platform: TargetPlatform.android,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: AppThemeScheme.oceanBlue.lightSeedColor,
+            seedColor: const Color(0xFF0393E7),
             brightness: Brightness.light,
           ),
         ),

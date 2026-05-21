@@ -24,8 +24,8 @@ class SwitchLoadingOverlay extends StatelessWidget {
     final accentColor = Theme.of(context).colorScheme.primary;
 
     // 💡 仅在全屏模式下且非 PC 平台才需要计算状态栏高度
-    final double topPadding = (isFullscreen && !DeviceUtils.isPC()) 
-        ? MediaQuery.of(context).padding.top 
+    final double topPadding = (isFullscreen && !DeviceUtils.isPC())
+        ? MediaQuery.of(context).padding.top
         : 0;
 
     return Positioned.fill(
@@ -65,7 +65,7 @@ class SwitchLoadingOverlay extends StatelessWidget {
                   Stack(
                     alignment: Alignment.center,
                     children: [
-                      // 旋转的背景方块（半透明绿色）
+                      // 旋转的背景方块（半透明主题色）
                       RotationTransition(
                         turns: animationController,
                         child: Container(

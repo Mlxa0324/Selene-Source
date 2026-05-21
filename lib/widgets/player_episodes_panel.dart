@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -430,10 +429,14 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                                 }
                               });
                             },
-                            selectedColor: themeService.accentWithAlpha(0.2),
+                            selectedColor: themeService.selectedCardSurface(
+                              brightness: isDarkMode
+                                  ? Brightness.dark
+                                  : Brightness.light,
+                            ),
                             backgroundColor: isDarkMode
                                 ? Colors.white10
-                                : Colors.black.withValues(alpha: 0.05),
+                                : Colors.white.withValues(alpha: 0.92),
                             labelStyle: TextStyle(
                               color: isSelected
                                   ? themeService.accentColor
@@ -447,8 +450,14 @@ class _PlayerEpisodesPanelState extends State<PlayerEpisodesPanel> {
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
                                 color: isSelected
-                                    ? themeService.accentColor
-                                    : Colors.transparent,
+                                    ? themeService.selectedCardBorder(
+                                        brightness: isDarkMode
+                                            ? Brightness.dark
+                                            : Brightness.light,
+                                      )
+                                    : (isDarkMode
+                                        ? Colors.transparent
+                                        : const Color(0xFFE7ECF2)),
                               ),
                             ),
                             showCheckmark: false,
@@ -642,14 +651,15 @@ class _EpisodePanelItemWithHoverState
   Widget build(BuildContext context) {
     final themeService = context.watch<ThemeService>();
     final accentColor = themeService.accentColor;
-    final selectedSurface = widget.isDarkMode
-        ? accentColor.withValues(alpha: 0.14)
-        : Color.lerp(Colors.white, accentColor, 0.04)!;
-    final selectedBorder = widget.isDarkMode
-        ? accentColor.withValues(alpha: 0.48)
-        : Color.lerp(Colors.white, accentColor, 0.42)!;
+    final currentBrightness =
+        widget.isDarkMode ? Brightness.dark : Brightness.light;
+    // 选中集数卡统一使用主题轻染底，保持播放页和侧面板视觉一致。
+    final selectedSurface =
+        themeService.selectedCardSurface(brightness: currentBrightness);
+    final selectedBorder =
+        themeService.selectedCardBorder(brightness: currentBrightness);
     final hoverSurface = widget.isDarkMode
-        ? Colors.white.withOpacity(0.1)
+        ? Colors.white.withValues(alpha: 0.1)
         : const Color(0xFFF8FAFC);
     final idleSurface = widget.isDarkMode
         ? Colors.white12
@@ -688,7 +698,7 @@ class _EpisodePanelItemWithHoverState
               color: widget.isCurrentEpisode
                   ? selectedBorder
                   : (widget.isDarkMode
-                      ? Colors.white.withOpacity(0.08)
+                      ? Colors.white.withValues(alpha: 0.08)
                       : const Color(0xFFE7ECF2)),
               width: widget.isCurrentEpisode ? 1.1 : 0.9,
             ),

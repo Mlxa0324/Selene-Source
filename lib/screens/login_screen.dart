@@ -392,9 +392,10 @@ class _LoginScreenState extends State<LoginScreen> {
         final content =
             await SubscriptionService.parseSubscriptionContent(response.body);
 
-        if (content == null || 
-            (content.searchResources == null || content.searchResources!.isEmpty) &&
-            (content.liveSources == null || content.liveSources!.isEmpty)) {
+        if (content == null ||
+            (content.searchResources == null ||
+                    content.searchResources!.isEmpty) &&
+                (content.liveSources == null || content.liveSources!.isEmpty)) {
           setState(() {
             _isLoading = false;
           });
@@ -473,8 +474,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // 保存订阅链接和内容
         await LocalModeStorageService.saveSubscriptionUrl(newUrl);
-        if (content.searchResources != null && content.searchResources!.isNotEmpty) {
-          await LocalModeStorageService.saveSearchSources(content.searchResources!);
+        if (content.searchResources != null &&
+            content.searchResources!.isNotEmpty) {
+          await LocalModeStorageService.saveSearchSources(
+              content.searchResources!);
         }
         if (content.liveSources != null && content.liveSources!.isNotEmpty) {
           await LocalModeStorageService.saveLiveSources(content.liveSources!);
@@ -508,22 +511,16 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final isTablet = DeviceUtils.isTablet(context);
+    final themeService = context.watch<ThemeService>();
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFe6f3fb), // #e6f3fb 0%
-              Color(0xFFeaf3f7), // #eaf3f7 18%
-              Color(0xFFf7f7f3), // #f7f7f3 38%
-              Color(0xFFe9ecef), // #e9ecef 60%
-              Color(0xFFdbe3ea), // #dbe3ea 80%
-              Color(0xFFd3dde6), // #d3dde6 100%
-            ],
-            stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+            colors: themeService.lightScaffoldGradientColors,
+            stops: const [0.0, 0.32, 0.66, 1.0],
           ),
         ),
         child: Column(

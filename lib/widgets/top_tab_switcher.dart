@@ -257,7 +257,7 @@ class _TopTabSwitcherState extends State<TopTabSwitcher>
                 fontWeight = progress > 0.5 ? FontWeight.w600 : FontWeight.w400;
               }
 
-              // PC端悬停时文字变绿色
+              // PC端悬停时文字变主题色
               if (isPC && isHovering) {
                 textColor = themeService.accentColor;
               }

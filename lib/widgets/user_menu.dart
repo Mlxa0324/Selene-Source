@@ -309,6 +309,7 @@ class _UserMenuState extends State<UserMenu> {
   void _showSwitchAccountDialog() {
     final activeKey =
         '${_serverUrl.trim().toLowerCase()}|${(_username ?? '').trim().toLowerCase()}';
+    final accentColor = context.read<ThemeService>().accentColor;
     showDialog(
       context: context,
       builder: (dialogContext) {
@@ -367,7 +368,7 @@ class _UserMenuState extends State<UserMenu> {
                                     leading: Icon(
                                       LucideIcons.userRound,
                                       color: canSwitch
-                                          ? const Color(0xFF10b981)
+                                          ? accentColor
                                           : (widget.isDarkMode
                                               ? const Color(0xFF9ca3af)
                                               : const Color(0xFF6b7280)),
@@ -392,10 +393,10 @@ class _UserMenuState extends State<UserMenu> {
                                       ),
                                     ),
                                     trailing: isActive
-                                        ? const Icon(
+                                        ? Icon(
                                             LucideIcons.check,
                                             size: 18,
-                                            color: Color(0xFF10b981),
+                                            color: accentColor,
                                           )
                                         : Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -589,6 +590,7 @@ class _UserMenuState extends State<UserMenu> {
   Widget _buildRoleTag() {
     String label;
     Color color;
+    final accentColor = context.watch<ThemeService>().accentColor;
 
     switch (_role) {
       case 'admin':
@@ -602,7 +604,7 @@ class _UserMenuState extends State<UserMenu> {
       case 'user':
       default:
         label = '用户';
-        color = const Color(0xFF10b981); // 绿色
+        color = accentColor;
         break;
     }
 
@@ -698,6 +700,8 @@ class _UserMenuState extends State<UserMenu> {
 
   void _showOptionDialog(String title, String currentValue,
       List<String> options, Future<void> Function(String) onChanged) {
+    final accentColor = context.read<ThemeService>().accentColor;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -739,7 +743,7 @@ class _UserMenuState extends State<UserMenu> {
                               : LucideIcons.circle,
                           size: 20,
                           color: currentValue == option
-                              ? const Color(0xFF10b981)
+                              ? accentColor
                               : (widget.isDarkMode
                                   ? const Color(0xFF9ca3af)
                                   : const Color(0xFF6b7280)),
@@ -771,6 +775,7 @@ class _UserMenuState extends State<UserMenu> {
 
   void _showM3u8ProxyUrlDialog() {
     final controller = TextEditingController(text: _m3u8ProxyUrl);
+    final accentColor = context.read<ThemeService>().accentColor;
 
     showDialog(
       context: context,
@@ -822,8 +827,8 @@ class _UserMenuState extends State<UserMenu> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(
-                  color: Color(0xFF10b981),
+                borderSide: BorderSide(
+                  color: accentColor,
                   width: 2,
                 ),
               ),
@@ -859,7 +864,7 @@ class _UserMenuState extends State<UserMenu> {
                 '保存',
                 style: FontUtils.poppins(
                   fontSize: 14,
-                  color: const Color(0xFF10b981),
+                  color: accentColor,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -872,6 +877,7 @@ class _UserMenuState extends State<UserMenu> {
 
   void _showDanmakuBaseApiDialog() {
     final controller = TextEditingController(text: _danmakuBaseApi);
+    final accentColor = context.read<ThemeService>().accentColor;
 
     showDialog(
       context: context,
@@ -927,8 +933,8 @@ class _UserMenuState extends State<UserMenu> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF10b981),
+                    borderSide: BorderSide(
+                      color: accentColor,
                       width: 2,
                     ),
                   ),
@@ -976,7 +982,7 @@ class _UserMenuState extends State<UserMenu> {
                 '保存',
                 style: FontUtils.poppins(
                   fontSize: 14,
-                  color: const Color(0xFF10b981),
+                  color: accentColor,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1063,6 +1069,8 @@ class _UserMenuState extends State<UserMenu> {
     required IconData icon,
     Key? optionKey,
   }) {
+    final accentColor = context.watch<ThemeService>().accentColor;
+
     return Material(
       color: Colors.transparent,
       child: Container(
@@ -1105,7 +1113,7 @@ class _UserMenuState extends State<UserMenu> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: value
-                      ? const Color(0xFF10b981)
+                      ? accentColor
                       : (widget.isDarkMode
                           ? const Color(0xFF374151)
                           : const Color(0xFFe5e7eb)),
@@ -1487,10 +1495,10 @@ class _UserMenuState extends State<UserMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.cloud_download_outlined,
                     size: 20,
-                    color: Color(0xFF10b981),
+                    color: context.watch<ThemeService>().accentColor,
                   ),
                   const SizedBox(width: 12),
                   Text(

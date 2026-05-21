@@ -72,9 +72,13 @@ void main() {
   test('saveAppThemeScheme writes the selected theme scheme key', () async {
     SharedPreferences.setMockInitialValues({});
 
-    await UserDataService.saveAppThemeScheme(AppThemeScheme.oceanBlue);
+    final clearBlue = AppThemeScheme.values.firstWhere(
+      (scheme) => scheme.label == '清澈蓝',
+    );
+
+    await UserDataService.saveAppThemeScheme(clearBlue);
 
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('app_theme_scheme_v1'), 'ocean_blue');
+    expect(prefs.getString('app_theme_scheme_v1'), 'clear_blue');
   });
 }

@@ -150,8 +150,8 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
     final isDarkMode = widget.theme.brightness == Brightness.dark;
     final opacity = widget.backgroundOpacity ?? (isDarkMode ? 0.85 : 0.95);
     final backgroundColor = isDarkMode
-        ? Colors.black.withOpacity(opacity)
-        : Colors.white.withOpacity(opacity);
+        ? Colors.black.withValues(alpha: opacity)
+        : Colors.white.withValues(alpha: opacity);
     final textColor = isDarkMode ? Colors.white : Colors.black87;
 
     return Container(
@@ -190,7 +190,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                           size: 20,
                           color: _isRefreshing
                               ? themeService.accentColor
-                              : textColor.withOpacity(0.6),
+                              : textColor.withValues(alpha: 0.6),
                         ),
                       ),
                       onPressed: _isRefreshing ? null : _handleRefresh,
@@ -316,8 +316,8 @@ class _ListPagerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bgColor = isDarkMode
-        ? Colors.black.withOpacity(0.35)
-        : Colors.white.withOpacity(0.9);
+        ? Colors.black.withValues(alpha: 0.35)
+        : Colors.white.withValues(alpha: 0.9);
     final borderColor = isDarkMode ? Colors.white24 : Colors.black12;
     final iconColor = isDarkMode ? Colors.white : Colors.black87;
 
@@ -354,17 +354,18 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
     final textColor = widget.isDarkMode ? Colors.white : Colors.black87;
     final itemHeight = widget.isCompact ? 84.0 : 100.0;
     final accentColor = themeService.accentColor;
-    final selectedSurface = widget.isDarkMode
-        ? accentColor.withValues(alpha: 0.14)
-        : Color.lerp(Colors.white, accentColor, 0.035)!;
-    final selectedBorder = widget.isDarkMode
-        ? accentColor.withValues(alpha: 0.5)
-        : Color.lerp(Colors.white, accentColor, 0.42)!;
+    final currentBrightness =
+        widget.isDarkMode ? Brightness.dark : Brightness.light;
+    // 选中源卡统一使用主题轻染底，避免深色背景和主题色混成脏色块。
+    final selectedSurface =
+        themeService.selectedCardSurface(brightness: currentBrightness);
+    final selectedBorder =
+        themeService.selectedCardBorder(brightness: currentBrightness);
     final idleSurface = widget.isDarkMode
-        ? Colors.white.withOpacity(0.05)
-        : Colors.white.withOpacity(0.92);
+        ? Colors.white.withValues(alpha: 0.05)
+        : Colors.white.withValues(alpha: 0.92);
     final hoverSurface = widget.isDarkMode
-        ? Colors.white.withOpacity(0.1)
+        ? Colors.white.withValues(alpha: 0.1)
         : const Color(0xFFF8FAFC);
 
     return MouseRegion(
@@ -397,7 +398,7 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
               color: widget.isCurrent
                   ? selectedBorder
                   : (widget.isDarkMode
-                      ? Colors.white.withOpacity(0.08)
+                      ? Colors.white.withValues(alpha: 0.08)
                       : const Color(0xFFE7ECF2)),
               width: widget.isCurrent ? 1.1 : 0.9,
             ),
@@ -456,18 +457,18 @@ class _SourcePanelItemWithHoverState extends State<_SourcePanelItemWithHover> {
                           Text(
                             widget.source.sourceName,
                             style: FontUtils.poppins(
-                              color: textColor.withOpacity(0.6),
+                              color: textColor.withValues(alpha: 0.6),
                               fontSize: widget.isCompact ? 12 : 13,
                             ),
                           ),
                           if (widget.source.episodes.length > 1) ...[
                             Text(' • ',
                                 style: TextStyle(
-                                    color: textColor.withOpacity(0.3))),
+                                    color: textColor.withValues(alpha: 0.3))),
                             Text(
                               '${widget.source.episodes.length}集',
                               style: TextStyle(
-                                color: textColor.withOpacity(0.6),
+                                color: textColor.withValues(alpha: 0.6),
                                 fontSize: widget.isCompact ? 12 : 13,
                               ),
                             ),

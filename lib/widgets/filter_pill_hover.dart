@@ -37,7 +37,7 @@ class _FilterPillHoverState extends State<FilterPillHover> {
   @override
   Widget build(BuildContext context) {
     final accentColor = context.watch<ThemeService>().accentColor;
-    // 计算颜色：如果是PC且isDefault且hover，显示绿色；否则按原逻辑
+    // 计算颜色：如果是PC且isDefault且hover，显示主题色；否则按原逻辑
     Color textColor;
     if (widget.isPC && widget.isDefault && _isHovered) {
       textColor = accentColor;
@@ -111,7 +111,7 @@ class _FilterOptionHoverState extends State<FilterOptionHover> {
   @override
   Widget build(BuildContext context) {
     final accentColor = context.watch<ThemeService>().accentColor;
-    // 计算颜色：如果选中显示白色，如果PC且未选中且hover显示绿色，否则默认
+    // 计算颜色：如果选中显示白色，如果PC且未选中且hover显示主题色，否则默认
     Color textColor;
     if (widget.isSelected) {
       textColor = Colors.white;

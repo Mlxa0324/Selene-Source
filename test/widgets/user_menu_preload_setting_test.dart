@@ -53,7 +53,8 @@ void main() {
     expect(find.text('预加载（media_kit）'), findsNothing);
   });
 
-  testWidgets('settings page shows theme color selector with five fixed schemes',
+  testWidgets(
+      'settings page shows theme color selector with three clean schemes',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     PackageInfo.setMockInitialValues(
@@ -74,13 +75,15 @@ void main() {
     expect(find.text('主题色'), findsOneWidget);
     expect(find.text('经典影院绿'), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('app-settings-theme-color-option')));
+    await tester
+        .tap(find.byKey(const ValueKey('app-settings-theme-color-option')));
     await tester.pumpAndSettle();
 
-    expect(find.text('深海蓝'), findsOneWidget);
-    expect(find.text('霓虹紫'), findsOneWidget);
-    expect(find.text('落日橙'), findsOneWidget);
-    expect(find.text('玫瑰红'), findsOneWidget);
+    expect(find.text('奈飞红'), findsOneWidget);
+    expect(find.text('清澈蓝'), findsOneWidget);
+    expect(find.text('霓虹紫'), findsNothing);
+    expect(find.text('落日橙'), findsNothing);
+    expect(find.text('玫瑰红'), findsNothing);
   });
 
   testWidgets('phone preload level options stay on a single row',
@@ -185,7 +188,7 @@ void main() {
 
     expect(
       selectedDecoration.color,
-      AppThemeScheme.oceanBlue.lightSeedColor,
+      const Color(0xFF0393E7),
     );
   });
 

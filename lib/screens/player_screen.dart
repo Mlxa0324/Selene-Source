@@ -724,7 +724,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Color _macOSTopBarColor(ThemeData theme) {
+  Color _macOSTopBarColor(ThemeData theme, ThemeService themeService) {
     if (!DeviceUtils.isMacOS()) {
       return Colors.black;
     }
@@ -733,7 +733,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return theme.scaffoldBackgroundColor;
     }
 
-    return const Color(0xFFe6f3fb);
+    return themeService.lightScaffoldGradientColors.first;
   }
 
   /// 加载弹幕数据
@@ -3754,7 +3754,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   if (videoYear.isNotEmpty && videoYear != 'unknown')
                     const SizedBox(width: 12),
 
-                  // 分类信息（绿色文字样式，充满可用空间但不与详情按钮重叠）
+                  // 分类信息（主题色文字样式，充满可用空间但不与详情按钮重叠）
                   if (currentDetail!.class_ != null &&
                       currentDetail!.class_!.isNotEmpty)
                     Expanded(
@@ -4566,16 +4566,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                 child: _HoverButton(
                   onTap: _isRefreshing ? null : _refreshSourcesSpeed,
                   enabled: !_isRefreshing,
-                      child: RotationTransition(
-                        turns: _refreshAnimationController,
-                        child: Icon(
-                          Icons.refresh,
-                          size: 22,
-                          color: _isRefreshing
-                              ? Theme.of(context).colorScheme.primary
-                              : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
-                        ),
-                      ),
+                  child: RotationTransition(
+                    turns: _refreshAnimationController,
+                    child: Icon(
+                      Icons.refresh,
+                      size: 22,
+                      color: _isRefreshing
+                          ? Theme.of(context).colorScheme.primary
+                          : (isDarkMode ? Colors.grey[400] : Colors.grey[600]),
+                    ),
+                  ),
                 ),
               ),
 
@@ -5639,6 +5639,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 构建错误覆盖层
   Widget _buildErrorOverlay(ThemeData theme) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    final themeService = context.watch<ThemeService>();
 
     return Container(
       width: double.infinity,
@@ -5646,18 +5647,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       decoration: BoxDecoration(
         gradient: isDarkMode
             ? null
-            : const LinearGradient(
+            : LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFFe6f3fb),
-                  Color(0xFFeaf3f7),
-                  Color(0xFFf7f7f3),
-                  Color(0xFFe9ecef),
-                  Color(0xFFdbe3ea),
-                  Color(0xFFd3dde6),
-                ],
-                stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                colors: themeService.lightScaffoldGradientColors,
+                stops: const [0.0, 0.32, 0.66, 1.0],
               ),
         color: isDarkMode ? Colors.black : null,
       ),
@@ -5797,7 +5791,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                             _onBackPressed();
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).colorScheme.primary,
+                            backgroundColor:
+                                Theme.of(context).colorScheme.primary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
@@ -5994,6 +5989,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
+    final themeService = context.watch<ThemeService>();
 
     return PopScope(
       canPop: Platform.isIOS && !_isCasting,
@@ -6021,18 +6017,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             decoration: BoxDecoration(
               gradient: isDarkMode
                   ? null
-                  : const LinearGradient(
+                  : LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0xFFe6f3fb),
-                        Color(0xFFeaf3f7),
-                        Color(0xFFf7f7f3),
-                        Color(0xFFe9ecef),
-                        Color(0xFFdbe3ea),
-                        Color(0xFFd3dde6),
-                      ],
-                      stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                      colors: themeService.lightScaffoldGradientColors,
+                      stops: const [0.0, 0.32, 0.66, 1.0],
                     ),
               color: isDarkMode ? theme.scaffoldBackgroundColor : null,
             ),
@@ -6273,6 +6262,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 构建手机模式布局（不包含播放器）
   Widget _buildPhoneLayout(ThemeData theme) {
+    final themeService = context.watch<ThemeService>();
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
     final screenWidth = MediaQuery.of(context).size.width;
@@ -6282,7 +6272,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         Container(
           height: statusBarHeight + macOSPadding,
-          color: _macOSTopBarColor(theme),
+          color: _macOSTopBarColor(theme, themeService),
         ),
         // 播放器占位空间
         SizedBox(height: playerHeight),
@@ -6295,6 +6285,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   /// 构建平板竖屏模式布局（不包含播放器）
   Widget _buildPortraitTabletLayout(ThemeData theme) {
+    final themeService = context.watch<ThemeService>();
     final screenHeight = MediaQuery.of(context).size.height;
     final statusBarHeight = MediaQuery.of(context).padding.top;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
@@ -6304,7 +6295,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         Container(
           height: statusBarHeight + macOSPadding,
-          color: _macOSTopBarColor(theme),
+          color: _macOSTopBarColor(theme, themeService),
         ),
         // 播放器占位空间
         SizedBox(height: playerHeight),
@@ -6318,6 +6309,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 构建平板横屏模式布局（不包含播放器）
   Widget _buildTabletLandscapeLayout(
       ThemeData theme, BoxConstraints stackConstraints) {
+    final themeService = context.watch<ThemeService>();
     final statusBarHeight = MediaQuery.maybeOf(context)?.padding.top ?? 0;
     final macOSPadding = DeviceUtils.isMacOS() ? 32.0 : 0.0;
     final stackWidth =
@@ -6335,7 +6327,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       children: [
         Container(
           height: statusBarHeight + macOSPadding,
-          color: _macOSTopBarColor(theme),
+          color: _macOSTopBarColor(theme, themeService),
         ),
         Expanded(
           child: Row(
@@ -6395,7 +6387,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: themeService.lightScaffoldGradientColors,
-                stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                stops: const [0.0, 0.32, 0.66, 1.0],
               ),
         color: isDarkMode ? Colors.black : null,
       ),
@@ -6421,7 +6413,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 Stack(
                   alignment: Alignment.center,
                   children: [
-                    // 旋转的背景方块（半透明绿色）
+                    // 旋转的背景方块（半透明主题色）
                     RotationTransition(
                       turns: _loadingAnimationController,
                       child: Container(
@@ -6444,8 +6436,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                           colors: [
                             themeService.accentTint(
                               0.82,
-                              brightness:
-                                  isDarkMode ? Brightness.dark : Brightness.light,
+                              brightness: isDarkMode
+                                  ? Brightness.dark
+                                  : Brightness.light,
                               baseColor: isDarkMode
                                   ? const Color(0xFF111111)
                                   : Colors.white,
@@ -6581,13 +6574,15 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor = Theme.of(context).colorScheme.primary;
-    final accentSurface = widget.isDarkMode
-        ? accentColor.withOpacity(0.14)
-        : Color.lerp(Colors.white, accentColor, 0.04)!;
-    final accentBorder = widget.isDarkMode
-        ? accentColor.withOpacity(0.48)
-        : Color.lerp(Colors.white, accentColor, 0.42)!;
+    final themeService = context.watch<ThemeService>();
+    final accentColor = themeService.accentColor;
+    final currentBrightness =
+        widget.isDarkMode ? Brightness.dark : Brightness.light;
+    // 选中卡片统一走主题轻染底，避免红/绿/蓝叠在黑底上发脏。
+    final accentSurface =
+        themeService.selectedCardSurface(brightness: currentBrightness);
+    final accentBorder =
+        themeService.selectedCardBorder(brightness: currentBrightness);
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrentEpisode)
           ? SystemMouseCursors.click
@@ -6610,17 +6605,17 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                 ? accentSurface
                 : (widget.isDarkMode
                     ? (_isHovering
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.white.withOpacity(0.08))
+                        ? Colors.white.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.08))
                     : (_isHovering
                         ? const Color(0xFFF8FAFC)
-                        : Colors.white.withOpacity(0.92))),
+                        : Colors.white.withValues(alpha: 0.92))),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: widget.isCurrentEpisode
                   ? accentBorder
                   : (widget.isDarkMode
-                      ? Colors.white.withOpacity(0.15)
+                      ? Colors.white.withValues(alpha: 0.15)
                       : const Color(0xFFE5E7EB)),
               width: widget.isCurrentEpisode ? 1.05 : 0.9,
             ),
@@ -6628,7 +6623,7 @@ class _EpisodeCardWithHoverState extends State<_EpisodeCardWithHover> {
                 ? null
                 : [
                     BoxShadow(
-                      color: const Color(0xFF0F172A).withOpacity(0.025),
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.025),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -6705,13 +6700,15 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
 
   @override
   Widget build(BuildContext context) {
-    final accentColor = Theme.of(context).colorScheme.primary;
-    final accentSurface = widget.isDarkMode
-        ? accentColor.withOpacity(0.14)
-        : Color.lerp(Colors.white, accentColor, 0.04)!;
-    final accentBorder = widget.isDarkMode
-        ? accentColor.withOpacity(0.48)
-        : Color.lerp(Colors.white, accentColor, 0.42)!;
+    final themeService = context.watch<ThemeService>();
+    final accentColor = themeService.accentColor;
+    final currentBrightness =
+        widget.isDarkMode ? Brightness.dark : Brightness.light;
+    // 选中卡片统一走主题轻染底，避免红/绿/蓝叠在黑底上发脏。
+    final accentSurface =
+        themeService.selectedCardSurface(brightness: currentBrightness);
+    final accentBorder =
+        themeService.selectedCardBorder(brightness: currentBrightness);
     return MouseRegion(
       cursor: (DeviceUtils.isPC() && !widget.isCurrentSource)
           ? SystemMouseCursors.click
@@ -6734,17 +6731,17 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                 ? accentSurface
                 : (widget.isDarkMode
                     ? (_isHovering
-                        ? Colors.white.withOpacity(0.15)
-                        : Colors.white.withOpacity(0.08))
+                        ? Colors.white.withValues(alpha: 0.15)
+                        : Colors.white.withValues(alpha: 0.08))
                     : (_isHovering
                         ? const Color(0xFFF8FAFC)
-                        : Colors.white.withOpacity(0.92))),
+                        : Colors.white.withValues(alpha: 0.92))),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
               color: widget.isCurrentSource
                   ? accentBorder
                   : (widget.isDarkMode
-                      ? Colors.white.withOpacity(0.15)
+                      ? Colors.white.withValues(alpha: 0.15)
                       : const Color(0xFFE5E7EB)),
               width: widget.isCurrentSource ? 1.05 : 0.9,
             ),
@@ -6752,7 +6749,7 @@ class _SourceCardWithHoverState extends State<_SourceCardWithHover> {
                 ? null
                 : [
                     BoxShadow(
-                      color: const Color(0xFF0F172A).withOpacity(0.025),
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.025),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),

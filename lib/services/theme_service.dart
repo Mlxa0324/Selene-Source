@@ -16,7 +16,7 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
         isDarkMode ? Brightness.dark : Brightness.light,
       );
 
-  Color get lightScaffoldBackground => const Color(0xFFF8F9FA);
+  Color get lightScaffoldBackground => const Color(0xFFFCFEFF);
   Color get darkScaffoldBackground => const Color(0xFF121212);
 
   Color accentWithAlpha(double alpha, {Brightness? brightness}) {
@@ -42,23 +42,51 @@ class ThemeService extends ChangeNotifier with WidgetsBindingObserver {
     )!;
   }
 
+  /// 构建播放页选中卡片底色，统一使用白底轻染避免黑底叠色发脏。
+  Color selectedCardSurface({Brightness? brightness}) {
+    final targetBrightness =
+        brightness ?? (isDarkMode ? Brightness.dark : Brightness.light);
+
+    return accentTint(
+      targetBrightness == Brightness.dark ? 0.09 : 0.045,
+      brightness: targetBrightness,
+      baseColor: Colors.white,
+    );
+  }
+
+  /// 构建播放页选中卡片边框色，保持主题识别度但不过分厚重。
+  Color selectedCardBorder({Brightness? brightness}) {
+    final targetBrightness =
+        brightness ?? (isDarkMode ? Brightness.dark : Brightness.light);
+
+    return accentTint(
+      targetBrightness == Brightness.dark ? 0.46 : 0.42,
+      brightness: targetBrightness,
+      baseColor: Colors.white,
+    );
+  }
+
   List<Color> get lightScaffoldGradientColors => [
-        accentTint(0.12, brightness: Brightness.light),
-        accentTint(0.1,
-            brightness: Brightness.light,
-            baseColor: const Color(0xFFF2F7FB)),
-        accentTint(0.06,
-            brightness: Brightness.light,
-            baseColor: const Color(0xFFF7F7F3)),
-        accentTint(0.08,
-            brightness: Brightness.light,
-            baseColor: const Color(0xFFE9ECEF)),
-        accentTint(0.1,
-            brightness: Brightness.light,
-            baseColor: const Color(0xFFDDE6ED)),
-        accentTint(0.14,
-            brightness: Brightness.light,
-            baseColor: const Color(0xFFD3DDE6)),
+        accentTint(
+          0.045,
+          brightness: Brightness.light,
+          baseColor: Colors.white,
+        ),
+        accentTint(
+          0.035,
+          brightness: Brightness.light,
+          baseColor: const Color(0xFFFCFEFF),
+        ),
+        accentTint(
+          0.025,
+          brightness: Brightness.light,
+          baseColor: Colors.white,
+        ),
+        accentTint(
+          0.035,
+          brightness: Brightness.light,
+          baseColor: const Color(0xFFF8FCFF),
+        ),
       ];
 
   Color get accentHoverColor => Color.lerp(
