@@ -164,8 +164,11 @@ class DanmakuService {
     final matches = _decodeManualMatches(prefs.getString(_manualMatchKey));
     final cleanKeyword = searchKeyword?.trim();
 
-    for (var offset = selectedEpisodeOffset; offset < episodeIds.length; offset++) {
-      final targetEpisodeIndex = episodeIndex + (offset - selectedEpisodeOffset);
+    for (var offset = selectedEpisodeOffset;
+        offset < episodeIds.length;
+        offset++) {
+      final targetEpisodeIndex =
+          episodeIndex + (offset - selectedEpisodeOffset);
       final key = _manualMatchStorageKey(source, id, targetEpisodeIndex);
       final existingRecord = matches[key];
       final nextEpisodeId = episodeIds[offset];
@@ -259,6 +262,11 @@ class DanmakuService {
   /// 设置 baseApi
   Future<void> setBaseApi(String baseApi) async {
     final prefs = await SharedPreferences.getInstance();
+    baseApi = baseApi.trim();
+    if (baseApi.isEmpty) {
+      await prefs.setString(_baseApiKey, '');
+      return;
+    }
     // 确保 baseApi 以 / 结尾
     if (!baseApi.endsWith('/')) {
       baseApi = '$baseApi/';

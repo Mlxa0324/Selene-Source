@@ -3,10 +3,14 @@ package org.moontechlab.selene
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
+import android.app.UiModeManager
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.StatFs
 import android.provider.Settings
 import android.util.Log
 import android.view.OrientationEventListener
@@ -24,6 +28,8 @@ class MainActivity : FlutterActivity() {
     private val sleepTimerChannelName = "org.moontechlab.selene/sleep_timer"
     private val orientationChannelName = "selene/orientation"
     private val physicalOrientationChannelName = "selene/physical_orientation"
+    private val deviceChannelName = "selene/device"
+    private val storageChannelName = "selene/storage"
 
     private lateinit var pipControlChannel: MethodChannel
     private var pipIsPlaying: Boolean = true
@@ -127,6 +133,29 @@ class MainActivity : FlutterActivity() {
                 }
             })
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isAndroidTv" -> {
+                        result.success(isAndroidTvDevice())
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, storageChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getAvailableStorageBytes" -> {
+                        val statFs = StatFs(cacheDir.path)
+                        result.success(statFs.availableBytes)
+                    }
+
+                    else -> result.notImplemented()
+                }
+            }
+
         pipControlChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, pipControlChannelName)
         pipControlChannel.setMethodCallHandler { call, result ->
@@ -164,6 +193,20 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    private fun isAndroidTvDevice(): Boolean {
+        val uiModeManager = getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+        val isTelevisionMode =
+            uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+
+        // 部分电视盒子只声明 leanback 或 television feature，这里三种信号任一命中即可。
+        val hasLeanbackFeature =
+            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        val hasTelevisionFeature =
+            packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)
+
+        return isTelevisionMode || hasLeanbackFeature || hasTelevisionFeature
     }
 
     override fun onPictureInPictureModeChanged(

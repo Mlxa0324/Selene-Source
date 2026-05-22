@@ -17,6 +17,17 @@ void main() {
     expect(widget.playbackPreloadLevel, PlaybackPreloadLevel.medium);
   });
 
+  test('video player controls are visible by default and can be hidden', () {
+    const defaultWidget = VideoPlayerWidget(isShortDrama: false);
+    const previewWidget = VideoPlayerWidget(
+      isShortDrama: false,
+      showControls: false,
+    );
+
+    expect(defaultWidget.showControls, isTrue);
+    expect(previewWidget.showControls, isFalse);
+  });
+
   test('player adapter exposes cached ranges through stream and state',
       () async {
     final stream = _FakePlayerAdapterStream();

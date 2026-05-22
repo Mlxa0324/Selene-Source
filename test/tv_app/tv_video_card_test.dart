@@ -1,0 +1,166 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/widgets/tv_video_card.dart';
+
+void main() {
+  test('TV video card keeps compact poster proportions', () {
+    expect(TvVideoCard.width, 158);
+    expect(TvVideoCard.height, 296);
+    expect(TvVideoCard.coverHeight, 237);
+    expect(TvVideoCard.focusedScale, 1.08);
+    expect(TvVideoCard.shimmerBegin, const Alignment(-1.2, -0.34));
+    expect(TvVideoCard.shimmerEnd, const Alignment(1.2, 0.34));
+    expect(TvVideoCard.shimmerVerticalTravelFactor, 0.34);
+    expect(TvVideoCard.shimmerDuration, const Duration(milliseconds: 1800));
+    expect(TvVideoCard.focusSweepDelay, const Duration(milliseconds: 300));
+    expect(TvVideoCard.coverHeight / TvVideoCard.width, closeTo(1.5, 0.01));
+  });
+
+  testWidgets('TV video card scales whole card but keeps focus frame on cover',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(),
+          ),
+        ),
+      ),
+    );
+
+    final coverFocusFrame = find.byType(AnimatedContainer);
+
+    expect(coverFocusFrame, findsOneWidget);
+    expect(tester.getSize(coverFocusFrame), const Size(158, 237));
+    expect(find.byType(AnimatedScale), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('测试影片'),
+        matching: find.byType(AnimatedScale),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: coverFocusFrame,
+        matching: find.text('测试影片'),
+      ),
+      findsNothing,
+    );
+
+    final title = tester.widget<Text>(find.text('测试影片'));
+    expect(title.maxLines, 1);
+  });
+
+  testWidgets('TV video card shows cover skeleton while image is loading',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(cover: 'https://example.com/poster.jpg'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('tv-cover-loading-skeleton')),
+        findsOneWidget);
+  });
+
+  testWidgets('TV video card shows episode badge for multi episode progress',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(
+              index: 3,
+              totalEpisodes: 12,
+              playTime: 600,
+              totalTime: 1200,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('tv-card-episode-badge')), findsOneWidget);
+    expect(find.text('3/12'), findsOneWidget);
+  });
+
+  testWidgets('TV video card shows playback progress at cover bottom',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(
+              playTime: 300,
+              totalTime: 1200,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('tv-card-progress-bar')), findsOneWidget);
+    final progressFill = tester.widget<FractionallySizedBox>(
+      find.byKey(const ValueKey('tv-card-progress-fill')),
+    );
+    expect(progressFill.widthFactor, 0.25);
+  });
+
+  testWidgets('TV video card delays focus sweep until focus stays briefly',
+      (tester) async {
+    final focusNode = FocusNode();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            focusNode: focusNode,
+            videoInfo: _videoInfo(),
+          ),
+        ),
+      ),
+    );
+
+    focusNode.requestFocus();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 299));
+
+    expect(find.byKey(const ValueKey('tv-cover-focus-sweep')), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(find.byKey(const ValueKey('tv-cover-focus-sweep')), findsOneWidget);
+
+    focusNode.dispose();
+  });
+}
+
+VideoInfo _videoInfo({
+  String cover = '',
+  int index = 1,
+  int totalEpisodes = 1,
+  int playTime = 0,
+  int totalTime = 0,
+}) {
+  return VideoInfo(
+    id: 'tv_card_1',
+    source: 'test',
+    title: '测试影片',
+    sourceName: '测试源',
+    year: '2026',
+    cover: cover,
+    index: index,
+    totalEpisodes: totalEpisodes,
+    playTime: playTime,
+    totalTime: totalTime,
+    saveTime: 0,
+    searchTitle: '测试影片',
+    rate: '8.8',
+  );
+}

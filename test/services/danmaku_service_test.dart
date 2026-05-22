@@ -172,4 +172,12 @@ void main() {
       '20250601期',
     );
   });
+
+  test('弹幕服务器地址为空时不会补成斜杠', () async {
+    final service = DanmakuService();
+
+    await service.setBaseApi('');
+
+    expect(await service.getBaseApi(), '');
+  });
 }

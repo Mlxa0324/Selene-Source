@@ -1,0 +1,215 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:path_provider/path_provider.dart';
+
+import 'api_service.dart';
+import 'danmaku_service.dart';
+import 'douban_cache_service.dart';
+import 'live_service.dart';
+import 'page_cache_service.dart';
+import 'search_service.dart';
+import 'user_data_service.dart';
+
+/// 缓存目录加载函数。
+typedef AppCacheDirectoriesLoader = Future<List<Directory>> Function();
+
+/// 可用存储空间加载函数。
+typedef AppAvailableStorageLoader = Future<int?> Function();
+
+/// 缓存清理函数。
+typedef AppCacheClearer = Future<void> Function();
+
+/// 应用缓存管理服务。
+///
+/// 只管理图片、临时文件和业务运行缓存，不清理服务器地址、账号、主题、
+/// 弹幕配置等持久化设置。
+class AppCacheService {
+  /// 创建应用缓存管理服务。
+  AppCacheService({
+    AppCacheDirectoriesLoader? cacheDirectoriesLoader,
+    AppAvailableStorageLoader? availableStorageLoader,
+    AppCacheClearer? businessCacheClearer,
+    AppCacheClearer? imageDiskCacheClearer,
+  })  : _cacheDirectoriesLoader =
+            cacheDirectoriesLoader ?? _defaultCacheDirectories,
+        _availableStorageLoader =
+            availableStorageLoader ?? _loadAvailableStorageBytes,
+        _businessCacheClearer = businessCacheClearer ?? _clearBusinessCaches,
+        _imageDiskCacheClearer = imageDiskCacheClearer ?? _clearImageDiskCache;
+
+  /// Android 原生存储空间通道。
+  static const MethodChannel _storageChannel = MethodChannel('selene/storage');
+
+  /// 低空间阈值，小于 500MB 时避免继续写入图片磁盘缓存。
+  static const int lowStorageThresholdBytes = 500 * 1024 * 1024;
+
+  /// 缓存目录加载函数。
+  final AppCacheDirectoriesLoader _cacheDirectoriesLoader;
+
+  /// 可用存储空间加载函数。
+  final AppAvailableStorageLoader _availableStorageLoader;
+
+  /// 业务缓存清理函数。
+  final AppCacheClearer _businessCacheClearer;
+
+  /// 图片磁盘缓存清理函数。
+  final AppCacheClearer _imageDiskCacheClearer;
+
+  /// 缓存的图片磁盘写入判断。
+  bool? _cachedUseImageDiskCache;
+
+  /// 启动进入 App 前执行缓存整理。
+  ///
+  /// 常规启动会清理业务运行缓存和内存图片缓存；当系统剩余空间低于
+  /// [lowStorageThresholdBytes] 时，额外清理图片磁盘缓存并让后续图片不落盘。
+  Future<void> prepareBeforeAppEnter() async {
+    await _businessCacheClearer();
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+
+    final shouldUseDiskCache = await shouldUseImageDiskCache();
+    if (!shouldUseDiskCache) {
+      await _imageDiskCacheClearer();
+    }
+  }
+
+  /// 判断当前是否允许图片写入磁盘缓存。
+  Future<bool> shouldUseImageDiskCache() async {
+    if (_cachedUseImageDiskCache != null) {
+      return _cachedUseImageDiskCache!;
+    }
+
+    final availableBytes = await _availableStorageLoader();
+    final useDiskCache =
+        availableBytes == null || availableBytes >= lowStorageThresholdBytes;
+    _cachedUseImageDiskCache = useDiskCache;
+    return useDiskCache;
+  }
+
+  /// 计算当前缓存目录占用大小。
+  Future<int> calculateCacheSizeBytes() async {
+    final directories = await _cacheDirectoriesLoader();
+    var totalBytes = 0;
+    for (final directory in directories) {
+      totalBytes += await _calculateDirectorySize(directory);
+    }
+    return totalBytes;
+  }
+
+  /// 清理所有缓存。
+  ///
+  /// 该方法会清理业务运行缓存、豆瓣缓存、HLS 脚本缓存、临时目录和图片磁盘缓存，
+  /// 但不会清除登录状态、服务器地址、账号密码、主题色、弹幕配置等设置。
+  Future<void> clearAllCaches() async {
+    await _businessCacheClearer();
+    await _imageDiskCacheClearer();
+
+    final directories = await _cacheDirectoriesLoader();
+    for (final directory in directories) {
+      await _clearDirectoryContents(directory);
+    }
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+    _cachedUseImageDiskCache = null;
+  }
+
+  /// 格式化缓存大小。
+  static String formatBytes(int bytes) {
+    if (bytes < 1024) {
+      return '$bytes B';
+    }
+    final kb = bytes / 1024;
+    if (kb < 1024) {
+      return '${kb.toStringAsFixed(1)} KB';
+    }
+    final mb = kb / 1024;
+    if (mb < 1024) {
+      return '${mb.toStringAsFixed(1)} MB';
+    }
+    final gb = mb / 1024;
+    return '${gb.toStringAsFixed(1)} GB';
+  }
+
+  /// 加载默认缓存目录。
+  static Future<List<Directory>> _defaultCacheDirectories() async {
+    final directories = <Directory>[];
+    final tempDirectory = await getTemporaryDirectory();
+    directories.add(tempDirectory);
+
+    final documentsDirectory = await getApplicationDocumentsDirectory();
+    directories.add(Directory('${documentsDirectory.path}/douban_cache'));
+    return directories;
+  }
+
+  /// 读取系统可用存储空间。
+  static Future<int?> _loadAvailableStorageBytes() async {
+    try {
+      return await _storageChannel
+          .invokeMethod<int>('getAvailableStorageBytes');
+    } on MissingPluginException {
+      return null;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('读取可用存储空间失败: $e');
+      }
+      return null;
+    }
+  }
+
+  /// 清理默认业务运行缓存。
+  static Future<void> _clearBusinessCaches() async {
+    LiveService.clearAllCache();
+    PageCacheService().clearAllCache();
+    ApiService.clearSourcesDataCache();
+    SearchService.clearCache();
+    DanmakuService().clearSearchCache();
+    await DoubanCacheService().clearAll();
+    await UserDataService.clearHlsJsCache();
+  }
+
+  /// 清理图片磁盘缓存。
+  static Future<void> _clearImageDiskCache() async {
+    await DefaultCacheManager().emptyCache();
+  }
+
+  /// 计算目录大小。
+  static Future<int> _calculateDirectorySize(Directory directory) async {
+    if (!await directory.exists()) {
+      return 0;
+    }
+
+    var totalBytes = 0;
+    await for (final entity
+        in directory.list(recursive: true, followLinks: false)) {
+      if (entity is File) {
+        try {
+          totalBytes += await entity.length();
+        } catch (_) {
+          // 文件可能在统计期间被系统删除，忽略即可。
+        }
+      }
+    }
+    return totalBytes;
+  }
+
+  /// 清空目录内容但保留目录本身。
+  static Future<void> _clearDirectoryContents(Directory directory) async {
+    if (!await directory.exists()) {
+      return;
+    }
+
+    await for (final entity
+        in directory.list(recursive: false, followLinks: false)) {
+      try {
+        await entity.delete(recursive: true);
+      } catch (_) {
+        // 部分系统文件可能暂时被占用，跳过不影响主要清理流程。
+      }
+    }
+  }
+}

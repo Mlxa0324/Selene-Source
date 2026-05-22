@@ -72,6 +72,9 @@ class VideoPlayerWidget extends StatefulWidget {
   final ProgressDisplayMode progressMode;
   final bool showSystemTime;
   final bool hideCenterControlsWithBars;
+
+  /// 是否显示播放器控制层，TV 详情页预览播放器会关闭该能力。
+  final bool showControls;
   final PlaybackPreloadLevel playbackPreloadLevel;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
@@ -130,6 +133,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.progressMode = ProgressDisplayMode.none,
     this.showSystemTime = false,
     this.hideCenterControlsWithBars = true,
+    this.showControls = true,
     this.playbackPreloadLevel = PlaybackPreloadLevel.off,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
@@ -1456,6 +1460,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Widget _buildVideoSurface() {
     final useEmbeddedDesktopControls =
         widget.surface == VideoPlayerSurface.desktop &&
+            widget.showControls &&
             _adapter is MediaKitAdapter;
     final videoKey = _adapter is MediaKitAdapter
         ? ValueKey(
@@ -1576,6 +1581,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   Widget _buildControls() {
     if (_adapter == null) return const SizedBox.shrink();
+    if (!widget.showControls) {
+      return const SizedBox.shrink();
+    }
 
     if (widget.surface == VideoPlayerSurface.desktop) {
       // media_kit 在 Video 内部注入控件；WebView 在外层叠加控件。

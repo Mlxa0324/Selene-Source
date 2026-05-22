@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
+import 'app_bootstrap.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/user_data_service.dart';
 import 'services/api_service.dart';
+import 'services/app_cache_service.dart';
 import 'services/theme_service.dart';
 import 'services/douban_cache_service.dart';
 import 'services/local_mode_storage_service.dart';
@@ -15,6 +17,7 @@ import 'dart:io' show Platform;
 import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
+import 'tv_app/tv_app_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +59,9 @@ void main() async {
   // 清理过期的播放记录 (一周以上)
   LocalModeStorageService.cleanupOldPlayRecords();
 
+  // 进入 App 前整理非配置类缓存，保留账号、服务器、主题等设置。
+  await AppCacheService().prepareBeforeAppEnter();
+
   runApp(const SeleneApp());
 
   // 初始化 Windows 窗口配置
@@ -91,7 +97,10 @@ class SeleneApp extends StatelessWidget {
             theme: themeService.lightTheme,
             darkTheme: themeService.darkTheme,
             themeMode: themeService.themeMode,
-            home: const AppWrapper(),
+            home: AppBootstrap(
+              normalBuilder: (_) => const AppWrapper(),
+              tvBuilder: (_) => const TvAppShell(),
+            ),
             builder: (context, child) {
               // 为 Windows 平台改善字体渲染
               if (Platform.isWindows) {
@@ -136,7 +145,7 @@ class _AppWrapperState extends State<AppWrapper> {
         // 本地模式：尝试刷新订阅内容
         try {
           final subscriptionUrl =
-          await LocalModeStorageService.getSubscriptionUrl();
+              await LocalModeStorageService.getSubscriptionUrl();
           if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
             // 💡 优化：增加 10 秒超时控制，防止因网络波动导致启动页永久卡死
             final response = await http
@@ -144,14 +153,16 @@ class _AppWrapperState extends State<AppWrapper> {
                 .timeout(const Duration(seconds: 10));
             if (response.statusCode == 200) {
               final content =
-              await SubscriptionService.parseSubscriptionContent(
-                  response.body);
+                  await SubscriptionService.parseSubscriptionContent(
+                      response.body);
               if (content != null) {
-                if (content.searchResources != null && content.searchResources!.isNotEmpty) {
+                if (content.searchResources != null &&
+                    content.searchResources!.isNotEmpty) {
                   await LocalModeStorageService.saveSearchSources(
                       content.searchResources!);
                 }
-                if (content.liveSources != null && content.liveSources!.isNotEmpty) {
+                if (content.liveSources != null &&
+                    content.liveSources!.isNotEmpty) {
                   await LocalModeStorageService.saveLiveSources(
                       content.liveSources!);
                 }
@@ -237,18 +248,18 @@ class _AppWrapperState extends State<AppWrapper> {
                 gradient: themeService.isDarkMode
                     ? null
                     : const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFFe6f3fb),
-                    Color(0xFFeaf3f7),
-                    Color(0xFFf7f7f3),
-                    Color(0xFFe9ecef),
-                    Color(0xFFdbe3ea),
-                    Color(0xFFd3dde6),
-                  ],
-                  stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
-                ),
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Color(0xFFe6f3fb),
+                          Color(0xFFeaf3f7),
+                          Color(0xFFf7f7f3),
+                          Color(0xFFe9ecef),
+                          Color(0xFFdbe3ea),
+                          Color(0xFFd3dde6),
+                        ],
+                        stops: [0.0, 0.18, 0.38, 0.60, 0.80, 1.0],
+                      ),
               ),
               child: Center(
                 child: Column(
