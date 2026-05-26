@@ -12,6 +12,7 @@ import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
@@ -354,51 +355,54 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0D0E),
-      body: SafeArea(
-        child: FutureBuilder<TvVideoDetailData>(
-          future: _detailFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return Center(
-                child: CircularProgressIndicator(
-                  color: TvTheme.of(context).accent,
+    return TvBackHandler(
+      autofocus: true,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0B0D0E),
+        body: SafeArea(
+          child: FutureBuilder<TvVideoDetailData>(
+            future: _detailFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return Center(
+                  child: CircularProgressIndicator(
+                    color: TvTheme.of(context).accent,
+                  ),
+                );
+              }
+
+              _applyDetail(snapshot.data ??
+                  const TvVideoDetailData(
+                    currentDetail: null,
+                    sources: [],
+                    recommends: [],
+                  ));
+
+              return SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.fromLTRB(
+                  TvLayout.pageHorizontalPadding,
+                  38,
+                  TvLayout.pageHorizontalPadding,
+                  56,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeroArea(),
+                    const SizedBox(height: 30),
+                    _buildSourcesSection(),
+                    const SizedBox(height: 28),
+                    _buildEpisodesSection(),
+                    const SizedBox(height: 34),
+                    _buildRecommendsSection(),
+                    const SizedBox(height: 38),
+                    _buildBottomActions(),
+                  ],
                 ),
               );
-            }
-
-            _applyDetail(snapshot.data ??
-                const TvVideoDetailData(
-                  currentDetail: null,
-                  sources: [],
-                  recommends: [],
-                ));
-
-            return SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(
-                TvLayout.pageHorizontalPadding,
-                38,
-                TvLayout.pageHorizontalPadding,
-                56,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeroArea(),
-                  const SizedBox(height: 30),
-                  _buildSourcesSection(),
-                  const SizedBox(height: 28),
-                  _buildEpisodesSection(),
-                  const SizedBox(height: 34),
-                  _buildRecommendsSection(),
-                  const SizedBox(height: 38),
-                  _buildBottomActions(),
-                ],
-              ),
-            );
-          },
+            },
+          ),
         ),
       ),
     );
@@ -564,6 +568,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             _TvDetailActionButton(
               label: _isFavorite ? '已收藏' : '收藏',
               icon: _isFavorite ? LucideIcons.heart : LucideIcons.heartPlus,
+              iconColor: _isFavorite
+                  ? const Color(0xFFE50914)
+                  : const Color(0xFF131A21),
               onPressed: _toggleFavorite,
             ),
           ],
@@ -769,6 +776,7 @@ class _TvDetailActionButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
+    this.iconColor = Colors.white,
   });
 
   /// 按钮文案。
@@ -780,6 +788,9 @@ class _TvDetailActionButton extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 图标颜色。
+  final Color iconColor;
+
   @override
   Widget build(BuildContext context) {
     return TvFocusable(
@@ -790,7 +801,7 @@ class _TvDetailActionButton extends StatelessWidget {
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
-            color: const Color(0xFFD7DDE2),
+            color: const Color(0xCC1B2127),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: hasFocus ? Colors.white : Colors.transparent,
@@ -800,14 +811,14 @@ class _TvDetailActionButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 20, color: const Color(0xFF131A21)),
+              Icon(icon, size: 20, color: iconColor),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: FontUtils.poppins(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xFF131A21),
+                  color: Colors.white,
                 ),
               ),
             ],

@@ -80,6 +80,34 @@ void main() {
     scrollController.dispose();
   });
 
+  testWidgets('treats space key as confirm action', (tester) async {
+    final focusNode = FocusNode();
+    var pressedCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvFocusable(
+            focusNode: focusNode,
+            onPressed: () {
+              pressedCount++;
+            },
+            builder: (_, __) => const SizedBox(width: 80, height: 80),
+          ),
+        ),
+      ),
+    );
+
+    focusNode.requestFocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+
+    expect(pressedCount, 1);
+
+    focusNode.dispose();
+  });
+
   testWidgets('starts scrolling horizontal focus list before last item',
       (tester) async {
     final scrollController = ScrollController();

@@ -111,7 +111,7 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
   static const double _expandedTopPadding = 6;
 
   /// 展开态底部留白。
-  static const double _expandedBottomPadding = 16;
+  static const double _expandedBottomPadding = 14;
 
   /// 摘要态上下留白。
   static const EdgeInsets _compactPadding = EdgeInsets.fromLTRB(
@@ -218,7 +218,7 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
               onSelected: (option) => _selectOption(row.title, option),
               isSelected: (option) => _isSelected(row.title, option),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
           ],
         ],
       ),
@@ -502,16 +502,16 @@ class _TvCategoryFilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 44,
+      height: 40,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 58,
+            width: 56,
             child: Text(
               '$title:',
               style: FontUtils.poppins(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: const Color(0xFF98A2A8),
               ),
@@ -522,9 +522,9 @@ class _TvCategoryFilterRow extends StatelessWidget {
               key: ValueKey('tv-filter-row-$title'),
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.hardEdge,
-              padding: const EdgeInsets.only(left: 4, right: 0),
+              padding: const EdgeInsets.only(left: 2, right: 0),
               itemCount: options.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 14),
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
                 final option = options[index];
                 final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
@@ -611,10 +611,13 @@ class _TvCategoryFilterChip extends StatelessWidget {
           child: AnimatedContainer(
             key: ValueKey('tv-filter-chip-$label'),
             duration: const Duration(milliseconds: 140),
-            height: 32,
-            constraints: const BoxConstraints(minWidth: 44, maxWidth: 76),
+            constraints: const BoxConstraints(
+              minWidth: 38,
+              maxWidth: 72,
+              minHeight: 30,
+            ),
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
               color: selected ? palette.accent : const Color(0xFF343943),
               borderRadius: BorderRadius.circular(7),

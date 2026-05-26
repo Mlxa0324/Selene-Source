@@ -122,7 +122,8 @@ class _TvFocusableState extends State<TvFocusable> {
     }
 
     if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter) {
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.space) {
       widget.onPressed?.call();
       return KeyEventResult.handled;
     }

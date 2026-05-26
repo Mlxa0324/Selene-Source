@@ -162,6 +162,24 @@ void main() {
     expect(find.text('收藏 0'), findsOneWidget);
   });
 
+  testWidgets('renders live tab as developing placeholder page',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData.empty(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await _tapTopNavLabel(tester, '直播');
+    await tester.pumpAndSettle();
+
+    expect(find.text('正在开发'), findsOneWidget);
+  });
+
   testWidgets('renders category tabs as vertical grids', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -226,6 +244,38 @@ void main() {
     expect(find.text('综艺 0'), findsOneWidget);
   });
 
+  testWidgets('animates top tab content with page-like horizontal slide',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: [_videoInfo('movie_0', '电影 0')],
+            hotTvShows: [_videoInfo('series_0', '剧集 0')],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    await _tapTopNavLabel(tester, '剧集');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(find.text('电影 0'), findsOneWidget);
+    expect(find.text('剧集 0'), findsOneWidget);
+    expect(_slideOffsetForText(tester, '电影 0').dx, lessThan(-0.1));
+    expect(_slideOffsetForText(tester, '剧集 0').dx, greaterThan(0.1));
+  });
+
   testWidgets(
       'shows category filter panel only from focused category top nav item',
       (tester) async {
@@ -256,7 +306,7 @@ void main() {
     expect(
         find.byKey(const ValueKey('tv-category-filter-panel')), findsNothing);
 
-    _focusNodeForText(tester, '筛选后 2025').requestFocus();
+    _focusNodeForVideoCard(tester, 'movie_0').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -265,7 +315,7 @@ void main() {
     expect(
         find.byKey(const ValueKey('tv-category-filter-panel')), findsNothing);
 
-    _focusNodeForText(tester, '电影').requestFocus();
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -302,7 +352,7 @@ void main() {
         find.byKey(const ValueKey('tv-category-filter-panel')), findsNothing);
   });
 
-  testWidgets('live top nav item is only a quick action bridge',
+  testWidgets('live top nav item still moves to quick actions on up key',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -400,11 +450,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('初始电影'), findsOneWidget);
 
-    _focusNodeForText(tester, '电影').requestFocus();
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
-    _focusNodeForText(tester, '犯罪').requestFocus();
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-犯罪'))
+        .requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
@@ -440,7 +491,7 @@ void main() {
     await _tapTopNavLabel(tester, '电影');
     await tester.pumpAndSettle();
 
-    _focusNodeForText(tester, '电影').requestFocus();
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -452,8 +503,9 @@ void main() {
     expect(
         find.byKey(const ValueKey('tv-category-filter-summary')), findsNothing);
 
-    _focusNodeForText(tester, '电影 0').requestFocus();
+    _focusNodeForGridVideoCard(tester, 'movie_0').requestFocus();
     await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(
       find.byKey(const ValueKey('tv-category-filter-summary')),
@@ -500,6 +552,10 @@ void main() {
             history: const [],
             favorites: const [],
           ),
+          loadCategoryData: (_, __, filters) async {
+            final year = filters['年份']?.label ?? '全部';
+            return [_videoInfo('filtered_$year', '筛选后 $year')];
+          },
         ),
       ),
     );
@@ -508,7 +564,7 @@ void main() {
     await _tapTopNavLabel(tester, '电影');
     await tester.pumpAndSettle();
 
-    _focusNodeForText(tester, '电影').requestFocus();
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -517,7 +573,7 @@ void main() {
         warnIfMissed: false);
     await tester.pumpAndSettle();
 
-    _focusNodeForText(tester, '电影 0').requestFocus();
+    _focusNodeForVideoCard(tester, 'filtered_2025').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -541,17 +597,17 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final chipSize = tester.getSize(
-      find
-          .ancestor(
-            of: find.text('全部').first,
-            matching: find.byType(AnimatedContainer),
-          )
-          .first,
+    final chipWidget = tester.widget<AnimatedContainer>(
+      find.byKey(const ValueKey('tv-filter-chip-全部')).first,
     );
-    expect(chipSize.height, 44);
-    expect(chipSize.width, greaterThanOrEqualTo(44));
-    expect(chipSize.width, lessThanOrEqualTo(76));
+    expect(
+      chipWidget.constraints,
+      const BoxConstraints(minWidth: 38, maxWidth: 72, minHeight: 30),
+    );
+    expect(
+      chipWidget.padding,
+      const EdgeInsets.symmetric(horizontal: 2),
+    );
     expect(
       find.byKey(const ValueKey('tv-filter-row-more-indicator-排序')),
       findsNothing,
@@ -699,6 +755,14 @@ FocusNode _focusNodeForText(WidgetTester tester, String label) {
   return tester.widget<Focus>(focusFinder.first).focusNode!;
 }
 
+Offset _slideOffsetForText(WidgetTester tester, String label) {
+  final slideFinder = find.ancestor(
+    of: find.text(label),
+    matching: find.byType(SlideTransition),
+  );
+  return tester.widget<SlideTransition>(slideFinder.first).position.value;
+}
+
 FocusNode _focusNodeForAction(WidgetTester tester, String key) {
   final focusFinder = find.descendant(
     of: find.byKey(ValueKey('tv-top-nav-action-$key')),
@@ -709,8 +773,42 @@ FocusNode _focusNodeForAction(WidgetTester tester, String key) {
   return tester.widget<Focus>(focusFinder.first).focusNode!;
 }
 
+FocusNode _focusNodeForTopNavLabel(WidgetTester tester, String label) {
+  final focusFinder = find.ancestor(
+    of: find.text(label),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Focus && widget.focusNode != null,
+    ),
+  );
+  return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+FocusNode _focusNodeForVideoCard(WidgetTester tester, String id) {
+  return _focusNodeForFocusableKey(
+    tester,
+    ValueKey('tv-video-card-focus-$id'),
+  );
+}
+
+FocusNode _focusNodeForGridVideoCard(WidgetTester tester, String id) {
+  return _focusNodeForFocusableKey(
+    tester,
+    ValueKey('tv-video-card-focus-$id'),
+  );
+}
+
 FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
   final focusFinder = find.ancestor(
+    of: find.byKey(key),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Focus && widget.focusNode != null,
+    ),
+  );
+  return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+FocusNode _focusNodeForFocusableKey(WidgetTester tester, Key key) {
+  final focusFinder = find.descendant(
     of: find.byKey(key),
     matching: find.byWidgetPredicate(
       (widget) => widget is Focus && widget.focusNode != null,

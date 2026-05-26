@@ -198,7 +198,8 @@ class _TvTopNavState extends State<TvTopNav> {
     _navHasFocus = true;
 
     // 从内容区回到顶部菜单时，总是先回到当前选中项，避免就近菜单误切页。
-    if (enteringFromOutside && index != widget.selectedIndex) {
+    if (enteringFromOutside &&
+        (!_isMainTabSelected || index != widget.selectedIndex)) {
       _redirectFocusToSelected();
       return;
     }
@@ -209,6 +210,8 @@ class _TvTopNavState extends State<TvTopNav> {
     }
 
     // 顶部菜单内部左右移动时，焦点到哪个菜单就切到哪个菜单。
+    //
+    // “直播”现在是独立页面，但仍保留按上进入右上角快捷区的过渡能力。
     if (index != widget.selectedIndex) {
       widget.onChanged(index);
     }
@@ -256,7 +259,7 @@ class _TvTopNavState extends State<TvTopNav> {
     );
   }
 
-  /// 从右上角快捷按钮回到直播过渡按钮。
+  /// 从右上角快捷按钮回到直播主菜单项。
   void _focusLiveTab() {
     final liveIndex = _liveTabIndex;
     if (liveIndex == null) {
@@ -270,7 +273,7 @@ class _TvTopNavState extends State<TvTopNav> {
     );
   }
 
-  /// 直播过渡按钮下标。
+  /// 直播主菜单项下标。
   int? get _liveTabIndex {
     final index = widget.tabs.indexOf('直播');
     return index < 0 ? null : index;
@@ -299,19 +302,26 @@ class _TvTopNavState extends State<TvTopNav> {
   /// 当前选中页是否属于左侧主菜单。
   ///
   /// 右上角快捷入口使用独立页面下标，不能再把播放历史等页面误判成“直播”菜单选中态。
-  bool get _isMainTabSelected => widget.selectedIndex >= 0 && widget.selectedIndex <= 4;
+  bool get _isMainTabSelected {
+    final quickActionIndex = _selectedActionIndex;
+    if (quickActionIndex != null) {
+      return false;
+    }
+    return widget.selectedIndex >= 0 &&
+        widget.selectedIndex < widget.tabs.length;
+  }
 
   /// 当前选中页对应的快捷入口下标。
   int? get _selectedActionIndex {
     switch (widget.selectedIndex) {
-      case 5:
+      case 6:
         final index = _actions.indexWhere((action) => action.key == 'history');
         return index < 0 ? null : index;
-      case 6:
+      case 7:
         final index =
             _actions.indexWhere((action) => action.key == 'favorites');
         return index < 0 ? null : index;
-      case 7:
+      case 8:
         final index = _actions.indexWhere((action) => action.key == 'settings');
         return index < 0 ? null : index;
       default:
@@ -365,7 +375,7 @@ class _TvTopNavState extends State<TvTopNav> {
           key: 'history',
           label: '播放历史',
           icon: LucideIcons.history,
-          selected: widget.selectedIndex == 5,
+          selected: widget.selectedIndex == 6,
           onPressed: widget.onHistoryPressed!,
         ),
       if (widget.onFavoritesPressed != null)
@@ -373,7 +383,7 @@ class _TvTopNavState extends State<TvTopNav> {
           key: 'favorites',
           label: '收藏夹',
           icon: LucideIcons.heart,
-          selected: widget.selectedIndex == 6,
+          selected: widget.selectedIndex == 7,
           onPressed: widget.onFavoritesPressed!,
         ),
       if (widget.onSettingsPressed != null)
@@ -381,7 +391,7 @@ class _TvTopNavState extends State<TvTopNav> {
           key: 'settings',
           label: '设置',
           icon: LucideIcons.settings,
-          selected: widget.selectedIndex == 7,
+          selected: widget.selectedIndex == 8,
           onPressed: widget.onSettingsPressed!,
         ),
     ];

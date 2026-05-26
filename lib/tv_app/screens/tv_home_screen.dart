@@ -6,9 +6,11 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/bangumi_service.dart';
 import 'package:selene/services/douban_service.dart';
 import 'package:selene/services/page_cache_service.dart';
+import 'package:selene/tv_app/screens/tv_live_screen.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_top_nav.dart';
@@ -348,7 +350,8 @@ class TvHomeScreen extends StatefulWidget {
   }
 }
 
-class _TvHomeScreenState extends State<TvHomeScreen> {
+class _TvHomeScreenState extends State<TvHomeScreen>
+    with SingleTickerProviderStateMixin {
   /// TV 顶部固定区域半透遮罩色。
   static const Color _topScrimColor = Color(0xD00B0D0E);
 
@@ -357,6 +360,10 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   /// 分类筛选面板展开动画时长。
   static const Duration _filterAnimationDuration = Duration(milliseconds: 340);
+
+  /// 标签页内容左右切换动画时长。
+  static const Duration _tabSwitchAnimationDuration =
+      Duration(milliseconds: 260);
 
   /// 当前分类筛选区是否处于紧凑摘要态。
   ///
@@ -375,6 +382,18 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   /// 当前选中的顶部导航下标。
   int _selectedIndex = 0;
+
+  /// 正在切出的顶部导航下标。
+  int? _outgoingTabIndex;
+
+  /// 标签页内容切换方向，1 为向右切换，-1 为向左切换。
+  double _tabSwitchDirection = 1;
+
+  /// 标签页内容切换动画控制器。
+  late final AnimationController _tabSwitchController = AnimationController(
+    vsync: this,
+    duration: _tabSwitchAnimationDuration,
+  );
 
   /// 首页数据加载任务。
   Future<TvHomeData>? _homeDataFuture;
@@ -403,6 +422,21 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _tabSwitchController.value = 1;
+    _tabSwitchController.addStatusListener(_handleTabSwitchStatus);
+  }
+
+  @override
+  void dispose() {
+    _tabSwitchController
+      ..removeStatusListener(_handleTabSwitchStatus)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_categoryFilterVisible,
@@ -424,7 +458,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                       final isLoading =
                           snapshot.connectionState != ConnectionState.done;
 
-                      return _buildSelectedTab(data, isLoading);
+                      return _buildAnimatedSelectedTab(data, isLoading);
                     },
                   ),
                 ),
@@ -464,26 +498,79 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                 tabs: _tabs,
                 selectedIndex: _selectedIndex,
                 onSearchPressed: _openSearch,
-                onHistoryPressed: () => _selectTab(5),
-                onFavoritesPressed: () => _selectTab(6),
-                onSettingsPressed: () => _selectTab(7),
+                onHistoryPressed: () => _selectTab(6),
+                onFavoritesPressed: () => _selectTab(7),
+                onSettingsPressed: () => _selectTab(8),
                 onTabArrowUp: _handleTopNavArrowUp,
-                onChanged: (index) {
-                  setState(() {
-                    _selectedIndex = index;
-                    _categoryFilterVisible = false;
-                    _categoryFilterCompact = false;
-                    _categoryFilterPreferredFocusRowTitle = null;
-                  });
-                },
+                onChanged: _selectTab,
               ),
             ),
     );
   }
 
+  /// 构建带左右滑页动画的当前标签内容。
+  Widget _buildAnimatedSelectedTab(TvHomeData data, bool isLoading) {
+    final outgoingIndex = _outgoingTabIndex;
+    return AnimatedBuilder(
+      animation: _tabSwitchController,
+      builder: (context, child) {
+        final progress = Curves.easeOutCubic.transform(
+          _tabSwitchController.value,
+        );
+        final incomingOffset = Offset((1 - progress) * _tabSwitchDirection, 0);
+        final outgoingOffset = Offset(-progress * _tabSwitchDirection, 0);
+        final showOutgoing =
+            outgoingIndex != null && _tabSwitchController.value < 1;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (showOutgoing)
+              _buildTabTransitionLayer(
+                key: ValueKey('tv-home-tab-outgoing-$outgoingIndex'),
+                offset: outgoingOffset,
+                child: _buildSelectedTabByIndex(
+                  outgoingIndex,
+                  data,
+                  isLoading,
+                ),
+              ),
+            _buildTabTransitionLayer(
+              key: ValueKey('tv-home-tab-incoming-$_selectedIndex'),
+              offset: incomingOffset,
+              child: _buildSelectedTab(data, isLoading),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 构建单层标签页切换动画。
+  Widget _buildTabTransitionLayer({
+    required Key key,
+    required Offset offset,
+    required Widget child,
+  }) {
+    return SlideTransition(
+      key: key,
+      position: AlwaysStoppedAnimation<Offset>(offset),
+      child: child,
+    );
+  }
+
   /// 构建当前选中的 TV 标签内容。
   Widget _buildSelectedTab(TvHomeData data, bool isLoading) {
-    switch (_selectedIndex) {
+    return _buildSelectedTabByIndex(_selectedIndex, data, isLoading);
+  }
+
+  /// 按指定下标构建 TV 标签内容。
+  Widget _buildSelectedTabByIndex(
+    int index,
+    TvHomeData data,
+    bool isLoading,
+  ) {
+    switch (index) {
       case 1:
         return _buildMovieTab(data, isLoading);
       case 2:
@@ -493,10 +580,12 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
       case 4:
         return _buildVarietyTab(data, isLoading);
       case 5:
-        return _buildHistoryTab(data, isLoading);
+        return const TvLiveScreen();
       case 6:
-        return _buildFavoritesTab(data, isLoading);
+        return _buildHistoryTab(data, isLoading);
       case 7:
+        return _buildFavoritesTab(data, isLoading);
+      case 8:
         return const TvSettingsScreen();
       case 0:
       default:
@@ -515,7 +604,8 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
             videos: data.continueWatching,
             isLoading: isLoading,
             onVideoPressed: _openVideoFromRecord,
-            onMorePressed: () => _selectTab(5),
+            // “继续观看”的“查看更多”进入播放历史页，而不是直播页。
+            onMorePressed: () => _selectTab(6),
           ),
           TvHomeSection(
             title: '热门电影',
@@ -647,16 +737,16 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
   }) {
     final filterFuture = _categoryDataFutures[kind];
     if (filterFuture == null) {
-        return TvVideoGrid(
-          title: title,
-          videos: videos,
-          isLoading: isLoading,
-          onVideoPressed: onVideoPressed,
-          onVideoFocusChanged: _handleCategoryGridFocusChanged,
-          onArrowUp: _categoryFilterVisible && _categoryFilterCompact
-              ? _expandCategoryFilter
-              : null,
-        );
+      return TvVideoGrid(
+        title: title,
+        videos: videos,
+        isLoading: isLoading,
+        onVideoPressed: onVideoPressed,
+        onVideoFocusChanged: _handleCategoryGridFocusChanged,
+        onArrowUp: _categoryFilterVisible && _categoryFilterCompact
+            ? _expandCategoryFilter
+            : null,
+      );
     }
 
     return FutureBuilder<List<VideoInfo>>(
@@ -719,7 +809,8 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
                   : TvCategoryFilterPanelMode.expanded,
               preferredFocusRowTitle: _categoryFilterPreferredFocusRowTitle,
               selectedOptions: Map<String, TvCategoryFilterOption>.unmodifiable(
-                _categoryFilters[kind] ?? const <String, TvCategoryFilterOption>{},
+                _categoryFilters[kind] ??
+                    const <String, TvCategoryFilterOption>{},
               ),
               onChanged: (rowTitle, option) => _handleCategoryFilterChanged(
                 kind,
@@ -819,9 +910,7 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   /// 判断是否为返回类按键。
   bool _isBackKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.browserBack;
+    return TvBackIntent.isBackKey(key);
   }
 
   /// 构建播放历史标签内容。
@@ -853,12 +942,28 @@ class _TvHomeScreenState extends State<TvHomeScreen> {
 
   /// 切换到指定顶部菜单。
   void _selectTab(int index) {
+    if (index == _selectedIndex) {
+      return;
+    }
     setState(() {
+      _outgoingTabIndex = _selectedIndex;
+      _tabSwitchDirection = index > _selectedIndex ? 1 : -1;
       _selectedIndex = index;
       _categoryFilterVisible = false;
       _categoryFilterCompact = false;
       _categoryFilterPreferredFocusRowTitle = null;
     });
+    _tabSwitchController.forward(from: 0);
+  }
+
+  /// 标签页切换完成后清理旧页面。
+  void _handleTabSwitchStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || _outgoingTabIndex == null) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _outgoingTabIndex = null);
+    }
   }
 
   /// 打开现有播放器页面。

@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
@@ -187,6 +189,36 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     '其它',
   ];
 
+  /// 顶部暂停态操作提示。
+  static const String _pausedHintText = '按【菜单键】或【下键】选择集数、线路和播放设置';
+
+  /// 安全刷新壳层状态。
+  ///
+  /// 播放器会在子组件 `initState/build` 过程中同步回调控制器创建和播放状态。
+  /// 这些场景如果直接 `setState`，会触发 build 阶段重建异常，因此统一延后到本帧结束。
+  void _scheduleChromeRefresh() {
+    if (!mounted) {
+      return;
+    }
+
+    final schedulerPhase = SchedulerBinding.instance.schedulerPhase;
+    final isBuildRelatedPhase =
+        schedulerPhase == SchedulerPhase.persistentCallbacks ||
+            schedulerPhase == SchedulerPhase.transientCallbacks ||
+            schedulerPhase == SchedulerPhase.midFrameMicrotasks;
+
+    if (isBuildRelatedPhase) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+      return;
+    }
+
+    setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
@@ -302,7 +334,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter) {
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.space) {
       unawaited(_togglePlayPause());
       return KeyEventResult.handled;
     }
@@ -322,9 +355,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 判断是否为返回类按键。
   bool _isBackKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
-        key == LogicalKeyboardKey.browserBack;
+    return TvBackIntent.isBackKey(key);
   }
 
   /// 展示底部菜单。
@@ -362,6 +393,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       await controller.pause();
     } else {
       await controller.play();
+    }
+
+    // 播放/暂停切换后主动刷新壳层状态，确保暂停态 UI 立即同步。
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -414,6 +450,36 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     return widget.playbackController?.totalDuration ??
         _playerController?.duration ??
         Duration(seconds: widget.videoInfo.totalTime);
+  }
+
+  /// 当前播放器是否处于播放中。
+  ///
+  /// 控制器尚未创建时按“播放中”处理，避免页面初次进入时误闪暂停壳层。
+  bool get _isPlaybackPlaying {
+    final injectedController = widget.playbackController;
+    if (injectedController != null) {
+      return injectedController.isPlaying;
+    }
+    final controller = _playerController;
+    if (controller != null) {
+      return controller.isPlaying;
+    }
+    return true;
+  }
+
+  /// 是否显示暂停/拖动时的播放器信息壳层。
+  bool get _shouldShowPlaybackChrome {
+    return !_menuVisible && (_seekOverlayVisible || !_isPlaybackPlaying);
+  }
+
+  /// 是否显示中心播放按钮。
+  bool get _shouldShowCenterPlayButton {
+    return !_menuVisible && !_isPlaybackPlaying;
+  }
+
+  /// 是否处于拖动进度中的快进/快退态。
+  bool get _isSeekingPreviewOnly {
+    return !_menuVisible && _seekOverlayVisible && _isPlaybackPlaying;
   }
 
   /// 执行播放器 seek。
@@ -528,8 +594,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           body: Stack(
             children: [
               Positioned.fill(child: _buildPlayer()),
-              Positioned.fill(child: _buildTopDecorations()),
-              if (!_menuVisible) _buildBottomHints(),
+              if (_shouldShowPlaybackChrome)
+                Positioned.fill(child: _buildPlaybackChromeScrim()),
+              if (_shouldShowPlaybackChrome) _buildTopDecorations(),
+              if (_shouldShowCenterPlayButton) _buildCenterPlayButton(),
+              if (_shouldShowPlaybackChrome) _buildBottomProgressBar(),
               if (_seekOverlayVisible) _buildSeekOverlay(),
               if (_menuVisible) _buildBottomMenu(),
             ],
@@ -545,6 +614,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           context,
           (controller) {
             _playerController = controller;
+            _scheduleChromeRefresh();
           },
         ) ??
         VideoPlayerWidget(
@@ -561,93 +631,275 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           showControls: false,
           onControllerCreated: (controller) {
             _playerController = controller;
+            _scheduleChromeRefresh();
+          },
+          onPlay: () {
+            _scheduleChromeRefresh();
+          },
+          onPause: () {
+            _scheduleChromeRefresh();
           },
           onVideoCompleted: () {},
         );
   }
 
-  /// 构建顶部说明和装饰层。
-  Widget _buildTopDecorations() {
+  /// 构建暂停态顶部和底部的可读性遮罩。
+  Widget _buildPlaybackChromeScrim() {
     return IgnorePointer(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(34, 24, 34, 0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    const Icon(
-                      LucideIcons.arrowLeft,
-                      color: Colors.white,
-                      size: 26,
-                    ),
-                    const SizedBox(width: 14),
-                    Flexible(
-                      child: Text(
-                        '$_title | $_episodeLabel',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: FontUtils.poppins(
-                          fontSize: 27,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                LucideIcons.grip,
-                color: Colors.white,
-                size: 28,
-              ),
-              const SizedBox(width: 24),
-              Text(
-                _clockText,
-                style: FontUtils.poppins(
-                  fontSize: 23,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.black.withValues(alpha: 0.34),
+              Colors.transparent,
+              Colors.transparent,
+              Colors.black.withValues(alpha: 0.28),
             ],
+            stops: const [0.0, 0.18, 0.72, 1.0],
           ),
         ),
       ),
     );
   }
 
-  /// 构建底部遥控器操作提醒。
-  Widget _buildBottomHints() {
+  /// 构建顶部说明和装饰层。
+  Widget _buildTopDecorations() {
+    final showHintText = !_isSeekingPreviewOnly;
+    return Positioned(
+      key: const ValueKey('tv-fullscreen-top-decorations'),
+      left: 34,
+      right: 34,
+      top: 14,
+      child: IgnorePointer(
+        child: SafeArea(
+          bottom: false,
+          child: SizedBox(
+            height: 38,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 左右两组分别贴顶部两侧，避免长标题或提示文字把装饰信息挤到中间。
+                final contentWidth = constraints.maxWidth;
+                final leftWidth = contentWidth * (showHintText ? 0.45 : 0.58);
+                final rightWidth = contentWidth * (showHintText ? 0.52 : 0.34);
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: SizedBox(
+                        key: const ValueKey('tv-fullscreen-top-left'),
+                        width: leftWidth,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              LucideIcons.arrowLeft,
+                              color: Colors.white,
+                              size: 26,
+                            ),
+                            const SizedBox(width: 14),
+                            Flexible(
+                              child: Text(
+                                '$_title | $_episodeLabel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: FontUtils.poppins(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: SizedBox(
+                        key: const ValueKey('tv-fullscreen-top-right'),
+                        width: rightWidth,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            if (showHintText) ...[
+                              Flexible(
+                                child: Text(
+                                  _pausedHintText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.right,
+                                  style: FontUtils.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white.withValues(alpha: 0.94),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 18),
+                            ],
+                            const Icon(
+                              LucideIcons.grip,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              _clockText,
+                              style: FontUtils.poppins(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建中心播放按钮。
+  Widget _buildCenterPlayButton() {
+    return Center(
+      child: IgnorePointer(
+        child: Container(
+          key: const ValueKey('tv-fullscreen-center-play'),
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.58),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            LucideIcons.play,
+            color: Colors.white,
+            size: 28,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 构建暂停态和拖动进度时的底部细进度条。
+  Widget _buildBottomProgressBar() {
+    final palette = TvTheme.of(context);
+    final duration = _seekPreviewDuration ?? _currentPlaybackDuration;
+    final position = _seekPreviewPosition ?? _currentPlaybackPosition;
+    final clampedPosition = _clampDuration(position, Duration.zero, duration);
+    final progress = duration <= Duration.zero
+        ? 0.0
+        : (clampedPosition.inMilliseconds / duration.inMilliseconds)
+            .clamp(0.0, 1.0);
+    final statusIcon =
+        _isPlaybackPlaying ? LucideIcons.pause : LucideIcons.play;
+
     return Positioned(
       left: 34,
       right: 34,
       bottom: 26,
       child: IgnorePointer(
-        child: DefaultTextStyle(
-          style: FontUtils.poppins(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Colors.white.withValues(alpha: 0.92),
-          ),
-          child: Stack(
-            alignment: Alignment.bottomCenter,
+        child: SafeArea(
+          top: false,
+          minimum: EdgeInsets.zero,
+          child: Row(
             children: [
-              Align(
-                alignment: Alignment.bottomLeft,
-                child: Text(
-                  '提醒：请勿随意相信视频上广告、网址、二维码等！',
-                  style: FontUtils.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.88),
+              Icon(
+                statusIcon,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _formatProgressBarDuration(clampedPosition),
+                style: FontUtils.poppins(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.96),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: SizedBox(
+                  key: const ValueKey('tv-fullscreen-bottom-progress'),
+                  height: 18,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final trackWidth = constraints.maxWidth;
+                      final playedWidth = trackWidth * progress;
+                      final knobLeft =
+                          (playedWidth - 5).clamp(0.0, trackWidth - 10.0);
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.centerLeft,
+                        children: [
+                          Container(
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.54),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                          Container(
+                            width: playedWidth,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: palette.accent,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                          Positioned(
+                            left: knobLeft,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: palette.accent,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.28),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
-              const Text('按【返回键】退出播放，按【下键】进行选集、线路、画面比例等设置'),
+              const SizedBox(width: 14),
+              Text(
+                _formatProgressBarDuration(duration),
+                style: FontUtils.poppins(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.96),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                LucideIcons.expand,
+                size: 16,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
             ],
           ),
         ),
@@ -668,27 +920,31 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           duration: const Duration(milliseconds: 120),
           child: Container(
             key: const ValueKey('tv-fullscreen-seek-overlay'),
-            width: 260,
-            height: 132,
+            width: 244,
+            height: 94,
             decoration: BoxDecoration(
-              color: const Color(0xFFE4EAEE).withValues(alpha: 0.78),
-              borderRadius: BorderRadius.circular(8),
+              color: const Color(0xFF10161D).withValues(alpha: 0.80),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.08),
+                width: 1,
+              ),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   icon,
-                  size: 42,
-                  color: const Color(0xFF17212B),
+                  size: 31,
+                  color: Colors.white,
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
                 Text(
-                  '${_formatDuration(position)} / ${_formatDuration(duration)}',
+                  '${_formatDuration(position)}/${_formatDuration(duration)}',
                   style: FontUtils.poppins(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF17212B),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   ),
                 ),
               ],
@@ -710,6 +966,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           '${seconds.toString().padLeft(2, '0')}';
     }
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  /// 格式化底部进度条时间。
+  ///
+  /// 底部进度条对齐电视端播放器习惯，小于 1 小时时也固定显示 `mm:ss`。
+  String _formatProgressBarDuration(Duration duration) {
+    final safeDuration = duration < Duration.zero ? Duration.zero : duration;
+    final hours = safeDuration.inHours;
+    final minutes = safeDuration.inMinutes.remainder(60);
+    final seconds = safeDuration.inSeconds.remainder(60);
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:'
+          '${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
   }
 
   /// 构建底部一二级菜单。
@@ -986,7 +1258,6 @@ class _TvPlayerMenuButton extends StatelessWidget {
         }
       },
       builder: (context, hasFocus) {
-        final active = selected || hasFocus;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           height: 56,
@@ -1006,9 +1277,9 @@ class _TvPlayerMenuButton extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: FontUtils.poppins(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
-              color: active ? palette.selectedText : Colors.white,
+              color: Colors.white,
             ),
           ),
         );

@@ -197,13 +197,60 @@ void main() {
     );
     expect(focusedScale.scale, TvVideoCard.focusedScale);
   });
+
+  testWidgets('escape pops TV search page like remote back key',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TvSearchScreen(
+                        loadSearchData: (_) async => const TvSearchData(
+                          searchHistory: ['庆余年'],
+                          hotWords: ['剑来'],
+                          recommends: [],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('打开搜索页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开搜索页'));
+    await tester.pumpAndSettle();
+
+    final hotWordFocusNode = _focusNodeForText(tester, '剑来');
+    hotWordFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(hotWordFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('打开搜索页'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-search-screen')), findsNothing);
+  });
 }
 
 FocusNode _focusNodeForText(WidgetTester tester, String label) {
   final focusFinder = find.ancestor(
     of: find.text(label),
     matching: find.byWidgetPredicate(
-      (widget) => widget is Focus && widget.focusNode != null,
+      (widget) =>
+          widget is Focus &&
+          widget.focusNode != null &&
+          widget.focusNode!.debugLabel != 'tv-back-handler',
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;

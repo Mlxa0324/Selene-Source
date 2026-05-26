@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
@@ -207,29 +208,33 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: const ValueKey('tv-search-screen'),
-      backgroundColor: const Color(0xFF10131D),
-      body: SafeArea(
-        child: FutureBuilder<TvSearchData>(
-          future: _searchDataFuture,
-          builder: (context, snapshot) {
-            final data = snapshot.data ?? TvSearchData.empty();
-            final isLoading = snapshot.connectionState != ConnectionState.done;
+    return TvBackHandler(
+      autofocus: true,
+      child: Scaffold(
+        key: const ValueKey('tv-search-screen'),
+        backgroundColor: const Color(0xFF10131D),
+        body: SafeArea(
+          child: FutureBuilder<TvSearchData>(
+            future: _searchDataFuture,
+            builder: (context, snapshot) {
+              final data = snapshot.data ?? TvSearchData.empty();
+              final isLoading =
+                  snapshot.connectionState != ConnectionState.done;
 
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: 404,
-                  child: _buildLeftPanel(),
-                ),
-                Expanded(
-                  child: _buildRightPanel(data, isLoading),
-                ),
-              ],
-            );
-          },
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 404,
+                    child: _buildLeftPanel(),
+                  ),
+                  Expanded(
+                    child: _buildRightPanel(data, isLoading),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

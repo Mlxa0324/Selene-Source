@@ -735,7 +735,8 @@ class _TvTextFieldState extends State<_TvTextField> {
       return KeyEventResult.ignored;
     }
     if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter) {
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.space) {
       if (!_isEditing) {
         _startEditing();
         return KeyEventResult.handled;

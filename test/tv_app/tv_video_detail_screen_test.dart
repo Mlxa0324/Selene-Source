@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:selene/models/favorite_item.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 
 void main() {
@@ -168,6 +172,115 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('tv-fullscreen-player')), findsOneWidget);
+  });
+
+  testWidgets('favorite action uses red heart icon when current video is saved',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final cacheService = PageCacheService();
+    cacheService.setCache<List<FavoriteItem>>(
+      'favorites',
+      [
+        FavoriteItem(
+          id: 'main',
+          source: 'test',
+          title: '主影片',
+          sourceName: '测试源',
+          year: '2026',
+          cover: '',
+          totalEpisodes: 2,
+          saveTime: DateTime.now().millisecondsSinceEpoch,
+          origin: '',
+        ),
+      ],
+    );
+    addTearDown(cacheService.clearAllCache);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('已收藏'), findsOneWidget);
+    final heartIcon = tester.widget<Icon>(find.byIcon(LucideIcons.heart));
+    expect(heartIcon.color!.toARGB32(), 0xFFE50914);
+  });
+
+  testWidgets('escape pops TV detail page like remote back key',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TvVideoDetailScreen(
+                        videoInfo: _videoInfo('main', '主影片'),
+                        loadDetail: (_, __) async => TvVideoDetailData(
+                          currentDetail: _searchResult('source_a', '主源'),
+                          sources: [
+                            _searchResult('source_a', '主源'),
+                          ],
+                          recommends: const [],
+                        ),
+                        playerBuilder: (_, __) => Container(
+                          key: const ValueKey(
+                            'tv-detail-player-placeholder',
+                          ),
+                          color: Colors.black,
+                        ),
+                        fullscreenPlayerBuilder: (_, __) => Container(
+                          key: const ValueKey(
+                            'tv-fullscreen-player-placeholder',
+                          ),
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('打开详情页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开详情页'));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.byKey(const ValueKey('tv-detail-player-entry')), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('打开详情页'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-detail-player-entry')), findsNothing);
   });
 }
 

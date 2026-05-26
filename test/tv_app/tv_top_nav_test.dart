@@ -211,7 +211,7 @@ void main() {
     expect(find.byKey(const ValueKey('tv-top-nav-clock')), findsOneWidget);
   });
 
-  testWidgets('moves from live transition tab to quick actions with up key',
+  testWidgets('moves from live tab to quick actions with up key',
       (tester) async {
     int? arrowUpIndex;
 
@@ -273,8 +273,7 @@ void main() {
     expect(_focusNodeForAction(tester, 'search').hasFocus, isTrue);
   });
 
-  testWidgets(
-      'moves from search action back to live transition tab with down key',
+  testWidgets('moves from search action back to live tab with down key',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -310,6 +309,54 @@ void main() {
           backgroundColor: const Color(0xFF0B0D0E),
           body: TvTopNav(
             tabs: const ['首页', '电影', '剧集', '动漫', '综艺', '直播'],
+            selectedIndex: 6,
+            onChanged: (_) {},
+            onSearchPressed: () {},
+            onHistoryPressed: () {},
+            onFavoritesPressed: () {},
+            onSettingsPressed: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final historyButton = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.descendant(
+              of: find.byKey(const ValueKey('tv-top-nav-action-history')),
+              matching: find.text('播放历史'),
+            ),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    final liveTab = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('直播'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+
+    final historyDecoration = historyButton.decoration! as BoxDecoration;
+    final liveDecoration = liveTab.decoration! as BoxDecoration;
+
+    expect(historyDecoration.color, isNot(Colors.transparent));
+    expect(liveDecoration.color, Colors.transparent);
+  });
+
+  testWidgets('live selection highlights only live tab, not history action',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvTopNav(
+            tabs: const ['首页', '电影', '剧集', '动漫', '综艺', '直播'],
             selectedIndex: 5,
             onChanged: (_) {},
             onSearchPressed: () {},
@@ -324,26 +371,74 @@ void main() {
     await tester.pumpAndSettle();
 
     final historyButton = tester.widget<AnimatedContainer>(
-      find.ancestor(
-        of: find.descendant(
-          of: find.byKey(const ValueKey('tv-top-nav-action-history')),
-          matching: find.text('播放历史'),
-        ),
-        matching: find.byType(AnimatedContainer),
-      ).first,
+      find
+          .ancestor(
+            of: find.descendant(
+              of: find.byKey(const ValueKey('tv-top-nav-action-history')),
+              matching: find.text('播放历史'),
+            ),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
     );
     final liveTab = tester.widget<AnimatedContainer>(
-      find.ancestor(
-        of: find.text('直播'),
-        matching: find.byType(AnimatedContainer),
-      ).first,
+      find
+          .ancestor(
+            of: find.text('直播'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
     );
 
     final historyDecoration = historyButton.decoration! as BoxDecoration;
     final liveDecoration = liveTab.decoration! as BoxDecoration;
 
-    expect(historyDecoration.color, isNot(Colors.transparent));
-    expect(liveDecoration.color, Colors.transparent);
+    expect(liveDecoration.color, isNot(Colors.transparent));
+    expect(historyDecoration.color, const Color(0xFF272C30));
+  });
+
+  testWidgets(
+      'redirects focus back to history action instead of live bridge when history page is selected',
+      (tester) async {
+    final outsideFocusNode = FocusNode();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: Column(
+            children: [
+              TvTopNav(
+                tabs: const ['首页', '电影', '剧集', '动漫', '综艺', '直播'],
+                selectedIndex: 6,
+                onChanged: (_) {},
+                onSearchPressed: () {},
+                onHistoryPressed: () {},
+                onFavoritesPressed: () {},
+                onSettingsPressed: () {},
+              ),
+              TextButton(
+                focusNode: outsideFocusNode,
+                onPressed: () {},
+                child: const Text('下方内容'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    outsideFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    _focusNodeForLabel(tester, '直播').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForAction(tester, 'history').hasFocus, isTrue);
+    expect(_focusNodeForLabel(tester, '直播').hasFocus, isFalse);
+
+    outsideFocusNode.dispose();
   });
 
   testWidgets('notifies focused tab index when pressing up on top nav item',

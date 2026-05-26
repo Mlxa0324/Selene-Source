@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
+import 'package:selene/widgets/player_settings_panel.dart';
+import 'package:selene/widgets/video_player_widget.dart';
 
 void main() {
   testWidgets('opens TV player menu with down key and hides unsupported tabs',
@@ -72,6 +74,33 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('备用线路'), findsOneWidget);
+  });
+
+  testWidgets('uses smaller white text in TV player bottom menu',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    final text = tester.widget<Text>(find.text('播放列表'));
+    expect(text.style?.fontSize, 18);
+    expect(text.style?.color, Colors.white);
   });
 
   testWidgets('uses mobile player display mode labels', (tester) async {
@@ -199,6 +228,148 @@ void main() {
     expect(playback.playCount, 1);
   });
 
+  testWidgets('space toggles play pause when TV player menu is hidden',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+
+    expect(playback.pauseCount, 1);
+    expect(playback.playCount, 0);
+  });
+
+  testWidgets('shows paused overlay matching TV playback shell',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(seconds: 17),
+      duration: const Duration(minutes: 45, seconds: 28),
+      playing: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-center-play')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+        findsOneWidget);
+    expect(find.text('00:17'), findsOneWidget);
+    expect(find.text('45:28'), findsOneWidget);
+    expect(find.textContaining('按【菜单键】或【下键】'), findsOneWidget);
+    expect(find.textContaining('提醒：'), findsNothing);
+  });
+
+  testWidgets('places fullscreen top decorations on both top sides',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(seconds: 17),
+      duration: const Duration(minutes: 45, seconds: 28),
+      playing: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final decorationFinder =
+        find.byKey(const ValueKey('tv-fullscreen-top-decorations'));
+    final leftFinder = find.byKey(const ValueKey('tv-fullscreen-top-left'));
+    final rightFinder = find.byKey(const ValueKey('tv-fullscreen-top-right'));
+    final decorationTop = tester.getTopLeft(decorationFinder);
+    final leftTop = tester.getTopLeft(leftFinder);
+    final rightTop = tester.getTopLeft(rightFinder);
+
+    expect(decorationFinder, findsOneWidget);
+    expect(leftFinder, findsOneWidget);
+    expect(rightFinder, findsOneWidget);
+    expect(decorationTop.dy, lessThan(30));
+    expect(leftTop.dy, rightTop.dy);
+    expect(leftTop.dy, lessThan(30));
+    expect(rightTop.dx, greaterThan(leftTop.dx + 300));
+  });
+
+  testWidgets(
+      'does not call setState during build when player controller is created',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, onControllerCreated) {
+            return _SynchronousControllerCreatedProbe(
+              onControllerCreated: onControllerCreated,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pump();
+    final exception = tester.takeException();
+    expect(exception, isNull);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('tv-fullscreen-center-play')),
+        findsOneWidget);
+  });
+
   testWidgets('arrow key seek shows center time overlay when menu is hidden',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
@@ -231,7 +402,8 @@ void main() {
     expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 30)]);
     expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
         findsOneWidget);
-    expect(find.text('35:30 / 1:46:59'), findsOneWidget);
+    expect(find.text('35:30/1:46:59'), findsOneWidget);
+    expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
   });
 
   test('TV fullscreen seek acceleration eases from 5s to 29s', () {
@@ -327,5 +499,107 @@ class _FakeTvFullscreenPlaybackController
   Future<void> seekTo(Duration position) async {
     this.position = position;
     seekPositions.add(position);
+  }
+}
+
+class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
+  _FakeVideoPlayerWidgetController({
+    required this.isPlaying,
+    required this.currentPosition,
+    required this.duration,
+  });
+
+  @override
+  final bool isPlaying;
+
+  @override
+  final Duration? currentPosition;
+
+  @override
+  final Duration? duration;
+
+  @override
+  void addProgressListener(VoidCallback listener) {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  void exitWebFullscreen() {}
+
+  @override
+  bool get isPipMode => false;
+
+  @override
+  double get playbackSpeed => 1.0;
+
+  @override
+  Future<void> pause() async {}
+
+  @override
+  Future<void> play() async {}
+
+  @override
+  void removeProgressListener(VoidCallback listener) {}
+
+  @override
+  Future<void> seekTo(Duration position) async {}
+
+  @override
+  Future<void> setSpeed(double speed) async {}
+
+  @override
+  void setVideoFit(VideoFitType fitType) {}
+
+  @override
+  Future<void> setVolume(double volume) async {}
+
+  @override
+  Future<void> updateDataSource(
+    String url, {
+    Duration? startAt,
+    Map<String, String>? headers,
+  }) async {}
+
+  @override
+  Size? get videoSize => null;
+
+  @override
+  double? get volume => 1.0;
+}
+
+class _SynchronousControllerCreatedProbe extends StatefulWidget {
+  const _SynchronousControllerCreatedProbe({
+    required this.onControllerCreated,
+  });
+
+  final void Function(VideoPlayerWidgetController controller)
+      onControllerCreated;
+
+  @override
+  State<_SynchronousControllerCreatedProbe> createState() =>
+      _SynchronousControllerCreatedProbeState();
+}
+
+class _SynchronousControllerCreatedProbeState
+    extends State<_SynchronousControllerCreatedProbe> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onControllerCreated(
+      _FakeVideoPlayerWidgetController(
+        isPlaying: false,
+        currentPosition: const Duration(seconds: 3),
+        duration: const Duration(minutes: 1),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      key: ValueKey('tv-fullscreen-player-placeholder'),
+      color: Colors.black,
+    );
   }
 }
