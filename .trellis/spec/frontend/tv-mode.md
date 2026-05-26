@@ -103,6 +103,23 @@ typedef TvVideoDetailLoader = Future<TvVideoDetailData> Function(
   VideoInfo videoInfo,
 );
 
+typedef TvVideoInitialSourcesLoader = Future<List<SearchResult>> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+);
+
+typedef TvVideoMoreSourcesLoader = Future<List<SearchResult>> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+  ValueChanged<List<SearchResult>> onIncrementalResults,
+);
+
+typedef TvVideoRecommendsLoader = Future<List<VideoInfo>> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+  SearchResult? currentDetail,
+);
+
 class TvVideoDetailData {
   final SearchResult? currentDetail;
   final List<SearchResult> sources;
@@ -115,7 +132,9 @@ class TvVideoDetailData {
 - `currentDetail` 是当前播放源。
 - `sources` 是可切换播放源。
 - `recommends` 是相关推荐卡片数据。
-- 详情页可注入 `loadDetail` 和 `playerBuilder` 以支持测试。
+- 详情页可注入 `loadDetail`、`loadInitialSources`、`loadMoreSources`、`loadRecommends` 和 `playerBuilder` 以支持测试。
+- 生产加载必须拆成首屏可播源、后台补源和推荐三段；只有测试旧聚合路径时才使用 `loadDetail` 一次性回填。
+- `loadMoreSources` 的 `onIncrementalResults` 一旦回调到首个匹配源，详情页必须立即设置 `currentDetail`、结束首屏转圈并触发内嵌播放器起播，后续完整结果继续去重追加到 `sources`。
 
 ### 3.4 TV 焦点封装
 
@@ -175,6 +194,8 @@ class TvFocusable extends StatefulWidget {
 
 TV 页面左右统一边距当前收敛为 `36px`，供顶部导航、首页横向分区、分类筛选区、纵向 Grid、设置页和详情页共用。纵向 Grid 在 1080p 主场景下固定为 `7` 列，避免不同页面因为可用宽度变化出现列数抖动。
 
+纵向 Grid 需要支持焦点驱动的提前分页：当当前焦点进入底部倒数第二行时，触发下一页加载。加载中、无更多数据或同一批数据已触发过时不能重复请求；新页数据追加后才允许下一次触发。电影、剧集、动漫、综艺分类页使用豆瓣推荐接口的 `page` 参数执行真实分页，并按 `source + id` 去重追加；播放历史和收藏夹当前服务层一次性返回完整列表，暂不伪造分页。
+
 TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，把当前焦点移动到视口偏上的稳定浏览位置。首页横向分区卡片获焦时按区块整体滚动，形成更明显的整行上移效果；播放历史、收藏夹、电影、剧集、动漫、综艺等纵向 Grid，以及详情页、搜索页、设置页中的上下滚动内容，复用 `TvFocusable` 的自动滚动能力。设置页输入框因直接使用 `TextField`，需要单独接入同一套滚动辅助。
 
 纯文字型焦点列表（例如分类筛选项、搜索历史/热词、设置页文字选项）在长按方向键时，必须保留逐项经过的中间选中态，不能直接跳过中间项。实现上允许 `TvFocusable` 对同一文字列表分组启用重复方向键冷却，吞掉过密的 `KeyRepeatEvent`；海报卡片、顶部主导航、播放器菜单等非文字列表保持原有焦点节奏，不强制复用该节流。
@@ -208,7 +229,7 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 操作 | 预期 |
 |------|------|
 | 卡片点击 | 打开 `TvVideoDetailScreen` |
-| 详情加载 | 先精确源详情，再按标题补源 |
+| 详情加载 | 精确源详情与标题补源并行启动；任一任务先拿到可播源就先渲染详情并起播，标题补源结果后续增量追加 |
 | 换源 | 切换 `currentDetail`，选集重置为 0 |
 | 选集 | 更新 `_episodeIndex` 并刷新内嵌播放器 |
 | 换源布局 | 单行横向列表，不使用多行换行布局 |
@@ -219,6 +240,16 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 推荐点击 | `pushReplacement` 到新的 TV 详情页 |
 | 回到顶部 | 当前详情页滚动到顶部 |
 | 返回上一级 | 不显示页面级按钮，直接依赖遥控器返回键 |
+
+TV 详情页加载错误契约：
+
+| 场景 | 预期 |
+|------|------|
+| 精确源详情失败 | 标记精确源加载完成，继续等待标题补源增量结果，不阻塞页面后续起播 |
+| 标题补源失败 | 标记后台补源完成；如果已有精确源则保持播放，如果仍无源则结束首屏转圈并展示空源/空选集状态 |
+| 推荐加载失败 | 仅保持相关推荐为空，不影响播放器和换源列表 |
+| 增量补源重复返回同一 `source + id` | 去重后不重复展示线路 |
+| 旧 `loadDetail` 测试入口 | 只用于兼容既有 widget test；生产默认路径不得等待推荐和全量补源完成后才渲染 |
 
 ### 4.9 TV 全屏播放器契约
 

@@ -9,7 +9,7 @@ import 'package:selene/utils/font_utils.dart';
 /// TV 视频纵向网格。
 ///
 /// 用于播放历史和收藏夹等需要上下滚动浏览的完整列表。
-class TvVideoGrid extends StatelessWidget {
+class TvVideoGrid extends StatefulWidget {
   /// 创建 TV 视频纵向网格。
   ///
   /// [title] 为页面标题。
@@ -22,7 +22,12 @@ class TvVideoGrid extends StatelessWidget {
     this.onVideoPressed,
     this.onVideoFocusChanged,
     this.onArrowUp,
+    this.focusMemoryGroupKey,
+    this.firstItemFocusNode,
     this.isLoading = false,
+    this.isLoadingMore = false,
+    this.hasMore = false,
+    this.onLoadMore,
   });
 
   /// 页面标题。
@@ -44,8 +49,25 @@ class TvVideoGrid extends StatelessWidget {
   /// 分类页用于呼出筛选面板；为空时保持默认焦点导航。
   final VoidCallback? onArrowUp;
 
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
+
+  /// 第一张卡片的外部焦点节点。
+  ///
+  /// 分类页从顶部菜单按下时用它稳定回到首张卡片。
+  final FocusNode? firstItemFocusNode;
+
   /// 是否处于加载状态。
   final bool isLoading;
+
+  /// 是否正在加载下一页。
+  final bool isLoadingMore;
+
+  /// 是否还有下一页数据。
+  final bool hasMore;
+
+  /// 触发加载下一页的回调。
+  final VoidCallback? onLoadMore;
 
   /// Grid 横向间距。
   static const double crossAxisSpacing = 26.0;
@@ -55,6 +77,25 @@ class TvVideoGrid extends StatelessWidget {
 
   /// 焦点放大安全边距，避免首尾列卡片被滚动视口裁剪。
   static const double focusSafePadding = 12.0;
+
+  @override
+  State<TvVideoGrid> createState() => _TvVideoGridState();
+}
+
+class _TvVideoGridState extends State<TvVideoGrid> {
+  /// 最近一次触发加载更多时的列表长度。
+  ///
+  /// 同一批数据里多个倒数第二行卡片连续获焦时，只触发一次分页。
+  int? _lastLoadMoreTriggerLength;
+
+  @override
+  void didUpdateWidget(covariant TvVideoGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videos.length != widget.videos.length ||
+        oldWidget.isLoadingMore && !widget.isLoadingMore && widget.hasMore) {
+      _lastLoadMoreTriggerLength = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,12 +114,14 @@ class TvVideoGrid extends StatelessWidget {
             clipBehavior: Clip.none,
             slivers: [
               _buildTitleSliver(),
-              if (isLoading)
+              if (widget.isLoading)
                 _buildLoadingGrid(crossAxisCount)
-              else if (videos.isEmpty)
+              else if (widget.videos.isEmpty)
                 _buildEmptyState()
-              else
+              else ...[
                 _buildVideoGrid(crossAxisCount),
+                if (widget.isLoadingMore) _buildLoadMoreIndicator(),
+              ],
             ],
           );
         },
@@ -91,13 +134,13 @@ class TvVideoGrid extends StatelessWidget {
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          focusSafePadding,
+          TvVideoGrid.focusSafePadding,
           0,
-          focusSafePadding,
+          TvVideoGrid.focusSafePadding,
           24,
         ),
         child: Text(
-          title,
+          widget.title,
           style: FontUtils.poppins(
             fontSize: 28,
             fontWeight: FontWeight.w700,
@@ -112,17 +155,17 @@ class TvVideoGrid extends StatelessWidget {
   Widget _buildLoadingGrid(int crossAxisCount) {
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(
-        focusSafePadding,
+        TvVideoGrid.focusSafePadding,
         8,
-        focusSafePadding,
+        TvVideoGrid.focusSafePadding,
         64,
       ),
       sliver: SliverGrid(
         key: const ValueKey('tv-video-loading-grid'),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          crossAxisSpacing: crossAxisSpacing,
-          mainAxisSpacing: mainAxisSpacing,
+          crossAxisSpacing: TvVideoGrid.crossAxisSpacing,
+          mainAxisSpacing: TvVideoGrid.mainAxisSpacing,
           mainAxisExtent: TvVideoCard.height,
         ),
         delegate: SliverChildBuilderDelegate(
@@ -148,7 +191,9 @@ class TvVideoGrid extends StatelessWidget {
   /// 构建空状态。
   Widget _buildEmptyState() {
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: focusSafePadding),
+      padding: const EdgeInsets.symmetric(
+        horizontal: TvVideoGrid.focusSafePadding,
+      ),
       sliver: SliverToBoxAdapter(
         child: Container(
           key: const ValueKey('tv-video-grid-empty'),
@@ -177,36 +222,105 @@ class TvVideoGrid extends StatelessWidget {
   Widget _buildVideoGrid(int crossAxisCount) {
     return SliverPadding(
       padding: const EdgeInsets.fromLTRB(
-        focusSafePadding,
+        TvVideoGrid.focusSafePadding,
         8,
-        focusSafePadding,
+        TvVideoGrid.focusSafePadding,
         64,
       ),
       sliver: SliverGrid(
         key: const ValueKey('tv-video-grid'),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          crossAxisSpacing: crossAxisSpacing,
-          mainAxisSpacing: mainAxisSpacing,
+          crossAxisSpacing: TvVideoGrid.crossAxisSpacing,
+          mainAxisSpacing: TvVideoGrid.mainAxisSpacing,
           mainAxisExtent: TvVideoCard.height,
         ),
         delegate: SliverChildBuilderDelegate(
           (context, index) {
-            final videoInfo = videos[index];
+            final videoInfo = widget.videos[index];
             return _TvGridEdgeItem(
               crossAxisCount: crossAxisCount,
               index: index,
-              itemCount: videos.length,
+              itemCount: widget.videos.length,
               videoInfo: videoInfo,
-              onPressed: () => onVideoPressed?.call(videoInfo),
-              onFocusChanged: onVideoFocusChanged,
-              onArrowUp: onArrowUp,
+              focusNode: index == 0 ? widget.firstItemFocusNode : null,
+              onPressed: () => widget.onVideoPressed?.call(videoInfo),
+              onFocusChanged: (hasFocus) {
+                if (hasFocus) {
+                  _tryTriggerLoadMore(index, crossAxisCount);
+                }
+                widget.onVideoFocusChanged?.call(hasFocus);
+              },
+              onArrowUp: widget.onArrowUp,
+              focusMemoryGroupKey:
+                  widget.focusMemoryGroupKey ?? 'tv-grid-${widget.title}',
             );
           },
-          childCount: videos.length,
+          childCount: widget.videos.length,
         ),
       ),
     );
+  }
+
+  /// 构建底部分页加载提示。
+  Widget _buildLoadMoreIndicator() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          TvVideoGrid.focusSafePadding,
+          0,
+          TvVideoGrid.focusSafePadding,
+          46,
+        ),
+        child: Row(
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              '加载更多',
+              style: FontUtils.poppins(
+                fontSize: 14,
+                color: const Color(0xFF98A2A8),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 焦点进入倒数第二行时触发分页加载。
+  void _tryTriggerLoadMore(int index, int crossAxisCount) {
+    if (!widget.hasMore ||
+        widget.isLoading ||
+        widget.isLoadingMore ||
+        widget.onLoadMore == null ||
+        widget.videos.isEmpty) {
+      return;
+    }
+
+    final lastRowIndex = (widget.videos.length - 1) ~/ crossAxisCount;
+    if (lastRowIndex < 2) {
+      return;
+    }
+
+    final rowIndex = index ~/ crossAxisCount;
+    final triggerRowIndex = lastRowIndex - 1;
+    if (rowIndex < triggerRowIndex ||
+        _lastLoadMoreTriggerLength == widget.videos.length) {
+      return;
+    }
+
+    // 当前批次只触发一次，等下一页追加后再允许继续触发。
+    _lastLoadMoreTriggerLength = widget.videos.length;
+    widget.onLoadMore?.call();
   }
 }
 
@@ -218,9 +332,11 @@ class _TvGridEdgeItem extends StatefulWidget {
     required this.index,
     required this.itemCount,
     required this.crossAxisCount,
+    this.focusNode,
     this.onPressed,
     this.onFocusChanged,
     this.onArrowUp,
+    this.focusMemoryGroupKey,
   });
 
   /// 视频展示数据。
@@ -235,6 +351,9 @@ class _TvGridEdgeItem extends StatefulWidget {
   /// 当前网格列数。
   final int crossAxisCount;
 
+  /// 外部焦点节点。
+  final FocusNode? focusNode;
+
   /// 点击回调。
   final VoidCallback? onPressed;
 
@@ -243,6 +362,9 @@ class _TvGridEdgeItem extends StatefulWidget {
 
   /// 上方向键回调。
   final VoidCallback? onArrowUp;
+
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
 
   @override
   State<_TvGridEdgeItem> createState() => _TvGridEdgeItemState();
@@ -279,6 +401,8 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
       key: _edgeShakeKey,
       child: TvVideoCard(
         videoInfo: widget.videoInfo,
+        focusNode: widget.focusNode,
+        focusMemoryGroupKey: widget.focusMemoryGroupKey,
         onPressed: widget.onPressed,
         onFocusChanged: widget.onFocusChanged,
         onArrowLeft: _isLeftEdge ? () => _shake(AxisDirection.left) : null,

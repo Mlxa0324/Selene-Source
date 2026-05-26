@@ -34,6 +34,7 @@ class TvFocusable extends StatefulWidget {
     this.autofocus = false,
     this.autoScrollOnFocus = true,
     this.focusScrollAlignment = TvFocusScroll.defaultAlignment,
+    this.focusMemoryGroupKey,
     this.directionalRepeatThrottleGroupKey,
     this.directionalRepeatThrottleDuration = const Duration(milliseconds: 120),
   });
@@ -71,6 +72,12 @@ class TvFocusable extends StatefulWidget {
   /// 获焦自动滚动时的目标对齐位置。
   final double focusScrollAlignment;
 
+  /// 上下跨列表焦点记忆分组 Key。
+  ///
+  /// 同一个列表内的控件使用相同 Key。上下方向离开当前列表时，会优先回到目标列表
+  /// 最近一次获焦的控件，避免默认焦点系统每次按几何距离跳到列表开头或就近项。
+  final Object? focusMemoryGroupKey;
+
   /// 方向键长按节流分组 Key。
   ///
   /// 纯文字列表长按时，重复方向事件会比焦点动画快很多。
@@ -93,6 +100,14 @@ class _TvFocusableState extends State<TvFocusable> {
   static final Map<Object, _TvDirectionalRepeatState> _directionalRepeatStates =
       <Object, _TvDirectionalRepeatState>{};
 
+  /// TV 焦点记忆分组表。
+  static final Map<Object, Set<_TvFocusableState>> _focusMemoryGroups =
+      <Object, Set<_TvFocusableState>>{};
+
+  /// TV 焦点记忆最后获焦项。
+  static final Map<Object, _TvFocusableState> _lastFocusedByGroup =
+      <Object, _TvFocusableState>{};
+
   /// 内部焦点节点。
   ///
   /// 未传入外部节点时使用，便于测试和焦点定位读取当前 Focus 节点。
@@ -106,11 +121,27 @@ class _TvFocusableState extends State<TvFocusable> {
   /// 当前控件是否获得焦点。
   bool _hasFocus = false;
 
+  /// 当前已注册的焦点记忆分组。
+  Object? _registeredFocusMemoryGroupKey;
+
   /// 当前实际使用的焦点节点。
   FocusNode get _effectiveFocusNode => widget.focusNode ?? _ownedFocusNode;
 
   @override
+  void initState() {
+    super.initState();
+    _syncFocusMemoryRegistration();
+  }
+
+  @override
+  void didUpdateWidget(covariant TvFocusable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncFocusMemoryRegistration();
+  }
+
+  @override
   void dispose() {
+    _unregisterFocusMemory();
     _ownedFocusNode.dispose();
     super.dispose();
   }
@@ -138,6 +169,16 @@ class _TvFocusableState extends State<TvFocusable> {
         widget.onArrowRight != null) {
       widget.onArrowRight?.call();
       return KeyEventResult.handled;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      final memoryResult = _handleFocusMemoryVerticalNavigation(
+        event.logicalKey,
+      );
+      if (memoryResult != null) {
+        return memoryResult;
+      }
     }
 
     if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
@@ -201,11 +242,172 @@ class _TvFocusableState extends State<TvFocusable> {
         logicalKey == LogicalKeyboardKey.arrowDown;
   }
 
+  /// 同步焦点记忆分组注册状态。
+  void _syncFocusMemoryRegistration() {
+    final nextGroupKey = widget.focusMemoryGroupKey;
+    if (_registeredFocusMemoryGroupKey == nextGroupKey) {
+      return;
+    }
+    _unregisterFocusMemory();
+    if (nextGroupKey == null) {
+      return;
+    }
+    _focusMemoryGroups
+        .putIfAbsent(nextGroupKey, () => <_TvFocusableState>{})
+        .add(this);
+    _registeredFocusMemoryGroupKey = nextGroupKey;
+  }
+
+  /// 取消当前焦点记忆分组注册。
+  void _unregisterFocusMemory() {
+    final groupKey = _registeredFocusMemoryGroupKey;
+    if (groupKey == null) {
+      return;
+    }
+    final group = _focusMemoryGroups[groupKey];
+    group?.remove(this);
+    if (group?.isEmpty == true) {
+      _focusMemoryGroups.remove(groupKey);
+    }
+    if (_lastFocusedByGroup[groupKey] == this) {
+      _lastFocusedByGroup.remove(groupKey);
+    }
+    _registeredFocusMemoryGroupKey = null;
+  }
+
+  /// 处理上下方向跨列表时的焦点记忆跳转。
+  KeyEventResult? _handleFocusMemoryVerticalNavigation(LogicalKeyboardKey key) {
+    final currentGroupKey = _registeredFocusMemoryGroupKey;
+    if (currentGroupKey == null) {
+      return null;
+    }
+    final currentRect = _globalRect;
+    if (currentRect == null) {
+      return null;
+    }
+    final direction = key == LogicalKeyboardKey.arrowDown ? 1 : -1;
+
+    // 当前列表在该方向还有可聚焦项时，交给 Flutter 默认焦点系统继续列表内移动。
+    if (_nearestEntryInDirection(
+          entries: _focusMemoryGroups[currentGroupKey] ?? const {},
+          currentRect: currentRect,
+          direction: direction,
+          excludeCurrentGroup: false,
+        ) !=
+        null) {
+      return null;
+    }
+
+    final target = _nearestRememberedGroupEntry(
+      currentGroupKey: currentGroupKey,
+      currentRect: currentRect,
+      direction: direction,
+    );
+    if (target == null) {
+      return null;
+    }
+
+    target._effectiveFocusNode.requestFocus();
+    return KeyEventResult.handled;
+  }
+
+  /// 查找目标方向上最近的其它列表记忆焦点。
+  _TvFocusableState? _nearestRememberedGroupEntry({
+    required Object currentGroupKey,
+    required Rect currentRect,
+    required int direction,
+  }) {
+    final rememberedEntries = <_TvFocusableState>[];
+    for (final entry in _lastFocusedByGroup.entries) {
+      if (entry.key == currentGroupKey) {
+        continue;
+      }
+      rememberedEntries.add(entry.value);
+    }
+
+    return _nearestEntryInDirection(
+      entries: rememberedEntries,
+      currentRect: currentRect,
+      direction: direction,
+      excludeCurrentGroup: true,
+    );
+  }
+
+  /// 查找指定方向上最近的可用焦点项。
+  _TvFocusableState? _nearestEntryInDirection({
+    required Iterable<_TvFocusableState> entries,
+    required Rect currentRect,
+    required int direction,
+    required bool excludeCurrentGroup,
+  }) {
+    _TvFocusableState? bestEntry;
+    double? bestScore;
+    final currentCenter = currentRect.center;
+    for (final entry in entries) {
+      if (entry == this || !entry._isFocusMemoryUsable) {
+        continue;
+      }
+      if (excludeCurrentGroup &&
+          entry._registeredFocusMemoryGroupKey ==
+              _registeredFocusMemoryGroupKey) {
+        continue;
+      }
+      final rect = entry._globalRect;
+      if (rect == null) {
+        continue;
+      }
+      final deltaY = rect.center.dy - currentCenter.dy;
+      final isInDirection = direction > 0 ? deltaY > 8 : deltaY < -8;
+      if (!isInDirection) {
+        continue;
+      }
+      final deltaX = (rect.center.dx - currentCenter.dx).abs();
+      final score = deltaY.abs() * 1000 + deltaX;
+      if (bestScore == null || score < bestScore) {
+        bestScore = score;
+        bestEntry = entry;
+      }
+    }
+    return bestEntry;
+  }
+
+  /// 当前项是否可作为焦点记忆目标。
+  bool get _isFocusMemoryUsable {
+    if (!mounted || !_effectiveFocusNode.canRequestFocus) {
+      return false;
+    }
+    return _globalRect != null;
+  }
+
+  /// 获取当前控件全局位置。
+  Rect? get _globalRect {
+    final targetContext = _scrollTargetKey.currentContext;
+    if (targetContext == null) {
+      return null;
+    }
+    final renderObject = targetContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) {
+      return null;
+    }
+    final size = renderObject.size;
+    if (size.isEmpty) {
+      return null;
+    }
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & size;
+  }
+
   /// 同步真实焦点态。
   void _handleFocusChange(bool hasFocus) {
     setState(() {
       _hasFocus = hasFocus;
     });
+    if (hasFocus) {
+      final groupKey = _registeredFocusMemoryGroupKey;
+      if (groupKey != null) {
+        _lastFocusedByGroup[groupKey] = this;
+      }
+    }
     if (hasFocus && widget.autoScrollOnFocus) {
       final targetContext = _scrollTargetKey.currentContext;
       if (targetContext != null) {

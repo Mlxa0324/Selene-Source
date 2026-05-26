@@ -13,6 +13,7 @@ import 'services/local_mode_storage_service.dart';
 import 'services/subscription_service.dart';
 import 'services/download_service.dart';
 import 'config/player_backend_config.dart';
+import 'widgets/global_back_handler.dart';
 import 'dart:io' show Platform;
 import 'package:macos_window_utils/macos_window_utils.dart';
 import 'package:media_kit/media_kit.dart';
@@ -82,6 +83,10 @@ void main() async {
 class SeleneApp extends StatelessWidget {
   const SeleneApp({super.key});
 
+  /// 根导航器 Key，用于全局 Esc 返回键统一触发路由返回。
+  static final GlobalKey<NavigatorState> _navigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -94,6 +99,7 @@ class SeleneApp extends StatelessWidget {
           return MaterialApp(
             title: 'Selene',
             debugShowCheckedModeBanner: false,
+            navigatorKey: _navigatorKey,
             theme: themeService.lightTheme,
             darkTheme: themeService.darkTheme,
             themeMode: themeService.themeMode,
@@ -102,16 +108,20 @@ class SeleneApp extends StatelessWidget {
               tvBuilder: (_) => const TvAppShell(),
             ),
             builder: (context, child) {
+              Widget content = child!;
               // 为 Windows 平台改善字体渲染
               if (Platform.isWindows) {
-                return MediaQuery(
+                content = MediaQuery(
                   data: MediaQuery.of(context).copyWith(
                     textScaler: const TextScaler.linear(1.0),
                   ),
-                  child: child!,
+                  child: content,
                 );
               }
-              return child!;
+              return GlobalBackHandler(
+                navigatorKey: _navigatorKey,
+                child: content,
+              );
             },
           );
         },

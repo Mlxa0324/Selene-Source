@@ -17,6 +17,39 @@ typedef TvTopNavChanged = void Function(int index);
 /// [index] 为当前获得焦点的导航下标。
 typedef TvTopNavArrowUp = void Function(int index);
 
+/// TV 顶部导航下方向键回调。
+///
+/// [index] 为当前获得焦点的导航下标，返回 true 表示页面已处理焦点移动。
+typedef TvTopNavArrowDown = bool Function(int index);
+
+/// TV 顶部导航控制器。
+///
+/// 用于页面级返回键把焦点显式送回当前选中的顶部入口。
+class TvTopNavController {
+  /// 当前绑定的顶部导航状态。
+  _TvTopNavState? _state;
+
+  /// 顶部导航当前是否持有焦点。
+  bool get hasFocus => _state?._hasAnyTopNavFocus ?? false;
+
+  /// 请求焦点回到当前选中的顶部入口。
+  bool requestSelectedFocus() {
+    return _state?._requestSelectedFocus() ?? false;
+  }
+
+  /// 绑定顶部导航状态。
+  void _attach(_TvTopNavState state) {
+    _state = state;
+  }
+
+  /// 解绑顶部导航状态。
+  void _detach(_TvTopNavState state) {
+    if (_state == state) {
+      _state = null;
+    }
+  }
+}
+
 /// TV 顶部导航快捷操作。
 class TvTopNavAction {
   /// 创建 TV 顶部导航快捷操作。
@@ -58,16 +91,19 @@ class TvTopNav extends StatefulWidget {
   /// [onFavoritesPressed] 为收藏夹快捷入口回调。
   /// [onSettingsPressed] 为设置快捷入口回调。
   /// [onTabArrowUp] 为菜单项获焦后按上方向键回调。
+  /// [onTabArrowDown] 为菜单项获焦后按下方向键回调。
   const TvTopNav({
     super.key,
     required this.tabs,
     required this.selectedIndex,
     required this.onChanged,
+    this.controller,
     this.onSearchPressed,
     this.onHistoryPressed,
     this.onFavoritesPressed,
     this.onSettingsPressed,
     this.onTabArrowUp,
+    this.onTabArrowDown,
   });
 
   /// 导航文案列表。
@@ -78,6 +114,9 @@ class TvTopNav extends StatefulWidget {
 
   /// 导航切换回调。
   final TvTopNavChanged onChanged;
+
+  /// 顶部导航控制器。
+  final TvTopNavController? controller;
 
   /// 搜索入口点击回调。
   final VoidCallback? onSearchPressed;
@@ -93,6 +132,9 @@ class TvTopNav extends StatefulWidget {
 
   /// 菜单项上方向键回调。
   final TvTopNavArrowUp? onTabArrowUp;
+
+  /// 菜单项下方向键回调。
+  final TvTopNavArrowDown? onTabArrowDown;
 
   @override
   State<TvTopNav> createState() => _TvTopNavState();
@@ -134,16 +176,22 @@ class _TvTopNavState extends State<TvTopNav> {
       setState(() => _currentTime = _formatCurrentTime(DateTime.now()));
     });
     _syncFocusableItems();
+    widget.controller?._attach(this);
   }
 
   @override
   void didUpdateWidget(covariant TvTopNav oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncFocusableItems();
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
   }
 
   @override
   void dispose() {
+    widget.controller?._detach(this);
     _clockTimer?.cancel();
     for (final node in _focusNodes) {
       node.dispose();
@@ -219,12 +267,18 @@ class _TvTopNavState extends State<TvTopNav> {
 
   /// 把焦点重定向到当前选中的顶部菜单项。
   void _redirectFocusToSelected() {
+    _requestSelectedFocus();
+  }
+
+  /// 请求焦点回到当前选中的顶部入口。
+  bool _requestSelectedFocus() {
     final target = _selectedFocusTarget;
     if (target == null) {
-      return;
+      return false;
     }
     _redirectingToSelected = true;
     _requestFocusTarget(target);
+    return true;
   }
 
   /// 请求焦点并把目标滚动到可见区域。
@@ -490,6 +544,7 @@ class _TvTopNavState extends State<TvTopNav> {
                       final selected =
                           _isMainTabSelected && index == widget.selectedIndex;
                       final onTabArrowUp = widget.onTabArrowUp;
+                      final onTabArrowDown = widget.onTabArrowDown;
                       final isLiveTab = title == '直播';
 
                       return Padding(
@@ -508,6 +563,16 @@ class _TvTopNavState extends State<TvTopNav> {
                                   : onTabArrowUp == null
                                       ? null
                                       : () => onTabArrowUp(index),
+                          onArrowDown: onTabArrowDown == null
+                              ? null
+                              : () {
+                                  final handled = onTabArrowDown(index);
+                                  if (!handled) {
+                                    _focusNodes[index].focusInDirection(
+                                      TraversalDirection.down,
+                                    );
+                                  }
+                                },
                           builder: (context, hasFocus) {
                             return AnimatedContainer(
                               duration: const Duration(milliseconds: 140),

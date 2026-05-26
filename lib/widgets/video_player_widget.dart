@@ -716,7 +716,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
   }
 
-  Future<void> _initializePlayer() async {
+  Future<void> _initializePlayer({Duration? startAt}) async {
     if (_playerDisposed) {
       return;
     }
@@ -730,14 +730,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             _adapter = _createMediaKitAdapter();
             _setupPlayerListeners();
             _adapter?.updateVideoFit(_getBoxFit());
-            await _openCurrentMedia();
+            await _openCurrentMedia(startAt: startAt);
           } else {
             debugPrint('VideoPlayerWidget: 使用 VideoPlayerAdapter 播放本地文件');
             final controller = vp.VideoPlayerController.file(
               File(_currentUrl!),
             );
             _adapter = VideoPlayerAdapter(controller);
-            controller.initialize().then((_) {
+            controller.initialize().then((_) async {
+              if (startAt != null) {
+                // 首次创建本地播放器时承接外部续播位置。
+                await controller.seekTo(startAt);
+              }
               if (mounted) {
                 _safeSetState(() {
                   _isLoadingVideo = false;
@@ -755,10 +759,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _adapter = _createMediaKitAdapter();
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
-          await _openCurrentMedia();
+          await _openCurrentMedia(startAt: startAt);
         } else {
           _adapter = _createWebViewPlayerAdapter(
             url: _currentUrl!,
+            startAt: startAt,
             logReason:
                 'VideoPlayerWidget: 移动端使用 WebViewPlayerAdapter 播放网络流(含 MediaKit 不支持的 URL)',
           );
@@ -778,6 +783,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         });
         _adapter = _createWebViewPlayerAdapter(
           url: _currentUrl!,
+          startAt: startAt,
           logReason: 'VideoPlayerWidget: 桌面端使用 WebViewPlayerAdapter 播放网络流',
         );
         _setupPlayerListeners();
@@ -790,7 +796,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _adapter = _createMediaKitAdapter();
         _setupPlayerListeners();
         if (_currentUrl != null) {
-          await _openCurrentMedia();
+          await _openCurrentMedia(startAt: startAt);
         }
       }
 
@@ -974,7 +980,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
 
     if (_adapter == null) {
-      await _initializePlayer();
+      await _initializePlayer(startAt: startAt);
       return;
     }
 

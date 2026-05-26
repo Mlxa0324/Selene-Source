@@ -30,6 +30,8 @@ class TvHomeSection extends StatelessWidget {
     this.onMorePressed,
     this.isLoading = false,
     this.scrollController,
+    this.autofocusFirstItem = false,
+    this.firstItemFocusNode,
   });
 
   /// 首页分区最大展示影视数量。
@@ -98,6 +100,12 @@ class TvHomeSection extends StatelessWidget {
   /// 默认由区块内部管理，测试或特殊场景可传入外部控制器。
   final ScrollController? scrollController;
 
+  /// 是否把第一个卡片作为默认内容焦点入口。
+  final bool autofocusFirstItem;
+
+  /// 第一个卡片的外部焦点节点。
+  final FocusNode? firstItemFocusNode;
+
   @override
   Widget build(BuildContext context) {
     return _TvHomeSectionBody(
@@ -107,6 +115,8 @@ class TvHomeSection extends StatelessWidget {
       onMorePressed: onMorePressed,
       isLoading: isLoading,
       scrollController: scrollController,
+      autofocusFirstItem: autofocusFirstItem,
+      firstItemFocusNode: firstItemFocusNode,
     );
   }
 }
@@ -121,6 +131,8 @@ class _TvHomeSectionBody extends StatefulWidget {
     this.onVideoPressed,
     this.onMorePressed,
     this.scrollController,
+    this.autofocusFirstItem = false,
+    this.firstItemFocusNode,
   });
 
   /// 区块标题。
@@ -141,6 +153,12 @@ class _TvHomeSectionBody extends StatefulWidget {
   /// 横向列表滚动控制器。
   final ScrollController? scrollController;
 
+  /// 是否把第一个卡片作为默认内容焦点入口。
+  final bool autofocusFirstItem;
+
+  /// 第一个卡片的外部焦点节点。
+  final FocusNode? firstItemFocusNode;
+
   @override
   State<_TvHomeSectionBody> createState() => _TvHomeSectionBodyState();
 }
@@ -155,6 +173,9 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
   /// 区块内部横向列表控制器。
   late final ScrollController _scrollController =
       widget.scrollController ?? ScrollController();
+
+  /// 当前区块的焦点记忆分组。
+  Object get _focusMemoryGroupKey => 'tv-home-section-${widget.title}';
 
   @override
   void dispose() {
@@ -376,6 +397,9 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
         Widget item;
         if (showMore && index == visibleVideos.length) {
           item = _TvMoreCard(
+            focusMemoryGroupKey: _focusMemoryGroupKey,
+            autofocus: widget.autofocusFirstItem && index == 0,
+            focusNode: index == 0 ? widget.firstItemFocusNode : null,
             onPressed: widget.onMorePressed!,
             onFocusChanged: (hasFocus) =>
                 _handleItemFocusChange(hasFocus, index),
@@ -390,6 +414,9 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
           final videoInfo = visibleVideos[index];
           item = TvVideoCard(
             videoInfo: videoInfo,
+            focusMemoryGroupKey: _focusMemoryGroupKey,
+            autofocus: widget.autofocusFirstItem && index == 0,
+            focusNode: index == 0 ? widget.firstItemFocusNode : null,
             onPressed: () => widget.onVideoPressed?.call(videoInfo),
             onFocusChanged: (hasFocus) =>
                 _handleItemFocusChange(hasFocus, index),
@@ -422,6 +449,9 @@ class _TvMoreCard extends StatelessWidget {
   /// 创建 TV 首页查看更多卡片。
   const _TvMoreCard({
     required this.onPressed,
+    this.focusMemoryGroupKey,
+    this.autofocus = false,
+    this.focusNode,
     this.onFocusChanged,
     this.onArrowLeft,
     this.onArrowRight,
@@ -429,6 +459,15 @@ class _TvMoreCard extends StatelessWidget {
 
   /// 点击回调。
   final VoidCallback onPressed;
+
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
+
+  /// 是否默认获取焦点。
+  final bool autofocus;
+
+  /// 外部焦点节点。
+  final FocusNode? focusNode;
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
@@ -448,6 +487,9 @@ class _TvMoreCard extends StatelessWidget {
       child: Align(
         alignment: Alignment.topCenter,
         child: TvFocusable(
+          focusMemoryGroupKey: focusMemoryGroupKey,
+          autofocus: autofocus,
+          focusNode: focusNode,
           onPressed: onPressed,
           onFocusChanged: onFocusChanged,
           focusScrollAlignment: 0.42,

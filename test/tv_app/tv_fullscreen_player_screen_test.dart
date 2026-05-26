@@ -6,6 +6,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 import 'package:selene/widgets/video_player_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   testWidgets('opens TV player menu with down key and hides unsupported tabs',
@@ -406,6 +407,88 @@ void main() {
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
   });
 
+  testWidgets('center seek overlay uses reference compact width',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 9, seconds: 46),
+      duration: const Duration(minutes: 59, seconds: 11),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    final overlaySize = tester.getSize(
+      find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
+    );
+    expect(overlaySize.width, 272);
+  });
+
+  testWidgets('starts fullscreen player from injected initial position',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    Duration? startPosition;
+    final startPositions = <Duration?>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          initialPlaybackPosition: const Duration(minutes: 9, seconds: 51),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(minutes: 59, seconds: 11),
+                  onUpdateDataSource: (_, {startAt, headers}) async {
+                    startPositions.add(startAt);
+                    startPosition = startAt;
+                  },
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(startPositions, [const Duration(minutes: 9, seconds: 51)]);
+    expect(startPosition, const Duration(minutes: 9, seconds: 51));
+  });
+
   test('TV fullscreen seek acceleration eases from 5s to 29s', () {
     expect(TvFullscreenSeekStep.secondsForElapsed(Duration.zero), 5);
     expect(
@@ -507,6 +590,7 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     required this.isPlaying,
     required this.currentPosition,
     required this.duration,
+    this.onUpdateDataSource,
   });
 
   @override
@@ -517,6 +601,12 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   final Duration? duration;
+
+  final Future<void> Function(
+    String url, {
+    Duration? startAt,
+    Map<String, String>? headers,
+  })? onUpdateDataSource;
 
   @override
   void addProgressListener(VoidCallback listener) {}
@@ -559,7 +649,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     String url, {
     Duration? startAt,
     Map<String, String>? headers,
-  }) async {}
+  }) async {
+    await onUpdateDataSource?.call(url, startAt: startAt, headers: headers);
+  }
 
   @override
   Size? get videoSize => null;

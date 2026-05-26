@@ -866,6 +866,7 @@ class _TvThemeOptionRow extends StatelessWidget {
             final selected = option.key == value;
             return TvFocusable(
               directionalRepeatThrottleGroupKey: 'tv-setting-theme-$label',
+              focusMemoryGroupKey: 'tv-setting-theme-$label',
               onPressed: () => onChanged(option.key),
               builder: (context, hasFocus) {
                 return AnimatedContainer(
@@ -966,6 +967,7 @@ class _TvOptionRow extends StatelessWidget {
             final selected = option == value;
             return TvFocusable(
               directionalRepeatThrottleGroupKey: 'tv-setting-option-$label',
+              focusMemoryGroupKey: 'tv-setting-option-$label',
               onPressed: () => onChanged(option),
               builder: (context, hasFocus) {
                 return AnimatedContainer(

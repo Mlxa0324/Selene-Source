@@ -72,6 +72,71 @@ void main() {
     expect(find.text('热门综艺'), findsOneWidget);
   });
 
+  testWidgets('home top nav down focuses first continue watching card',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+  });
+
+  testWidgets('escape from home list focuses selected home top nav tab',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isFalse);
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+  });
+
   testWidgets('opens search screen from top nav search icon', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -205,7 +270,7 @@ void main() {
             history: const [],
             favorites: const [],
           ),
-          loadCategoryData: (_, __, filters) async {
+          loadCategoryData: (_, __, filters, ___) async {
             final year = filters['年份']?.label ?? '全部';
             return [_videoInfo('movie_filtered', '筛选后 $year')];
           },
@@ -391,6 +456,41 @@ void main() {
     expect(find.byKey(const ValueKey('tv-edge-shake')), findsOneWidget);
   });
 
+  testWidgets('vertical grid loads more when focus reaches second last row',
+      (tester) async {
+    var loadMoreCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvVideoGrid(
+            title: '电影',
+            videos: List.generate(
+              21,
+              (index) => _videoInfo('grid_$index', '电影 $index'),
+            ),
+            hasMore: true,
+            onLoadMore: () => loadMoreCount++,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'grid_0').requestFocus();
+    await tester.pumpAndSettle();
+    expect(loadMoreCount, 0);
+
+    _focusNodeForVideoCard(tester, 'grid_7').requestFocus();
+    await tester.pumpAndSettle();
+    expect(loadMoreCount, 1);
+
+    _focusNodeForVideoCard(tester, 'grid_8').requestFocus();
+    await tester.pumpAndSettle();
+    expect(loadMoreCount, 1);
+  });
+
   testWidgets('category filter rows clip options and keep edge focus',
       (tester) async {
     await tester.pumpWidget(
@@ -436,9 +536,10 @@ void main() {
             history: const [],
             favorites: const [],
           ),
-          loadCategoryData: (_, kind, filters) async {
+          loadCategoryData: (_, kind, filters, page) async {
             queryCount++;
             capturedFilters = Map<String, TvCategoryFilterOption>.from(filters);
+            expect(page, 0);
             return [_videoInfo('movie_filtered', '筛选后电影')];
           },
         ),
@@ -535,6 +636,129 @@ void main() {
     );
   });
 
+  testWidgets('category top nav down focuses first card after filter closes',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              21,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForVideoCard(tester, 'movie_10').requestFocus();
+    await tester.pump();
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump(const Duration(milliseconds: 380));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump(const Duration(milliseconds: 380));
+
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_10').hasFocus, isFalse);
+  });
+
+  testWidgets('escape from category grid focuses selected top nav tab',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              14,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForVideoCard(tester, 'movie_10').requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(_focusNodeForTopNavLabel(tester, '电影').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_10').hasFocus, isFalse);
+  });
+
+  testWidgets('escape from category filter focuses selected top nav tab',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              14,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('tv-category-filter-panel')),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('tv-category-filter-panel')),
+      findsNothing,
+    );
+    expect(_focusNodeForTopNavLabel(tester, '电影').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+  });
+
   testWidgets('focus returns to selected year chip when moving up from grid',
       (tester) async {
     await tester.pumpWidget(
@@ -552,7 +776,7 @@ void main() {
             history: const [],
             favorites: const [],
           ),
-          loadCategoryData: (_, __, filters) async {
+          loadCategoryData: (_, __, filters, ___) async {
             final year = filters['年份']?.label ?? '全部';
             return [_videoInfo('filtered_$year', '筛选后 $year')];
           },
@@ -735,6 +959,57 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('电影 0'), findsOneWidget);
+  });
+
+  testWidgets('category grid appends next page near bottom second last row',
+      (tester) async {
+    final requestedPages = <int>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              21,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+          loadCategoryData: (_, __, ___, page) async {
+            requestedPages.add(page);
+            return List.generate(
+              7,
+              (index) => _videoInfo(
+                'movie_page_${page}_$index',
+                '第$page页电影 $index',
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForVideoCard(tester, 'movie_7').requestFocus();
+    await tester.pump();
+    await tester.pump();
+
+    expect(requestedPages, [1]);
+    final categoryGrid = tester.widget<TvVideoGrid>(
+      find.byType(TvVideoGrid).first,
+    );
+    expect(
+      categoryGrid.videos.map((video) => video.title),
+      contains('第1页电影 0'),
+    );
   });
 }
 

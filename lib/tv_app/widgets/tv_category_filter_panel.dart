@@ -534,6 +534,7 @@ class _TvCategoryFilterRow extends StatelessWidget {
                   key: edgeShakeKey,
                   child: _TvCategoryFilterChip(
                     throttleGroupKey: 'tv-category-filter-row-$title',
+                    focusMemoryGroupKey: 'tv-category-filter-row-$title',
                     label: option.label,
                     selected: isSelected(option),
                     focusNode: option.value == initialFocusOption?.value
@@ -564,6 +565,7 @@ class _TvCategoryFilterChip extends StatelessWidget {
   /// 创建 TV 分类筛选按钮。
   const _TvCategoryFilterChip({
     required this.throttleGroupKey,
+    required this.focusMemoryGroupKey,
     required this.label,
     required this.selected,
     this.focusNode,
@@ -574,6 +576,9 @@ class _TvCategoryFilterChip extends StatelessWidget {
 
   /// 当前行共享的方向键长按节流分组。
   final Object throttleGroupKey;
+
+  /// 上下跨列表焦点记忆分组。
+  final Object focusMemoryGroupKey;
 
   /// 展示文案。
   final String label;
@@ -599,6 +604,7 @@ class _TvCategoryFilterChip extends StatelessWidget {
     return TvFocusable(
       directionalRepeatThrottleGroupKey: throttleGroupKey,
       directionalRepeatThrottleDuration: const Duration(milliseconds: 80),
+      focusMemoryGroupKey: focusMemoryGroupKey,
       focusNode: focusNode,
       onPressed: onPressed,
       onArrowLeft: onArrowLeft,

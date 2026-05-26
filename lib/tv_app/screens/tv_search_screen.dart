@@ -549,6 +549,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           key: edgeShakeKey,
           child: TvVideoCard(
             videoInfo: videoInfo,
+            focusMemoryGroupKey: 'tv-search-recommend-list',
             onPressed: () => _openVideo(videoInfo),
             onArrowLeft: isFirstItem
                 ? () => _handleRecommendEdge(index, AxisDirection.left)
@@ -669,6 +670,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   Widget _buildWordTile(String word) {
     return TvFocusable(
       directionalRepeatThrottleGroupKey: 'tv-search-word-tiles',
+      focusMemoryGroupKey: 'tv-search-word-tiles',
       onPressed: () => _setQuery(word),
       builder: (context, hasFocus) {
         return AnimatedContainer(

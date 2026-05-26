@@ -28,6 +28,7 @@ typedef TvCategoryDataLoader = Future<List<VideoInfo>> Function(
   BuildContext context,
   TvCategoryFilterKind kind,
   Map<String, TvCategoryFilterOption> filters,
+  int page,
 );
 
 /// TV 详情页面构建函数。
@@ -163,8 +164,9 @@ class TvHomeScreen extends StatefulWidget {
     BuildContext context,
     TvCategoryFilterKind kind,
     Map<String, TvCategoryFilterOption> filters,
+    int page,
   ) async {
-    final params = _buildCategoryQueryParams(kind, filters);
+    final params = _buildCategoryQueryParams(kind, filters, page: page);
     final response = await DoubanService.fetchDoubanRecommends(
       context,
       params,
@@ -174,9 +176,8 @@ class TvHomeScreen extends StatefulWidget {
 
   /// 根据 TV 分类筛选项构建豆瓣推荐查询参数。
   static DoubanRecommendsParams _buildCategoryQueryParams(
-    TvCategoryFilterKind kind,
-    Map<String, TvCategoryFilterOption> filters,
-  ) {
+      TvCategoryFilterKind kind, Map<String, TvCategoryFilterOption> filters,
+      {required int page}) {
     final type = _filterLabel(filters, '类型');
     final region = _filterLabel(filters, '地区');
     final year = _filterLabel(filters, '年份');
@@ -191,6 +192,7 @@ class TvHomeScreen extends StatefulWidget {
           year: year,
           sort: sort,
           pageLimit: 30,
+          page: page,
         );
       case TvCategoryFilterKind.series:
         return DoubanRecommendsParams(
@@ -201,6 +203,7 @@ class TvHomeScreen extends StatefulWidget {
           year: year,
           sort: sort,
           pageLimit: 30,
+          page: page,
         );
       case TvCategoryFilterKind.anime:
         return DoubanRecommendsParams(
@@ -211,6 +214,7 @@ class TvHomeScreen extends StatefulWidget {
           year: year,
           sort: sort,
           pageLimit: 30,
+          page: page,
         );
       case TvCategoryFilterKind.variety:
         return DoubanRecommendsParams(
@@ -221,6 +225,7 @@ class TvHomeScreen extends StatefulWidget {
           year: year,
           sort: sort,
           pageLimit: 30,
+          page: page,
         );
     }
   }
@@ -395,6 +400,21 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     duration: _tabSwitchAnimationDuration,
   );
 
+  /// 首页“继续观看”第一个卡片焦点。
+  final FocusNode _continueWatchingFirstFocusNode =
+      FocusNode(debugLabel: 'tv-home-continue-first');
+
+  /// 顶部导航控制器。
+  final TvTopNavController _topNavController = TvTopNavController();
+
+  /// 分类页首张卡片焦点。
+  ///
+  /// 顶部分类菜单按下时直接回到首张卡片，避免默认焦点搜索跳到历史卡片位置。
+  late final Map<TvCategoryFilterKind, FocusNode> _categoryFirstFocusNodes = {
+    for (final kind in TvCategoryFilterKind.values)
+      kind: FocusNode(debugLabel: 'tv-category-first-${kind.name}'),
+  };
+
   /// 首页数据加载任务。
   Future<TvHomeData>? _homeDataFuture;
 
@@ -408,6 +428,21 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 各分类页筛选查询任务。
   final Map<TvCategoryFilterKind, Future<List<VideoInfo>>>
       _categoryDataFutures = {};
+
+  /// 各分类页当前展示数据。
+  final Map<TvCategoryFilterKind, List<VideoInfo>> _categoryVideos = {};
+
+  /// 各分类页下一次要请求的页码。
+  final Map<TvCategoryFilterKind, int> _categoryNextPages = {};
+
+  /// 各分类页是否仍有更多数据。
+  final Map<TvCategoryFilterKind, bool> _categoryHasMore = {};
+
+  /// 各分类页是否正在加载下一页。
+  final Map<TvCategoryFilterKind, bool> _categoryLoadingMore = {};
+
+  /// 各分类页请求序号，用于丢弃过期筛选和分页请求。
+  final Map<TvCategoryFilterKind, int> _categoryRequestSerials = {};
 
   /// 分类筛选面板展开后优先回到的筛选行。
   ///
@@ -430,6 +465,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   @override
   void dispose() {
+    _continueWatchingFirstFocusNode.dispose();
+    for (final node in _categoryFirstFocusNodes.values) {
+      node.dispose();
+    }
     _tabSwitchController
       ..removeStatusListener(_handleTabSwitchStatus)
       ..dispose();
@@ -497,11 +536,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               child: TvTopNav(
                 tabs: _tabs,
                 selectedIndex: _selectedIndex,
+                controller: _topNavController,
                 onSearchPressed: _openSearch,
                 onHistoryPressed: () => _selectTab(6),
                 onFavoritesPressed: () => _selectTab(7),
                 onSettingsPressed: () => _selectTab(8),
                 onTabArrowUp: _handleTopNavArrowUp,
+                onTabArrowDown: _handleTopNavArrowDown,
                 onChanged: _selectTab,
               ),
             ),
@@ -595,47 +636,53 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 构建 TV 首页标签内容。
   Widget _buildHomeTab(TvHomeData data, bool isLoading) {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TvHomeSection(
-            title: '继续观看',
-            videos: data.continueWatching,
-            isLoading: isLoading,
-            onVideoPressed: _openVideoFromRecord,
-            // “继续观看”的“查看更多”进入播放历史页，而不是直播页。
-            onMorePressed: () => _selectTab(6),
-          ),
-          TvHomeSection(
-            title: '热门电影',
-            videos: data.hotMovies,
-            isLoading: isLoading,
-            onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
-            onMorePressed: () => _selectTab(1),
-          ),
-          TvHomeSection(
-            title: '热门剧集',
-            videos: data.hotTvShows,
-            isLoading: isLoading,
-            onVideoPressed: _openVideo,
-            onMorePressed: () => _selectTab(2),
-          ),
-          TvHomeSection(
-            title: '新番放送',
-            videos: data.bangumiCalendar,
-            isLoading: isLoading,
-            onVideoPressed: _openVideo,
-            onMorePressed: () => _selectTab(3),
-          ),
-          TvHomeSection(
-            title: '热门综艺',
-            videos: data.hotShows,
-            isLoading: isLoading,
-            onVideoPressed: _openVideo,
-            onMorePressed: () => _selectTab(4),
-          ),
-        ],
+    return Focus(
+      canRequestFocus: false,
+      onKeyEvent: _handleSelectedTabBackKey,
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TvHomeSection(
+              title: '继续观看',
+              videos: data.continueWatching,
+              isLoading: isLoading,
+              onVideoPressed: _openVideoFromRecord,
+              autofocusFirstItem: true,
+              firstItemFocusNode: _continueWatchingFirstFocusNode,
+              // “继续观看”的“查看更多”进入播放历史页，而不是直播页。
+              onMorePressed: () => _selectTab(6),
+            ),
+            TvHomeSection(
+              title: '热门电影',
+              videos: data.hotMovies,
+              isLoading: isLoading,
+              onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
+              onMorePressed: () => _selectTab(1),
+            ),
+            TvHomeSection(
+              title: '热门剧集',
+              videos: data.hotTvShows,
+              isLoading: isLoading,
+              onVideoPressed: _openVideo,
+              onMorePressed: () => _selectTab(2),
+            ),
+            TvHomeSection(
+              title: '新番放送',
+              videos: data.bangumiCalendar,
+              isLoading: isLoading,
+              onVideoPressed: _openVideo,
+              onMorePressed: () => _selectTab(3),
+            ),
+            TvHomeSection(
+              title: '热门综艺',
+              videos: data.hotShows,
+              isLoading: isLoading,
+              onVideoPressed: _openVideo,
+              onMorePressed: () => _selectTab(4),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -702,6 +749,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           _hideCategoryFilter();
           return KeyEventResult.handled;
         }
+        if (_isBackKey(event.logicalKey) &&
+            !_topNavController.hasFocus &&
+            _topNavController.requestSelectedFocus()) {
+          return KeyEventResult.handled;
+        }
         return KeyEventResult.ignored;
       },
       child: Column(
@@ -737,10 +789,19 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }) {
     final filterFuture = _categoryDataFutures[kind];
     if (filterFuture == null) {
+      final currentVideos = _categoryVideos[kind] ?? videos;
       return TvVideoGrid(
         title: title,
-        videos: videos,
+        videos: currentVideos,
         isLoading: isLoading,
+        isLoadingMore: _categoryLoadingMore[kind] ?? false,
+        hasMore: _categoryHasMore[kind] ?? true,
+        onLoadMore: () => _loadMoreCategoryVideos(
+          kind,
+          seedVideos: currentVideos,
+        ),
+        firstItemFocusNode: _categoryFirstFocusNodes[kind],
+        focusMemoryGroupKey: 'tv-category-grid-${kind.name}',
         onVideoPressed: onVideoPressed,
         onVideoFocusChanged: _handleCategoryGridFocusChanged,
         onArrowUp: _categoryFilterVisible && _categoryFilterCompact
@@ -753,10 +814,20 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       future: filterFuture,
       builder: (context, snapshot) {
         final filterLoading = snapshot.connectionState != ConnectionState.done;
+        final currentVideos =
+            _categoryVideos[kind] ?? snapshot.data ?? const [];
         return TvVideoGrid(
           title: title,
-          videos: snapshot.data ?? <VideoInfo>[],
+          videos: currentVideos,
           isLoading: filterLoading,
+          isLoadingMore: _categoryLoadingMore[kind] ?? false,
+          hasMore: _categoryHasMore[kind] ?? false,
+          onLoadMore: () => _loadMoreCategoryVideos(
+            kind,
+            seedVideos: currentVideos,
+          ),
+          firstItemFocusNode: _categoryFirstFocusNodes[kind],
+          focusMemoryGroupKey: 'tv-category-grid-${kind.name}',
           onVideoPressed: onVideoPressed,
           onVideoFocusChanged: _handleCategoryGridFocusChanged,
           onArrowUp: _categoryFilterVisible && _categoryFilterCompact
@@ -833,16 +904,125 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     );
     currentFilters[rowTitle] = option;
 
-    // 确认筛选后立即发起查询，并用结果刷新下方 Grid。
+    final loader =
+        widget.loadCategoryData ?? TvHomeScreen.defaultLoadCategoryData;
+    final requestSerial = _nextCategoryRequestSerial(kind);
+    final filtersSnapshot =
+        Map<String, TvCategoryFilterOption>.unmodifiable(currentFilters);
+    final firstPageFuture = loader(
+      context,
+      kind,
+      filtersSnapshot,
+      0,
+    );
+
+    // 确认筛选后立即发起第一页查询，并用结果刷新下方 Grid。
     setState(() {
       _categoryFilters[kind] = currentFilters;
-      _categoryDataFutures[kind] =
-          (widget.loadCategoryData ?? TvHomeScreen.defaultLoadCategoryData)(
-        context,
-        kind,
-        Map<String, TvCategoryFilterOption>.unmodifiable(currentFilters),
-      );
+      _categoryDataFutures[kind] = firstPageFuture;
+      _categoryVideos.remove(kind);
+      _categoryNextPages[kind] = 1;
+      _categoryHasMore[kind] = true;
+      _categoryLoadingMore[kind] = false;
     });
+
+    firstPageFuture.then((items) {
+      if (!mounted || !_isCurrentCategoryRequest(kind, requestSerial)) {
+        return;
+      }
+      setState(() {
+        _categoryVideos[kind] = items;
+        _categoryHasMore[kind] = items.isNotEmpty;
+      });
+    }).catchError((_) {
+      if (!mounted || !_isCurrentCategoryRequest(kind, requestSerial)) {
+        return;
+      }
+      setState(() {
+        _categoryVideos[kind] = const <VideoInfo>[];
+        _categoryHasMore[kind] = false;
+      });
+    });
+  }
+
+  /// 加载当前分类页下一页数据。
+  Future<void> _loadMoreCategoryVideos(
+    TvCategoryFilterKind kind, {
+    required List<VideoInfo> seedVideos,
+  }) async {
+    if (_categoryLoadingMore[kind] == true ||
+        (_categoryHasMore[kind] ?? true) == false) {
+      return;
+    }
+
+    final loader =
+        widget.loadCategoryData ?? TvHomeScreen.defaultLoadCategoryData;
+    final filters = Map<String, TvCategoryFilterOption>.unmodifiable(
+      _categoryFilters[kind] ?? const <String, TvCategoryFilterOption>{},
+    );
+    final page = _categoryNextPages[kind] ?? 1;
+    final requestSerial = _categoryRequestSerials[kind] ?? 0;
+
+    setState(() {
+      _categoryVideos[kind] = seedVideos;
+      _categoryLoadingMore[kind] = true;
+    });
+
+    try {
+      final nextItems = await loader(context, kind, filters, page);
+      if (!mounted || !_isCurrentCategoryRequest(kind, requestSerial)) {
+        return;
+      }
+
+      setState(() {
+        final merged = _mergeCategoryVideos(seedVideos, nextItems);
+        _categoryVideos[kind] = merged;
+        _categoryNextPages[kind] = page + 1;
+        _categoryHasMore[kind] = nextItems.isNotEmpty;
+        _categoryLoadingMore[kind] = false;
+      });
+    } catch (_) {
+      if (!mounted || !_isCurrentCategoryRequest(kind, requestSerial)) {
+        return;
+      }
+      setState(() {
+        _categoryHasMore[kind] = false;
+        _categoryLoadingMore[kind] = false;
+      });
+    }
+  }
+
+  /// 合并分类分页数据，避免同一视频重复出现。
+  List<VideoInfo> _mergeCategoryVideos(
+    List<VideoInfo> currentVideos,
+    List<VideoInfo> nextItems,
+  ) {
+    final merged = List<VideoInfo>.of(currentVideos);
+    final seenKeys = merged.map(_categoryVideoKey).toSet();
+    for (final item in nextItems) {
+      // 豆瓣分页偶尔会返回重复条目，追加前按 source + id 去重。
+      if (seenKeys.add(_categoryVideoKey(item))) {
+        merged.add(item);
+      }
+    }
+    return merged;
+  }
+
+  /// 构建分类视频去重键。
+  String _categoryVideoKey(VideoInfo videoInfo) {
+    return '${videoInfo.source}::${videoInfo.id}';
+  }
+
+  /// 生成当前分类页的最新请求序号。
+  int _nextCategoryRequestSerial(TvCategoryFilterKind kind) {
+    final nextSerial = (_categoryRequestSerials[kind] ?? 0) + 1;
+    _categoryRequestSerials[kind] = nextSerial;
+    return nextSerial;
+  }
+
+  /// 判断分类页请求是否仍属于当前筛选条件。
+  bool _isCurrentCategoryRequest(TvCategoryFilterKind kind, int requestSerial) {
+    return requestSerial == (_categoryRequestSerials[kind] ?? 0);
   }
 
   /// 展示分类筛选面板。
@@ -873,6 +1053,40 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     _showCategoryFilter();
   }
 
+  /// 处理顶部菜单项获焦后的下方向键。
+  bool _handleTopNavArrowDown(int index) {
+    if (index == 0) {
+      if (_continueWatchingFirstFocusNode.canRequestFocus) {
+        _continueWatchingFirstFocusNode.requestFocus();
+        return true;
+      }
+      return false;
+    }
+
+    if (!_isCategoryTabIndex(index)) {
+      return false;
+    }
+
+    final kind = _categoryKindForTabIndex(index);
+    final focusNode = kind == null ? null : _categoryFirstFocusNodes[kind];
+    if (focusNode?.canRequestFocus == true) {
+      focusNode!.requestFocus();
+      return true;
+    }
+    return false;
+  }
+
+  /// 根据顶部菜单下标获取分类类型。
+  TvCategoryFilterKind? _categoryKindForTabIndex(int index) {
+    return switch (index) {
+      1 => TvCategoryFilterKind.movie,
+      2 => TvCategoryFilterKind.series,
+      3 => TvCategoryFilterKind.anime,
+      4 => TvCategoryFilterKind.variety,
+      _ => null,
+    };
+  }
+
   /// 判断顶部菜单下标是否为可筛选分类页。
   bool _isCategoryTabIndex(int index) {
     return index >= 1 && index <= 4;
@@ -887,6 +1101,14 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       _categoryFilterVisible = false;
       _categoryFilterCompact = false;
       _categoryFilterPreferredFocusRowTitle = null;
+    });
+
+    // 筛选面板关闭后顶部导航会重新挂载，下一帧再把焦点还给当前分类 Tab。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _topNavController.requestSelectedFocus();
     });
   }
 

@@ -25,6 +25,26 @@ typedef TvVideoDetailLoader = Future<TvVideoDetailData> Function(
   VideoInfo videoInfo,
 );
 
+/// TV 详情页初始可播源加载函数。
+typedef TvVideoInitialSourcesLoader = Future<List<SearchResult>> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+);
+
+/// TV 详情页后台补源加载函数。
+typedef TvVideoMoreSourcesLoader = Future<List<SearchResult>> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+  ValueChanged<List<SearchResult>> onIncrementalResults,
+);
+
+/// TV 详情页推荐加载函数。
+typedef TvVideoRecommendsLoader = Future<List<VideoInfo>> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+  SearchResult? currentDetail,
+);
+
 /// TV 详情页播放器构建函数。
 typedef TvDetailPlayerBuilder = Widget Function(
   BuildContext context,
@@ -60,6 +80,9 @@ class TvVideoDetailScreen extends StatefulWidget {
     required this.videoInfo,
     this.stype,
     this.loadDetail,
+    this.loadInitialSources,
+    this.loadMoreSources,
+    this.loadRecommends,
     this.playerBuilder,
     this.fullscreenPlayerBuilder,
   });
@@ -72,6 +95,15 @@ class TvVideoDetailScreen extends StatefulWidget {
 
   /// 详情加载函数，测试时可注入。
   final TvVideoDetailLoader? loadDetail;
+
+  /// 初始可播源加载函数，测试时可注入。
+  final TvVideoInitialSourcesLoader? loadInitialSources;
+
+  /// 后台补源加载函数，测试时可注入。
+  final TvVideoMoreSourcesLoader? loadMoreSources;
+
+  /// 推荐加载函数，测试时可注入。
+  final TvVideoRecommendsLoader? loadRecommends;
 
   /// 播放器构建函数，测试时可替换。
   final TvDetailPlayerBuilder? playerBuilder;
@@ -87,37 +119,18 @@ class TvVideoDetailScreen extends StatefulWidget {
     BuildContext context,
     VideoInfo videoInfo,
   ) async {
-    final isLocalMode = await UserDataService.getIsLocalMode();
-    final query = videoInfo.searchTitle.trim().isNotEmpty
-        ? videoInfo.searchTitle.trim()
-        : videoInfo.title.trim();
     final sources = <SearchResult>[];
 
-    // 有明确源和 ID 时优先加载对应详情，保证历史/收藏入口命中原源。
-    if (videoInfo.source.isNotEmpty &&
-        videoInfo.id.isNotEmpty &&
-        videoInfo.source != 'douban' &&
-        videoInfo.source != 'bangumi') {
-      final exact = isLocalMode
-          ? await SearchService.getDetailSync(videoInfo.source, videoInfo.id)
-          : await ApiService.fetchSourceDetail(videoInfo.source, videoInfo.id);
-      sources.addAll(exact);
-    }
+    final exact = await defaultLoadInitialSources(context, videoInfo);
+    _addUniqueSources(sources, exact);
 
-    // 继续补全同标题的可用源，作为换源列表。
-    if (query.isNotEmpty) {
-      final searched = isLocalMode
-          ? await SearchService.searchSync(query)
-          : await ApiService.fetchSourcesData(query, allowEarlyReturn: false);
-      for (final source in searched) {
-        final exists = sources.any(
-          (item) => item.source == source.source && item.id == source.id,
-        );
-        if (!exists) {
-          sources.add(source);
-        }
-      }
-    }
+    final searched = await _loadMoreSourcesByQuery(
+      videoInfo,
+      stype: null,
+      onIncrementalResults: (_) {},
+      allowEarlyReturn: false,
+    );
+    _addUniqueSources(sources, searched);
 
     final currentDetail = sources.isNotEmpty ? sources.first : null;
     // 静态加载函数没有 State.mounted，可取消时由 FutureBuilder 丢弃页面结果。
@@ -128,6 +141,34 @@ class TvVideoDetailScreen extends StatefulWidget {
       currentDetail: currentDetail,
       sources: sources,
       recommends: recommends,
+    );
+  }
+
+  /// 默认加载入口视频对应的精确详情。
+  static Future<List<SearchResult>> defaultLoadInitialSources(
+    BuildContext context,
+    VideoInfo videoInfo,
+  ) async {
+    if (!_hasPlayableIdentity(videoInfo)) {
+      return const [];
+    }
+
+    final isLocalMode = await UserDataService.getIsLocalMode();
+    return isLocalMode
+        ? SearchService.getDetailSync(videoInfo.source, videoInfo.id)
+        : ApiService.fetchSourceDetail(videoInfo.source, videoInfo.id);
+  }
+
+  /// 默认按标题后台补全播放源。
+  static Future<List<SearchResult>> defaultLoadMoreSources(
+    BuildContext context,
+    VideoInfo videoInfo,
+    ValueChanged<List<SearchResult>> onIncrementalResults,
+  ) {
+    return _loadMoreSourcesByQuery(
+      videoInfo,
+      stype: null,
+      onIncrementalResults: onIncrementalResults,
     );
   }
 
@@ -151,6 +192,96 @@ class TvVideoDetailScreen extends StatefulWidget {
             .toList() ??
         const [];
   }
+
+  /// 判断入口信息是否能直接请求播放详情。
+  static bool _hasPlayableIdentity(VideoInfo videoInfo) {
+    return videoInfo.source.isNotEmpty &&
+        videoInfo.id.isNotEmpty &&
+        videoInfo.source != 'douban' &&
+        videoInfo.source != 'bangumi';
+  }
+
+  /// 按标题搜索更多源，支持服务器流式增量回调。
+  static Future<List<SearchResult>> _loadMoreSourcesByQuery(
+    VideoInfo videoInfo, {
+    required String? stype,
+    required ValueChanged<List<SearchResult>> onIncrementalResults,
+    bool allowEarlyReturn = true,
+  }) async {
+    final query = videoInfo.searchTitle.trim().isNotEmpty
+        ? videoInfo.searchTitle.trim()
+        : videoInfo.title.trim();
+    if (query.isEmpty) {
+      return const [];
+    }
+
+    List<SearchResult> filterResults(List<SearchResult> results) {
+      return results
+          .where((result) => _matchesSearchResult(videoInfo, stype, result))
+          .toList();
+    }
+
+    final isLocalSearch = await UserDataService.getLocalSearch();
+    final isLocalMode = await UserDataService.getIsLocalMode();
+
+    if (isLocalSearch || isLocalMode) {
+      final results = filterResults(await SearchService.searchSync(query));
+      onIncrementalResults(results);
+      return results;
+    }
+
+    final results = await ApiService.fetchSourcesData(
+      query,
+      onIncrementalResults: (incrementalResults) {
+        onIncrementalResults(filterResults(incrementalResults));
+      },
+      earlyReturnMatcher: (result) =>
+          _matchesSearchResult(videoInfo, stype, result),
+      allowEarlyReturn: allowEarlyReturn,
+    );
+    return filterResults(results);
+  }
+
+  /// 判断搜索结果是否匹配当前影片。
+  static bool _matchesSearchResult(
+    VideoInfo videoInfo,
+    String? stype,
+    SearchResult result,
+  ) {
+    final sourceTitle = result.title.replaceAll(' ', '').toLowerCase();
+    final targetTitle = videoInfo.title.replaceAll(' ', '').toLowerCase();
+    final titleMatch = sourceTitle == targetTitle;
+    final year = videoInfo.year.trim().toLowerCase();
+    final resultYear = result.year.trim().toLowerCase();
+    final yearMatch = year.isEmpty || year == 'unknown' || resultYear == year;
+    var typeMatch = true;
+
+    if (stype == 'tv') {
+      typeMatch = result.episodes.length > 1;
+    } else if (stype == 'movie') {
+      typeMatch = result.episodes.length == 1;
+    }
+
+    return titleMatch && yearMatch && typeMatch;
+  }
+
+  /// 去重追加播放源。
+  static bool _addUniqueSources(
+    List<SearchResult> target,
+    List<SearchResult> incoming,
+  ) {
+    var changed = false;
+    for (final source in incoming) {
+      final exists = target.any(
+        (item) => item.source == source.source && item.id == source.id,
+      );
+      if (!exists) {
+        target.add(source);
+        changed = true;
+      }
+    }
+    return changed;
+  }
 }
 
 class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
@@ -162,9 +293,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 播放器控制器。
   VideoPlayerWidgetController? _playerController;
-
-  /// 详情加载任务。
-  late Future<TvVideoDetailData> _detailFuture;
 
   /// 当前源详情。
   SearchResult? _currentDetail;
@@ -184,17 +312,25 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 当前是否收藏。
   bool _isFavorite = false;
 
-  /// 是否已应用加载结果。
-  bool _appliedDetail = false;
+  /// 首屏详情是否仍在等待可播数据。
+  bool _isInitialDetailLoading = true;
+
+  /// 精确源详情是否加载完成。
+  bool _initialSourcesLoaded = false;
+
+  /// 后台补源是否加载完成。
+  bool _moreSourcesLoaded = false;
+
+  /// 推荐内容是否已经开始加载。
+  bool _hasStartedRecommends = false;
+
+  /// 当前加载批次，避免旧页面异步结果回写。
+  int _loadSerial = 0;
 
   @override
   void initState() {
     super.initState();
-    _detailFuture =
-        (widget.loadDetail ?? TvVideoDetailScreen.defaultLoadDetail)(
-      context,
-      widget.videoInfo,
-    );
+    _startDetailLoading();
     _loadFavoriteState();
   }
 
@@ -203,6 +339,26 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _playerController?.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// 开始详情数据加载。
+  void _startDetailLoading() {
+    final serial = ++_loadSerial;
+    if (_shouldUseLegacyLoader) {
+      unawaited(_loadLegacyDetail(serial));
+      return;
+    }
+
+    unawaited(_loadInitialSources(serial));
+    unawaited(_loadMoreSources(serial));
+  }
+
+  /// 是否使用旧的聚合加载入口。
+  bool get _shouldUseLegacyLoader {
+    return widget.loadDetail != null &&
+        widget.loadInitialSources == null &&
+        widget.loadMoreSources == null &&
+        widget.loadRecommends == null;
   }
 
   /// 加载收藏状态。
@@ -216,16 +372,187 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
   }
 
-  /// 应用详情加载结果。
-  void _applyDetail(TvVideoDetailData data) {
-    if (_appliedDetail) {
+  /// 使用旧聚合加载函数加载详情。
+  Future<void> _loadLegacyDetail(int serial) async {
+    try {
+      final data = await widget.loadDetail!(context, widget.videoInfo);
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+
+      setState(() {
+        _currentDetail = data.currentDetail;
+        _sources = data.sources;
+        _recommends = data.recommends;
+        _isInitialDetailLoading = false;
+        _initialSourcesLoaded = true;
+        _moreSourcesLoaded = true;
+        _hasStartedRecommends = true;
+      });
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _playCurrentEpisode());
+    } catch (error) {
+      debugPrint('TV 详情页聚合加载失败: $error');
+      if (mounted && serial == _loadSerial) {
+        setState(() {
+          _isInitialDetailLoading = false;
+          _initialSourcesLoaded = true;
+          _moreSourcesLoaded = true;
+        });
+      }
+    }
+  }
+
+  /// 加载入口精确源，优先让详情页有可播数据。
+  Future<void> _loadInitialSources(int serial) async {
+    final loader = widget.loadInitialSources ??
+        TvVideoDetailScreen.defaultLoadInitialSources;
+    try {
+      final sources = await loader(context, widget.videoInfo);
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+
+      _mergeSources(sources, preferAsCurrent: true);
+    } catch (error) {
+      debugPrint('TV 详情页精确源加载失败: $error');
+    }
+    _markInitialSourcesLoaded();
+  }
+
+  /// 后台搜索并增量追加其它播放源。
+  Future<void> _loadMoreSources(int serial) async {
+    final loader = widget.loadMoreSources ??
+        (
+          BuildContext context,
+          VideoInfo videoInfo,
+          ValueChanged<List<SearchResult>> onIncrementalResults,
+        ) {
+          return TvVideoDetailScreen._loadMoreSourcesByQuery(
+            videoInfo,
+            stype: widget.stype,
+            onIncrementalResults: onIncrementalResults,
+          );
+        };
+
+    try {
+      final sources = await loader(
+        context,
+        widget.videoInfo,
+        (incrementalResults) {
+          if (!mounted || serial != _loadSerial) {
+            return;
+          }
+          _mergeSources(incrementalResults, preferAsCurrent: false);
+        },
+      );
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+
+      _mergeSources(sources, preferAsCurrent: false);
+    } catch (error) {
+      debugPrint('TV 详情页后台补源失败: $error');
+    }
+    _markMoreSourcesLoaded();
+  }
+
+  /// 标记精确源加载完成。
+  void _markInitialSourcesLoaded() {
+    if (!mounted) {
       return;
     }
-    _currentDetail = data.currentDetail;
-    _sources = data.sources;
-    _recommends = data.recommends;
-    _appliedDetail = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _playCurrentEpisode());
+    setState(() {
+      _initialSourcesLoaded = true;
+      _refreshInitialLoadingState();
+    });
+    _loadRecommendsIfNeeded();
+  }
+
+  /// 标记后台补源加载完成。
+  void _markMoreSourcesLoaded() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _moreSourcesLoaded = true;
+      _refreshInitialLoadingState();
+    });
+    _loadRecommendsIfNeeded(
+      forceWhenEmpty: _initialSourcesLoaded && _currentDetail == null,
+    );
+  }
+
+  /// 合并新播放源并在首次命中时立即起播。
+  void _mergeSources(
+    List<SearchResult> incoming, {
+    required bool preferAsCurrent,
+  }) {
+    if (incoming.isEmpty && _currentDetail != null) {
+      return;
+    }
+
+    var shouldPlay = false;
+    setState(() {
+      final mutableSources = List<SearchResult>.from(_sources);
+      final changed =
+          TvVideoDetailScreen._addUniqueSources(mutableSources, incoming);
+      if (changed) {
+        _sources = List<SearchResult>.unmodifiable(mutableSources);
+      }
+
+      // 首个可播源到达后立刻结束首屏转圈。
+      if (_currentDetail == null && mutableSources.isNotEmpty) {
+        _currentDetail =
+            preferAsCurrent ? incoming.first : mutableSources.first;
+        _episodeIndex = 0;
+        _episodeGroupIndex = 0;
+        shouldPlay = true;
+      }
+
+      _refreshInitialLoadingState();
+    });
+
+    if (shouldPlay) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _playCurrentEpisode());
+    }
+    _loadRecommendsIfNeeded();
+  }
+
+  /// 刷新首屏加载状态。
+  void _refreshInitialLoadingState() {
+    if (_currentDetail != null ||
+        (_initialSourcesLoaded && _moreSourcesLoaded)) {
+      _isInitialDetailLoading = false;
+    }
+  }
+
+  /// 按需加载相关推荐。
+  void _loadRecommendsIfNeeded({bool forceWhenEmpty = false}) {
+    if (_hasStartedRecommends) {
+      return;
+    }
+    if (_currentDetail == null && !forceWhenEmpty) {
+      return;
+    }
+    _hasStartedRecommends = true;
+    unawaited(_loadRecommendsAsync(_loadSerial));
+  }
+
+  /// 异步加载相关推荐。
+  Future<void> _loadRecommendsAsync(int serial) async {
+    final loader = widget.loadRecommends ?? TvVideoDetailScreen._loadRecommends;
+    try {
+      final recommends =
+          await loader(context, widget.videoInfo, _currentDetail);
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+      setState(() => _recommends = recommends);
+    } catch (error) {
+      debugPrint('TV 详情页推荐加载失败: $error');
+    }
   }
 
   /// 播放当前选集。
@@ -330,6 +657,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 进入 TV 专属全屏播放器页。
   void _openFullscreenPlayer() {
+    final controller = _playerController;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => TvFullscreenPlayerScreen(
@@ -338,6 +666,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           sources: _sources,
           stype: widget.stype,
           initialEpisodeIndex: _episodeIndex,
+          initialPlaybackPosition: controller?.currentPosition,
+          initialPlaybackWasPlaying: controller?.isPlaying ?? true,
           playerBuilder: widget.fullscreenPlayerBuilder,
         ),
       ),
@@ -356,53 +686,38 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return TvBackHandler(
-      autofocus: true,
       child: Scaffold(
         backgroundColor: const Color(0xFF0B0D0E),
         body: SafeArea(
-          child: FutureBuilder<TvVideoDetailData>(
-            future: _detailFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return Center(
+          child: _isInitialDetailLoading && _currentDetail == null
+              ? Center(
                   child: CircularProgressIndicator(
                     color: TvTheme.of(context).accent,
                   ),
-                );
-              }
-
-              _applyDetail(snapshot.data ??
-                  const TvVideoDetailData(
-                    currentDetail: null,
-                    sources: [],
-                    recommends: [],
-                  ));
-
-              return SingleChildScrollView(
-                controller: _scrollController,
-                padding: const EdgeInsets.fromLTRB(
-                  TvLayout.pageHorizontalPadding,
-                  38,
-                  TvLayout.pageHorizontalPadding,
-                  56,
+                )
+              : SingleChildScrollView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(
+                    TvLayout.pageHorizontalPadding,
+                    38,
+                    TvLayout.pageHorizontalPadding,
+                    56,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeroArea(),
+                      const SizedBox(height: 30),
+                      _buildSourcesSection(),
+                      const SizedBox(height: 28),
+                      _buildEpisodesSection(),
+                      const SizedBox(height: 34),
+                      _buildRecommendsSection(),
+                      const SizedBox(height: 38),
+                      _buildBottomActions(),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeroArea(),
-                    const SizedBox(height: 30),
-                    _buildSourcesSection(),
-                    const SizedBox(height: 28),
-                    _buildEpisodesSection(),
-                    const SizedBox(height: 34),
-                    _buildRecommendsSection(),
-                    const SizedBox(height: 38),
-                    _buildBottomActions(),
-                  ],
-                ),
-              );
-            },
-          ),
         ),
       ),
     );
@@ -447,6 +762,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 构建播放器区域。
   Widget _buildPlayerBox(SearchResult? detail) {
     return TvFocusable(
+      autofocus: true,
+      autoScrollOnFocus: false,
       onPressed: _openFullscreenPlayer,
       builder: (context, hasFocus) {
         return AnimatedContainer(
@@ -563,14 +880,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             _TvDetailActionButton(
               label: '全屏',
               icon: LucideIcons.maximize2,
+              focusMemoryGroupKey: 'tv-detail-actions',
               onPressed: _openFullscreenPlayer,
             ),
             _TvDetailActionButton(
               label: _isFavorite ? '已收藏' : '收藏',
-              icon: _isFavorite ? LucideIcons.heart : LucideIcons.heartPlus,
-              iconColor: _isFavorite
-                  ? const Color(0xFFE50914)
-                  : const Color(0xFF131A21),
+              icon: LucideIcons.heart,
+              focusMemoryGroupKey: 'tv-detail-actions',
+              iconColor: _isFavorite ? const Color(0xFFE50914) : Colors.white,
               onPressed: _toggleFavorite,
             ),
           ],
@@ -600,6 +917,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   return _TvChoiceChip(
                     label: source.sourceName,
                     selected: selected,
+                    focusMemoryGroupKey: 'tv-detail-source-list',
                     onPressed: () => _switchSource(source),
                   );
                 },
@@ -637,6 +955,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                         return _TvTextChoice(
                           label: _episodeGroupLabel(index, episodes.length),
                           selected: index == groupIndex,
+                          focusMemoryGroupKey: 'tv-detail-episode-group-list',
                           onPressed: () => _switchEpisodeGroup(index),
                           throttleGroupKey: 'tv-detail-episode-group-list',
                         );
@@ -662,6 +981,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                       return _TvChoiceChip(
                         label: title.isEmpty ? '${index + 1}' : title,
                         selected: index == _episodeIndex,
+                        focusMemoryGroupKey: 'tv-detail-episode-list',
                         onPressed: () => _switchEpisode(index),
                       );
                     },
@@ -689,6 +1009,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   final videoInfo = _recommends[index];
                   return TvVideoCard(
                     videoInfo: videoInfo,
+                    focusMemoryGroupKey: 'tv-detail-recommend-list',
                     onPressed: () {
                       Navigator.of(context).pushReplacement(
                         MaterialPageRoute(
@@ -716,6 +1037,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           _TvDetailActionButton(
             label: '回到顶部',
             icon: LucideIcons.arrowUp,
+            focusMemoryGroupKey: 'tv-detail-bottom-actions',
             onPressed: _scrollToTop,
           ),
         ],
@@ -776,6 +1098,7 @@ class _TvDetailActionButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
+    this.focusMemoryGroupKey,
     this.iconColor = Colors.white,
   });
 
@@ -788,12 +1111,17 @@ class _TvDetailActionButton extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
+
   /// 图标颜色。
   final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
     return TvFocusable(
+      focusMemoryGroupKey: focusMemoryGroupKey,
+      autoScrollOnFocus: false,
       onPressed: onPressed,
       builder: (context, hasFocus) {
         return AnimatedContainer(
@@ -838,6 +1166,7 @@ class _TvTextChoice extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onPressed,
+    this.focusMemoryGroupKey,
     this.throttleGroupKey,
   });
 
@@ -850,6 +1179,9 @@ class _TvTextChoice extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
+
   /// 长按方向键节流分组 Key。
   final Object? throttleGroupKey;
 
@@ -859,6 +1191,7 @@ class _TvTextChoice extends StatelessWidget {
     return TvFocusable(
       onPressed: onPressed,
       // 分组切换改成纯文字列表后，需要保留逐项经过的焦点节奏。
+      focusMemoryGroupKey: focusMemoryGroupKey,
       directionalRepeatThrottleGroupKey: throttleGroupKey,
       builder: (context, hasFocus) {
         final highlight = hasFocus || selected;
@@ -892,6 +1225,7 @@ class _TvChoiceChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onPressed,
+    this.focusMemoryGroupKey,
   });
 
   /// 文案。
@@ -903,10 +1237,14 @@ class _TvChoiceChip extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
+
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
     return TvFocusable(
+      focusMemoryGroupKey: focusMemoryGroupKey,
       onPressed: onPressed,
       builder: (context, hasFocus) {
         return AnimatedContainer(

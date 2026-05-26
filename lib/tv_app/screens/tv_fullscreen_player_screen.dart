@@ -82,6 +82,8 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     required this.currentDetail,
     required this.sources,
     this.initialEpisodeIndex = 0,
+    this.initialPlaybackPosition,
+    this.initialPlaybackWasPlaying = true,
     this.stype,
     this.playerBuilder,
     this.playbackController,
@@ -98,6 +100,14 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
 
   /// 初始选集下标。
   final int initialEpisodeIndex;
+
+  /// 初始续播位置。
+  ///
+  /// 从详情页小播放器进入全屏时传入当前播放位置，避免全屏播放器重新从头播。
+  final Duration? initialPlaybackPosition;
+
+  /// 进入全屏前是否正在播放。
+  final bool initialPlaybackWasPlaying;
 
   /// 搜索类型，保留给后续 TV 播放策略使用。
   final String? stype;
@@ -131,9 +141,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前选集下标。
   late int _episodeIndex = _safeInitialEpisodeIndex();
-
-  /// 当前播放地址。
-  String? _playUrl;
 
   /// 当前菜单是否展示。
   bool _menuVisible = false;
@@ -180,6 +187,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 播放地址解析任务序号，避免异步回写旧地址。
   int _loadToken = 0;
 
+  /// 初次加载全屏播放器时需要使用的续播位置。
+  Duration? _pendingInitialPlaybackPosition;
+
+  /// 是否已经应用过初始续播位置。
+  bool _hasAppliedInitialPlaybackPosition = false;
+
+  /// 是否已经把首次播放地址下发给全屏播放器控制器。
+  bool _hasRequestedInitialControllerLoad = false;
+
   /// TV 播放器一级菜单。
   static const List<String> _menuTabs = [
     '播放列表',
@@ -188,6 +204,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     '倍速',
     '其它',
   ];
+
+  /// 中心 seek 提示宽度，对齐参考播放器的紧凑提示框。
+  static const double _seekOverlayWidth = 272;
 
   /// 顶部暂停态操作提示。
   static const String _pausedHintText = '按【菜单键】或【下键】选择集数、线路和播放设置';
@@ -223,6 +242,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   void initState() {
     super.initState();
     _clockText = _formatClock(DateTime.now());
+    _pendingInitialPlaybackPosition =
+        _safeInitialPlaybackPosition(widget.initialPlaybackPosition);
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) {
         return;
@@ -230,6 +251,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       setState(() => _clockText = _formatClock(DateTime.now()));
     });
     _loadCurrentEpisode(updateController: false);
+  }
+
+  /// 过滤非法初始续播位置。
+  Duration? _safeInitialPlaybackPosition(Duration? position) {
+    if (position == null || position <= Duration.zero) {
+      return null;
+    }
+    return position;
   }
 
   @override
@@ -293,7 +322,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Future<void> _loadCurrentEpisode({required bool updateController}) async {
     final token = ++_loadToken;
     if (_episodes.isEmpty) {
-      setState(() => _playUrl = null);
       return;
     }
 
@@ -308,10 +336,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return;
     }
 
-    setState(() => _playUrl = url);
+    // 首次进入全屏时接续详情页小播放器的当前进度，后续换源换集不复用。
+    final startAt = updateController ? _takeInitialPlaybackPosition() : null;
     if (updateController) {
-      await _playerController?.updateDataSource(url);
+      await _playerController?.updateDataSource(url, startAt: startAt);
     }
+  }
+
+  /// 取出一次性初始续播位置。
+  Duration? _takeInitialPlaybackPosition() {
+    if (_hasAppliedInitialPlaybackPosition) {
+      return null;
+    }
+    _hasAppliedInitialPlaybackPosition = true;
+    final position = _pendingInitialPlaybackPosition;
+    _pendingInitialPlaybackPosition = null;
+    return position;
   }
 
   /// 处理全屏播放器键盘和遥控器按键。
@@ -612,14 +652,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Widget _buildPlayer() {
     return widget.playerBuilder?.call(
           context,
-          (controller) {
-            _playerController = controller;
-            _scheduleChromeRefresh();
-          },
+          _handlePlayerControllerCreated,
         ) ??
         VideoPlayerWidget(
           surface: VideoPlayerSurface.desktop,
-          url: _playUrl,
+          // 全屏页需要带 `startAt` 续播，避免 `url` 自动加载路径从 0 秒起播。
+          url: null,
           videoTitle: _title,
           videoYear: _year,
           currentEpisodeIndex: _episodeIndex,
@@ -629,10 +667,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           initialFitType: _fitType,
           isShortDrama: false,
           showControls: false,
-          onControllerCreated: (controller) {
-            _playerController = controller;
-            _scheduleChromeRefresh();
-          },
+          onControllerCreated: _handlePlayerControllerCreated,
           onPlay: () {
             _scheduleChromeRefresh();
           },
@@ -641,6 +676,26 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           },
           onVideoCompleted: () {},
         );
+  }
+
+  /// 记录播放器控制器并执行一次首次续播加载。
+  void _handlePlayerControllerCreated(VideoPlayerWidgetController controller) {
+    _playerController = controller;
+    _scheduleChromeRefresh();
+    if (_hasRequestedInitialControllerLoad) {
+      return;
+    }
+
+    _hasRequestedInitialControllerLoad = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_loadCurrentEpisode(updateController: true));
+      if (!widget.initialPlaybackWasPlaying) {
+        unawaited(controller.pause());
+      }
+    });
   }
 
   /// 构建暂停态顶部和底部的可读性遮罩。
@@ -920,7 +975,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           duration: const Duration(milliseconds: 120),
           child: Container(
             key: const ValueKey('tv-fullscreen-seek-overlay'),
-            width: 244,
+            width: _seekOverlayWidth,
             height: 94,
             decoration: BoxDecoration(
               color: const Color(0xFF10161D).withValues(alpha: 0.80),

@@ -161,4 +161,73 @@ void main() {
     }
     scrollController.dispose();
   });
+
+  testWidgets('restores remembered focus when moving vertically between lists',
+      (tester) async {
+    final upperNode = FocusNode(debugLabel: 'upper');
+    final lowerFirstNode = FocusNode(debugLabel: 'lower-first');
+    final lowerSecondNode = FocusNode(debugLabel: 'lower-second');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  TvFocusable(
+                    focusNode: upperNode,
+                    focusMemoryGroupKey: 'upper-list',
+                    builder: (_, __) => const SizedBox(
+                      width: 80,
+                      height: 60,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
+              Row(
+                children: [
+                  TvFocusable(
+                    focusNode: lowerFirstNode,
+                    focusMemoryGroupKey: 'lower-list',
+                    builder: (_, __) => const SizedBox(
+                      width: 80,
+                      height: 60,
+                    ),
+                  ),
+                  const SizedBox(width: 40),
+                  TvFocusable(
+                    focusNode: lowerSecondNode,
+                    focusMemoryGroupKey: 'lower-list',
+                    builder: (_, __) => const SizedBox(
+                      width: 80,
+                      height: 60,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    lowerSecondNode.requestFocus();
+    await tester.pump();
+    upperNode.requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+
+    expect(lowerSecondNode.hasFocus, isTrue);
+    expect(lowerFirstNode.hasFocus, isFalse);
+
+    upperNode.dispose();
+    lowerFirstNode.dispose();
+    lowerSecondNode.dispose();
+  });
 }

@@ -31,6 +31,7 @@ class TvVideoCard extends StatelessWidget {
     this.autofocus = false,
     this.autoScrollOnFocus = true,
     this.focusScrollAlignment = TvFocusScroll.defaultAlignment,
+    this.focusMemoryGroupKey,
   });
 
   /// 视频展示数据。
@@ -67,6 +68,9 @@ class TvVideoCard extends StatelessWidget {
 
   /// 获焦自动滚动时的目标对齐位置。
   final double focusScrollAlignment;
+
+  /// 上下跨列表焦点记忆分组 Key。
+  final Object? focusMemoryGroupKey;
 
   /// 当前视频数据 ID，用于 TV 测试和焦点定位。
   String get focusKey => 'tv-video-card-focus-${videoInfo.id}';
@@ -106,6 +110,7 @@ class TvVideoCard extends StatelessWidget {
       autofocus: autofocus,
       autoScrollOnFocus: autoScrollOnFocus,
       focusScrollAlignment: focusScrollAlignment,
+      focusMemoryGroupKey: focusMemoryGroupKey,
       onPressed: onPressed,
       onFocusChanged: onFocusChanged,
       onArrowLeft: onArrowLeft,
