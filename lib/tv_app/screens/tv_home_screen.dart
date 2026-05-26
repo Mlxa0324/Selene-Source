@@ -919,6 +919,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     // 确认筛选后立即发起第一页查询，并用结果刷新下方 Grid。
     setState(() {
       _categoryFilters[kind] = currentFilters;
+      _categoryFilterPreferredFocusRowTitle = rowTitle;
       _categoryDataFutures[kind] = firstPageFuture;
       _categoryVideos.remove(kind);
       _categoryNextPages[kind] = 1;
@@ -1128,6 +1129,23 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return;
     }
     _hideCategoryFilter();
+  }
+
+  /// 处理当前标签内容区的返回键。
+  ///
+  /// 首页和分类页列表中按返回键时，只把焦点送回当前选中的顶部导航入口，
+  /// 不自动落到列表首项，也不直接退出页面。
+  KeyEventResult _handleSelectedTabBackKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (!_isBackKey(event.logicalKey) || _topNavController.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    if (_topNavController.requestSelectedFocus()) {
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   /// 判断是否为返回类按键。

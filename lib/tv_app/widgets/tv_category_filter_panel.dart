@@ -121,8 +121,10 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
     12,
   );
 
-  /// 面板首次展示时默认聚焦的筛选项。
-  final FocusNode _initialFocusNode = FocusNode();
+  /// 每个筛选项的稳定焦点节点。
+  ///
+  /// 父级刷新筛选结果时保持当前选中项焦点，避免回退到本行“全部”。
+  final Map<String, FocusNode> _optionFocusNodes = {};
 
   /// 当前面板行数据。
   List<TvCategoryFilterRowData> get _rows =>
@@ -141,19 +143,22 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _initialFocusNode.requestFocus();
+        _selectedOptionFocusNodeFor(_preferredFocusRowTitle).requestFocus();
       }
     });
   }
 
   @override
   void dispose() {
-    _initialFocusNode.dispose();
+    for (final node in _optionFocusNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
   /// 处理筛选项选中。
   void _selectOption(String rowTitle, TvCategoryFilterOption option) {
+    _optionFocusNodeFor(rowTitle, option.value).requestFocus();
     widget.onChanged?.call(rowTitle, option);
   }
 
@@ -176,6 +181,21 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
       ),
     );
     return row.options.first;
+  }
+
+  /// 获取指定筛选项的稳定焦点节点。
+  FocusNode _optionFocusNodeFor(String rowTitle, String optionValue) {
+    final key = '$rowTitle::$optionValue';
+    return _optionFocusNodes.putIfAbsent(
+      key,
+      () => FocusNode(debugLabel: 'tv-filter-$key'),
+    );
+  }
+
+  /// 获取指定行当前选中项的焦点节点。
+  FocusNode _selectedOptionFocusNodeFor(String rowTitle) {
+    final option = _selectedOptionFor(rowTitle);
+    return _optionFocusNodeFor(rowTitle, option.value);
   }
 
   @override
@@ -205,18 +225,33 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final row in rows) ...[
-            _TvCategoryFilterRow(
-              title: row.title,
-              options: row.options,
-              initialFocusOption: row.title == _preferredFocusRowTitle
-                  ? _selectedOptionFor(row.title)
-                  : null,
-              initialFocusNode: row.title == _preferredFocusRowTitle
-                  ? _initialFocusNode
-                  : null,
-              onSelected: (option) => _selectOption(row.title, option),
-              isSelected: (option) => _isSelected(row.title, option),
+          for (final entry in rows.asMap().entries) ...[
+            Builder(
+              builder: (context) {
+                final index = entry.key;
+                final row = entry.value;
+                final previousRowTitle =
+                    index > 0 ? rows[index - 1].title : null;
+                final nextRowTitle =
+                    index + 1 < rows.length ? rows[index + 1].title : null;
+
+                return _TvCategoryFilterRow(
+                  title: row.title,
+                  options: row.options,
+                  optionFocusNodeFor: (option) =>
+                      _optionFocusNodeFor(row.title, option.value),
+                  onArrowUp: previousRowTitle == null
+                      ? null
+                      : () => _selectedOptionFocusNodeFor(previousRowTitle)
+                          .requestFocus(),
+                  onArrowDown: nextRowTitle == null
+                      ? null
+                      : () => _selectedOptionFocusNodeFor(nextRowTitle)
+                          .requestFocus(),
+                  onSelected: (option) => _selectOption(row.title, option),
+                  isSelected: (option) => _isSelected(row.title, option),
+                );
+              },
             ),
             const SizedBox(height: 18),
           ],
@@ -475,8 +510,9 @@ class _TvCategoryFilterRow extends StatelessWidget {
   const _TvCategoryFilterRow({
     required this.title,
     required this.options,
-    this.initialFocusOption,
-    this.initialFocusNode,
+    required this.optionFocusNodeFor,
+    this.onArrowUp,
+    this.onArrowDown,
     required this.onSelected,
     required this.isSelected,
   });
@@ -487,11 +523,14 @@ class _TvCategoryFilterRow extends StatelessWidget {
   /// 当前行选项。
   final List<TvCategoryFilterOption> options;
 
-  /// 当前行首次展开时需要获焦的筛选项。
-  final TvCategoryFilterOption? initialFocusOption;
+  /// 根据筛选项获取稳定焦点节点。
+  final FocusNode Function(TvCategoryFilterOption option) optionFocusNodeFor;
 
-  /// 当前行首次展开时的焦点节点。
-  final FocusNode? initialFocusNode;
+  /// 上方向键行级跳转回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键行级跳转回调。
+  final VoidCallback? onArrowDown;
 
   /// 选中回调。
   final ValueChanged<TvCategoryFilterOption> onSelected;
@@ -534,12 +573,9 @@ class _TvCategoryFilterRow extends StatelessWidget {
                   key: edgeShakeKey,
                   child: _TvCategoryFilterChip(
                     throttleGroupKey: 'tv-category-filter-row-$title',
-                    focusMemoryGroupKey: 'tv-category-filter-row-$title',
                     label: option.label,
                     selected: isSelected(option),
-                    focusNode: option.value == initialFocusOption?.value
-                        ? initialFocusNode
-                        : null,
+                    focusNode: optionFocusNodeFor(option),
                     onPressed: () => onSelected(option),
                     onArrowLeft: isFirstItem
                         ? () =>
@@ -549,6 +585,8 @@ class _TvCategoryFilterRow extends StatelessWidget {
                         ? () => edgeShakeKey.currentState
                             ?.shake(AxisDirection.right)
                         : null,
+                    onArrowUp: onArrowUp,
+                    onArrowDown: onArrowDown,
                   ),
                 );
               },
@@ -565,20 +603,18 @@ class _TvCategoryFilterChip extends StatelessWidget {
   /// 创建 TV 分类筛选按钮。
   const _TvCategoryFilterChip({
     required this.throttleGroupKey,
-    required this.focusMemoryGroupKey,
     required this.label,
     required this.selected,
     this.focusNode,
     required this.onPressed,
     this.onArrowLeft,
     this.onArrowRight,
+    this.onArrowUp,
+    this.onArrowDown,
   });
 
   /// 当前行共享的方向键长按节流分组。
   final Object throttleGroupKey;
-
-  /// 上下跨列表焦点记忆分组。
-  final Object focusMemoryGroupKey;
 
   /// 展示文案。
   final String label;
@@ -598,17 +634,24 @@ class _TvCategoryFilterChip extends StatelessWidget {
   /// 右边界方向键回调。
   final VoidCallback? onArrowRight;
 
+  /// 上方向键行级跳转回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键行级跳转回调。
+  final VoidCallback? onArrowDown;
+
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
     return TvFocusable(
       directionalRepeatThrottleGroupKey: throttleGroupKey,
       directionalRepeatThrottleDuration: const Duration(milliseconds: 80),
-      focusMemoryGroupKey: focusMemoryGroupKey,
       focusNode: focusNode,
       onPressed: onPressed,
       onArrowLeft: onArrowLeft,
       onArrowRight: onArrowRight,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
       builder: (context, hasFocus) {
         return AnimatedScale(
           scale: hasFocus ? 1.06 : 1,

@@ -159,6 +159,9 @@ class _TvTopNavState extends State<TvTopNav> {
   /// 当前是否正在把外部焦点重定向到已选菜单项。
   bool _redirectingToSelected = false;
 
+  /// 最近一次从主菜单进入快捷按钮区的菜单下标。
+  int? _lastActionSourceTabIndex;
+
   /// 当前时间刷新定时器。
   Timer? _clockTimer;
 
@@ -299,11 +302,12 @@ class _TvTopNavState extends State<TvTopNav> {
     });
   }
 
-  /// 从主分类最右侧进入右上角快捷按钮。
-  void _focusFirstAction() {
+  /// 从主分类进入右上角快捷按钮。
+  void _focusFirstAction(int sourceTabIndex) {
     if (_actionFocusNodes.isEmpty || _actionKeys.isEmpty) {
       return;
     }
+    _lastActionSourceTabIndex = sourceTabIndex;
     _navHasFocus = true;
     _requestFocusTarget(
       _TopNavFocusTarget(
@@ -313,16 +317,18 @@ class _TvTopNavState extends State<TvTopNav> {
     );
   }
 
-  /// 从右上角快捷按钮回到直播主菜单项。
-  void _focusLiveTab() {
-    final liveIndex = _liveTabIndex;
-    if (liveIndex == null) {
+  /// 从右上角快捷按钮回到来源主菜单项。
+  void _focusActionSourceTab() {
+    final sourceIndex = _lastActionSourceTabIndex ?? _liveTabIndex;
+    if (sourceIndex == null ||
+        sourceIndex < 0 ||
+        sourceIndex >= _focusNodes.length) {
       return;
     }
     _requestFocusTarget(
       _TopNavFocusTarget(
-        focusNode: _focusNodes[liveIndex],
-        itemKey: _itemKeys[liveIndex],
+        focusNode: _focusNodes[sourceIndex],
+        itemKey: _itemKeys[sourceIndex],
       ),
     );
   }
@@ -506,7 +512,7 @@ class _TvTopNavState extends State<TvTopNav> {
                                   focusNode: _actionFocusNodes[index],
                                   onFocusChanged: _handleActionFocusChange,
                                   onArrowDown:
-                                      index == 0 ? _focusLiveTab : null,
+                                      index == 0 ? _focusActionSourceTab : null,
                                 ),
                               );
                             }).toList(),
@@ -557,9 +563,9 @@ class _TvTopNavState extends State<TvTopNav> {
                               _handleTabFocusChange(index, hasFocus),
                           onPressed: () => widget.onChanged(index),
                           onArrowUp: isLiveTab && actions.isNotEmpty
-                              ? _focusFirstAction
+                              ? () => _focusFirstAction(index)
                               : index == 0 && actions.isNotEmpty
-                                  ? _focusFirstAction
+                                  ? () => _focusFirstAction(index)
                                   : onTabArrowUp == null
                                       ? null
                                       : () => onTabArrowUp(index),

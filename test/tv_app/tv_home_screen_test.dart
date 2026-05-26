@@ -137,6 +137,37 @@ void main() {
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
   });
 
+  testWidgets('quick action down returns to selected tab before home cards',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForAction(tester, 'history').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isFalse);
+  });
+
   testWidgets('opens search screen from top nav search icon', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -738,6 +769,8 @@ void main() {
     await _tapTopNavLabel(tester, '电影');
     await tester.pumpAndSettle();
 
+    _focusNodeForVideoCard(tester, 'movie_0').requestFocus();
+    await tester.pumpAndSettle();
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pump();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -757,6 +790,113 @@ void main() {
     );
     expect(_focusNodeForTopNavLabel(tester, '电影').hasFocus, isTrue);
     expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+  });
+
+  testWidgets('category filter down moves to next filter row before cards',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              14,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForVideoCard(tester, 'movie_0').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(
+      _rowHasFocusedChip(tester, '排序'),
+      isTrue,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_rowHasFocusedChip(tester, '类型'), isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_rowHasFocusedChip(tester, '地区'), isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_rowHasFocusedChip(tester, '年份'), isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+  });
+
+  testWidgets('selected category filter chip keeps focus after refresh',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              14,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+          loadCategoryData: (_, __, filters, ___) async {
+            final region = filters['地区']?.label ?? '全部';
+            return [_videoInfo('filtered_$region', '筛选后 $region')];
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-香港'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    expect(find.text('筛选后 香港'), findsOneWidget);
+    expect(
+      _focusNodeForKey(tester, const ValueKey('tv-filter-chip-香港')).hasFocus,
+      isTrue,
+    );
+    expect(
+      _focusNodeForKey(tester, const ValueKey('tv-filter-chip-全部')).hasFocus,
+      isFalse,
+    );
   });
 
   testWidgets('focus returns to selected year chip when moving up from grid',
@@ -1080,6 +1220,16 @@ FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+bool _rowHasFocusedChip(WidgetTester tester, String rowTitle) {
+  final focusFinder = find.descendant(
+    of: find.byKey(ValueKey('tv-filter-row-$rowTitle')),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Focus && widget.focusNode?.hasFocus == true,
+    ),
+  );
+  return focusFinder.evaluate().isNotEmpty;
 }
 
 FocusNode _focusNodeForFocusableKey(WidgetTester tester, Key key) {

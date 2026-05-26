@@ -273,6 +273,44 @@ void main() {
     expect(_focusNodeForAction(tester, 'search').hasFocus, isTrue);
   });
 
+  testWidgets('search action down returns to home tab after entering from home',
+      (tester) async {
+    var searchPressed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvTopNav(
+            tabs: const ['首页', '电影', '剧集', '动漫', '综艺', '直播'],
+            selectedIndex: 0,
+            onChanged: (_) {},
+            onSearchPressed: () {
+              searchPressed = true;
+            },
+            onHistoryPressed: () {},
+            onFavoritesPressed: () {},
+            onSettingsPressed: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(searchPressed, isTrue);
+    expect(_focusNodeForLabel(tester, '首页').hasFocus, isTrue);
+    expect(_focusNodeForLabel(tester, '直播').hasFocus, isFalse);
+  });
+
   testWidgets('moves from search action back to live tab with down key',
       (tester) async {
     await tester.pumpWidget(
