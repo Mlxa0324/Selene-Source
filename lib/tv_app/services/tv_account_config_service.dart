@@ -72,6 +72,43 @@ class TvAccountConfigService {
     );
   }
 
+  /// 仅保存服务器账号配置。
+  ///
+  /// 当前 TV 首版设置页只保存服务器地址、账号和密码，不立即发起登录。
+  /// 若当前激活账号仍是同一组服务器和用户名，则继续沿用已有 cookies；
+  /// 否则清空 cookies，避免把旧登录态误绑定到新配置上。
+  Future<TvAccountSaveResult> saveCredentials(
+    TvServerCredentials credentials,
+  ) async {
+    if (!credentials.canLogin) {
+      return const TvAccountSaveResult(
+        success: false,
+        message: '请填写服务器地址、账号和密码',
+      );
+    }
+
+    final baseUrl = _normalizeServerUrl(credentials.serverUrl);
+    final currentServerUrl = await UserDataService.getServerUrl() ?? '';
+    final currentUsername = await UserDataService.getUsername() ?? '';
+    final currentCookies = await UserDataService.getCookies() ?? '';
+    final isSameAccount =
+        currentServerUrl.trim().toLowerCase() == baseUrl.toLowerCase() &&
+            currentUsername.trim().toLowerCase() ==
+                credentials.username.trim().toLowerCase();
+
+    await UserDataService.saveUserData(
+      serverUrl: baseUrl,
+      username: credentials.username.trim(),
+      password: credentials.password,
+      cookies: isSameAccount ? currentCookies : '',
+    );
+
+    return const TvAccountSaveResult(
+      success: true,
+      message: '服务器配置已保存',
+    );
+  }
+
   /// 保存服务器账号并登录。
   ///
   /// 登录成功后写入 cookies，并切换为服务器模式。

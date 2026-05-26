@@ -32,6 +32,8 @@ class TvHomeSection extends StatelessWidget {
     this.scrollController,
     this.autofocusFirstItem = false,
     this.firstItemFocusNode,
+    this.onArrowUpFromFirstItem,
+    this.onArrowDownToNextSection,
   });
 
   /// 首页分区最大展示影视数量。
@@ -106,6 +108,12 @@ class TvHomeSection extends StatelessWidget {
   /// 第一个卡片的外部焦点节点。
   final FocusNode? firstItemFocusNode;
 
+  /// 首个卡片按上方向键时的回调。
+  final VoidCallback? onArrowUpFromFirstItem;
+
+  /// 任意卡片按下方向键时进入下一分区的回调。
+  final VoidCallback? onArrowDownToNextSection;
+
   @override
   Widget build(BuildContext context) {
     return _TvHomeSectionBody(
@@ -117,6 +125,8 @@ class TvHomeSection extends StatelessWidget {
       scrollController: scrollController,
       autofocusFirstItem: autofocusFirstItem,
       firstItemFocusNode: firstItemFocusNode,
+      onArrowUpFromFirstItem: onArrowUpFromFirstItem,
+      onArrowDownToNextSection: onArrowDownToNextSection,
     );
   }
 }
@@ -133,6 +143,8 @@ class _TvHomeSectionBody extends StatefulWidget {
     this.scrollController,
     this.autofocusFirstItem = false,
     this.firstItemFocusNode,
+    this.onArrowUpFromFirstItem,
+    this.onArrowDownToNextSection,
   });
 
   /// 区块标题。
@@ -158,6 +170,12 @@ class _TvHomeSectionBody extends StatefulWidget {
 
   /// 第一个卡片的外部焦点节点。
   final FocusNode? firstItemFocusNode;
+
+  /// 首个卡片按上方向键时的回调。
+  final VoidCallback? onArrowUpFromFirstItem;
+
+  /// 任意卡片按下方向键时进入下一分区的回调。
+  final VoidCallback? onArrowDownToNextSection;
 
   @override
   State<_TvHomeSectionBody> createState() => _TvHomeSectionBodyState();
@@ -185,17 +203,19 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
     super.dispose();
   }
 
-  /// 区块失去遥控器焦点时复位横向滚动位置。
-  void _handleFocusChange(bool hasFocus) {
-    if (hasFocus || !_scrollController.hasClients) {
-      return;
-    }
-    _scrollController.jumpTo(0);
-  }
-
   /// 卡片获得焦点时，把当前区块平滑滚动到大屏适合浏览的位置。
   void _handleItemFocusChange(bool hasFocus, int index) {
     if (!hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || TvFocusable.groupHasFocusedChild(_focusMemoryGroupKey)) {
+          return;
+        }
+        // 首页横向分区最后一个焦点离组后，重置入口与滚动位置。
+        TvFocusable.resetGroupEntryToFirstFocusable(_focusMemoryGroupKey);
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
+      });
       return;
     }
 
@@ -277,35 +297,31 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      canRequestFocus: false,
-      onFocusChange: _handleFocusChange,
-      child: Padding(
-        key: _sectionKey,
-        padding: const EdgeInsets.only(bottom: 42),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: TvLayout.pageHorizontalPadding,
-              ),
-              child: Text(
-                widget.title,
-                style: FontUtils.poppins(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+    return Padding(
+      key: _sectionKey,
+      padding: const EdgeInsets.only(bottom: 42),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: TvLayout.pageHorizontalPadding,
+            ),
+            child: Text(
+              widget.title,
+              style: FontUtils.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
               ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: TvVideoCard.height + 42,
-              child: widget.isLoading ? _buildLoadingList() : _buildVideoList(),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: TvVideoCard.height + 42,
+            child: widget.isLoading ? _buildLoadingList() : _buildVideoList(),
+          ),
+        ],
       ),
     );
   }
@@ -409,6 +425,8 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
             onArrowRight: isLastItem
                 ? () => _handleEdge(index, AxisDirection.right)
                 : null,
+            onArrowUp: isFirstItem ? widget.onArrowUpFromFirstItem : null,
+            onArrowDown: widget.onArrowDownToNextSection,
           );
         } else {
           final videoInfo = visibleVideos[index];
@@ -430,6 +448,8 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
             onArrowRight: isLastItem
                 ? () => _handleEdge(index, AxisDirection.right)
                 : null,
+            onArrowUp: isFirstItem ? widget.onArrowUpFromFirstItem : null,
+            onArrowDown: widget.onArrowDownToNextSection,
           );
         }
         return TvEdgeShake(
@@ -453,6 +473,8 @@ class _TvMoreCard extends StatelessWidget {
     this.autofocus = false,
     this.focusNode,
     this.onFocusChanged,
+    this.onArrowUp,
+    this.onArrowDown,
     this.onArrowLeft,
     this.onArrowRight,
   });
@@ -471,6 +493,12 @@ class _TvMoreCard extends StatelessWidget {
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
+
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
 
   /// 左方向键回调。
   final VoidCallback? onArrowLeft;
@@ -493,6 +521,8 @@ class _TvMoreCard extends StatelessWidget {
           onPressed: onPressed,
           onFocusChanged: onFocusChanged,
           focusScrollAlignment: 0.42,
+          onArrowUp: onArrowUp,
+          onArrowDown: onArrowDown,
           onArrowLeft: onArrowLeft,
           onArrowRight: onArrowRight,
           builder: (context, hasFocus) {

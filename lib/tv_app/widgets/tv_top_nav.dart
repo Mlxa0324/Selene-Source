@@ -12,6 +12,11 @@ import 'package:selene/utils/font_utils.dart';
 /// [index] 为新选中的导航下标。
 typedef TvTopNavChanged = void Function(int index);
 
+/// TV 顶部导航确认键回调。
+///
+/// [index] 为当前获得焦点的导航下标，返回 true 表示页面已处理确认行为。
+typedef TvTopNavPressed = bool Function(int index);
+
 /// TV 顶部导航方向键回调。
 ///
 /// [index] 为当前获得焦点的导航下标。
@@ -90,7 +95,8 @@ class TvTopNav extends StatefulWidget {
   /// [onHistoryPressed] 为播放历史快捷入口回调。
   /// [onFavoritesPressed] 为收藏夹快捷入口回调。
   /// [onSettingsPressed] 为设置快捷入口回调。
-  /// [onTabArrowUp] 为菜单项获焦后按上方向键回调。
+  /// [onTabPressed] 为菜单项获焦后按确认键回调。
+  /// [onTabArrowUp] 为菜单项获焦后按上方向键兜底回调。
   /// [onTabArrowDown] 为菜单项获焦后按下方向键回调。
   const TvTopNav({
     super.key,
@@ -102,6 +108,7 @@ class TvTopNav extends StatefulWidget {
     this.onHistoryPressed,
     this.onFavoritesPressed,
     this.onSettingsPressed,
+    this.onTabPressed,
     this.onTabArrowUp,
     this.onTabArrowDown,
   });
@@ -129,6 +136,9 @@ class TvTopNav extends StatefulWidget {
 
   /// 设置快捷入口点击回调。
   final VoidCallback? onSettingsPressed;
+
+  /// 菜单项确认键回调。
+  final TvTopNavPressed? onTabPressed;
 
   /// 菜单项上方向键回调。
   final TvTopNavArrowUp? onTabArrowUp;
@@ -319,7 +329,9 @@ class _TvTopNavState extends State<TvTopNav> {
 
   /// 从右上角快捷按钮回到来源主菜单项。
   void _focusActionSourceTab() {
-    final sourceIndex = _lastActionSourceTabIndex ?? _liveTabIndex;
+    final selectedMainIndex = _isMainTabSelected ? widget.selectedIndex : null;
+    final sourceIndex =
+        _lastActionSourceTabIndex ?? selectedMainIndex ?? _liveTabIndex;
     if (sourceIndex == null ||
         sourceIndex < 0 ||
         sourceIndex >= _focusNodes.length) {
@@ -420,6 +432,15 @@ class _TvTopNavState extends State<TvTopNav> {
     }
   }
 
+  /// 处理顶部菜单项确认键。
+  void _handleTabPressed(int index) {
+    final handled = widget.onTabPressed?.call(index) ?? false;
+    if (handled) {
+      return;
+    }
+    widget.onChanged(index);
+  }
+
   /// 顶部快捷入口列表。
   List<TvTopNavAction> get _actions {
     return [
@@ -511,8 +532,7 @@ class _TvTopNavState extends State<TvTopNav> {
                                   action: action,
                                   focusNode: _actionFocusNodes[index],
                                   onFocusChanged: _handleActionFocusChange,
-                                  onArrowDown:
-                                      index == 0 ? _focusActionSourceTab : null,
+                                  onArrowDown: _focusActionSourceTab,
                                 ),
                               );
                             }).toList(),
@@ -549,9 +569,7 @@ class _TvTopNavState extends State<TvTopNav> {
                       final title = entry.value;
                       final selected =
                           _isMainTabSelected && index == widget.selectedIndex;
-                      final onTabArrowUp = widget.onTabArrowUp;
                       final onTabArrowDown = widget.onTabArrowDown;
-                      final isLiveTab = title == '直播';
 
                       return Padding(
                         key: _itemKeys[index],
@@ -561,14 +579,12 @@ class _TvTopNavState extends State<TvTopNav> {
                           autofocus: index == 0,
                           onFocusChanged: (hasFocus) =>
                               _handleTabFocusChange(index, hasFocus),
-                          onPressed: () => widget.onChanged(index),
-                          onArrowUp: isLiveTab && actions.isNotEmpty
+                          onPressed: () => _handleTabPressed(index),
+                          onArrowUp: actions.isNotEmpty
                               ? () => _focusFirstAction(index)
-                              : index == 0 && actions.isNotEmpty
-                                  ? () => _focusFirstAction(index)
-                                  : onTabArrowUp == null
-                                      ? null
-                                      : () => onTabArrowUp(index),
+                              : widget.onTabArrowUp == null
+                                  ? null
+                                  : () => widget.onTabArrowUp!(index),
                           onArrowDown: onTabArrowDown == null
                               ? null
                               : () {

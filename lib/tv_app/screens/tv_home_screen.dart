@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:selene/models/favorite_item.dart';
-import 'package:selene/models/play_record.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/bangumi_service.dart';
 import 'package:selene/services/douban_service.dart';
 import 'package:selene/services/page_cache_service.dart';
+import 'package:selene/tv_app/screens/tv_favorites_screen.dart';
+import 'package:selene/tv_app/screens/tv_history_screen.dart';
 import 'package:selene/tv_app/screens/tv_live_screen.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/services/tv_video_library_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
@@ -43,6 +44,11 @@ typedef TvDetailPageBuilder = Widget Function(
 ///
 /// 用于测试替换真实搜索页，避免触发搜索页自身的网络和缓存逻辑。
 typedef TvSearchPageBuilder = Widget Function();
+
+/// TV 独立功能页构建函数。
+///
+/// 用于测试替换快捷入口打开的新页面。
+typedef TvStandalonePageBuilder = Widget Function();
 
 /// TV 首页聚合数据。
 ///
@@ -109,6 +115,9 @@ class TvHomeScreen extends StatefulWidget {
     this.loadCategoryData,
     this.buildDetailPage,
     this.buildSearchPage,
+    this.buildHistoryPage,
+    this.buildFavoritesPage,
+    this.buildSettingsPage,
   });
 
   /// 首页数据加载函数。
@@ -123,14 +132,23 @@ class TvHomeScreen extends StatefulWidget {
   /// 搜索页面构建函数。
   final TvSearchPageBuilder? buildSearchPage;
 
+  /// 播放历史页面构建函数。
+  final TvStandalonePageBuilder? buildHistoryPage;
+
+  /// 收藏夹页面构建函数。
+  final TvStandalonePageBuilder? buildFavoritesPage;
+
+  /// 设置页面构建函数。
+  final TvStandalonePageBuilder? buildSettingsPage;
+
   @override
   State<TvHomeScreen> createState() => _TvHomeScreenState();
 
   /// 默认首页数据加载逻辑。
   static Future<TvHomeData> defaultLoadHomeData(BuildContext context) async {
     final cacheService = PageCacheService();
-    final playRecordsFuture = _loadPlayRecords(context, cacheService);
-    final favoritesFuture = _loadFavorites(context, cacheService);
+    final playRecordsFuture = TvVideoLibraryService.loadHistory(context);
+    final favoritesFuture = TvVideoLibraryService.loadFavorites(context);
     final hotMoviesFuture = _loadHotMovies(context, cacheService);
     final hotTvShowsFuture = _loadHotTvShows(context, cacheService);
     final bangumiCalendarFuture = _loadBangumiCalendar(context);
@@ -255,36 +273,6 @@ class TvHomeScreen extends StatefulWidget {
     return option.value;
   }
 
-  /// 加载播放记录。
-  static Future<List<VideoInfo>> _loadPlayRecords(
-    BuildContext context,
-    PageCacheService cacheService,
-  ) async {
-    try {
-      final result = await cacheService.getPlayRecords(context);
-      return (result.data ?? <PlayRecord>[])
-          .map(VideoInfo.fromPlayRecord)
-          .toList();
-    } catch (_) {
-      return <VideoInfo>[];
-    }
-  }
-
-  /// 加载收藏夹。
-  static Future<List<VideoInfo>> _loadFavorites(
-    BuildContext context,
-    PageCacheService cacheService,
-  ) async {
-    try {
-      final result = await cacheService.getFavorites(context);
-      return (result.data ?? <FavoriteItem>[])
-          .map(_favoriteToVideoInfo)
-          .toList();
-    } catch (_) {
-      return <VideoInfo>[];
-    }
-  }
-
   /// 加载热门电影。
   static Future<List<VideoInfo>> _loadHotMovies(
     BuildContext context,
@@ -337,22 +325,6 @@ class TvHomeScreen extends StatefulWidget {
   }
 
   /// 将收藏数据转换为视频卡片数据。
-  static VideoInfo _favoriteToVideoInfo(FavoriteItem item) {
-    return VideoInfo(
-      id: item.id,
-      source: item.source,
-      title: item.title,
-      sourceName: item.sourceName,
-      year: item.year,
-      cover: item.cover,
-      index: 1,
-      totalEpisodes: item.totalEpisodes,
-      playTime: 0,
-      totalTime: 0,
-      saveTime: item.saveTime,
-      searchTitle: item.title,
-    );
-  }
 }
 
 class _TvHomeScreenState extends State<TvHomeScreen>
@@ -403,6 +375,16 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 首页“继续观看”第一个卡片焦点。
   final FocusNode _continueWatchingFirstFocusNode =
       FocusNode(debugLabel: 'tv-home-continue-first');
+
+  /// 首页每个横向分区的首张卡片焦点。
+  final FocusNode _hotMoviesFirstFocusNode =
+      FocusNode(debugLabel: 'tv-home-hot-movies-first');
+  final FocusNode _hotSeriesFirstFocusNode =
+      FocusNode(debugLabel: 'tv-home-hot-series-first');
+  final FocusNode _hotAnimeFirstFocusNode =
+      FocusNode(debugLabel: 'tv-home-hot-anime-first');
+  final FocusNode _hotVarietyFirstFocusNode =
+      FocusNode(debugLabel: 'tv-home-hot-variety-first');
 
   /// 顶部导航控制器。
   final TvTopNavController _topNavController = TvTopNavController();
@@ -466,6 +448,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   @override
   void dispose() {
     _continueWatchingFirstFocusNode.dispose();
+    _hotMoviesFirstFocusNode.dispose();
+    _hotSeriesFirstFocusNode.dispose();
+    _hotAnimeFirstFocusNode.dispose();
+    _hotVarietyFirstFocusNode.dispose();
     for (final node in _categoryFirstFocusNodes.values) {
       node.dispose();
     }
@@ -538,9 +524,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
                 selectedIndex: _selectedIndex,
                 controller: _topNavController,
                 onSearchPressed: _openSearch,
-                onHistoryPressed: () => _selectTab(6),
-                onFavoritesPressed: () => _selectTab(7),
-                onSettingsPressed: () => _selectTab(8),
+                onHistoryPressed: _openHistory,
+                onFavoritesPressed: _openFavorites,
+                onSettingsPressed: _openSettings,
+                onTabPressed: _handleTopNavPressed,
                 onTabArrowUp: _handleTopNavArrowUp,
                 onTabArrowDown: _handleTopNavArrowDown,
                 onChanged: _selectTab,
@@ -622,12 +609,6 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         return _buildVarietyTab(data, isLoading);
       case 5:
         return const TvLiveScreen();
-      case 6:
-        return _buildHistoryTab(data, isLoading);
-      case 7:
-        return _buildFavoritesTab(data, isLoading);
-      case 8:
-        return const TvSettingsScreen();
       case 0:
       default:
         return _buildHomeTab(data, isLoading);
@@ -650,14 +631,22 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               onVideoPressed: _openVideoFromRecord,
               autofocusFirstItem: true,
               firstItemFocusNode: _continueWatchingFirstFocusNode,
-              // “继续观看”的“查看更多”进入播放历史页，而不是直播页。
-              onMorePressed: () => _selectTab(6),
+              onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
+              onArrowDownToNextSection: () =>
+                  _hotMoviesFirstFocusNode.requestFocus(),
+              // “继续观看”的“查看更多”进入独立播放历史页。
+              onMorePressed: _openHistory,
             ),
             TvHomeSection(
               title: '热门电影',
               videos: data.hotMovies,
               isLoading: isLoading,
               onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
+              firstItemFocusNode: _hotMoviesFirstFocusNode,
+              onArrowUpFromFirstItem: () =>
+                  _continueWatchingFirstFocusNode.requestFocus(),
+              onArrowDownToNextSection: () =>
+                  _hotSeriesFirstFocusNode.requestFocus(),
               onMorePressed: () => _selectTab(1),
             ),
             TvHomeSection(
@@ -665,6 +654,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               videos: data.hotTvShows,
               isLoading: isLoading,
               onVideoPressed: _openVideo,
+              firstItemFocusNode: _hotSeriesFirstFocusNode,
+              onArrowUpFromFirstItem: () =>
+                  _hotMoviesFirstFocusNode.requestFocus(),
+              onArrowDownToNextSection: () =>
+                  _hotAnimeFirstFocusNode.requestFocus(),
               onMorePressed: () => _selectTab(2),
             ),
             TvHomeSection(
@@ -672,6 +666,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               videos: data.bangumiCalendar,
               isLoading: isLoading,
               onVideoPressed: _openVideo,
+              firstItemFocusNode: _hotAnimeFirstFocusNode,
+              onArrowUpFromFirstItem: () =>
+                  _hotSeriesFirstFocusNode.requestFocus(),
+              onArrowDownToNextSection: () =>
+                  _hotVarietyFirstFocusNode.requestFocus(),
               onMorePressed: () => _selectTab(3),
             ),
             TvHomeSection(
@@ -679,6 +678,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               videos: data.hotShows,
               isLoading: isLoading,
               onVideoPressed: _openVideo,
+              firstItemFocusNode: _hotVarietyFirstFocusNode,
+              onArrowUpFromFirstItem: () =>
+                  _hotAnimeFirstFocusNode.requestFocus(),
               onMorePressed: () => _selectTab(4),
             ),
           ],
@@ -792,6 +794,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       final currentVideos = _categoryVideos[kind] ?? videos;
       return TvVideoGrid(
         title: title,
+        titleHint: !_categoryFilterVisible ? '按确认键打开分类筛选' : null,
         videos: currentVideos,
         isLoading: isLoading,
         isLoadingMore: _categoryLoadingMore[kind] ?? false,
@@ -818,6 +821,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
             _categoryVideos[kind] ?? snapshot.data ?? const [];
         return TvVideoGrid(
           title: title,
+          titleHint: !_categoryFilterVisible ? '按确认键打开分类筛选' : null,
           videos: currentVideos,
           isLoading: filterLoading,
           isLoadingMore: _categoryLoadingMore[kind] ?? false,
@@ -1048,10 +1052,16 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 处理顶部菜单项获焦后的上方向键。
   void _handleTopNavArrowUp(int index) {
-    if (!_isCategoryTabIndex(index)) {
-      return;
+    // 顶部菜单上键现在统一交给 TvTopNav 过渡到右上角快捷按钮。
+  }
+
+  /// 处理顶部菜单项确认键。
+  bool _handleTopNavPressed(int index) {
+    if (!_isCategoryTabIndex(index) || index != _selectedIndex) {
+      return false;
     }
     _showCategoryFilter();
+    return true;
   }
 
   /// 处理顶部菜单项获焦后的下方向键。
@@ -1153,26 +1163,6 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     return TvBackIntent.isBackKey(key);
   }
 
-  /// 构建播放历史标签内容。
-  Widget _buildHistoryTab(TvHomeData data, bool isLoading) {
-    return TvVideoGrid(
-      title: '播放历史',
-      videos: data.history,
-      isLoading: isLoading,
-      onVideoPressed: _openVideoFromRecord,
-    );
-  }
-
-  /// 构建收藏夹标签内容。
-  Widget _buildFavoritesTab(TvHomeData data, bool isLoading) {
-    return TvVideoGrid(
-      title: '收藏夹',
-      videos: data.favorites,
-      isLoading: isLoading,
-      onVideoPressed: _openVideoFromRecord,
-    );
-  }
-
   /// 按播放记录语义打开视频。
   void _openVideoFromRecord(VideoInfo videoInfo) {
     _openVideo(
@@ -1226,9 +1216,43 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 打开搜索页面。
   void _openSearch() {
     final searchPage = widget.buildSearchPage?.call() ?? const TvSearchScreen();
+    _pushQuickPage(searchPage);
+  }
+
+  /// 打开播放历史页面。
+  void _openHistory() {
+    final historyPage = widget.buildHistoryPage?.call() ??
+        TvHistoryScreen(
+          buildDetailPage: (videoInfo) =>
+              widget.buildDetailPage?.call(videoInfo, null) ??
+              TvVideoDetailScreen(videoInfo: videoInfo),
+        );
+    _pushQuickPage(historyPage);
+  }
+
+  /// 打开收藏夹页面。
+  void _openFavorites() {
+    final favoritesPage = widget.buildFavoritesPage?.call() ??
+        TvFavoritesScreen(
+          buildDetailPage: (videoInfo) =>
+              widget.buildDetailPage?.call(videoInfo, null) ??
+              TvVideoDetailScreen(videoInfo: videoInfo),
+        );
+    _pushQuickPage(favoritesPage);
+  }
+
+  /// 打开设置页面。
+  void _openSettings() {
+    final settingsPage =
+        widget.buildSettingsPage?.call() ?? const TvSettingsScreen();
+    _pushQuickPage(settingsPage);
+  }
+
+  /// 统一打开顶部快捷入口对应的独立页面。
+  void _pushQuickPage(Widget page) {
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => searchPage,
+        pageBuilder: (context, animation, secondaryAnimation) => page,
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

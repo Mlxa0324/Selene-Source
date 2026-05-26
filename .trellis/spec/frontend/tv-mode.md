@@ -31,7 +31,10 @@ lib/tv_app/
 | 文件 | 职责 |
 |------|------|
 | `lib/tv_app/tv_app_shell.dart` | TV 端 App Shell |
-| `lib/tv_app/screens/tv_home_screen.dart` | TV 首页、播放历史、收藏夹、设置入口 |
+| `lib/tv_app/screens/tv_home_screen.dart` | TV 首页与顶部导航快捷入口 |
+| `lib/tv_app/screens/tv_video_library_screen.dart` | TV 独立视频库列表页基座 |
+| `lib/tv_app/screens/tv_history_screen.dart` | TV 播放历史独立页 |
+| `lib/tv_app/screens/tv_favorites_screen.dart` | TV 收藏夹独立页 |
 | `lib/tv_app/screens/tv_live_screen.dart` | TV 直播占位页 |
 | `lib/tv_app/screens/tv_settings_screen.dart` | TV 设置页 |
 | `lib/tv_app/screens/tv_search_screen.dart` | TV 搜索页 |
@@ -154,7 +157,38 @@ class TvFocusable extends StatefulWidget {
 - `onFocusChanged` 处理焦点进入和离开。
 - 顶部导航通过 `onFocusChanged(true)` 直接切换标签页。
 - 顶部导航需要为每个菜单项持有独立 `FocusNode`，用于外部焦点进入时重定向到当前选中项。
-- 顶部导航左侧主菜单承载「首页、电影、剧集、动漫、综艺、直播」；其中「直播」是独立页面，同时保留进入右上角快捷区的焦点过渡能力，不呼出分类筛选。右侧「搜索、播放历史、收藏夹、设置」属于快捷按钮区，使用图标加文字按钮展示。快捷按钮与 `IvyTV` Logo 同处顶部第一行并靠右展示，主分类菜单在下一行，二者上下错开，右侧同时展示当前时间。
+- 顶部导航左侧主菜单承载「首页、电影、剧集、动漫、综艺、直播」；其中「直播」是独立页面，同时保留进入右上角快捷区的焦点过渡能力，不呼出分类筛选。右侧「搜索、播放历史、收藏夹、设置」属于快捷按钮区，使用图标加文字按钮展示。四个快捷入口都必须跳转独立页面，不再复用 `TvHomeScreen` 内嵌 tab。快捷按钮与 `IvyTV` Logo 同处顶部第一行并靠右展示，主分类菜单在下一行，二者上下错开，右侧同时展示当前时间。
+
+### 3.5 TV 播放记录服务
+
+```dart
+class TvPlayRecordService {
+  static bool hasResumeHint(VideoInfo videoInfo);
+  static int episodeIndexFromVideoInfo(VideoInfo videoInfo, int totalEpisodes);
+  static Duration? resumePositionFromVideoInfo(VideoInfo videoInfo);
+  static PlayRecord buildRecord({
+    required VideoInfo videoInfo,
+    required SearchResult detail,
+    required int episodeIndex,
+    required int playTime,
+    required int totalTime,
+    DateTime? now,
+  });
+  static Future<bool> saveRecord(BuildContext context, PlayRecord playRecord);
+  static Future<void> cleanupOtherSourceRecords({
+    required BuildContext context,
+    required SearchResult keepSource,
+    required String searchTitle,
+  });
+}
+```
+
+实现要求：
+
+- TV 详情页和 TV 全屏播放器都必须复用 `TvPlayRecordService` 构建 `PlayRecord`。
+- 继续观看入口使用 `VideoInfo.index` 换算初始集数下标，使用 `VideoInfo.playTime` 作为首次 `updateDataSource(startAt)`。
+- 播放进度上报沿用手机端节流：播放位置小于 1 秒不保存，10 秒内重复进度不重复保存。
+- 换源时必须先保存新源 `PlayRecord`，保存失败不得清理旧源记录；保存成功后才清理同一影片其它源记录，避免网络抖动造成继续观看丢失。
 
 ## 4. Contracts
 
@@ -183,8 +217,8 @@ class TvFocusable extends StatefulWidget {
 | 动漫标签 | `TvHomeData.bangumiCalendar` | 纵向 Grid |
 | 综艺标签 | `TvHomeData.hotShows` | 纵向 Grid |
 | 直播标签 | `TvLiveScreen` | 居中占位页 |
-| 播放历史 | `PageCacheService.getPlayRecords` | 纵向 Grid |
-| 收藏夹 | `PageCacheService.getFavorites` | 纵向 Grid |
+| 播放历史 | `PageCacheService.getPlayRecords` | 独立页纵向 Grid |
+| 收藏夹 | `PageCacheService.getFavorites` | 独立页纵向 Grid |
 
 首页横向列表每个分区最多展示 15 个影视卡片。分区数据超过 15 个时，第 16 个位置展示“查看更多”卡片，宽度等于 `TvVideoCard.width`，高度等于 `TvVideoCard.coverHeight`，点击后切换到对应顶部分类页或播放历史页。
 
@@ -200,7 +234,7 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 
 纯文字型焦点列表（例如分类筛选项、搜索历史/热词、设置页文字选项）在长按方向键时，必须保留逐项经过的中间选中态，不能直接跳过中间项。实现上允许 `TvFocusable` 对同一文字列表分组启用重复方向键冷却，吞掉过密的 `KeyRepeatEvent`；海报卡片、顶部主导航、播放器菜单等非文字列表保持原有焦点节奏，不强制复用该节流。
 
-电影、剧集、动漫、综艺四个分类页只有在顶部导航对应菜单项已获得焦点时，继续按上方向键才呼出 TV 分类筛选面板。直播菜单项不呼出筛选面板，确认键进入独立直播占位页，按上方向键进入右上角搜索快捷入口；搜索快捷入口按下方向键回到直播菜单项，左右方向键不负责主菜单和快捷区的跨区跳转。内容区卡片或 Grid 按上方向键必须先按正常焦点逻辑回到顶部导航，不能直接呼出筛选面板。筛选面板包含排序、类型、地区、年份四行，每行第一个选项必须是「全部」，后续选项使用横向列表展示。每一行横向列表必须裁剪到选项视口内，避免横向滚动时覆盖左侧「排序:」「类型:」等行标题；首尾选项继续按左右方向键必须触发边界抖动并保持当前行焦点，长按左右键不能跳到其它筛选行。确认键选中筛选项后，必须记录当前分类的筛选条件，立即执行对应豆瓣推荐查询，并用查询结果刷新下方 Grid；请求中展示 Grid 骨架，不再继续显示旧列表。面板呼出时顶部导航淡出并收起，筛选面板从顶部缓慢下滑展开，Grid 留在正常布局流中被面板向下顶开，不能遮住卡片。筛选面板必须使用半透黑色背景遮罩，避免滚动卡片和筛选项文字重叠。面板呼出后焦点默认落到第一行「全部」，便于继续用左右方向键选择筛选项。返回键必须先关闭筛选面板并恢复顶部导航。播放历史和收藏夹不接入该筛选面板，继续保持原有纵向 Grid 行为。
+电影、剧集、动漫、综艺四个分类页只有在顶部导航对应菜单项已获得焦点时，按确认键才呼出 TV 分类筛选面板。对应分类页标题右侧需要提供一条弱提示文案，例如“按确认键打开分类筛选”，帮助用户理解入口，但提示字号和颜色都要克制，不能压过页面标题。直播菜单项不呼出筛选面板，确认键进入独立直播占位页；主菜单所有项按上方向键都进入右上角搜索快捷入口。右上快捷入口按下方向键必须回到进入快捷区前的来源主菜单项，没有来源记忆时才回直播兜底，左右方向键不负责主菜单和快捷区的跨区跳转。内容区卡片或 Grid 按上方向键必须先按正常焦点逻辑回到顶部导航，不能直接呼出筛选面板。筛选面板包含排序、类型、地区、年份四行，每行第一个选项必须是「全部」，后续选项使用横向列表展示。每一行横向列表必须裁剪到选项视口内，避免横向滚动时覆盖左侧「排序:」「类型:」等行标题；首尾选项继续按左右方向键必须触发边界抖动并保持当前行焦点，长按左右键不能跳到其它筛选行。确认键选中筛选项后，必须记录当前分类的筛选条件，立即执行对应豆瓣推荐查询，并用查询结果刷新下方 Grid；请求中展示 Grid 骨架，不再继续显示旧列表。面板呼出时顶部导航淡出并收起，筛选面板从顶部缓慢下滑展开，Grid 留在正常布局流中被面板向下顶开，不能遮住卡片。面板呼出后标题提示文案需要随筛选面板一起隐藏，避免和筛选区内容重复。筛选面板必须使用半透黑色背景遮罩，避免滚动卡片和筛选项文字重叠。面板呼出后焦点默认落到第一行「全部」，便于继续用左右方向键选择筛选项。返回键必须先关闭筛选面板并恢复顶部导航。播放历史和收藏夹不接入该筛选面板，继续保持原有纵向 Grid 行为。
 
 分类筛选面板需要支持两种展示态：焦点停留在顶部筛选区时展示完整四行展开态；焦点下移到分类 Grid 浏览内容时，同一块区域自动切换成更紧凑的一行摘要态，仅保留当前排序、类型、地区、年份结果，给下方列表释放更多高度。摘要态下 Grid 首行卡片继续按上方向键时，必须先把筛选区恢复为完整展开态，再按既有焦点逻辑回到顶部。展开态的行高、按钮高度、字号和间距需要比初版更紧凑，保证筛选区整体高度收敛。
 
@@ -230,12 +264,16 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 |------|------|
 | 卡片点击 | 打开 `TvVideoDetailScreen` |
 | 详情加载 | 精确源详情与标题补源并行启动；任一任务先拿到可播源就先渲染详情并起播，标题补源结果后续增量追加 |
-| 换源 | 切换 `currentDetail`，选集重置为 0 |
+| 顶部说明 | 顶部展示 `IvyTV` 与 `按返回键返回上一页 | 全屏时向下键可进行播放设置（倍数，其它）`，不得出现「内核」相关字样 |
+| 顶部快捷 | 顶部右侧展示搜索按钮和当前系统时间；搜索按钮打开 `TvSearchScreen`，当前时间以 `HH:mm` 格式定时刷新 |
+| 继续观看 | 根据播放记录恢复对应集数与秒数，例如第 497 集从记录秒数继续播 |
+| 进度上报 | 内嵌播放器进度变化时保存当前源、集数、播放秒数和总时长 |
+| 换源 | 切换 `currentDetail`，保留当前集数和播放秒数，保存新源记录成功后再清理旧源记录 |
 | 选集 | 更新 `_episodeIndex` 并刷新内嵌播放器 |
-| 换源布局 | 单行横向列表，不使用多行换行布局 |
-| 选集布局 | 分组标签加单行横向列表，长剧集按固定区间切换 |
-| 内嵌播放器 | 关闭播放器控制层，焦点确认只用于进入全屏 |
-| 全屏 | push `TvFullscreenPlayerScreen`，携带当前详情、线路列表和集下标 |
+| 换源布局 | 标题展示为「切换线路」，并补充 `遇播放卡顿，音画不同步或无法播放时，请切换播放线路`；单行横向列表，不使用多行换行布局；换源卡片按上方向键必须按实际位置就近回到播放器、全屏或收藏按钮；全屏和收藏按钮按下方向键必须优先回到当前选中的播放源，当前源未构建时才回到第一个已构建源，避免依赖几何焦点导致丢焦或跳到非当前源；焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
+| 选集布局 | 单行横向集数列表在上，分组标签在集数列表下方；总集数不超过 20 集时不展示分组，长剧集按固定区间切换；换源、选集、分组和相关推荐之间必须设置明确的上下焦点目标，向下按顺序进入下一块，向上回到就近的上一块；集数列表和分组列表焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
+| 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏 |
+| 全屏 | 详情页内展示 `TvFullscreenPlayerScreen` 覆盖层，携带当前详情、线路列表和集下标；生产路径必须通过同一个 `VideoPlayerWidget`/控制器在预览和全屏之间移动，避免进入全屏时重新起播或黑屏；TV 全屏播放器同样禁用 PiP/小窗最小化 |
 | 收藏 | 使用 `PageCacheService.addFavorite/removeFavorite` |
 | 推荐点击 | `pushReplacement` 到新的 TV 详情页 |
 | 回到顶部 | 当前详情页滚动到顶部 |
@@ -259,10 +297,12 @@ TV 详情页加载错误契约：
 | 顶部右侧 | 只展示装饰图标，不可点击 |
 | 下方向键 | 当前无菜单时弹出底部一二级菜单 |
 | 一级菜单 | 焦点移入即切换二级菜单，不需要按确认 |
+| 一级菜单上键 | 焦点进入当前一级菜单对应的二级菜单选中项 |
 | 二级菜单 | 只有二级菜单按钮执行实际操作 |
+| 二级菜单下键 | 焦点回到当前一级菜单项 |
 | 禁用菜单 | 不展示「清晰度」和「内核」 |
 | 播放列表 | 横向展示当前源选集，确认后切换选集 |
-| 播放线路 | 横向展示可用线路，确认后切换线路并重置到第 1 集 |
+| 播放线路 | 横向展示可用线路，确认后切换线路并保留当前集数和播放秒数 |
 | 画面比例 | 选项文案与手机端播放器设置一致：适应、填充、宽度、高度 |
 | 倍速 | 提供常用倍速，确认后调用播放器倍速切换 |
 | 其它 | 展示片头、片尾和弹幕开关入口 |
@@ -270,7 +310,7 @@ TV 详情页加载错误契约：
 | 菜单未弹出时左右键 | 执行进度跳转，从 5 秒逐步加速到 29 秒 |
 | 左右键进度提示 | 屏幕中心展示浅灰圆角时间提示，格式为 `当前时间 / 总时长` |
 | 底部提醒 | 菜单未弹出时展示返回键、下键和安全提醒文案 |
-| 返回键 | 菜单已弹出时先关闭菜单；无菜单时退出全屏回到详情页 |
+| 返回键 | `Esc`、遥控器返回键和系统返回统一处理；菜单已弹出时先关闭菜单；无菜单时退出全屏回到详情页 |
 
 ### 4.5 TV 设置输入框契约
 
@@ -330,7 +370,7 @@ TV 详情页加载错误契约：
 | 详情页换源或选集换行 | 使用横向 `ListView`，选集长列表先按分组切换 | `tv_video_detail_screen_test.dart` |
 | 详情页显示返回按钮 | 不展示“返回上一级”，保留系统/遥控器返回 | `tv_video_detail_screen_test.dart` |
 | 详情页播放器出现控制按钮组 | `VideoPlayerWidget.showControls=false`，播放器焦点确认只进全屏 | `tv_video_detail_screen_test.dart` / `video_player_widget_preload_config_test.dart` |
-| 分类页上键无筛选面板 | `TvTopNav.onTabArrowUp` 仅在电影、剧集、动漫、综艺菜单获焦时展示筛选面板，内容区上键不直接呼出 | `tv_home_screen_test.dart`, `tv_top_nav_test.dart` |
+| 分类页筛选入口触发错误 | 电影、剧集、动漫、综艺菜单按确认键展示筛选面板；上键统一进入右上快捷入口，内容区上键不直接呼出 | `tv_home_screen_test.dart`, `tv_top_nav_test.dart` |
 | 筛选面板遮挡卡片或顶部导航仍占位 | 顶部导航用收起动画让出空间，筛选面板用尺寸动画下滑展开并顶开 Grid | `tv_home_screen_test.dart` |
 | 筛选项横向滚动盖住行标题或左右边界跳行 | 筛选行 `ListView` 使用视口裁剪，首尾选项复用 `TvEdgeShake` 拦截左右边界方向键 | `tv_home_screen_test.dart` |
 | 筛选项确认后 Grid 不刷新 | `TvHomeScreen.loadCategoryData` 执行筛选查询，`FutureBuilder` 用筛选结果替换当前分类 Grid | `tv_home_screen_test.dart` |
@@ -347,10 +387,15 @@ TV 详情页加载错误契约：
 | Grid 海报滚到顶部后盖住菜单或筛选面板 | 内容区和分类 Grid 外层使用 `ClipRect`，顶部导航与筛选面板提供半透黑色遮罩 | `tv_home_screen_test.dart` |
 | 纵向滚动页焦点移动没有平滑滚动 | `TvFocusable` 获焦后调用 `TvFocusScroll`，首页分区使用更明显的区块滚动对齐 | `tv_focusable_test.dart`, `tv_home_section_test.dart` |
 | TV 卡片缺少继续观看进度 | 多集徽章和封面底部播放进度条复用 `VideoInfo` 进度字段 | `tv_video_card_test.dart` |
+| TV 卡片缺少继续观看秒数和源名 | 继续观看卡片副标题展示当前集、播放时间和源名 | `tv_video_card_test.dart` |
+| TV 详情页继续观看从第 1 集起播 | 详情页把 `VideoInfo.index/playTime` 转成 `updateDataSource(startAt)` | `tv_video_detail_screen_test.dart` |
+| TV 详情页或全屏页播放不更新记录 | 播放器控制器进度监听调用 `TvPlayRecordService.saveRecord` | `tv_video_detail_screen_test.dart`, `tv_fullscreen_player_screen_test.dart` |
+| TV 换源后旧记录被误删 | 换源先保存新源记录，失败时跳过清理，成功后才删除同影片其它源记录 | `tv_video_detail_screen_test.dart`, `tv_fullscreen_player_screen_test.dart` |
 | 顶部导航需要按确认才切换 | 菜单项获得焦点时触发 `onChanged` | `tv_top_nav_test.dart` |
 | 从内容区回顶部时误切到就近菜单 | 导航栏外部进入时先请求当前选中项焦点 | `tv_top_nav_test.dart` |
 | TV 顶部缺少快捷入口 | `TvTopNav` 右侧快捷区提供搜索、播放历史、收藏夹、设置四个图标文字按钮 | `tv_home_screen_test.dart`, `tv_top_nav_test.dart` |
 | 全屏播放器菜单未弹出时缺少遥控器播放控制 | 确认键切换播放暂停，左右键按加速步长 seek，并显示中心时间提示 | `tv_fullscreen_player_screen_test.dart` |
+| 详情页进入全屏时播放器重新创建 | 详情页用同页覆盖层和共享播放器 Key 复用当前控制器，注入全屏播放器时才允许走独立 builder | `tv_video_detail_screen_test.dart` |
 | TV 搜索页缺少历史和热词 | 搜索历史使用纯文字 Grid，搜索热词使用本地 mock Grid | `tv_search_screen_test.dart` |
 | TV 搜索页推荐列表无边界反馈或放大不明显 | 推荐列表卡片复用 `TvVideoCard.focusedScale`，首尾方向键复用 `TvEdgeShake` 边界抖动 | `tv_search_screen_test.dart` |
 | 设置输入框移入就弹键盘 | 输入框默认浏览态，确认后进入编辑态 | `tv_settings_screen_test.dart` |
@@ -367,7 +412,7 @@ TV 详情页加载错误契约：
 
 用户也可以在顶部导航切到「电影」「剧集」「动漫」「综艺」大类。焦点移动到对应菜单后页面立即切换，并使用纵向 Grid 展示该大类内容。
 
-顶部导航第一行左侧展示 `IvyTV` Logo，右上角提供「搜索、播放历史、收藏夹、设置」四个快捷按钮，并在最右侧展示当前时间。播放历史、收藏夹和设置不再出现在左侧主分类菜单中，快捷入口必须与 Logo 同行、靠右展示，主分类菜单独立放在下一行，确认快捷按钮后进入对应页面。
+顶部导航第一行左侧展示 `IvyTV` Logo，右上角提供「搜索、播放历史、收藏夹、设置」四个快捷按钮，并在最右侧展示当前时间。播放历史、收藏夹和设置不再出现在左侧主分类菜单中，快捷入口必须与 Logo 同行、靠右展示，主分类菜单独立放在下一行，确认快捷按钮后统一 `push` 对应独立页面，而不是切首页内部内容。
 
 ### 6.2 Base Case
 
@@ -392,6 +437,7 @@ flutter test test/tv_app/tv_home_section_test.dart
 flutter test test/tv_app/tv_top_nav_test.dart
 flutter test test/tv_app/tv_video_card_test.dart
 flutter test test/tv_app/tv_video_detail_screen_test.dart
+flutter test test/tv_app/tv_fullscreen_player_screen_test.dart
 flutter test test/tv_app/tv_settings_screen_test.dart
 ```
 
@@ -480,7 +526,7 @@ TvFocusable(
 
 顶部导航还有一个特殊规则：当焦点从内容区进入顶部导航时，不允许按空间距离直接落到就近菜单项。必须先请求 `selectedIndex` 对应菜单项的焦点；只有导航栏内部左右移动时，才能焦点到哪就切到哪。
 
-顶部导航右上角必须提供搜索、播放历史、收藏夹、设置四个图标文字快捷入口，且快捷入口与 `IvyTV` Logo 同行、与左侧主分类菜单上下错开，不放在同一行。快捷入口属于顶部导航内部焦点成员：从内容区回到顶部导航时仍先回当前选中菜单项或当前选中快捷入口。直播菜单项作为快捷区过渡：直播按上方向键进入搜索快捷入口；首页菜单项也可按上方向键进入右上快捷按钮区。搜索快捷入口按下方向键必须回到进入快捷区前的来源主菜单项，例如从首页按上进入搜索则按下回首页，从直播按上进入搜索则按下回直播；没有来源记忆时才回直播兜底。电影、剧集、动漫、综艺菜单项按上方向键仍只呼出分类筛选面板，不跳到快捷入口。筛选面板展开时顶部导航整体收起，快捷入口和当前时间也随顶部导航隐藏。
+顶部导航右上角必须提供搜索、播放历史、收藏夹、设置四个图标文字快捷入口，且快捷入口与 `IvyTV` Logo 同行、与左侧主分类菜单上下错开，不放在同一行。快捷入口属于顶部导航内部焦点成员：从内容区回到顶部导航时仍先回当前选中菜单项或当前选中快捷入口。直播菜单项作为快捷区过渡；首页、电影、剧集、动漫、综艺、直播这些主菜单项按上方向键都进入搜索快捷入口。右上快捷入口按下方向键必须回到进入快捷区前的来源主菜单项，例如从首页按上进入搜索则按下回首页，从直播按上进入搜索则按下回直播；没有来源记忆时才回直播兜底，不能越过下方主菜单直接跳到内容卡片。电影、剧集、动漫、综艺菜单项的分类筛选只允许通过确认键呼出，不能再占用上方向键。筛选面板展开时顶部导航整体收起，快捷入口和当前时间也随顶部导航隐藏。
 
 TV 搜索页必须使用 `lib/tv_app/screens/tv_search_screen.dart`，不要直接打开普通端 `SearchScreen`。页面左侧提供搜索输入展示、字母数字遥控器键盘、清空和删除按钮；右侧顶部展示搜索历史纯文字 Grid，下面展示搜索热词纯文字 Grid。搜索页左侧搜索标题和右侧搜索历史标题必须使用统一顶部留白，首屏默认状态不能明显偏下。搜索历史复用 `PageCacheService.getSearchHistory`，搜索热词当前使用本地 mock 列表，后续有接口后再替换。右侧下方可展示影片推荐横向列表，推荐点击进入 `TvVideoDetailScreen`。影片推荐列表的焦点放大比例必须与首页 `TvVideoCard.focusedScale` 一致，到达左右边界时必须复用 `TvEdgeShake` 给出边界抖动反馈。
 

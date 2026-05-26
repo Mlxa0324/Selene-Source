@@ -169,7 +169,7 @@ void main() {
     await tester.pumpAndSettle();
     controller.jumpTo(controller.position.maxScrollExtent - 120);
     await tester.pumpAndSettle();
-    _focusNodeForKey(tester, const ValueKey('tv-home-more-card'))
+    _focusNodeForFocusableContainer(tester, const ValueKey('tv-home-more-card'))
         .requestFocus();
     await tester.pump();
     controller.jumpTo(controller.position.maxScrollExtent - 120);
@@ -216,6 +216,66 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.offset, greaterThan(0));
+  });
+
+  testWidgets('re-entering home section starts from first card after blur',
+      (tester) async {
+    final continueFirstFocusNode = FocusNode(debugLabel: 'continue-first');
+    final movieFirstFocusNode = FocusNode(debugLabel: 'movie-first');
+    addTearDown(continueFirstFocusNode.dispose);
+    addTearDown(movieFirstFocusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: SizedBox(
+            height: 360,
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  TvHomeSection(
+                    title: '继续观看',
+                    videos: List.generate(
+                      8,
+                      (index) => _videoInfo('continue_$index', '继续 $index'),
+                    ),
+                    firstItemFocusNode: continueFirstFocusNode,
+                    onArrowDownToNextSection: () {
+                      movieFirstFocusNode.requestFocus();
+                    },
+                  ),
+                  TvHomeSection(
+                    title: '热门电影',
+                    videos: List.generate(
+                      8,
+                      (index) => _videoInfo('movie_$index', '电影 $index'),
+                    ),
+                    firstItemFocusNode: movieFirstFocusNode,
+                    onArrowUpFromFirstItem: () {
+                      continueFirstFocusNode.requestFocus();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'continue_0').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
   });
 
   test('home section starts scrolling when focus reaches fifth card', () {
@@ -267,7 +327,7 @@ void main() {
   });
 }
 
-FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
+FocusNode _focusNodeForFocusableContainer(WidgetTester tester, Key key) {
   final focusFinder = find.ancestor(
     of: find.byKey(key),
     matching: find.byWidgetPredicate(
@@ -275,6 +335,23 @@ FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
+  final focusFinder = find.descendant(
+    of: find.byKey(key),
+    matching: find.byWidgetPredicate(
+      (widget) => widget is Focus && widget.focusNode != null,
+    ),
+  );
+  return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+FocusNode _focusNodeForVideoCard(WidgetTester tester, String id) {
+  return _focusNodeForKey(
+    tester,
+    ValueKey('tv-video-card-focus-$id'),
+  );
 }
 
 Future<void> _setTvSurfaceSize(WidgetTester tester) async {

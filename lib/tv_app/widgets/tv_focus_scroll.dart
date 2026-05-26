@@ -31,6 +31,7 @@ class TvFocusScroll {
   static void ensureVisible(
     BuildContext context, {
     double alignment = defaultAlignment,
+    double horizontalTriggerFraction = TvFocusScroll.horizontalTriggerFraction,
   }) {
     // 等本轮焦点和布局稳定后再滚动，避免方向键切换时读到旧位置。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,6 +53,7 @@ class TvFocusScroll {
         renderObject: renderObject,
         position: position,
         alignment: alignment,
+        horizontalTriggerFraction: horizontalTriggerFraction,
         axisDirection: scrollable.axisDirection,
       );
       scrollable.position.animateTo(
@@ -71,6 +73,7 @@ class TvFocusScroll {
     required RenderObject renderObject,
     required ScrollPosition position,
     required double alignment,
+    required double horizontalTriggerFraction,
     required AxisDirection axisDirection,
   }) {
     final defaultOffset = viewport
@@ -91,20 +94,42 @@ class TvFocusScroll {
         viewport.getOffsetToReveal(renderObject, 1).offset.toDouble();
     final itemExtent =
         position.viewportDimension - (leadingOffset - trailingOffset).abs();
+    final viewportStart = position.pixels;
+    final viewportEnd = viewportStart + position.viewportDimension;
+    final itemStart = leadingOffset;
+    final itemEnd = itemStart + itemExtent;
     final itemCenter = leadingOffset + (itemExtent / 2);
-    final triggerLine = position.pixels +
-        (position.viewportDimension * horizontalTriggerFraction);
+    final triggerFraction = horizontalTriggerFraction.clamp(0.0, 1.0);
+    final triggerLine =
+        viewportStart + (position.viewportDimension * triggerFraction);
+
+    if (itemStart < viewportStart) {
+      return itemStart
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+    }
+
+    if (itemEnd > viewportEnd) {
+      final revealEndOffset = itemEnd - position.viewportDimension;
+      final triggerOffset =
+          itemCenter - (position.viewportDimension * triggerFraction);
+      final targetOffset =
+          triggerOffset > revealEndOffset ? triggerOffset : revealEndOffset;
+      return targetOffset
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+    }
 
     if (itemCenter <= triggerLine) {
-      return defaultOffset;
+      return viewportStart
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
     }
 
     final earlyScrollOffset =
-        (itemCenter - (position.viewportDimension * horizontalTriggerFraction))
+        (itemCenter - (position.viewportDimension * triggerFraction))
             .clamp(position.minScrollExtent, position.maxScrollExtent)
             .toDouble();
-    return earlyScrollOffset > defaultOffset
-        ? earlyScrollOffset
-        : defaultOffset;
+    return earlyScrollOffset;
   }
 }

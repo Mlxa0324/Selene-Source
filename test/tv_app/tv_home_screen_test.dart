@@ -187,8 +187,7 @@ void main() {
     expect(find.text('TV 搜索页已打开'), findsOneWidget);
   });
 
-  testWidgets('renders history and favorites as vertical grids',
-      (tester) async {
+  testWidgets('opens history page from top nav quick action', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: TvHomeScreen(
@@ -207,55 +206,70 @@ void main() {
               (index) => _videoInfo('favorite_$index', '收藏 $index'),
             ),
           ),
+          buildHistoryPage: () => const Scaffold(
+            body: Text('TV 播放历史页已打开'),
+          ),
         ),
       ),
     );
 
     await tester.pumpAndSettle();
-
-    await _tapTopNavLabel(tester, '播放历史');
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-history')));
     await tester.pumpAndSettle();
 
-    final historyGrid = find.byKey(const ValueKey('tv-video-grid'));
-    final historyScroll = find.byKey(const ValueKey('tv-video-grid-scroll'));
-    expect(historyGrid, findsOneWidget);
-    expect(historyScroll, findsOneWidget);
-    expect(
-      tester.widget<CustomScrollView>(historyScroll).scrollDirection,
-      Axis.vertical,
-    );
-    expect(
-      tester.widget<CustomScrollView>(historyScroll).clipBehavior,
-      Clip.none,
-    );
-    expect(
-      find.descendant(
-        of: historyScroll,
-        matching: find.text('播放历史'),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('历史 0'), findsOneWidget);
+    expect(find.text('TV 播放历史页已打开'), findsOneWidget);
+  });
 
-    await _tapTopNavLabel(tester, '收藏夹');
+  testWidgets('opens favorites page from top nav quick action', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: const [],
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: List.generate(
+              8,
+              (index) => _videoInfo('history_$index', '历史 $index'),
+            ),
+            favorites: List.generate(
+              8,
+              (index) => _videoInfo('favorite_$index', '收藏 $index'),
+            ),
+          ),
+          buildFavoritesPage: () => const Scaffold(
+            body: Text('TV 收藏夹页已打开'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-favorites')));
     await tester.pumpAndSettle();
 
-    final favoritesGrid = find.byKey(const ValueKey('tv-video-grid'));
-    final favoritesScroll = find.byKey(const ValueKey('tv-video-grid-scroll'));
-    expect(favoritesGrid, findsOneWidget);
-    expect(favoritesScroll, findsOneWidget);
-    expect(
-      tester.widget<CustomScrollView>(favoritesScroll).scrollDirection,
-      Axis.vertical,
-    );
-    expect(
-      find.descendant(
-        of: favoritesScroll,
-        matching: find.text('收藏夹'),
+    expect(find.text('TV 收藏夹页已打开'), findsOneWidget);
+  });
+
+  testWidgets('opens settings page from top nav quick action', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData.empty(),
+          buildSettingsPage: () => const Scaffold(
+            body: Text('TV 设置页已打开'),
+          ),
+        ),
       ),
-      findsOneWidget,
     );
-    expect(find.text('收藏 0'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-settings')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('TV 设置页已打开'), findsOneWidget);
   });
 
   testWidgets('renders live tab as developing placeholder page',
@@ -373,7 +387,7 @@ void main() {
   });
 
   testWidgets(
-      'shows category filter panel only from focused category top nav item',
+      'shows category filter panel only from selected category top nav confirm action',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -414,6 +428,16 @@ void main() {
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-top-nav-visible')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('tv-category-filter-panel')), findsNothing);
+    expect(_focusNodeForAction(tester, 'search').hasFocus, isTrue);
+
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('tv-top-nav-hidden')), findsOneWidget);
@@ -460,6 +484,41 @@ void main() {
 
     await tester.pumpAndSettle();
     _focusNodeForText(tester, '直播').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(
+        find.byKey(const ValueKey('tv-category-filter-panel')), findsNothing);
+    expect(_focusNodeForAction(tester, 'search').hasFocus, isTrue);
+  });
+
+  testWidgets('category top nav item up moves to quick actions',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              4,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -584,7 +643,7 @@ void main() {
 
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
     _focusNodeForKey(tester, const ValueKey('tv-filter-chip-犯罪'))
         .requestFocus();
@@ -625,7 +684,7 @@ void main() {
 
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     expect(
@@ -696,7 +755,7 @@ void main() {
     await tester.pump();
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pump(const Duration(milliseconds: 380));
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump(const Duration(milliseconds: 380));
@@ -773,7 +832,7 @@ void main() {
     await tester.pumpAndSettle();
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     expect(
@@ -821,7 +880,7 @@ void main() {
     await tester.pumpAndSettle();
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     expect(
@@ -879,7 +938,7 @@ void main() {
 
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     _focusNodeForKey(tester, const ValueKey('tv-filter-chip-香港'))
@@ -930,7 +989,7 @@ void main() {
 
     _focusNodeForTopNavLabel(tester, '电影').requestFocus();
     await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     await tester.tap(find.byKey(const ValueKey('tv-filter-chip-2025')).first,
@@ -1027,6 +1086,35 @@ void main() {
           find.byKey(const ValueKey('tv-video-grid-loading-card')).first),
       const Size(158, 237),
     );
+  });
+
+  testWidgets('category grid shows confirm hint beside title', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              4,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    expect(find.text('按确认键打开分类筛选'), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('tv-video-grid-title-hint')), findsOneWidget);
   });
 
   testWidgets('opens TV detail screen when video card is selected',

@@ -75,6 +75,10 @@ class VideoPlayerWidget extends StatefulWidget {
 
   /// 是否显示播放器控制层，TV 详情页预览播放器会关闭该能力。
   final bool showControls;
+
+  /// 是否允许系统画中画/小窗最小化。
+  final bool enablePip;
+
   final PlaybackPreloadLevel playbackPreloadLevel;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
@@ -134,6 +138,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.showSystemTime = false,
     this.hideCenterControlsWithBars = true,
     this.showControls = true,
+    this.enablePip = true,
     this.playbackPreloadLevel = PlaybackPreloadLevel.off,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
@@ -431,6 +436,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   bool get _isPipDisabledForCurrentPlayback {
+    if (!widget.enablePip) {
+      return true;
+    }
     if (!Platform.isIOS || widget.isLocal) {
       return false;
     }
@@ -587,7 +595,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   Future<void> _pushPipActionsState({required String reason}) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !widget.enablePip) {
       return;
     }
     try {
@@ -605,7 +613,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   }
 
   void _bindPipControlChannel() {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !widget.enablePip) {
       return;
     }
     _pipControlChannel.setMethodCallHandler((call) async {
@@ -1694,6 +1702,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         playbackSpeedListenable: _playbackSpeed,
         onSetSpeed: _setPlaybackSpeed,
         onEnterPipMode: _enterPipMode,
+        enablePip: widget.enablePip && !_isPipDisabledForCurrentPlayback,
         isPipMode: _isPipMode,
         onEpisodesButtonPressed: widget.onEpisodesButtonPressed,
         onSourcesButtonPressed: widget.onSourcesButtonPressed,

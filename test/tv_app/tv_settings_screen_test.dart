@@ -32,7 +32,7 @@ void main() {
     expect(find.text('服务器地址'), findsOneWidget);
     expect(find.text('账号'), findsOneWidget);
     expect(find.text('密码'), findsOneWidget);
-    expect(find.text('保存并登录'), findsOneWidget);
+    expect(find.text('保存配置'), findsOneWidget);
     expect(find.text('图片与弹幕'), findsOneWidget);
     expect(find.text('主题色'), findsOneWidget);
     expect(find.text('奈飞红'), findsOneWidget);
@@ -154,7 +154,7 @@ void main() {
     await tester.enterText(find.byType(TextField).at(1), 'demo_user');
     await _activateTextField(tester, 2);
     await tester.enterText(find.byType(TextField).at(2), 'demo_password');
-    await tester.tap(find.text('保存并登录'));
+    await tester.tap(find.text('保存配置'));
     await tester.pumpAndSettle();
 
     expect(savedCredentials?.serverUrl, 'https://server.example.com');

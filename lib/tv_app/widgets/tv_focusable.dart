@@ -34,6 +34,8 @@ class TvFocusable extends StatefulWidget {
     this.autofocus = false,
     this.autoScrollOnFocus = true,
     this.focusScrollAlignment = TvFocusScroll.defaultAlignment,
+    this.horizontalFocusScrollTriggerFraction =
+        TvFocusScroll.horizontalTriggerFraction,
     this.focusMemoryGroupKey,
     this.directionalRepeatThrottleGroupKey,
     this.directionalRepeatThrottleDuration = const Duration(milliseconds: 120),
@@ -72,6 +74,9 @@ class TvFocusable extends StatefulWidget {
   /// 获焦自动滚动时的目标对齐位置。
   final double focusScrollAlignment;
 
+  /// 横向列表获焦后开始提前滚动的视口比例。
+  final double horizontalFocusScrollTriggerFraction;
+
   /// 上下跨列表焦点记忆分组 Key。
   ///
   /// 同一个列表内的控件使用相同 Key。上下方向离开当前列表时，会优先回到目标列表
@@ -91,6 +96,44 @@ class TvFocusable extends StatefulWidget {
 
   @override
   State<TvFocusable> createState() => _TvFocusableState();
+
+  /// 清理指定分组最近一次记住的焦点项。
+  ///
+  /// 某些横向列表在离开后需要下次从头进入，此时只清掉“最近一次焦点”即可，
+  /// 不影响列表内部节点继续保留同一个焦点记忆分组。
+  static void clearLastFocusedForGroup(Object groupKey) {
+    _TvFocusableState._lastFocusedByGroup.remove(groupKey);
+  }
+
+  /// 将指定分组的入口焦点重置到首个可聚焦项。
+  ///
+  /// 适用于首页横向分区这类“离开后下次从第一个重新进入”的场景。
+  /// 若当前分组里没有可用节点，则回退为清理最近一次焦点记录。
+  static void resetGroupEntryToFirstFocusable(Object groupKey) {
+    final firstEntry = _TvFocusableState.firstFocusableEntryForGroup(groupKey);
+    if (firstEntry == null) {
+      _TvFocusableState._lastFocusedByGroup.remove(groupKey);
+      return;
+    }
+    _TvFocusableState._lastFocusedByGroup[groupKey] = firstEntry;
+  }
+
+  /// 判断指定分组当前是否仍有子项持有焦点。
+  ///
+  /// 用于列表在“最后一个焦点离开分组”时执行离组复位。
+  static bool groupHasFocusedChild(Object groupKey) {
+    final entries = _TvFocusableState._focusMemoryGroups[groupKey];
+    if (entries == null || entries.isEmpty) {
+      return false;
+    }
+    for (final entry in entries) {
+      if (entry._effectiveFocusNode.hasFocus ||
+          entry._effectiveFocusNode.hasPrimaryFocus) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 class _TvFocusableState extends State<TvFocusable> {
@@ -100,6 +143,9 @@ class _TvFocusableState extends State<TvFocusable> {
   static final Map<Object, _TvDirectionalRepeatState> _directionalRepeatStates =
       <Object, _TvDirectionalRepeatState>{};
 
+  /// 上下焦点判定容差，过滤同一横向列表内的轻微布局偏差。
+  static const double _verticalDirectionTolerance = 28;
+
   /// TV 焦点记忆分组表。
   static final Map<Object, Set<_TvFocusableState>> _focusMemoryGroups =
       <Object, Set<_TvFocusableState>>{};
@@ -107,6 +153,36 @@ class _TvFocusableState extends State<TvFocusable> {
   /// TV 焦点记忆最后获焦项。
   static final Map<Object, _TvFocusableState> _lastFocusedByGroup =
       <Object, _TvFocusableState>{};
+
+  /// 获取分组内第一个可聚焦的节点。
+  ///
+  /// 排序规则按大屏上的阅读顺序处理：先上后下，同一行再从左到右。
+  static _TvFocusableState? firstFocusableEntryForGroup(Object groupKey) {
+    final entries = _focusMemoryGroups[groupKey];
+    if (entries == null || entries.isEmpty) {
+      return null;
+    }
+
+    _TvFocusableState? bestEntry;
+    Rect? bestRect;
+    for (final entry in entries) {
+      if (!entry._isFocusMemoryUsable) {
+        continue;
+      }
+      final rect = entry._globalRect;
+      if (rect == null) {
+        continue;
+      }
+      final isBetterEntry = bestRect == null ||
+          rect.top < bestRect.top - 1 ||
+          ((rect.top - bestRect.top).abs() <= 1 && rect.left < bestRect.left);
+      if (isBetterEntry) {
+        bestEntry = entry;
+        bestRect = rect;
+      }
+    }
+    return bestEntry;
+  }
 
   /// 内部焦点节点。
   ///
@@ -171,16 +247,6 @@ class _TvFocusableState extends State<TvFocusable> {
       return KeyEventResult.handled;
     }
 
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
-        event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      final memoryResult = _handleFocusMemoryVerticalNavigation(
-        event.logicalKey,
-      );
-      if (memoryResult != null) {
-        return memoryResult;
-      }
-    }
-
     if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
         widget.onArrowUp != null) {
       widget.onArrowUp?.call();
@@ -191,6 +257,16 @@ class _TvFocusableState extends State<TvFocusable> {
         widget.onArrowDown != null) {
       widget.onArrowDown?.call();
       return KeyEventResult.handled;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
+        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      final memoryResult = _handleFocusMemoryVerticalNavigation(
+        event.logicalKey,
+      );
+      if (memoryResult != null) {
+        return memoryResult;
+      }
     }
 
     final directionalRepeatResult = _handleDirectionalRepeatThrottle(event);
@@ -288,13 +364,13 @@ class _TvFocusableState extends State<TvFocusable> {
     final direction = key == LogicalKeyboardKey.arrowDown ? 1 : -1;
 
     // 当前列表在该方向还有可聚焦项时，交给 Flutter 默认焦点系统继续列表内移动。
-    if (_nearestEntryInDirection(
-          entries: _focusMemoryGroups[currentGroupKey] ?? const {},
-          currentRect: currentRect,
-          direction: direction,
-          excludeCurrentGroup: false,
-        ) !=
-        null) {
+    final sameGroupTarget = _nearestEntryInDirection(
+      entries: _focusMemoryGroups[currentGroupKey] ?? const {},
+      currentRect: currentRect,
+      direction: direction,
+      excludeCurrentGroup: false,
+    );
+    if (sameGroupTarget != null) {
       return null;
     }
 
@@ -311,7 +387,7 @@ class _TvFocusableState extends State<TvFocusable> {
     return KeyEventResult.handled;
   }
 
-  /// 查找目标方向上最近的其它列表记忆焦点。
+  /// 查找目标方向上最近的其它列表焦点。
   _TvFocusableState? _nearestRememberedGroupEntry({
     required Object currentGroupKey,
     required Rect currentRect,
@@ -325,8 +401,26 @@ class _TvFocusableState extends State<TvFocusable> {
       rememberedEntries.add(entry.value);
     }
 
-    return _nearestEntryInDirection(
+    final rememberedTarget = _nearestEntryInDirection(
       entries: rememberedEntries,
+      currentRect: currentRect,
+      direction: direction,
+      excludeCurrentGroup: true,
+    );
+    if (rememberedTarget != null) {
+      return rememberedTarget;
+    }
+
+    final fallbackEntries = <_TvFocusableState>[];
+    for (final entry in _focusMemoryGroups.entries) {
+      if (entry.key == currentGroupKey) {
+        continue;
+      }
+      fallbackEntries.addAll(entry.value);
+    }
+
+    return _nearestEntryInDirection(
+      entries: fallbackEntries,
       currentRect: currentRect,
       direction: direction,
       excludeCurrentGroup: true,
@@ -357,7 +451,9 @@ class _TvFocusableState extends State<TvFocusable> {
         continue;
       }
       final deltaY = rect.center.dy - currentCenter.dy;
-      final isInDirection = direction > 0 ? deltaY > 8 : deltaY < -8;
+      final isInDirection = direction > 0
+          ? deltaY > _verticalDirectionTolerance
+          : deltaY < -_verticalDirectionTolerance;
       if (!isInDirection) {
         continue;
       }
@@ -414,6 +510,8 @@ class _TvFocusableState extends State<TvFocusable> {
         TvFocusScroll.ensureVisible(
           targetContext,
           alignment: widget.focusScrollAlignment,
+          horizontalTriggerFraction:
+              widget.horizontalFocusScrollTriggerFraction,
         );
       }
     }

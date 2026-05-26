@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:selene/models/play_record.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/api_service.dart';
@@ -10,14 +11,21 @@ import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/search_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
+import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/tv_layout.dart';
+import 'package:selene/tv_app/services/tv_play_record_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
+import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
+import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
 import 'package:selene/widgets/video_player_surface.dart';
 import 'package:selene/widgets/video_player_widget.dart';
+
+/// TV 详情页换源、选集和分组列表的横向滚动触发线。
+const double _tvDetailOptionScrollTriggerFraction = 0.5;
 
 /// TV 详情页数据加载函数。
 typedef TvVideoDetailLoader = Future<TvVideoDetailData> Function(
@@ -291,6 +299,67 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 页面滚动控制器。
   final ScrollController _scrollController = ScrollController();
 
+  /// 播放器入口焦点节点。
+  final FocusNode _playerFocusNode = FocusNode(debugLabel: 'tv-detail-player');
+
+  /// 全屏按钮焦点节点。
+  final FocusNode _fullscreenFocusNode =
+      FocusNode(debugLabel: 'tv-detail-fullscreen');
+
+  /// 收藏按钮焦点节点。
+  final FocusNode _favoriteFocusNode =
+      FocusNode(debugLabel: 'tv-detail-favorite');
+
+  /// 播放器入口位置 Key。
+  final GlobalKey _playerTargetKey = GlobalKey();
+
+  /// 共享播放器 Key。
+  ///
+  /// 预览和全屏覆盖层共用同一个 `VideoPlayerWidget`，避免进全屏时重建播放器。
+  final GlobalKey _sharedPlayerKey = GlobalKey();
+
+  /// 全屏按钮位置 Key。
+  final GlobalKey _fullscreenTargetKey = GlobalKey();
+
+  /// 收藏按钮位置 Key。
+  final GlobalKey _favoriteTargetKey = GlobalKey();
+
+  /// 底部回到顶部按钮焦点节点。
+  final FocusNode _bottomActionFocusNode =
+      FocusNode(debugLabel: 'tv-detail-bottom-action');
+
+  /// 底部回到顶部按钮位置 Key。
+  final GlobalKey _bottomActionTargetKey = GlobalKey();
+
+  /// 顶部搜索按钮焦点节点。
+  final FocusNode _searchFocusNode = FocusNode(debugLabel: 'tv-detail-search');
+
+  /// 换源列表焦点节点表。
+  ///
+  /// 顶部操作按钮按下时需要稳定回到当前播放源，不能只依赖系统几何焦点猜测。
+  final Map<String, FocusNode> _sourceFocusNodes = <String, FocusNode>{};
+
+  /// 换源列表可见性定位 Key 表。
+  final Map<String, GlobalKey> _sourceTargetKeys = <String, GlobalKey>{};
+
+  /// 选集列表焦点节点表。
+  final Map<int, FocusNode> _episodeFocusNodes = <int, FocusNode>{};
+
+  /// 选集列表定位 Key 表。
+  final Map<int, GlobalKey> _episodeTargetKeys = <int, GlobalKey>{};
+
+  /// 选集分组焦点节点表。
+  final Map<int, FocusNode> _episodeGroupFocusNodes = <int, FocusNode>{};
+
+  /// 选集分组定位 Key 表。
+  final Map<int, GlobalKey> _episodeGroupTargetKeys = <int, GlobalKey>{};
+
+  /// 推荐卡片焦点节点表。
+  final Map<String, FocusNode> _recommendFocusNodes = <String, FocusNode>{};
+
+  /// 推荐卡片定位 Key 表。
+  final Map<String, GlobalKey> _recommendTargetKeys = <String, GlobalKey>{};
+
   /// 播放器控制器。
   VideoPlayerWidgetController? _playerController;
 
@@ -309,8 +378,23 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 当前选集分组下标。
   int _episodeGroupIndex = 0;
 
+  /// 初始续播选集下标。
+  int _initialResumeEpisodeIndex = 0;
+
+  /// 初始续播时间，仅首次起播消费。
+  Duration? _pendingInitialPlaybackPosition;
+
+  /// 是否已经消费过初始续播时间。
+  bool _hasAppliedInitialPlaybackPosition = false;
+
+  /// 最近一次下发给播放器的地址，避免同一地址重复覆盖续播位置。
+  String? _lastRequestedPlaybackUrl;
+
   /// 当前是否收藏。
   bool _isFavorite = false;
+
+  /// 是否展示详情页内全屏覆盖层。
+  bool _fullscreenOverlayVisible = false;
 
   /// 首屏详情是否仍在等待可播数据。
   bool _isInitialDetailLoading = true;
@@ -327,18 +411,69 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 当前加载批次，避免旧页面异步结果回写。
   int _loadSerial = 0;
 
+  /// 顶部当前时间刷新定时器。
+  Timer? _clockTimer;
+
+  /// 顶部右侧当前时间。
+  late String _currentTime;
+
+  /// 上次保存播放进度的时间。
+  DateTime? _lastSaveTime;
+
+  /// 上次保存播放进度的秒数。
+  int? _lastSavePosition;
+
+  /// 换源记录任务序号，避免快速换源时旧任务误清理。
+  int _sourceSwitchRecordSerial = 0;
+
+  /// 播放进度保存间隔，对齐手机端节流策略。
+  static const Duration _saveProgressInterval = Duration(seconds: 10);
+
   @override
   void initState() {
     super.initState();
+    _currentTime = _formatCurrentTime(DateTime.now());
+    _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _currentTime = _formatCurrentTime(DateTime.now()));
+    });
     _startDetailLoading();
     _loadFavoriteState();
   }
 
   @override
   void dispose() {
+    _clockTimer?.cancel();
+    _playerController?.removeProgressListener(_onVideoProgressUpdate);
     _playerController?.dispose();
+    _playerFocusNode.dispose();
+    _fullscreenFocusNode.dispose();
+    _favoriteFocusNode.dispose();
+    _bottomActionFocusNode.dispose();
+    _searchFocusNode.dispose();
+    for (final node in _sourceFocusNodes.values) {
+      node.dispose();
+    }
+    for (final node in _episodeFocusNodes.values) {
+      node.dispose();
+    }
+    for (final node in _episodeGroupFocusNodes.values) {
+      node.dispose();
+    }
+    for (final node in _recommendFocusNodes.values) {
+      node.dispose();
+    }
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// 将当前时间格式化为顶部短时间。
+  static String _formatCurrentTime(DateTime dateTime) {
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   /// 开始详情数据加载。
@@ -384,6 +519,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         _currentDetail = data.currentDetail;
         _sources = data.sources;
         _recommends = data.recommends;
+        if (_currentDetail != null) {
+          _applyInitialResumeState(_currentDetail!);
+        }
         _isInitialDetailLoading = false;
         _initialSourcesLoaded = true;
         _moreSourcesLoaded = true;
@@ -505,8 +643,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       if (_currentDetail == null && mutableSources.isNotEmpty) {
         _currentDetail =
             preferAsCurrent ? incoming.first : mutableSources.first;
-        _episodeIndex = 0;
-        _episodeGroupIndex = 0;
+        _applyInitialResumeState(_currentDetail!);
         shouldPlay = true;
       }
 
@@ -526,6 +663,72 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         (_initialSourcesLoaded && _moreSourcesLoaded)) {
       _isInitialDetailLoading = false;
     }
+  }
+
+  /// 应用入口播放记录中的续播集数和时间。
+  void _applyInitialResumeState(SearchResult detail) {
+    if (TvPlayRecordService.hasResumeHint(widget.videoInfo) &&
+        _matchesVideoInfoRecord(detail)) {
+      _initialResumeEpisodeIndex =
+          TvPlayRecordService.episodeIndexFromVideoInfo(
+        widget.videoInfo,
+        detail.episodes.length,
+      );
+      _episodeIndex = _initialResumeEpisodeIndex;
+      _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
+      _pendingInitialPlaybackPosition =
+          TvPlayRecordService.resumePositionFromVideoInfo(widget.videoInfo);
+      _hasAppliedInitialPlaybackPosition = false;
+      return;
+    }
+
+    _initialResumeEpisodeIndex = 0;
+    _episodeIndex = 0;
+    _episodeGroupIndex = 0;
+    _pendingInitialPlaybackPosition = null;
+    _hasAppliedInitialPlaybackPosition = true;
+  }
+
+  /// 判断当前源是否匹配入口播放记录。
+  bool _matchesVideoInfoRecord(SearchResult detail) {
+    if (widget.videoInfo.source.isNotEmpty &&
+        widget.videoInfo.id.isNotEmpty &&
+        detail.source == widget.videoInfo.source &&
+        detail.id == widget.videoInfo.id) {
+      return true;
+    }
+
+    return TvPlayRecordService.isSameVideoForPlayRecord(
+      record: PlayRecord(
+        id: widget.videoInfo.id,
+        source: widget.videoInfo.source,
+        title: widget.videoInfo.title,
+        sourceName: widget.videoInfo.sourceName,
+        year: widget.videoInfo.year,
+        cover: widget.videoInfo.cover,
+        index: widget.videoInfo.index,
+        totalEpisodes: widget.videoInfo.totalEpisodes,
+        playTime: widget.videoInfo.playTime,
+        totalTime: widget.videoInfo.totalTime,
+        saveTime: widget.videoInfo.saveTime,
+        searchTitle: widget.videoInfo.searchTitle,
+      ),
+      targetSource: detail,
+      searchTitle: widget.videoInfo.searchTitle.trim().isNotEmpty
+          ? widget.videoInfo.searchTitle
+          : widget.videoInfo.title,
+    );
+  }
+
+  /// 取出一次性初始续播时间。
+  Duration? _takeInitialPlaybackPosition() {
+    if (_hasAppliedInitialPlaybackPosition) {
+      return null;
+    }
+    _hasAppliedInitialPlaybackPosition = true;
+    final position = _pendingInitialPlaybackPosition;
+    _pendingInitialPlaybackPosition = null;
+    return position;
   }
 
   /// 按需加载相关推荐。
@@ -555,6 +758,116 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
   }
 
+  /// 记录播放器控制器并挂载进度监听。
+  void _attachPlayerController(VideoPlayerWidgetController controller) {
+    if (identical(_playerController, controller)) {
+      _playCurrentEpisode();
+      return;
+    }
+
+    _playerController?.removeProgressListener(_onVideoProgressUpdate);
+    _playerController = controller;
+    _lastRequestedPlaybackUrl = null;
+    controller.addProgressListener(_onVideoProgressUpdate);
+    _playCurrentEpisode();
+  }
+
+  /// 播放进度变化时按手机端节流策略保存。
+  void _onVideoProgressUpdate() {
+    _saveProgress(scene: '定时保存');
+  }
+
+  /// 保存当前播放进度。
+  void _saveProgress({bool force = false, required String scene}) {
+    final detail = _currentDetail;
+    final controller = _playerController;
+    if (detail == null || controller == null) {
+      return;
+    }
+
+    final position = controller.currentPosition;
+    final duration = controller.duration;
+    if (position == null || duration == null || position.inSeconds < 1) {
+      return;
+    }
+
+    final playTime = position.inSeconds;
+    if (!force) {
+      final now = DateTime.now();
+      if (_lastSaveTime != null &&
+          now.difference(_lastSaveTime!) < _saveProgressInterval) {
+        return;
+      }
+      if (_lastSavePosition != null && playTime == _lastSavePosition) {
+        return;
+      }
+    }
+
+    _lastSaveTime = DateTime.now();
+    _lastSavePosition = playTime;
+
+    final playRecord = TvPlayRecordService.buildRecord(
+      videoInfo: widget.videoInfo,
+      detail: detail,
+      episodeIndex: _episodeIndex,
+      playTime: playTime,
+      totalTime: duration.inSeconds,
+    );
+
+    unawaited(
+      TvPlayRecordService.saveRecord(context, playRecord).then((saved) {
+        if (!saved) {
+          debugPrint('TV 保存播放进度失败 [场景: $scene]');
+        }
+      }),
+    );
+  }
+
+  /// 保存换源后的新播放记录，成功后再清理旧源记录。
+  Future<void> _saveSwitchedSourceRecord({
+    required SearchResult source,
+    required int switchSerial,
+    required int episodeIndex,
+    required int playTime,
+    required int totalTime,
+  }) async {
+    if (playTime < 1) {
+      return;
+    }
+
+    final playRecord = TvPlayRecordService.buildRecord(
+      videoInfo: widget.videoInfo,
+      detail: source,
+      episodeIndex: episodeIndex,
+      playTime: playTime,
+      totalTime: totalTime,
+    );
+    _lastSaveTime = DateTime.now();
+    _lastSavePosition = playTime;
+
+    final saved = await TvPlayRecordService.saveRecord(context, playRecord);
+    if (!saved) {
+      debugPrint('TV 换源记录保护：新记录保存失败，跳过旧记录清理');
+      return;
+    }
+
+    if (!mounted ||
+        switchSerial != _sourceSwitchRecordSerial ||
+        _currentDetail?.source != source.source ||
+        _currentDetail?.id != source.id) {
+      debugPrint('TV 换源记录保护：切源任务已过期，跳过旧记录清理');
+      return;
+    }
+
+    await TvPlayRecordService.cleanupOtherSourceRecords(
+      context: context,
+      keepSource: source,
+      searchTitle: widget.videoInfo.searchTitle.trim().isNotEmpty
+          ? widget.videoInfo.searchTitle
+          : widget.videoInfo.title,
+    );
+  }
+
   /// 播放当前选集。
   Future<void> _playCurrentEpisode() async {
     final detail = _currentDetail;
@@ -569,24 +882,89 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (proxy.isNotEmpty && url.startsWith('http')) {
       url = '$proxy${Uri.encodeComponent(url)}';
     }
-    await controller.updateDataSource(url);
+    final startAt = _takeInitialPlaybackPosition();
+    if (_lastRequestedPlaybackUrl == url && startAt == null) {
+      return;
+    }
+    _lastRequestedPlaybackUrl = url;
+    await controller.updateDataSource(url, startAt: startAt);
   }
 
   /// 切换播放源。
   void _switchSource(SearchResult source) {
+    if (_currentDetail?.source == source.source &&
+        _currentDetail?.id == source.id) {
+      return;
+    }
+    final switchSerial = ++_sourceSwitchRecordSerial;
+    final currentProgress =
+        _playerController?.currentPosition?.inSeconds ?? _lastSavePosition ?? 0;
+    final currentTotalTime =
+        _playerController?.duration?.inSeconds ?? widget.videoInfo.totalTime;
+    final currentEpisode = _episodeIndex;
+
     setState(() {
       _currentDetail = source;
-      _episodeIndex = 0;
-      _episodeGroupIndex = 0;
+      final maxEpisodeIndex =
+          source.episodes.isEmpty ? 0 : source.episodes.length - 1;
+      _episodeIndex = currentEpisode.clamp(0, maxEpisodeIndex).toInt();
+      _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
+      _pendingInitialPlaybackPosition = null;
+      _hasAppliedInitialPlaybackPosition = true;
+      _lastRequestedPlaybackUrl = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _playCurrentEpisode());
+    unawaited(
+      _saveSwitchedSourceRecord(
+        source: source,
+        switchSerial: switchSerial,
+        episodeIndex: _episodeIndex,
+        playTime: currentProgress,
+        totalTime: currentTotalTime,
+      ),
+    );
+  }
+
+  /// 同步全屏覆盖层内切换后的选集。
+  void _handleFullscreenEpisodeChanged(int index) {
+    if (!mounted || index == _episodeIndex) {
+      return;
+    }
+    setState(() {
+      _episodeIndex = index;
+      _episodeGroupIndex = index ~/ _episodeGroupSize;
+      _pendingInitialPlaybackPosition = null;
+      _hasAppliedInitialPlaybackPosition = true;
+      _lastRequestedPlaybackUrl = null;
+    });
+  }
+
+  /// 同步全屏覆盖层内切换后的播放线路。
+  void _handleFullscreenSourceChanged(SearchResult source) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentDetail = source;
+      final maxEpisodeIndex =
+          source.episodes.isEmpty ? 0 : source.episodes.length - 1;
+      _episodeIndex = _episodeIndex.clamp(0, maxEpisodeIndex).toInt();
+      _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
+      _pendingInitialPlaybackPosition = null;
+      _hasAppliedInitialPlaybackPosition = true;
+      _lastRequestedPlaybackUrl = null;
+    });
   }
 
   /// 切换选集。
   void _switchEpisode(int index) {
+    _saveProgress(force: true, scene: '切换选集前');
     setState(() {
       _episodeIndex = index;
       _episodeGroupIndex = index ~/ _episodeGroupSize;
+      _pendingInitialPlaybackPosition = null;
+      _hasAppliedInitialPlaybackPosition = true;
+      _lastRequestedPlaybackUrl = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _playCurrentEpisode());
   }
@@ -598,7 +976,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 获取选集分组数量。
   int _episodeGroupCount(int total) {
-    if (total <= 0) {
+    if (total <= _episodeGroupSize) {
       return 0;
     }
     return ((total - 1) ~/ _episodeGroupSize) + 1;
@@ -618,6 +996,332 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final rawEnd = start + _episodeGroupSize;
     final end = rawEnd > total ? total : rawEnd;
     return List<int>.generate(end - start, (offset) => start + offset);
+  }
+
+  /// 从换源卡片向上移动到最近的顶部控件。
+  void _focusNearestHeroControlFrom(BuildContext sourceContext) {
+    final sourceRect = _globalRectForContext(sourceContext);
+    if (sourceRect == null) {
+      _playerFocusNode.requestFocus();
+      return;
+    }
+
+    FocusNode? bestNode;
+    double? bestScore;
+    final candidates = [
+      (key: _playerTargetKey, node: _playerFocusNode),
+      (key: _fullscreenTargetKey, node: _fullscreenFocusNode),
+      (key: _favoriteTargetKey, node: _favoriteFocusNode),
+    ];
+
+    for (final candidate in candidates) {
+      if (!candidate.node.canRequestFocus) {
+        continue;
+      }
+      final targetRect = _globalRectForKey(candidate.key);
+      if (targetRect == null || targetRect.center.dy >= sourceRect.center.dy) {
+        continue;
+      }
+      final dx = targetRect.center.dx - sourceRect.center.dx;
+      final dy = targetRect.center.dy - sourceRect.center.dy;
+      final score = dx * dx + dy * dy;
+      if (bestScore == null || score < bestScore) {
+        bestScore = score;
+        bestNode = candidate.node;
+      }
+    }
+
+    (bestNode ?? _playerFocusNode).requestFocus();
+  }
+
+  /// 获取播放源的稳定标识。
+  String _sourceFocusKey(SearchResult source) {
+    return '${source.source}::${source.id}';
+  }
+
+  /// 获取播放源对应的焦点节点。
+  FocusNode _sourceFocusNodeFor(SearchResult source) {
+    final focusKey = _sourceFocusKey(source);
+    return _sourceFocusNodes.putIfAbsent(
+      focusKey,
+      () => FocusNode(debugLabel: 'tv-detail-source-$focusKey'),
+    );
+  }
+
+  /// 获取播放源对应的定位 Key。
+  GlobalKey _sourceTargetKeyFor(SearchResult source) {
+    final focusKey = _sourceFocusKey(source);
+    return _sourceTargetKeys.putIfAbsent(
+      focusKey,
+      () => GlobalKey(debugLabel: 'tv-detail-source-$focusKey'),
+    );
+  }
+
+  /// 获取选集焦点节点。
+  FocusNode _episodeFocusNodeFor(int index) {
+    return _episodeFocusNodes.putIfAbsent(
+      index,
+      () => FocusNode(debugLabel: 'tv-detail-episode-$index'),
+    );
+  }
+
+  /// 获取选集定位 Key。
+  GlobalKey _episodeTargetKeyFor(int index) {
+    return _episodeTargetKeys.putIfAbsent(
+      index,
+      () => GlobalKey(debugLabel: 'tv-detail-episode-$index'),
+    );
+  }
+
+  /// 获取选集分组焦点节点。
+  FocusNode _episodeGroupFocusNodeFor(int index) {
+    return _episodeGroupFocusNodes.putIfAbsent(
+      index,
+      () => FocusNode(debugLabel: 'tv-detail-episode-group-$index'),
+    );
+  }
+
+  /// 获取选集分组定位 Key。
+  GlobalKey _episodeGroupTargetKeyFor(int index) {
+    return _episodeGroupTargetKeys.putIfAbsent(
+      index,
+      () => GlobalKey(debugLabel: 'tv-detail-episode-group-$index'),
+    );
+  }
+
+  /// 获取推荐卡片的稳定标识。
+  String _recommendFocusKey(VideoInfo videoInfo) {
+    return '${videoInfo.source}::${videoInfo.id}';
+  }
+
+  /// 获取推荐卡片焦点节点。
+  FocusNode _recommendFocusNodeFor(VideoInfo videoInfo) {
+    final focusKey = _recommendFocusKey(videoInfo);
+    return _recommendFocusNodes.putIfAbsent(
+      focusKey,
+      () => FocusNode(debugLabel: 'tv-detail-recommend-$focusKey'),
+    );
+  }
+
+  /// 获取推荐卡片定位 Key。
+  GlobalKey _recommendTargetKeyFor(VideoInfo videoInfo) {
+    final focusKey = _recommendFocusKey(videoInfo);
+    return _recommendTargetKeys.putIfAbsent(
+      focusKey,
+      () => GlobalKey(debugLabel: 'tv-detail-recommend-$focusKey'),
+    );
+  }
+
+  /// 从顶部操作按钮向下稳定聚焦当前播放源。
+  void _focusSelectedSource() {
+    final targetNode = _firstVisibleSourceFocusNode();
+    if (targetNode == null) {
+      return;
+    }
+    targetNode.requestFocus();
+    _ensureFocusedNodeVisible(targetNode);
+  }
+
+  /// 从播放器向下进入第一条播放线路。
+  void _focusFirstSource() {
+    final targetNode = _firstVisibleSourceFocusNode();
+    if (targetNode == null) {
+      return;
+    }
+    targetNode.requestFocus();
+    _ensureFocusedNodeVisible(targetNode);
+  }
+
+  /// 从换源列表向下进入当前分组第一集。
+  void _focusFirstEpisodeInCurrentGroup() {
+    final detail = _currentDetail;
+    if (detail == null || detail.episodes.isEmpty) {
+      _focusFirstRecommend();
+      return;
+    }
+    final node =
+        _firstVisibleIndexedNode(_episodeTargetKeys, _episodeFocusNodes);
+    if (node == null) {
+      return;
+    }
+    node.requestFocus();
+    _ensureFocusedNodeVisible(node);
+  }
+
+  /// 从选集向下进入分组或推荐。
+  void _focusEpisodeDownTarget() {
+    final detail = _currentDetail;
+    final groupCount = _episodeGroupCount(detail?.episodes.length ?? 0);
+    if (groupCount > 1) {
+      final node = _firstVisibleIndexedNode(
+        _episodeGroupTargetKeys,
+        _episodeGroupFocusNodes,
+      );
+      node?.requestFocus();
+      if (node != null) {
+        _ensureFocusedNodeVisible(node);
+      }
+      return;
+    }
+    _focusFirstRecommend();
+  }
+
+  /// 从选集或分组向上回到当前播放源。
+  void _focusSelectedSourceFromBelow() {
+    _focusSelectedSource();
+  }
+
+  /// 从分组向下进入推荐。
+  void _focusFirstRecommend() {
+    final targetNode = _firstVisibleRecommendNode();
+    if (targetNode == null) {
+      _focusBottomAction();
+      return;
+    }
+    targetNode.requestFocus();
+    _ensureFocusedNodeVisible(targetNode);
+  }
+
+  /// 从推荐向下进入底部回到顶部按钮。
+  void _focusBottomAction() {
+    if (!_bottomActionFocusNode.canRequestFocus) {
+      return;
+    }
+    _bottomActionFocusNode.requestFocus();
+    _ensureFocusedNodeVisible(_bottomActionFocusNode);
+  }
+
+  /// 从推荐向上回到选集分组或选集。
+  void _focusRecommendationUpTarget() {
+    final detail = _currentDetail;
+    final groupCount = _episodeGroupCount(detail?.episodes.length ?? 0);
+    if (groupCount > 1) {
+      final groupNode = _firstVisibleIndexedNode(
+        _episodeGroupTargetKeys,
+        _episodeGroupFocusNodes,
+      );
+      if (groupNode != null) {
+        groupNode.requestFocus();
+        _ensureFocusedNodeVisible(groupNode);
+        return;
+      }
+    }
+    _focusFirstEpisodeInCurrentGroup();
+  }
+
+  /// 让指定焦点节点对应控件在详情页外层滚动视口中可见。
+  void _ensureFocusedNodeVisible(FocusNode node) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final context = node.context;
+      if (context == null || !context.mounted) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        context,
+        alignment: TvFocusScroll.defaultAlignment,
+        duration: TvFocusScroll.duration,
+        curve: TvFocusScroll.curve,
+      );
+    });
+  }
+
+  /// 获取当前已构建的索引焦点节点。
+  FocusNode? _visibleNodeForIndex(
+    Map<int, GlobalKey> targetKeys,
+    Map<int, FocusNode> focusNodes,
+    int index,
+  ) {
+    final targetKey = targetKeys[index];
+    if (targetKey?.currentContext == null) {
+      return null;
+    }
+    final node = focusNodes[index];
+    if (node == null || !node.canRequestFocus) {
+      return null;
+    }
+    return node;
+  }
+
+  /// 获取第一个已构建的索引焦点节点。
+  FocusNode? _firstVisibleIndexedNode(
+    Map<int, GlobalKey> targetKeys,
+    Map<int, FocusNode> focusNodes,
+  ) {
+    final sortedIndexes = targetKeys.keys.toList()..sort();
+    for (final index in sortedIndexes) {
+      final node = _visibleNodeForIndex(targetKeys, focusNodes, index);
+      if (node != null) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  /// 获取当前已构建且可见的播放源焦点节点。
+  FocusNode? _visibleSourceFocusNodeFor(SearchResult source) {
+    final focusKey = _sourceFocusKey(source);
+    final targetKey = _sourceTargetKeys[focusKey];
+    if (targetKey?.currentContext == null) {
+      return null;
+    }
+    final node = _sourceFocusNodes[focusKey];
+    if (node == null || !node.canRequestFocus) {
+      return null;
+    }
+    return node;
+  }
+
+  /// 获取第一个已构建的播放源焦点节点，避免焦点落到未渲染项后看起来消失。
+  FocusNode? _firstVisibleSourceFocusNode() {
+    for (final source in _sources) {
+      final node = _visibleSourceFocusNodeFor(source);
+      if (node != null) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  /// 获取第一个已构建的推荐焦点节点。
+  FocusNode? _firstVisibleRecommendNode() {
+    for (final videoInfo in _recommends) {
+      final focusKey = _recommendFocusKey(videoInfo);
+      final targetKey = _recommendTargetKeys[focusKey];
+      if (targetKey?.currentContext == null) {
+        continue;
+      }
+      final node = _recommendFocusNodes[focusKey];
+      if (node != null && node.canRequestFocus) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  /// 获取指定 Key 对应控件的全局矩形。
+  Rect? _globalRectForKey(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) {
+      return null;
+    }
+    return _globalRectForContext(context);
+  }
+
+  /// 获取指定上下文对应控件的全局矩形。
+  Rect? _globalRectForContext(BuildContext context) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) {
+      return null;
+    }
+    final size = renderObject.size;
+    if (size.isEmpty) {
+      return null;
+    }
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & size;
   }
 
   /// 切换收藏状态。
@@ -657,21 +1361,39 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 进入 TV 专属全屏播放器页。
   void _openFullscreenPlayer() {
-    final controller = _playerController;
+    setState(() => _fullscreenOverlayVisible = true);
+  }
+
+  /// 退出详情页内全屏覆盖层。
+  void _closeFullscreenOverlay() {
+    setState(() => _fullscreenOverlayVisible = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _playerFocusNode.requestFocus();
+      }
+    });
+  }
+
+  /// 打开 TV 搜索页。
+  void _openSearch() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => TvFullscreenPlayerScreen(
-          videoInfo: widget.videoInfo,
-          currentDetail: _currentDetail,
-          sources: _sources,
-          stype: widget.stype,
-          initialEpisodeIndex: _episodeIndex,
-          initialPlaybackPosition: controller?.currentPosition,
-          initialPlaybackWasPlaying: controller?.isPlaying ?? true,
-          playerBuilder: widget.fullscreenPlayerBuilder,
-        ),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const TvSearchScreen(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
     );
+  }
+
+  /// 将详情页操作区焦点送回顶部搜索入口。
+  void _focusSearchAction() {
+    _searchFocusNode.requestFocus();
+  }
+
+  /// 将顶部搜索入口焦点送到详情页全屏按钮。
+  void _focusFullscreenAction() {
+    _fullscreenFocusNode.requestFocus();
   }
 
   /// 回到页面顶部。
@@ -689,36 +1411,126 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFF0B0D0E),
         body: SafeArea(
-          child: _isInitialDetailLoading && _currentDetail == null
-              ? Center(
-                  child: CircularProgressIndicator(
-                    color: TvTheme.of(context).accent,
-                  ),
-                )
-              : SingleChildScrollView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(
-                    TvLayout.pageHorizontalPadding,
-                    38,
-                    TvLayout.pageHorizontalPadding,
-                    56,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildHeroArea(),
-                      const SizedBox(height: 30),
-                      _buildSourcesSection(),
-                      const SizedBox(height: 28),
-                      _buildEpisodesSection(),
-                      const SizedBox(height: 34),
-                      _buildRecommendsSection(),
-                      const SizedBox(height: 38),
-                      _buildBottomActions(),
-                    ],
-                  ),
-                ),
+          child: Stack(
+            children: [
+              _isInitialDetailLoading && _currentDetail == null
+                  ? Center(
+                      child: CircularProgressIndicator(
+                        color: TvTheme.of(context).accent,
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(
+                        TvLayout.pageHorizontalPadding,
+                        38,
+                        TvLayout.pageHorizontalPadding,
+                        56,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildPageGuide(),
+                          const SizedBox(height: 26),
+                          _buildHeroArea(),
+                          const SizedBox(height: 30),
+                          _buildSourcesSection(),
+                          const SizedBox(height: 28),
+                          _buildEpisodesSection(),
+                          const SizedBox(height: 34),
+                          _buildRecommendsSection(),
+                          const SizedBox(height: 38),
+                          _buildBottomActions(),
+                        ],
+                      ),
+                    ),
+              if (_fullscreenOverlayVisible) _buildFullscreenOverlay(),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  /// 构建顶部说明、搜索按钮和当前时间。
+  Widget _buildPageGuide() {
+    return Row(
+      children: [
+        Text(
+          'IvyTV',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: FontUtils.poppins(
+            fontSize: 30,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Text(
+            '按返回键返回上一页 | 全屏时向下键可进行播放设置（倍数，其它）',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: FontUtils.poppins(
+              fontSize: 17,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF98A2A8),
+            ),
+          ),
+        ),
+        const SizedBox(width: 22),
+        _TvDetailActionButton(
+          key: const ValueKey('tv-detail-search-action'),
+          label: '搜索',
+          icon: LucideIcons.search,
+          focusNode: _searchFocusNode,
+          borderRadius: 22,
+          onArrowDown: _focusFullscreenAction,
+          onPressed: _openSearch,
+        ),
+        const SizedBox(width: 18),
+        Text(
+          key: const ValueKey('tv-detail-clock'),
+          _currentTime,
+          style: FontUtils.poppins(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFFB6C2BF),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建同页全屏覆盖层。
+  Widget _buildFullscreenOverlay() {
+    return Positioned.fill(
+      child: TvFullscreenPlayerScreen(
+        videoInfo: widget.videoInfo,
+        currentDetail: _currentDetail,
+        sources: _sources,
+        stype: widget.stype,
+        initialEpisodeIndex: _episodeIndex,
+        initialPlaybackPosition: _playerController?.currentPosition,
+        initialPlaybackWasPlaying: _playerController?.isPlaying ?? true,
+        playerBuilder: (context, onControllerCreated) {
+          final player = widget.fullscreenPlayerBuilder?.call(
+            context,
+            onControllerCreated,
+          );
+          if (player != null) {
+            return player;
+          }
+          return _buildSharedPlayer(
+            _currentDetail,
+            onControllerCreatedOverride: onControllerCreated,
+          );
+        },
+        onExitRequested: _closeFullscreenOverlay,
+        onEpisodeChanged: _handleFullscreenEpisodeChanged,
+        onSourceChanged: _handleFullscreenSourceChanged,
+        reuseExistingPlayer: widget.fullscreenPlayerBuilder == null,
       ),
     );
   }
@@ -761,68 +1573,83 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 构建播放器区域。
   Widget _buildPlayerBox(SearchResult? detail) {
-    return TvFocusable(
-      autofocus: true,
-      autoScrollOnFocus: false,
-      onPressed: _openFullscreenPlayer,
-      builder: (context, hasFocus) {
-        return AnimatedContainer(
-          key: const ValueKey('tv-detail-player-entry'),
-          duration: const Duration(milliseconds: 140),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: hasFocus ? Colors.white : Colors.transparent,
-              width: 2,
+    return KeyedSubtree(
+      key: _playerTargetKey,
+      child: TvFocusable(
+        focusNode: _playerFocusNode,
+        autofocus: true,
+        autoScrollOnFocus: false,
+        onArrowDown: _focusFirstSource,
+        onPressed: _openFullscreenPlayer,
+        builder: (context, hasFocus) {
+          return AnimatedContainer(
+            key: const ValueKey('tv-detail-player-entry'),
+            duration: const Duration(milliseconds: 140),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: hasFocus ? Colors.white : Colors.transparent,
+                width: 2,
+              ),
             ),
-          ),
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: widget.playerBuilder?.call(
-                    context,
-                    (controller) {
-                      _playerController = controller;
-                      _playCurrentEpisode();
-                    },
-                  ) ??
-                  VideoPlayerWidget(
-                    surface: VideoPlayerSurface.desktop,
-                    url: null,
-                    videoTitle: detail?.title ?? widget.videoInfo.title,
-                    videoYear: detail?.year ?? widget.videoInfo.year,
-                    videoCover: detail?.poster ?? widget.videoInfo.cover,
-                    currentEpisodeIndex: _episodeIndex,
-                    totalEpisodes: detail?.episodes.length ?? 0,
-                    episodesTitles: detail?.episodesTitles,
-                    isShortDrama: false,
-                    sourceName:
-                        detail?.sourceName ?? widget.videoInfo.sourceName,
-                    showControls: false,
-                    onControllerCreated: (controller) {
-                      _playerController = controller;
-                      _playCurrentEpisode();
-                    },
-                    onFullscreenChanged: (_) {},
-                    onEpisodeChanged: _switchEpisode,
-                    onNextEpisode: () {
-                      final total = detail?.episodes.length ?? 0;
-                      if (_episodeIndex + 1 < total) {
-                        _switchEpisode(_episodeIndex + 1);
-                      }
-                    },
-                    onPreviousEpisode: () {
-                      if (_episodeIndex > 0) {
-                        _switchEpisode(_episodeIndex - 1);
-                      }
-                    },
-                    onVideoCompleted: () {},
-                  ),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _fullscreenOverlayVisible
+                    ? const ColoredBox(color: Colors.black)
+                    : _buildSharedPlayer(detail),
+              ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 构建预览和全屏共用的播放器。
+  Widget _buildSharedPlayer(
+    SearchResult? detail, {
+    void Function(VideoPlayerWidgetController controller)?
+        onControllerCreatedOverride,
+  }) {
+    final controllerCreated =
+        onControllerCreatedOverride ?? _attachPlayerController;
+    return KeyedSubtree(
+      key: _sharedPlayerKey,
+      child: widget.playerBuilder?.call(
+            context,
+            controllerCreated,
+          ) ??
+          VideoPlayerWidget(
+            surface: VideoPlayerSurface.desktop,
+            url: null,
+            videoTitle: detail?.title ?? widget.videoInfo.title,
+            videoYear: detail?.year ?? widget.videoInfo.year,
+            videoCover: detail?.poster ?? widget.videoInfo.cover,
+            currentEpisodeIndex: _episodeIndex,
+            totalEpisodes: detail?.episodes.length ?? 0,
+            episodesTitles: detail?.episodesTitles,
+            isShortDrama: false,
+            sourceName: detail?.sourceName ?? widget.videoInfo.sourceName,
+            showControls: false,
+            enablePip: false,
+            onControllerCreated: controllerCreated,
+            onFullscreenChanged: (_) {},
+            onEpisodeChanged: _switchEpisode,
+            onNextEpisode: () {
+              final total = detail?.episodes.length ?? 0;
+              if (_episodeIndex + 1 < total) {
+                _switchEpisode(_episodeIndex + 1);
+              }
+            },
+            onPreviousEpisode: () {
+              if (_episodeIndex > 0) {
+                _switchEpisode(_episodeIndex - 1);
+              }
+            },
+            onVideoCompleted: () {},
           ),
-        );
-      },
     );
   }
 
@@ -877,18 +1704,30 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           spacing: 14,
           runSpacing: 12,
           children: [
-            _TvDetailActionButton(
-              label: '全屏',
-              icon: LucideIcons.maximize2,
-              focusMemoryGroupKey: 'tv-detail-actions',
-              onPressed: _openFullscreenPlayer,
+            KeyedSubtree(
+              key: _fullscreenTargetKey,
+              child: _TvDetailActionButton(
+                label: '全屏',
+                icon: LucideIcons.maximize2,
+                focusNode: _fullscreenFocusNode,
+                focusMemoryGroupKey: 'tv-detail-actions',
+                onArrowUp: _focusSearchAction,
+                onArrowDown: _sources.isEmpty ? null : _focusSelectedSource,
+                onPressed: _openFullscreenPlayer,
+              ),
             ),
-            _TvDetailActionButton(
-              label: _isFavorite ? '已收藏' : '收藏',
-              icon: LucideIcons.heart,
-              focusMemoryGroupKey: 'tv-detail-actions',
-              iconColor: _isFavorite ? const Color(0xFFE50914) : Colors.white,
-              onPressed: _toggleFavorite,
+            KeyedSubtree(
+              key: _favoriteTargetKey,
+              child: _TvDetailActionButton(
+                label: _isFavorite ? '已收藏' : '收藏',
+                icon: LucideIcons.heart,
+                focusNode: _favoriteFocusNode,
+                focusMemoryGroupKey: 'tv-detail-actions',
+                iconColor: _isFavorite ? const Color(0xFFE50914) : Colors.white,
+                onArrowUp: _focusSearchAction,
+                onArrowDown: _sources.isEmpty ? null : _focusSelectedSource,
+                onPressed: _toggleFavorite,
+              ),
             ),
           ],
         ),
@@ -899,7 +1738,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 构建换源区。
   Widget _buildSourcesSection() {
     return _TvDetailSection(
-      title: '换源',
+      title: '切换线路',
+      subtitle: '遇播放卡顿，音画不同步或无法播放时，请切换播放线路',
       child: _sources.isEmpty
           ? _buildEmptyText('暂无可用源')
           : SizedBox(
@@ -914,11 +1754,34 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   final source = _sources[index];
                   final selected = source.source == _currentDetail?.source &&
                       source.id == _currentDetail?.id;
-                  return _TvChoiceChip(
-                    label: source.sourceName,
-                    selected: selected,
-                    focusMemoryGroupKey: 'tv-detail-source-list',
-                    onPressed: () => _switchSource(source),
+                  final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+                  final isFirstItem = index == 0;
+                  final isLastItem = index == _sources.length - 1;
+                  return KeyedSubtree(
+                    key: _sourceTargetKeyFor(source),
+                    child: TvEdgeShake(
+                      key: edgeShakeKey,
+                      child: Builder(
+                        builder: (chipContext) => _TvChoiceChip(
+                          label: source.sourceName,
+                          selected: selected,
+                          focusNode: _sourceFocusNodeFor(source),
+                          focusMemoryGroupKey: 'tv-detail-source-list',
+                          onArrowLeft: isFirstItem
+                              ? () => edgeShakeKey.currentState
+                                  ?.shake(AxisDirection.left)
+                              : null,
+                          onArrowRight: isLastItem
+                              ? () => edgeShakeKey.currentState
+                                  ?.shake(AxisDirection.right)
+                              : null,
+                          onArrowUp: () =>
+                              _focusNearestHeroControlFrom(chipContext),
+                          onArrowDown: _focusFirstEpisodeInCurrentGroup,
+                          onPressed: () => _switchSource(source),
+                        ),
+                      ),
+                    ),
                   );
                 },
               ),
@@ -942,28 +1805,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (groupCount > 1) ...[
-                  SizedBox(
-                    height: 40,
-                    child: ListView.separated(
-                      key: const ValueKey('tv-detail-episode-group-list'),
-                      scrollDirection: Axis.horizontal,
-                      clipBehavior: Clip.none,
-                      itemCount: groupCount,
-                      separatorBuilder: (_, __) => const SizedBox(width: 18),
-                      itemBuilder: (context, index) {
-                        return _TvTextChoice(
-                          label: _episodeGroupLabel(index, episodes.length),
-                          selected: index == groupIndex,
-                          focusMemoryGroupKey: 'tv-detail-episode-group-list',
-                          onPressed: () => _switchEpisodeGroup(index),
-                          throttleGroupKey: 'tv-detail-episode-group-list',
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
                 SizedBox(
                   height: 52,
                   child: ListView.separated(
@@ -978,15 +1819,78 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                           detail?.episodesTitles.length == episodes.length
                               ? detail!.episodesTitles[index]
                               : '${index + 1}';
-                      return _TvChoiceChip(
-                        label: title.isEmpty ? '${index + 1}' : title,
-                        selected: index == _episodeIndex,
-                        focusMemoryGroupKey: 'tv-detail-episode-list',
-                        onPressed: () => _switchEpisode(index),
+                      final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+                      final isFirstItem = itemIndex == 0;
+                      final isLastItem = itemIndex == visibleIndexes.length - 1;
+                      return TvEdgeShake(
+                        key: edgeShakeKey,
+                        child: KeyedSubtree(
+                          key: _episodeTargetKeyFor(index),
+                          child: _TvChoiceChip(
+                            label: title.isEmpty ? '${index + 1}' : title,
+                            selected: index == _episodeIndex,
+                            focusNode: _episodeFocusNodeFor(index),
+                            focusMemoryGroupKey: 'tv-detail-episode-list',
+                            onArrowLeft: isFirstItem
+                                ? () => edgeShakeKey.currentState
+                                    ?.shake(AxisDirection.left)
+                                : null,
+                            onArrowRight: isLastItem
+                                ? () => edgeShakeKey.currentState
+                                    ?.shake(AxisDirection.right)
+                                : null,
+                            onArrowUp: _focusSelectedSourceFromBelow,
+                            onArrowDown: _focusEpisodeDownTarget,
+                            onPressed: () => _switchEpisode(index),
+                          ),
+                        ),
                       );
                     },
                   ),
                 ),
+                if (groupCount > 1) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 40,
+                    child: ListView.separated(
+                      key: const ValueKey('tv-detail-episode-group-list'),
+                      scrollDirection: Axis.horizontal,
+                      clipBehavior: Clip.none,
+                      itemCount: groupCount,
+                      separatorBuilder: (_, __) => const SizedBox(width: 18),
+                      itemBuilder: (context, index) {
+                        final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+                        final isFirstItem = index == 0;
+                        final isLastItem = index == groupCount - 1;
+                        return TvEdgeShake(
+                          key: edgeShakeKey,
+                          child: KeyedSubtree(
+                            key: _episodeGroupTargetKeyFor(index),
+                            child: _TvTextChoice(
+                              label: _episodeGroupLabel(index, episodes.length),
+                              selected: index == groupIndex,
+                              focusNode: _episodeGroupFocusNodeFor(index),
+                              focusMemoryGroupKey:
+                                  'tv-detail-episode-group-list',
+                              onArrowLeft: isFirstItem
+                                  ? () => edgeShakeKey.currentState
+                                      ?.shake(AxisDirection.left)
+                                  : null,
+                              onArrowRight: isLastItem
+                                  ? () => edgeShakeKey.currentState
+                                      ?.shake(AxisDirection.right)
+                                  : null,
+                              onArrowUp: _focusFirstEpisodeInCurrentGroup,
+                              onArrowDown: _focusFirstRecommend,
+                              onPressed: () => _switchEpisodeGroup(index),
+                              throttleGroupKey: 'tv-detail-episode-group-list',
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ],
             ),
     );
@@ -1007,18 +1911,24 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 separatorBuilder: (_, __) => const SizedBox(width: 18),
                 itemBuilder: (context, index) {
                   final videoInfo = _recommends[index];
-                  return TvVideoCard(
-                    videoInfo: videoInfo,
-                    focusMemoryGroupKey: 'tv-detail-recommend-list',
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (context) => TvVideoDetailScreen(
-                            videoInfo: videoInfo,
+                  return KeyedSubtree(
+                    key: _recommendTargetKeyFor(videoInfo),
+                    child: TvVideoCard(
+                      videoInfo: videoInfo,
+                      focusNode: _recommendFocusNodeFor(videoInfo),
+                      focusMemoryGroupKey: 'tv-detail-recommend-list',
+                      onArrowUp: _focusRecommendationUpTarget,
+                      onArrowDown: _focusBottomAction,
+                      onPressed: () {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (context) => TvVideoDetailScreen(
+                              videoInfo: videoInfo,
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   );
                 },
               ),
@@ -1035,8 +1945,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         runSpacing: 12,
         children: [
           _TvDetailActionButton(
+            key: _bottomActionTargetKey,
             label: '回到顶部',
             icon: LucideIcons.arrowUp,
+            focusNode: _bottomActionFocusNode,
             focusMemoryGroupKey: 'tv-detail-bottom-actions',
             onPressed: _scrollToTop,
           ),
@@ -1063,10 +1975,14 @@ class _TvDetailSection extends StatelessWidget {
   const _TvDetailSection({
     required this.title,
     required this.child,
+    this.subtitle,
   });
 
   /// 分区标题。
   final String title;
+
+  /// 分区副标题。
+  final String? subtitle;
 
   /// 分区内容。
   final Widget child;
@@ -1084,6 +2000,19 @@ class _TvDetailSection extends StatelessWidget {
             color: Colors.white,
           ),
         ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            subtitle!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: FontUtils.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF98A2A8),
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         child,
       ],
@@ -1095,11 +2024,16 @@ class _TvDetailSection extends StatelessWidget {
 class _TvDetailActionButton extends StatelessWidget {
   /// 创建 TV 详情页操作按钮。
   const _TvDetailActionButton({
+    super.key,
     required this.label,
     required this.icon,
     required this.onPressed,
+    this.focusNode,
     this.focusMemoryGroupKey,
     this.iconColor = Colors.white,
+    this.borderRadius = 8,
+    this.onArrowUp,
+    this.onArrowDown,
   });
 
   /// 按钮文案。
@@ -1111,18 +2045,33 @@ class _TvDetailActionButton extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 焦点节点。
+  final FocusNode? focusNode;
+
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
 
   /// 图标颜色。
   final Color iconColor;
 
+  /// 按钮圆角数值。
+  final double borderRadius;
+
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   @override
   Widget build(BuildContext context) {
     return TvFocusable(
+      focusNode: focusNode,
       focusMemoryGroupKey: focusMemoryGroupKey,
       autoScrollOnFocus: false,
       onPressed: onPressed,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
@@ -1130,7 +2079,7 @@ class _TvDetailActionButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             color: const Color(0xCC1B2127),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
               color: hasFocus ? Colors.white : Colors.transparent,
               width: 2,
@@ -1166,6 +2115,11 @@ class _TvTextChoice extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onPressed,
+    this.focusNode,
+    this.onArrowLeft,
+    this.onArrowRight,
+    this.onArrowUp,
+    this.onArrowDown,
     this.focusMemoryGroupKey,
     this.throttleGroupKey,
   });
@@ -1179,6 +2133,21 @@ class _TvTextChoice extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 焦点节点。
+  final FocusNode? focusNode;
+
+  /// 左方向键回调。
+  final VoidCallback? onArrowLeft;
+
+  /// 右方向键回调。
+  final VoidCallback? onArrowRight;
+
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
 
@@ -1189,7 +2158,14 @@ class _TvTextChoice extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
     return TvFocusable(
+      focusNode: focusNode,
       onPressed: onPressed,
+      onArrowLeft: onArrowLeft,
+      onArrowRight: onArrowRight,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
+      horizontalFocusScrollTriggerFraction:
+          _tvDetailOptionScrollTriggerFraction,
       // 分组切换改成纯文字列表后，需要保留逐项经过的焦点节奏。
       focusMemoryGroupKey: focusMemoryGroupKey,
       directionalRepeatThrottleGroupKey: throttleGroupKey,
@@ -1225,6 +2201,11 @@ class _TvChoiceChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onPressed,
+    this.focusNode,
+    this.onArrowLeft,
+    this.onArrowRight,
+    this.onArrowUp,
+    this.onArrowDown,
     this.focusMemoryGroupKey,
   });
 
@@ -1237,6 +2218,21 @@ class _TvChoiceChip extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 焦点节点。
+  final FocusNode? focusNode;
+
+  /// 左方向键回调。
+  final VoidCallback? onArrowLeft;
+
+  /// 右方向键回调。
+  final VoidCallback? onArrowRight;
+
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
 
@@ -1244,8 +2240,15 @@ class _TvChoiceChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
     return TvFocusable(
+      focusNode: focusNode,
       focusMemoryGroupKey: focusMemoryGroupKey,
       onPressed: onPressed,
+      onArrowLeft: onArrowLeft,
+      onArrowRight: onArrowRight,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
+      horizontalFocusScrollTriggerFraction:
+          _tvDetailOptionScrollTriggerFraction,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),

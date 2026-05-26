@@ -28,6 +28,17 @@ void main() {
     expect(previewWidget.showControls, isFalse);
   });
 
+  test('video player pip can be disabled for TV playback', () {
+    const defaultWidget = VideoPlayerWidget(isShortDrama: false);
+    const tvWidget = VideoPlayerWidget(
+      isShortDrama: false,
+      enablePip: false,
+    );
+
+    expect(defaultWidget.enablePip, isTrue);
+    expect(tvWidget.enablePip, isFalse);
+  });
+
   test('player adapter exposes cached ranges through stream and state',
       () async {
     final stream = _FakePlayerAdapterStream();

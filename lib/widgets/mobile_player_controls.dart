@@ -127,6 +127,7 @@ class MobilePlayerControls extends StatefulWidget {
   final ValueChanged<bool>? onPlayerLockChanged;
   final ValueChanged<Duration>? onSeek;
   final bool? directLongPressRateControlOverride;
+  final bool enablePip;
   final bool showPreloadProgress;
   final List<PlayerCachedRange>? preloadProgressRanges;
 
@@ -172,6 +173,7 @@ class MobilePlayerControls extends StatefulWidget {
     this.onPlayerLockChanged,
     this.onSeek,
     this.directLongPressRateControlOverride,
+    this.enablePip = true,
     this.showPreloadProgress = false,
     this.preloadProgressRanges,
   });
@@ -1864,7 +1866,7 @@ class _MobilePlayerControlsState extends State<MobilePlayerControls> {
                             ),
                           ),
 
-                        if (Platform.isAndroid)
+                        if (Platform.isAndroid && widget.enablePip)
                           GestureDetector(
                             onTap: () async {
                               debugPrint('点击小窗按钮，准备进入画中画');

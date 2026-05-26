@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/user_data_service.dart';
+import 'package:selene/tv_app/services/tv_play_record_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
@@ -87,6 +88,10 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     this.stype,
     this.playerBuilder,
     this.playbackController,
+    this.onExitRequested,
+    this.onEpisodeChanged,
+    this.onSourceChanged,
+    this.reuseExistingPlayer = false,
   });
 
   /// 入口视频信息。
@@ -118,6 +123,22 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
   /// 测试注入的播放控制器。
   final TvFullscreenPlaybackController? playbackController;
 
+  /// 是否复用详情页里的同一个播放器实例。
+  ///
+  /// 同页全屏覆盖层在生产路径下设置为 true，避免重新创建播放器导致黑屏。
+  final bool reuseExistingPlayer;
+
+  /// 退出全屏请求回调。
+  ///
+  /// 详情页内全屏覆盖层会使用该回调隐藏覆盖层，保持共享播放器不销毁。
+  final VoidCallback? onExitRequested;
+
+  /// 全屏内选集变化回调。
+  final ValueChanged<int>? onEpisodeChanged;
+
+  /// 全屏内播放源变化回调。
+  final ValueChanged<SearchResult>? onSourceChanged;
+
   @override
   State<TvFullscreenPlayerScreen> createState() =>
       _TvFullscreenPlayerScreenState();
@@ -132,6 +153,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _menuTabs.length,
     (index) => FocusNode(debugLabel: 'tv-player-menu-$index'),
   );
+
+  /// 二级菜单焦点节点。
+  final Map<String, FocusNode> _secondaryMenuFocusNodes = {};
 
   /// 播放器控制器。
   VideoPlayerWidgetController? _playerController;
@@ -187,6 +211,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 播放地址解析任务序号，避免异步回写旧地址。
   int _loadToken = 0;
 
+  /// 上次保存播放进度的时间。
+  DateTime? _lastSaveTime;
+
+  /// 上次保存播放进度的秒数。
+  int? _lastSavePosition;
+
+  /// 换源记录任务序号，避免快速换源时旧任务误清理。
+  int _sourceSwitchRecordSerial = 0;
+
   /// 初次加载全屏播放器时需要使用的续播位置。
   Duration? _pendingInitialPlaybackPosition;
 
@@ -205,11 +238,25 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     '其它',
   ];
 
-  /// 中心 seek 提示宽度，对齐参考播放器的紧凑提示框。
-  static const double _seekOverlayWidth = 272;
+  /// TV 播放器画面比例选项。
+  static const List<(VideoFitType, String)> _fitOptions = [
+    (VideoFitType.contain, '适应'),
+    (VideoFitType.fill, '填充'),
+    (VideoFitType.fitWidth, '宽度'),
+    (VideoFitType.fitHeight, '高度'),
+  ];
+
+  /// TV 播放器倍速选项。
+  static const List<double> _speedOptions = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+  /// 中心 seek 提示宽度，保持比暂停提示更紧凑。
+  static const double _seekOverlayWidth = 232;
 
   /// 顶部暂停态操作提示。
   static const String _pausedHintText = '按【菜单键】或【下键】选择集数、线路和播放设置';
+
+  /// 播放进度保存间隔，对齐手机端节流策略。
+  static const Duration _saveProgressInterval = Duration(seconds: 10);
 
   /// 安全刷新壳层状态。
   ///
@@ -241,6 +288,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    HardwareKeyboard.instance.addHandler(_handleGlobalKeyEvent);
     _clockText = _formatClock(DateTime.now());
     _pendingInitialPlaybackPosition =
         _safeInitialPlaybackPosition(widget.initialPlaybackPosition);
@@ -263,11 +311,18 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     _clockTimer?.cancel();
     _seekOverlayTimer?.cancel();
-    _playerController?.dispose();
+    _playerController?.removeProgressListener(_onVideoProgressUpdate);
+    if (!widget.reuseExistingPlayer) {
+      _playerController?.dispose();
+    }
     _rootFocusNode.dispose();
     for (final node in _menuFocusNodes) {
+      node.dispose();
+    }
+    for (final node in _secondaryMenuFocusNodes.values) {
       node.dispose();
     }
     super.dispose();
@@ -360,11 +415,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return KeyEventResult.ignored;
     }
 
+    if (_isBackKey(event.logicalKey)) {
+      _handleBackKey();
+      return KeyEventResult.handled;
+    }
+
     if (_menuVisible) {
-      if (_isBackKey(event.logicalKey)) {
-        _hideMenu();
-        return KeyEventResult.handled;
-      }
       return KeyEventResult.ignored;
     }
 
@@ -396,6 +452,34 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 判断是否为返回类按键。
   bool _isBackKey(LogicalKeyboardKey key) {
     return TvBackIntent.isBackKey(key);
+  }
+
+  /// 处理全局返回按键。
+  ///
+  /// 播放器平台视图可能抢占 Flutter 焦点，因此全屏页额外监听全局键盘事件。
+  bool _handleGlobalKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return false;
+    }
+    if (!_isBackKey(event.logicalKey)) {
+      return false;
+    }
+    _handleBackKey();
+    return true;
+  }
+
+  /// 执行 TV 返回语义。
+  void _handleBackKey() {
+    if (_menuVisible) {
+      _hideMenu();
+      return;
+    }
+    final exitRequested = widget.onExitRequested;
+    if (exitRequested != null) {
+      exitRequested();
+      return;
+    }
+    unawaited(Navigator.of(context).maybePop());
   }
 
   /// 展示底部菜单。
@@ -589,22 +673,201 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     setState(() => _activeMenuIndex = index);
   }
 
+  /// 获取二级菜单稳定焦点节点。
+  FocusNode _secondaryFocusNodeFor(String group, int index) {
+    final key = '$group::$index';
+    return _secondaryMenuFocusNodes.putIfAbsent(
+      key,
+      () => FocusNode(debugLabel: 'tv-player-secondary-$key'),
+    );
+  }
+
+  /// 把焦点送到当前一级菜单对应的二级选项。
+  void _focusCurrentSecondaryOption() {
+    _currentSecondaryFocusNode?.requestFocus();
+  }
+
+  /// 把焦点送回当前一级菜单。
+  void _focusActivePrimaryMenu() {
+    _menuFocusNodes[_activeMenuIndex].requestFocus();
+  }
+
+  /// 当前二级菜单应该优先聚焦的选项。
+  FocusNode? get _currentSecondaryFocusNode {
+    switch (_menuTabs[_activeMenuIndex]) {
+      case '播放线路':
+        if (widget.sources.isEmpty) {
+          return null;
+        }
+        final selectedIndex = widget.sources.indexWhere(
+          (source) =>
+              source.source == _currentDetail?.source &&
+              source.id == _currentDetail?.id,
+        );
+        return _secondaryFocusNodeFor(
+          'source',
+          selectedIndex < 0 ? 0 : selectedIndex,
+        );
+      case '画面比例':
+        final selectedIndex = _fitOptions.indexWhere(
+          (option) => option.$1 == _fitType,
+        );
+        return _secondaryFocusNodeFor(
+          'fit',
+          selectedIndex < 0 ? 0 : selectedIndex,
+        );
+      case '倍速':
+        final selectedIndex = _speedOptions.indexWhere(
+          (speed) => (speed - _playbackSpeed).abs() < 0.01,
+        );
+        return _secondaryFocusNodeFor(
+          'speed',
+          selectedIndex < 0 ? 0 : selectedIndex,
+        );
+      case '其它':
+        return _secondaryFocusNodeFor('other', 2);
+      case '播放列表':
+      default:
+        if (_episodes.isEmpty) {
+          return null;
+        }
+        return _secondaryFocusNodeFor('episode', _episodeIndex);
+    }
+  }
+
+  /// 播放进度变化时按手机端节流策略保存。
+  void _onVideoProgressUpdate() {
+    _saveProgress(scene: '全屏定时保存');
+  }
+
+  /// 保存当前播放进度。
+  void _saveProgress({bool force = false, required String scene}) {
+    final detail = _currentDetail;
+    final position = _currentPlaybackPosition;
+    final duration = _currentPlaybackDuration;
+    if (detail == null || position.inSeconds < 1 || duration <= Duration.zero) {
+      return;
+    }
+
+    final playTime = position.inSeconds;
+    if (!force) {
+      final now = DateTime.now();
+      if (_lastSaveTime != null &&
+          now.difference(_lastSaveTime!) < _saveProgressInterval) {
+        return;
+      }
+      if (_lastSavePosition != null && playTime == _lastSavePosition) {
+        return;
+      }
+    }
+
+    _lastSaveTime = DateTime.now();
+    _lastSavePosition = playTime;
+
+    final playRecord = TvPlayRecordService.buildRecord(
+      videoInfo: widget.videoInfo,
+      detail: detail,
+      episodeIndex: _episodeIndex,
+      playTime: playTime,
+      totalTime: duration.inSeconds,
+    );
+
+    unawaited(
+      TvPlayRecordService.saveRecord(context, playRecord).then((saved) {
+        if (!saved) {
+          debugPrint('TV 全屏保存播放进度失败 [场景: $scene]');
+        }
+      }),
+    );
+  }
+
+  /// 保存换源后的新播放记录，成功后再清理旧源记录。
+  Future<void> _saveSwitchedSourceRecord({
+    required SearchResult source,
+    required int switchSerial,
+    required int episodeIndex,
+    required int playTime,
+    required int totalTime,
+  }) async {
+    if (playTime < 1) {
+      return;
+    }
+
+    final playRecord = TvPlayRecordService.buildRecord(
+      videoInfo: widget.videoInfo,
+      detail: source,
+      episodeIndex: episodeIndex,
+      playTime: playTime,
+      totalTime: totalTime,
+    );
+    _lastSaveTime = DateTime.now();
+    _lastSavePosition = playTime;
+
+    final saved = await TvPlayRecordService.saveRecord(context, playRecord);
+    if (!saved) {
+      debugPrint('TV 全屏换源记录保护：新记录保存失败，跳过旧记录清理');
+      return;
+    }
+
+    if (!mounted ||
+        switchSerial != _sourceSwitchRecordSerial ||
+        _currentDetail?.source != source.source ||
+        _currentDetail?.id != source.id) {
+      debugPrint('TV 全屏换源记录保护：切源任务已过期，跳过旧记录清理');
+      return;
+    }
+
+    await TvPlayRecordService.cleanupOtherSourceRecords(
+      context: context,
+      keepSource: source,
+      searchTitle: widget.videoInfo.searchTitle.trim().isNotEmpty
+          ? widget.videoInfo.searchTitle
+          : widget.videoInfo.title,
+    );
+  }
+
   /// 切换选集。
   void _switchEpisode(int index) {
     if (index < 0 || index >= _episodes.length) {
       return;
     }
+    _saveProgress(force: true, scene: '全屏切换选集前');
     setState(() => _episodeIndex = index);
+    widget.onEpisodeChanged?.call(index);
     _loadCurrentEpisode(updateController: true);
   }
 
   /// 切换播放线路。
   void _switchSource(SearchResult source) {
+    if (_currentDetail?.source == source.source &&
+        _currentDetail?.id == source.id) {
+      return;
+    }
+    final switchSerial = ++_sourceSwitchRecordSerial;
+    final currentProgress = _currentPlaybackPosition.inSeconds > 0
+        ? _currentPlaybackPosition.inSeconds
+        : (_lastSavePosition ?? 0);
+    final currentTotalDuration = _currentPlaybackDuration.inSeconds;
+    final currentEpisode = _episodeIndex;
+
     setState(() {
       _currentDetail = source;
-      _episodeIndex = 0;
+      final maxEpisodeIndex =
+          source.episodes.isEmpty ? 0 : source.episodes.length - 1;
+      _episodeIndex = currentEpisode.clamp(0, maxEpisodeIndex).toInt();
     });
+    widget.onSourceChanged?.call(source);
+    widget.onEpisodeChanged?.call(_episodeIndex);
     _loadCurrentEpisode(updateController: true);
+    unawaited(
+      _saveSwitchedSourceRecord(
+        source: source,
+        switchSerial: switchSerial,
+        episodeIndex: _episodeIndex,
+        playTime: currentProgress,
+        totalTime: currentTotalDuration,
+      ),
+    );
   }
 
   /// 切换画面比例。
@@ -667,6 +930,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           initialFitType: _fitType,
           isShortDrama: false,
           showControls: false,
+          enablePip: false,
           onControllerCreated: _handlePlayerControllerCreated,
           onPlay: () {
             _scheduleChromeRefresh();
@@ -680,6 +944,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 记录播放器控制器并执行一次首次续播加载。
   void _handlePlayerControllerCreated(VideoPlayerWidgetController controller) {
+    if (!identical(_playerController, controller)) {
+      _playerController?.removeProgressListener(_onVideoProgressUpdate);
+      controller.addProgressListener(_onVideoProgressUpdate);
+    }
     _playerController = controller;
     _scheduleChromeRefresh();
     if (_hasRequestedInitialControllerLoad) {
@@ -689,6 +957,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _hasRequestedInitialControllerLoad = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
+        return;
+      }
+      if (widget.reuseExistingPlayer) {
+        if (!widget.initialPlaybackWasPlaying) {
+          unawaited(controller.pause());
+        }
         return;
       }
       unawaited(_loadCurrentEpisode(updateController: true));
@@ -1087,6 +1361,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 label: _menuTabs[index],
                 selected: _activeMenuIndex == index,
                 minWidth: 120,
+                onArrowUp: _focusCurrentSecondaryOption,
                 onFocus: () => _switchPrimaryMenu(index),
                 onPressed: () => _switchPrimaryMenu(index),
               ),
@@ -1128,9 +1403,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             ? _episodeTitles[index]
             : '第${index + 1}集';
         return _TvPlayerMenuButton(
+          focusNode: _secondaryFocusNodeFor('episode', index),
           label: label.isEmpty ? '第${index + 1}集' : label,
           selected: index == _episodeIndex,
           minWidth: 104,
+          onArrowDown: _focusActivePrimaryMenu,
           onPressed: () => _switchEpisode(index),
         );
       },
@@ -1150,9 +1427,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         final selected = source.source == _currentDetail?.source &&
             source.id == _currentDetail?.id;
         return _TvPlayerMenuButton(
+          focusNode: _secondaryFocusNodeFor('source', index),
           label: source.sourceName,
           selected: selected,
           minWidth: 128,
+          onArrowDown: _focusActivePrimaryMenu,
           onPressed: () => _switchSource(source),
         );
       },
@@ -1161,21 +1440,17 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建画面比例二级菜单。
   Widget _buildFitChoices() {
-    const fits = [
-      (VideoFitType.contain, '适应'),
-      (VideoFitType.fill, '填充'),
-      (VideoFitType.fitWidth, '宽度'),
-      (VideoFitType.fitHeight, '高度'),
-    ];
     return _buildHorizontalChoices(
       key: const ValueKey('tv-fullscreen-fit-list'),
-      itemCount: fits.length,
+      itemCount: _fitOptions.length,
       itemBuilder: (index) {
-        final item = fits[index];
+        final item = _fitOptions[index];
         return _TvPlayerMenuButton(
+          focusNode: _secondaryFocusNodeFor('fit', index),
           label: item.$2,
           selected: item.$1 == _fitType,
           minWidth: 126,
+          onArrowDown: _focusActivePrimaryMenu,
           onPressed: () => _switchFit(item.$1),
         );
       },
@@ -1184,16 +1459,17 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建倍速二级菜单。
   Widget _buildSpeedChoices() {
-    const speeds = [0.75, 1.0, 1.25, 1.5, 2.0];
     return _buildHorizontalChoices(
       key: const ValueKey('tv-fullscreen-speed-list'),
-      itemCount: speeds.length,
+      itemCount: _speedOptions.length,
       itemBuilder: (index) {
-        final speed = speeds[index];
+        final speed = _speedOptions[index];
         return _TvPlayerMenuButton(
+          focusNode: _secondaryFocusNodeFor('speed', index),
           label: '${speed}x',
           selected: (speed - _playbackSpeed).abs() < 0.01,
           minWidth: 110,
+          onArrowDown: _focusActivePrimaryMenu,
           onPressed: () => _switchSpeed(speed),
         );
       },
@@ -1208,24 +1484,30 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       itemBuilder: (index) {
         if (index == 0) {
           return _TvPlayerMenuButton(
+            focusNode: _secondaryFocusNodeFor('other', index),
             label: '片头 00:00',
             selected: false,
             minWidth: 138,
+            onArrowDown: _focusActivePrimaryMenu,
             onPressed: () {},
           );
         }
         if (index == 1) {
           return _TvPlayerMenuButton(
+            focusNode: _secondaryFocusNodeFor('other', index),
             label: '片尾 00:00',
             selected: false,
             minWidth: 138,
+            onArrowDown: _focusActivePrimaryMenu,
             onPressed: () {},
           );
         }
         return _TvPlayerMenuButton(
+          focusNode: _secondaryFocusNodeFor('other', index),
           label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
           selected: _danmakuEnabled,
           minWidth: 138,
+          onArrowDown: _focusActivePrimaryMenu,
           onPressed: () {
             setState(() => _danmakuEnabled = !_danmakuEnabled);
           },
@@ -1280,6 +1562,8 @@ class _TvPlayerMenuButton extends StatelessWidget {
     required this.onPressed,
     this.focusNode,
     this.onFocus,
+    this.onArrowUp,
+    this.onArrowDown,
     this.minWidth = 118,
   });
 
@@ -1295,6 +1579,12 @@ class _TvPlayerMenuButton extends StatelessWidget {
   /// 焦点进入回调。
   final VoidCallback? onFocus;
 
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   /// 点击回调。
   final VoidCallback onPressed;
 
@@ -1307,6 +1597,8 @@ class _TvPlayerMenuButton extends StatelessWidget {
     return TvFocusable(
       focusNode: focusNode,
       onPressed: onPressed,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
       onFocusChanged: (hasFocus) {
         if (hasFocus) {
           onFocus?.call();

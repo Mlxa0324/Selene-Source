@@ -146,7 +146,7 @@ class TvSettingsScreen extends StatefulWidget {
   static Future<TvAccountSaveResult> defaultSaveAccount(
     TvServerCredentials credentials,
   ) {
-    return TvAccountConfigService().saveAndLogin(credentials);
+    return TvAccountConfigService().saveCredentials(credentials);
   }
 
   /// 默认弹幕保存逻辑。
@@ -254,7 +254,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _appliedLoadedData = true;
   }
 
-  /// 保存服务器账号并登录。
+  /// 保存服务器账号配置。
   Future<void> _saveAccount() async {
     setState(() {
       _savingAccount = true;
@@ -441,7 +441,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         ),
         const SizedBox(height: 24),
         _TvActionButton(
-          label: _savingAccount ? '登录中...' : '保存并登录',
+          label: _savingAccount ? '保存中...' : '保存配置',
           onPressed: _savingAccount ? null : _saveAccount,
         ),
       ],

@@ -19,6 +19,7 @@ class TvVideoGrid extends StatefulWidget {
     super.key,
     required this.title,
     required this.videos,
+    this.titleHint,
     this.onVideoPressed,
     this.onVideoFocusChanged,
     this.onArrowUp,
@@ -32,6 +33,11 @@ class TvVideoGrid extends StatefulWidget {
 
   /// 页面标题。
   final String title;
+
+  /// 页面标题右侧提示文案。
+  ///
+  /// 分类页用它提示用户可按确认键呼出筛选面板。
+  final String? titleHint;
 
   /// 视频列表。
   final List<VideoInfo> videos;
@@ -139,13 +145,33 @@ class _TvVideoGridState extends State<TvVideoGrid> {
           TvVideoGrid.focusSafePadding,
           24,
         ),
-        child: Text(
-          widget.title,
-          style: FontUtils.poppins(
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-          ),
+        child: Row(
+          children: [
+            Text(
+              widget.title,
+              style: FontUtils.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            if (widget.titleHint != null) ...[
+              const SizedBox(width: 14),
+              Flexible(
+                child: Text(
+                  key: const ValueKey('tv-video-grid-title-hint'),
+                  widget.titleHint!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: FontUtils.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF7F8A8F),
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

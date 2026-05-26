@@ -211,6 +211,36 @@ void main() {
     expect(find.byKey(const ValueKey('tv-top-nav-clock')), findsOneWidget);
   });
 
+  testWidgets('uses compact radius for utility action buttons', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvTopNav(
+            tabs: const ['首页', '电影', '剧集', '动漫', '综艺', '直播'],
+            selectedIndex: 0,
+            onChanged: (_) {},
+            onSearchPressed: () {},
+            onHistoryPressed: () {},
+            onFavoritesPressed: () {},
+            onSettingsPressed: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final searchButton = find.descendant(
+      of: find.byKey(const ValueKey('tv-top-nav-action-search')),
+      matching: find.byType(AnimatedContainer),
+    );
+    final container = tester.widget<AnimatedContainer>(searchButton);
+    final decoration = container.decoration! as BoxDecoration;
+
+    expect(decoration.borderRadius, BorderRadius.circular(8));
+  });
+
   testWidgets('moves from live tab to quick actions with up key',
       (tester) async {
     int? arrowUpIndex;

@@ -112,6 +112,28 @@ void main() {
     expect(progressFill.widthFactor, 0.25);
   });
 
+  testWidgets('TV video card echoes continue watching progress details',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(
+              index: 497,
+              totalEpisodes: 500,
+              playTime: 497,
+              totalTime: 3600,
+              rate: null,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('497/500'), findsOneWidget);
+    expect(find.text('第497集 · 08:17/01:00:00 · 测试源'), findsOneWidget);
+  });
+
   testWidgets('TV video card delays focus sweep until focus stays briefly',
       (tester) async {
     final focusNode = FocusNode();
@@ -147,6 +169,7 @@ VideoInfo _videoInfo({
   int totalEpisodes = 1,
   int playTime = 0,
   int totalTime = 0,
+  String? rate = '8.8',
 }) {
   return VideoInfo(
     id: 'tv_card_1',
@@ -161,6 +184,6 @@ VideoInfo _videoInfo({
     totalTime: totalTime,
     saveTime: 0,
     searchTitle: '测试影片',
-    rate: '8.8',
+    rate: rate,
   );
 }
