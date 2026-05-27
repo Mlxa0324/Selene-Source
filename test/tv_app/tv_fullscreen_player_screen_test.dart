@@ -7,11 +7,16 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/local_mode_storage_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
+import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 import 'package:selene/widgets/video_player_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('opens TV player menu with down key and hides unsupported tabs',
       (tester) async {
     await tester.pumpWidget(
@@ -48,6 +53,35 @@ void main() {
     expect(find.text('内核'), findsNothing);
   });
 
+  testWidgets('menu keeps top decorations visible', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tv-fullscreen-top-decorations')),
+        findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-fullscreen-top-decorations')),
+        findsOneWidget);
+  });
+
   testWidgets('switches secondary menu when first level tab gets focus',
       (tester) async {
     await tester.pumpWidget(
@@ -80,7 +114,7 @@ void main() {
     expect(find.text('备用线路'), findsOneWidget);
   });
 
-  testWidgets('primary player menu up focuses active secondary option',
+  testWidgets('primary and other menu keep current vertical focus context',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -104,10 +138,663 @@ void main() {
 
     _focusNodeForMenuLabel(tester, '其它').requestFocus();
     await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '片尾 00:00').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '其它').hasFocus, isTrue);
+
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
 
-    expect(_focusNodeForMenuLabel(tester, '弹幕 开').hasFocus, isTrue);
+    expect(_focusNodeForMenuLabel(tester, '片尾 00:00').hasFocus, isTrue);
+  });
+
+  testWidgets('play list primary tab up restores remembered group focus',
+      (tester) async {
+    final detail = _searchResult(
+      'source_a',
+      '主线路',
+      episodeCount: 25,
+      selectedEpisodeIndex: 21,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            index: 22,
+            totalEpisodes: 25,
+          ),
+          currentDetail: detail,
+          sources: [detail],
+          initialEpisodeIndex: 21,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放列表').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '21-25').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '播放列表').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '21-25').hasFocus, isTrue);
+  });
+
+  testWidgets('episode and group rows restore remembered vertical focus',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 25),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 25,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 25,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第3集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '第3集').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '01-20').hasFocus, isTrue);
+
+    _focusNodeForMenuLabel(tester, '01-20').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '第3集').hasFocus, isTrue);
+
+    _focusNodeForMenuLabel(tester, '第12集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '01-20').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '第12集').hasFocus, isTrue);
+
+    _focusNodeForMenuLabel(tester, '21-25').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '21-25').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+
+    _focusNodeForMenuLabel(tester, '21-25').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '播放列表').hasFocus, isTrue);
+  });
+
+  testWidgets('group row arrow up restores episodes after quick group switch',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 25),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 25,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 25,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '21-25').requestFocus();
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+  });
+
+  testWidgets('switching episode updates player data source and title',
+      (tester) async {
+    final updatedUrls = <String>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 3),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 3,
+            ),
+          ],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: const Duration(seconds: 8),
+                  duration: const Duration(seconds: 1000),
+                  onUpdateDataSource: (url, {headers, startAt}) async {
+                    updatedUrls.add(url);
+                  },
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    updatedUrls.clear();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第2集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('第2集'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(updatedUrls, contains('https://example.com/2.m3u8'));
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsNothing);
+  });
+
+  testWidgets('fullscreen player auto plays next episode after completion',
+      (tester) async {
+    final updatedUrls = <String>[];
+    final testHooks = TvFullscreenPlayerScreenTestHooks();
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 3),
+          testHooks: testHooks,
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 3,
+            ),
+          ],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: const Duration(seconds: 66),
+                  duration: const Duration(seconds: 1000),
+                  onUpdateDataSource: (url, {startAt, headers}) async {
+                    updatedUrls.add(url);
+                  },
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    updatedUrls.clear();
+
+    testHooks.onVideoCompleted?.call();
+    await tester.pumpAndSettle();
+
+    expect(updatedUrls, ['https://example.com/2.m3u8']);
+  });
+
+  testWidgets('switching source hides menu immediately', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 3),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 3,
+            ),
+            _searchResult(
+              'source_b',
+              '备用线路',
+              episodeCount: 3,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('备用线路'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(find.text('备用线路'), findsOneWidget);
+  });
+
+  testWidgets('menu auto hides after five seconds of inactivity',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsNothing);
+  });
+
+  testWidgets('episode and group rows keep focused item near same leading edge',
+      (tester) async {
+    final detail = _searchResult(
+      'source_a',
+      '主线路',
+      episodeCount: 120,
+      selectedEpisodeIndex: 20,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            index: 21,
+            totalEpisodes: 120,
+          ),
+          currentDetail: detail,
+          sources: [detail],
+          initialEpisodeIndex: 20,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '21-40').requestFocus();
+    await tester.pumpAndSettle();
+    _expectFinderNearListLeadingEdge(
+      tester,
+      listKey: 'tv-fullscreen-episode-group-list',
+      itemFinder: find.text('21-40'),
+      maxLeadingGap: 36,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    _expectMenuButtonNearListLeadingEdge(
+      tester,
+      listKey: 'tv-fullscreen-episode-list',
+      itemFinder: find.text('第21集'),
+      maxLeadingGap: 36,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '21-40').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '01-20').hasFocus, isTrue);
+    _expectFinderNearListLeadingEdge(
+      tester,
+      listKey: 'tv-fullscreen-episode-group-list',
+      itemFinder: find.text('01-20'),
+      maxLeadingGap: 36,
+    );
+  });
+
+  testWidgets('episode group row keeps scroll position on vertical focus moves',
+      (tester) async {
+    final detail = _searchResult(
+      'source_a',
+      '主线路',
+      episodeCount: 120,
+      selectedEpisodeIndex: 20,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            index: 21,
+            totalEpisodes: 120,
+          ),
+          currentDetail: detail,
+          sources: [detail],
+          initialEpisodeIndex: 20,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '21-40').requestFocus();
+    await tester.pumpAndSettle();
+    expect(find.text('第21集'), findsOneWidget);
+
+    final groupScrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('tv-fullscreen-episode-group-list')),
+    );
+    final groupController = groupScrollView.controller!;
+    final shiftedOffset = (groupController.offset + 40)
+        .clamp(0.0, groupController.position.maxScrollExtent);
+    groupController.jumpTo(shiftedOffset);
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '21-40').hasFocus, isTrue);
+    expect(groupController.offset, moreOrLessEquals(shiftedOffset));
+  });
+
+  testWidgets('play list splits long episodes into grouped pages',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            totalEpisodes: 41,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 41,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 41,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-episode-list')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-fullscreen-episode-group-list')),
+        findsOneWidget);
+    expect(find.text('01-20'), findsOneWidget);
+    expect(find.text('21-40'), findsOneWidget);
+    expect(find.text('41-41'), findsOneWidget);
+
+    expect(find.text('第1集'), findsOneWidget);
+    for (var index = 1; index <= 20; index++) {
+      expect(find.text('第$index集'), findsOneWidget);
+    }
+    expect(find.text('第21集'), findsNothing);
+
+    await tester.tap(find.text('21-40'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsOneWidget);
+    expect(find.text('第40集'), findsOneWidget);
+    expect(find.text('第1集'), findsNothing);
+  });
+
+  testWidgets('fullscreen player menu buttons use narrower widths',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+            _searchResult('source_b', '备用线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    final primaryButton = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('播放列表'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    final primaryConstraints = primaryButton.constraints!;
+    expect(primaryConstraints.minWidth, 100);
+    expect(primaryConstraints.maxWidth, 220);
+
+    final primarySize = tester.getSize(
+      find
+          .ancestor(
+            of: find.text('播放列表'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    expect(primarySize.width, greaterThanOrEqualTo(100));
+
+    final secondaryButton = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('第1集'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    final secondaryConstraints = secondaryButton.constraints!;
+    expect(secondaryConstraints.minWidth, 56);
+  });
+
+  testWidgets('primary menu shakes at left boundary', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放列表').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(find.byType(TvEdgeShake), findsWidgets);
+    expect(find.byKey(const ValueKey('tv-edge-shake')), findsWidgets);
+    expect(_focusNodeForMenuLabel(tester, '播放列表').hasFocus, isTrue);
+  });
+
+  testWidgets('episode row shakes at left boundary', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第1集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(find.byKey(const ValueKey('tv-edge-shake')), findsWidgets);
+    expect(_focusNodeForMenuLabel(tester, '第1集').hasFocus, isTrue);
   });
 
   testWidgets('uses smaller white text in TV player bottom menu',
@@ -167,6 +854,59 @@ void main() {
     expect(find.text('高度'), findsOneWidget);
     expect(find.text('默认'), findsNothing);
     expect(find.text('拉伸'), findsNothing);
+  });
+
+  testWidgets('other menu intro and outro actions seek to configured positions',
+      (tester) async {
+    await UserDataService.saveSkipIntroDuration(75);
+    await UserDataService.saveSkipOutroDuration(90);
+    final seekPositions = <Duration>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 2),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: const Duration(seconds: 8),
+                  duration: const Duration(seconds: 1000),
+                  onSeekTo: (position) async {
+                    seekPositions.add(position);
+                  },
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '其它').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('片头 01:15'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('片尾 01:30'));
+    await tester.pumpAndSettle();
+
+    expect(seekPositions, contains(const Duration(seconds: 75)));
+    expect(seekPositions, contains(const Duration(seconds: 910)));
   });
 
   testWidgets('back key closes TV player menu before popping fullscreen route',
@@ -430,6 +1170,82 @@ void main() {
     expect(find.textContaining('提醒：'), findsNothing);
   });
 
+  testWidgets('loading fullscreen player shows spinner without pause chrome',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(seconds: 17),
+      duration: const Duration(minutes: 45, seconds: 28),
+      playing: false,
+      loading: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('tv-fullscreen-center-play')), findsNothing);
+    expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+        findsNothing);
+  });
+
+  testWidgets('fullscreen spinner hides once playback has started',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(seconds: 17),
+      duration: const Duration(minutes: 45, seconds: 28),
+      playing: true,
+      loading: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('tv-fullscreen-center-play')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+      findsNothing,
+    );
+  });
+
   testWidgets('places fullscreen top decorations on both top sides',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
@@ -498,6 +1314,8 @@ void main() {
     final exception = tester.takeException();
     expect(exception, isNull);
     await tester.pump();
+    await tester.pump(_FakeVideoPlayerWidgetController.loadingHoldDuration);
+    await tester.pump();
     expect(find.byKey(const ValueKey('tv-fullscreen-center-play')),
         findsOneWidget);
   });
@@ -536,6 +1354,62 @@ void main() {
         findsOneWidget);
     expect(find.text('35:30/1:46:59'), findsOneWidget);
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
+  });
+
+  testWidgets('global remote keys drive fullscreen chrome without root focus',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+    );
+    final outsideFocusNode = FocusNode();
+    addTearDown(outsideFocusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: [
+            TvFullscreenPlayerScreen(
+              videoInfo: _videoInfo(),
+              currentDetail: _searchResult('source_a', '主线路'),
+              sources: [
+                _searchResult('source_a', '主线路'),
+              ],
+              playbackController: playback,
+              playerBuilder: (_, __) => const ColoredBox(
+                key: ValueKey('tv-fullscreen-player-placeholder'),
+                color: Colors.black,
+              ),
+            ),
+            Focus(
+              focusNode: outsideFocusNode,
+              child: const SizedBox(
+                key: ValueKey('outside-focus-target'),
+                width: 1,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    outsideFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 30)]);
+    expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
+        findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
   });
 
   testWidgets('center seek overlay uses reference compact width',
@@ -696,6 +1570,22 @@ void main() {
         searchTitle: '主角',
       ),
     );
+    await LocalModeStorageService.savePlayRecord(
+      PlayRecord(
+        id: 'other_video',
+        source: 'source_x',
+        title: '其它影片',
+        sourceName: '其它线路',
+        year: '2026',
+        cover: '',
+        index: 3,
+        totalEpisodes: 10,
+        playTime: 222,
+        totalTime: 800,
+        saveTime: 2,
+        searchTitle: '其它影片',
+      ),
+    );
     var controllerCreated = false;
 
     await tester.pumpWidget(
@@ -751,6 +1641,10 @@ void main() {
     expect(switchedRecord.id, 'detail_source_b');
     expect(switchedRecord.index, 2);
     expect(switchedRecord.playTime, 90);
+    expect(
+      records.where((record) => record.title == '其它影片'),
+      hasLength(1),
+    );
   });
 
   test('TV fullscreen seek acceleration eases from 5s to 29s', () {
@@ -766,10 +1660,44 @@ FocusNode _focusNodeForMenuLabel(WidgetTester tester, String label) {
   final focusFinder = find.ancestor(
     of: find.text(label),
     matching: find.byWidgetPredicate(
-      (widget) => widget is Focus && widget.focusNode != null,
+      (widget) {
+        if (widget is! Focus || widget.focusNode == null) {
+          return false;
+        }
+        final debugLabel = widget.focusNode!.debugLabel ?? '';
+        return debugLabel.startsWith('tv-player-menu-') ||
+            debugLabel.startsWith('tv-player-secondary-') ||
+            debugLabel.startsWith('tv-fullscreen-episode-group-');
+      },
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+void _expectFinderNearListLeadingEdge(
+  WidgetTester tester, {
+  required String listKey,
+  required Finder itemFinder,
+  double maxLeadingGap = 36,
+}) {
+  final listRect = tester.getRect(find.byKey(ValueKey(listKey)));
+  final itemRect = tester.getRect(itemFinder);
+  expect(itemRect.left - listRect.left, lessThanOrEqualTo(maxLeadingGap));
+}
+
+void _expectMenuButtonNearListLeadingEdge(
+  WidgetTester tester, {
+  required String listKey,
+  required Finder itemFinder,
+  double maxLeadingGap = 36,
+}) {
+  final buttonFinder = find.ancestor(
+    of: itemFinder,
+    matching: find.byWidgetPredicate((widget) => widget is AnimatedContainer),
+  );
+  final listRect = tester.getRect(find.byKey(ValueKey(listKey)));
+  final itemRect = tester.getRect(buttonFinder.first);
+  expect(itemRect.left - listRect.left, lessThanOrEqualTo(maxLeadingGap));
 }
 
 VideoInfo _videoInfo({
@@ -795,16 +1723,26 @@ VideoInfo _videoInfo({
   );
 }
 
-SearchResult _searchResult(String source, String sourceName) {
+SearchResult _searchResult(
+  String source,
+  String sourceName, {
+  int episodeCount = 2,
+  int selectedEpisodeIndex = 0,
+}) {
+  final episodes = List<String>.generate(
+    episodeCount,
+    (index) => 'https://example.com/${index + 1}.m3u8',
+  );
+  final episodeTitles = List<String>.generate(
+    episodeCount,
+    (index) => '第${index + 1}集',
+  );
   return SearchResult(
     id: 'detail_$source',
     title: '主角',
     poster: '',
-    episodes: const [
-      'https://example.com/1.m3u8',
-      'https://example.com/2.m3u8',
-    ],
-    episodesTitles: const ['第1集', '第2集'],
+    episodes: episodes,
+    episodesTitles: episodeTitles,
     source: source,
     sourceName: sourceName,
     year: '2026',
@@ -818,11 +1756,13 @@ class _FakeTvFullscreenPlaybackController
     required this.position,
     required this.duration,
     required this.playing,
+    this.loading = false,
   });
 
   Duration position;
   Duration duration;
   bool playing;
+  bool loading;
   int playCount = 0;
   int pauseCount = 0;
   final List<Duration> seekPositions = [];
@@ -835,6 +1775,9 @@ class _FakeTvFullscreenPlaybackController
 
   @override
   bool get isPlaying => playing;
+
+  @override
+  bool get isLoading => loading;
 
   @override
   Future<void> pause() async {
@@ -861,7 +1804,10 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     required this.currentPosition,
     required this.duration,
     this.onUpdateDataSource,
+    this.onSeekTo,
   });
+
+  static const Duration loadingHoldDuration = Duration(milliseconds: 520);
 
   @override
   final bool isPlaying;
@@ -872,6 +1818,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   @override
   final Duration? duration;
 
+  @override
+  bool get isLoading => false;
+
   final List<VoidCallback> _progressListeners = [];
 
   final Future<void> Function(
@@ -879,6 +1828,8 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     Duration? startAt,
     Map<String, String>? headers,
   })? onUpdateDataSource;
+
+  final Future<void> Function(Duration position)? onSeekTo;
 
   @override
   void addProgressListener(VoidCallback listener) {
@@ -917,7 +1868,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   }
 
   @override
-  Future<void> seekTo(Duration position) async {}
+  Future<void> seekTo(Duration position) async {
+    await onSeekTo?.call(position);
+  }
 
   @override
   Future<void> setSpeed(double speed) async {}

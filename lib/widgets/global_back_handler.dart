@@ -33,8 +33,8 @@ class GlobalBackHandler extends StatelessWidget {
       return KeyEventResult.ignored;
     }
 
-    // 延迟到本帧后执行，避免在键盘事件分发中同步改路由栈。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    // 放到微任务里立即分发返回，减少静态页面等待下一帧导致的返回迟滞。
+    Future<void>.microtask(() {
       navigator.maybePop();
     });
     return KeyEventResult.handled;

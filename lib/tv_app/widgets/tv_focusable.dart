@@ -134,6 +134,14 @@ class TvFocusable extends StatefulWidget {
     }
     return false;
   }
+
+  /// 请求焦点回到指定分组最近一次获焦的控件。
+  ///
+  /// 多个横向列表上下切换时，优先回到该列表上次停留的位置；
+  /// 若该分组还没有焦点记忆，则回退到分组内第一个可聚焦项。
+  static bool requestRememberedFocusForGroup(Object groupKey) {
+    return _TvFocusableState.requestRememberedFocusForGroup(groupKey);
+  }
 }
 
 class _TvFocusableState extends State<TvFocusable> {
@@ -182,6 +190,22 @@ class _TvFocusableState extends State<TvFocusable> {
       }
     }
     return bestEntry;
+  }
+
+  /// 请求焦点回到指定分组最近一次获焦的控件。
+  static bool requestRememberedFocusForGroup(Object groupKey) {
+    final rememberedEntry = _lastFocusedByGroup[groupKey];
+    if (rememberedEntry != null && rememberedEntry._isFocusMemoryUsable) {
+      rememberedEntry._effectiveFocusNode.requestFocus();
+      return true;
+    }
+
+    final firstEntry = firstFocusableEntryForGroup(groupKey);
+    if (firstEntry == null) {
+      return false;
+    }
+    firstEntry._effectiveFocusNode.requestFocus();
+    return true;
   }
 
   /// 内部焦点节点。

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
+import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
 
@@ -528,11 +529,27 @@ class _TvTopNavState extends State<TvTopNav> {
                                 padding: EdgeInsets.only(
                                   left: index == 0 ? 0 : 10,
                                 ),
-                                child: _TvTopNavActionButton(
-                                  action: action,
-                                  focusNode: _actionFocusNodes[index],
-                                  onFocusChanged: _handleActionFocusChange,
-                                  onArrowDown: _focusActionSourceTab,
+                                child: Builder(
+                                  builder: (context) {
+                                    final edgeShakeKey =
+                                        GlobalKey<TvEdgeShakeState>();
+                                    final isLastItem =
+                                        index == actions.length - 1;
+                                    return TvEdgeShake(
+                                      key: edgeShakeKey,
+                                      child: _TvTopNavActionButton(
+                                        action: action,
+                                        focusNode: _actionFocusNodes[index],
+                                        onFocusChanged:
+                                            _handleActionFocusChange,
+                                        onArrowDown: _focusActionSourceTab,
+                                        onArrowRight: isLastItem
+                                            ? () => edgeShakeKey.currentState
+                                                ?.shake(AxisDirection.right)
+                                            : null,
+                                      ),
+                                    );
+                                  },
                                 ),
                               );
                             }).toList(),
@@ -666,6 +683,7 @@ class _TvTopNavActionButton extends StatelessWidget {
     required this.focusNode,
     required this.onFocusChanged,
     this.onArrowDown,
+    this.onArrowRight,
   });
 
   /// 快捷操作。
@@ -680,6 +698,9 @@ class _TvTopNavActionButton extends StatelessWidget {
   /// 下方向键回调。
   final VoidCallback? onArrowDown;
 
+  /// 右方向键回调。
+  final VoidCallback? onArrowRight;
+
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
@@ -689,6 +710,7 @@ class _TvTopNavActionButton extends StatelessWidget {
       onFocusChanged: onFocusChanged,
       onPressed: action.onPressed,
       onArrowDown: onArrowDown,
+      onArrowRight: onArrowRight,
       builder: (context, hasFocus) {
         final active = hasFocus || action.selected;
         return Semantics(

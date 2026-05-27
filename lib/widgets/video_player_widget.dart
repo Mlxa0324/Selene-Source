@@ -189,6 +189,8 @@ class VideoPlayerWidgetController {
 
   bool get isPlaying => _state._adapter?.state.playing ?? false;
 
+  bool get isLoading => _state._isLoadingVideo || _state._isBuffering;
+
   Future<void> pause() async {
     await _state._adapter?.pause();
   }

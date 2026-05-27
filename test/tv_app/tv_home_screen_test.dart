@@ -72,13 +72,16 @@ void main() {
     expect(find.text('热门综艺'), findsOneWidget);
   });
 
-  testWidgets('home top nav down focuses first continue watching card',
+  testWidgets('home top nav down restores remembered continue watching card',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: TvHomeScreen(
           loadHomeData: (_) async => TvHomeData(
-            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            continueWatching: List.generate(
+              6,
+              (index) => _videoInfo('continue_$index', '继续 $index'),
+            ),
             hotMovies: List.generate(
               6,
               (index) => _videoInfo('movie_$index', '电影 $index'),
@@ -94,6 +97,8 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'continue_3').requestFocus();
+    await tester.pumpAndSettle();
     _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
     await tester.pumpAndSettle();
     _focusNodeForTopNavLabel(tester, '首页').requestFocus();
@@ -101,8 +106,51 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
-    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'continue_3').hasFocus, isTrue);
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+  });
+
+  testWidgets('home top nav down restores remembered home section focus',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'series_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'series_3').hasFocus, isTrue);
   });
 
   testWidgets('escape from home list focuses selected home top nav tab',
@@ -270,6 +318,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TV 设置页已打开'), findsOneWidget);
+  });
+
+  testWidgets('settings quick action blocks right key and keeps focus',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData.empty(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tv-edge-shake')), findsWidgets);
+
+    _focusNodeForAction(tester, 'settings').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusNodeForAction(tester, 'settings').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(_focusNodeForAction(tester, 'settings').hasFocus, isTrue);
   });
 
   testWidgets('renders live tab as developing placeholder page',
@@ -726,7 +797,8 @@ void main() {
     );
   });
 
-  testWidgets('category top nav down focuses first card after filter closes',
+  testWidgets(
+      'category top nav down restores remembered card after filter closes',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -765,8 +837,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
 
-    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isTrue);
-    expect(_focusNodeForVideoCard(tester, 'movie_10').hasFocus, isFalse);
+    expect(_focusNodeForVideoCard(tester, 'movie_10').hasFocus, isTrue);
   });
 
   testWidgets('escape from category grid focuses selected top nav tab',

@@ -79,8 +79,10 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
     final detailPage = widget.buildDetailPage?.call(videoInfo) ??
         TvVideoDetailScreen(videoInfo: videoInfo);
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => detailPage,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => detailPage,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
     );
   }

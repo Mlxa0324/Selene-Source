@@ -151,6 +151,18 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 推荐影片卡片边界抖动控制键。
   final Map<int, GlobalKey<TvEdgeShakeState>> _recommendEdgeShakeKeys = {};
 
+  /// 搜索历史首项焦点节点。
+  final FocusNode _historyFirstFocusNode = FocusNode();
+
+  /// 搜索热词首项焦点节点。
+  final FocusNode _hotWordFirstFocusNode = FocusNode();
+
+  /// 推荐区首张卡片焦点节点。
+  final FocusNode _recommendFirstFocusNode = FocusNode();
+
+  /// 是否已经完成首屏默认焦点分发。
+  bool _didDispatchInitialContentFocus = false;
+
   /// TV 键盘字符。
   static const List<String> _keyboardKeys = [
     'A',
@@ -203,6 +215,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   @override
   void dispose() {
     _recommendScrollController.dispose();
+    _historyFirstFocusNode.dispose();
+    _hotWordFirstFocusNode.dispose();
+    _recommendFirstFocusNode.dispose();
     super.dispose();
   }
 
@@ -220,6 +235,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               final data = snapshot.data ?? TvSearchData.empty();
               final isLoading =
                   snapshot.connectionState != ConnectionState.done;
+              _dispatchInitialContentFocusIfNeeded(data, isLoading);
 
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -253,18 +269,18 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               Text(
                 '搜索',
                 style: FontUtils.poppins(
-                  fontSize: 31,
+                  fontSize: 28,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Padding(
-                padding: const EdgeInsets.only(bottom: 3),
+                padding: const EdgeInsets.only(bottom: 2),
                 child: Text(
                   '按返回键可退出本页面',
                   style: FontUtils.poppins(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: const Color(0xFF9CA2AD),
                   ),
@@ -272,17 +288,17 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 22),
           _buildSearchField(),
-          const SizedBox(height: 40),
+          const SizedBox(height: 34),
           _buildKeyboard(),
-          const SizedBox(height: 36),
+          const SizedBox(height: 30),
           _buildActionRow(),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           Text(
             '如不习惯 TV 搜索方式，请使用电视联播功能',
             style: FontUtils.poppins(
-              fontSize: 13,
+              fontSize: 12,
               color: const Color(0xFF7F858F),
             ),
           ),
@@ -295,29 +311,29 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   Widget _buildSearchField() {
     return Container(
       key: const ValueKey('tv-search-input'),
-      height: 50,
+      height: 46,
       width: double.infinity,
       alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: const Color(0xFF4B4E58),
-        borderRadius: BorderRadius.circular(25),
+        borderRadius: BorderRadius.circular(23),
       ),
       child: Row(
         children: [
           const Icon(
             Icons.search,
-            size: 21,
+            size: 19,
             color: Color(0xFFE1E4EA),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
           Expanded(
             child: Text(
               _query.isEmpty ? '输入影片名称首字母进行搜索' : _query,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: FontUtils.poppins(
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: _query.isEmpty ? FontWeight.w500 : FontWeight.w700,
                 color: _query.isEmpty ? const Color(0xFFC4C8D0) : Colors.white,
               ),
@@ -336,9 +352,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 6,
-        mainAxisExtent: 48,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 11,
+        mainAxisExtent: 42,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 9,
       ),
       itemCount: _keyboardKeys.length,
       itemBuilder: (context, index) {
@@ -360,7 +376,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               child: Text(
                 keyLabel,
                 style: FontUtils.poppins(
-                  fontSize: 26,
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
                 ),
@@ -382,7 +398,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             onPressed: () => setState(() => _query = ''),
           ),
         ),
-        const SizedBox(width: 82),
+        const SizedBox(width: 68),
         Expanded(
           child: _buildActionButton(
             label: '删除',
@@ -403,11 +419,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          height: 50,
+          height: 46,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: hasFocus ? const Color(0xFF757983) : const Color(0xFF4A4D57),
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: BorderRadius.circular(23),
             border: Border.all(
               color: hasFocus ? Colors.white : Colors.transparent,
               width: 2,
@@ -416,7 +432,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           child: Text(
             label,
             style: FontUtils.poppins(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
               color: Colors.white,
             ),
@@ -428,6 +444,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 构建右侧搜索内容区。
   Widget _buildRightPanel(TvSearchData data, bool isLoading) {
+    final initialFocusTarget = _resolveInitialFocusTarget(data, isLoading);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(22, _panelTopPadding, 70, 42),
       child: Column(
@@ -437,18 +455,88 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             title: '搜索历史',
             words: data.searchHistory,
             emptyText: '暂无搜索历史',
+            firstItemFocusNode: _historyFirstFocusNode,
+            autofocusFirstItem:
+                initialFocusTarget == _TvSearchInitialFocusTarget.history,
           ),
           const SizedBox(height: 28),
           _buildWordSection(
             title: '搜索热词',
             words: data.hotWords,
             emptyText: '暂无搜索热词',
+            firstItemFocusNode: _hotWordFirstFocusNode,
+            autofocusFirstItem:
+                initialFocusTarget == _TvSearchInitialFocusTarget.hotWord,
           ),
           const SizedBox(height: 20),
-          _buildRecommendationSection(data.recommends, isLoading),
+          _buildRecommendationSection(
+            data.recommends,
+            isLoading,
+            firstCardFocusNode: _recommendFirstFocusNode,
+            autofocusFirstCard:
+                initialFocusTarget == _TvSearchInitialFocusTarget.recommend,
+          ),
         ],
       ),
     );
+  }
+
+  /// 解析搜索页首个默认焦点目标。
+  ///
+  /// 优先级保持为：搜索历史第一项 > 搜索热词第一项 > 影片推荐第一张卡片。
+  _TvSearchInitialFocusTarget _resolveInitialFocusTarget(
+    TvSearchData data,
+    bool isLoading,
+  ) {
+    // 有历史时，默认让用户先落到最近一次使用过的搜索词。
+    if (data.searchHistory.isNotEmpty) {
+      return _TvSearchInitialFocusTarget.history;
+    }
+
+    // 没有历史时，回退到热词第一项，方便直接挑选热门内容。
+    if (data.hotWords.isNotEmpty) {
+      return _TvSearchInitialFocusTarget.hotWord;
+    }
+
+    // 词条区域都为空时，再让推荐区第一张卡片接管首焦点。
+    if (!isLoading && data.recommends.isNotEmpty) {
+      return _TvSearchInitialFocusTarget.recommend;
+    }
+
+    return _TvSearchInitialFocusTarget.none;
+  }
+
+  /// 在首屏数据准备完成后，把默认焦点交给目标内容区。
+  void _dispatchInitialContentFocusIfNeeded(
+    TvSearchData data,
+    bool isLoading,
+  ) {
+    if (_didDispatchInitialContentFocus || isLoading) {
+      return;
+    }
+
+    final target = _resolveInitialFocusTarget(data, isLoading);
+    if (target == _TvSearchInitialFocusTarget.none) {
+      return;
+    }
+
+    _didDispatchInitialContentFocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _focusNodeForInitialTarget(target)?.requestFocus();
+    });
+  }
+
+  /// 根据首焦点目标返回对应焦点节点。
+  FocusNode? _focusNodeForInitialTarget(_TvSearchInitialFocusTarget target) {
+    return switch (target) {
+      _TvSearchInitialFocusTarget.history => _historyFirstFocusNode,
+      _TvSearchInitialFocusTarget.hotWord => _hotWordFirstFocusNode,
+      _TvSearchInitialFocusTarget.recommend => _recommendFirstFocusNode,
+      _TvSearchInitialFocusTarget.none => null,
+    };
   }
 
   /// 构建影片推荐横向列表。
@@ -457,6 +545,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   Widget _buildRecommendationSection(
     List<VideoInfo> recommends,
     bool isLoading,
+    {
+    required FocusNode firstCardFocusNode,
+    required bool autofocusFirstCard,
+  }
   ) {
     return Column(
       key: const ValueKey('tv-search-recommend-section'),
@@ -475,7 +567,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           height: TvVideoCard.height + 42,
           child: isLoading
               ? _buildRecommendationLoadingList()
-              : _buildRecommendationList(recommends),
+              : _buildRecommendationList(
+                  recommends,
+                  firstCardFocusNode: firstCardFocusNode,
+                  autofocusFirstCard: autofocusFirstCard,
+                ),
         ),
       ],
     );
@@ -512,7 +608,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   }
 
   /// 构建推荐卡片列表。
-  Widget _buildRecommendationList(List<VideoInfo> recommends) {
+  Widget _buildRecommendationList(
+    List<VideoInfo> recommends, {
+    required FocusNode firstCardFocusNode,
+    required bool autofocusFirstCard,
+  }) {
     if (recommends.isEmpty) {
       return Container(
         key: const ValueKey('tv-search-recommend-empty'),
@@ -550,6 +650,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           child: TvVideoCard(
             videoInfo: videoInfo,
             focusMemoryGroupKey: 'tv-search-recommend-list',
+            focusNode: isFirstItem ? firstCardFocusNode : null,
+            autofocus: autofocusFirstCard && isFirstItem,
             onPressed: () => _openVideo(videoInfo),
             onArrowLeft: isFirstItem
                 ? () => _handleRecommendEdge(index, AxisDirection.left)
@@ -611,6 +713,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required String title,
     required List<String> words,
     required String emptyText,
+    required FocusNode firstItemFocusNode,
+    required bool autofocusFirstItem,
   }) {
     return Column(
       key: ValueKey('tv-search-word-section-$title'),
@@ -639,7 +743,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               mainAxisSpacing: _wordTileMainSpacing,
             ),
             itemCount: words.length,
-            itemBuilder: (context, index) => _buildWordTile(words[index]),
+            itemBuilder: (context, index) => _buildWordTile(
+              words[index],
+              focusNode: index == 0 ? firstItemFocusNode : null,
+              autofocus: autofocusFirstItem && index == 0,
+            ),
           ),
       ],
     );
@@ -667,8 +775,14 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   }
 
   /// 构建搜索词按钮。
-  Widget _buildWordTile(String word) {
+  Widget _buildWordTile(
+    String word, {
+    FocusNode? focusNode,
+    required bool autofocus,
+  }) {
     return TvFocusable(
+      focusNode: focusNode,
+      autofocus: autofocus,
       directionalRepeatThrottleGroupKey: 'tv-search-word-tiles',
       focusMemoryGroupKey: 'tv-search-word-tiles',
       onPressed: () => _setQuery(word),
@@ -727,9 +841,27 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 打开 TV 详情页。
   void _openVideo(VideoInfo videoInfo) {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => TvVideoDetailScreen(videoInfo: videoInfo),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            TvVideoDetailScreen(videoInfo: videoInfo),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
     );
   }
+}
+
+/// 搜索页首焦点目标。
+enum _TvSearchInitialFocusTarget {
+  /// 不主动指定首焦点。
+  none,
+
+  /// 默认聚焦搜索历史首项。
+  history,
+
+  /// 默认聚焦搜索热词首项。
+  hotWord,
+
+  /// 默认聚焦推荐区首张卡片。
+  recommend,
 }

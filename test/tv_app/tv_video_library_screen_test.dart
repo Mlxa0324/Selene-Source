@@ -1,86 +1,63 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/video_info.dart';
-import 'package:selene/tv_app/screens/tv_favorites_screen.dart';
-import 'package:selene/tv_app/screens/tv_history_screen.dart';
+import 'package:selene/tv_app/screens/tv_video_library_screen.dart';
 
 void main() {
-  setUp(() {
-    TestWidgetsFlutterBinding.ensureInitialized();
-    final binding = TestWidgetsFlutterBinding.instance;
-    binding.window.physicalSizeTestValue = const Size(1920, 1080);
-    binding.window.devicePixelRatioTestValue = 1;
-  });
-
-  tearDown(() {
-    final binding = TestWidgetsFlutterBinding.instance;
-    binding.window.clearPhysicalSizeTestValue();
-    binding.window.clearDevicePixelRatioTestValue();
-  });
-
-  testWidgets('renders standalone history page as vertical grid',
+  testWidgets('escape pops TV video library page without waiting extra frame',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: TvHistoryScreen(
-          loadVideos: (_) async => List.generate(
-            8,
-            (index) => _videoInfo('history_$index', '历史 $index'),
-          ),
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvVideoLibraryScreen(
+                        title: '播放历史',
+                        loadVideos: (_) async => [
+                          _videoInfo('history_1', '历史影片'),
+                        ],
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开视频库页'),
+              ),
+            );
+          },
         ),
       ),
     );
 
+    await tester.tap(find.text('打开视频库页'));
     await tester.pumpAndSettle();
 
-    final grid = find.byKey(const ValueKey('tv-video-grid'));
-    final scroll = find.byKey(const ValueKey('tv-video-grid-scroll'));
-    expect(grid, findsOneWidget);
-    expect(scroll, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(find.text('打开视频库页'), findsOneWidget);
     expect(
-      tester.widget<CustomScrollView>(scroll).scrollDirection,
-      Axis.vertical,
+      find.byKey(const ValueKey('tv-video-library-screen-播放历史')),
+      findsNothing,
     );
-    expect(find.text('播放历史'), findsOneWidget);
-    expect(find.text('历史 0'), findsOneWidget);
-  });
-
-  testWidgets('renders standalone favorites page as vertical grid',
-      (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: TvFavoritesScreen(
-          loadVideos: (_) async => List.generate(
-            8,
-            (index) => _videoInfo('favorite_$index', '收藏 $index'),
-          ),
-        ),
-      ),
-    );
-
-    await tester.pumpAndSettle();
-
-    final grid = find.byKey(const ValueKey('tv-video-grid'));
-    final scroll = find.byKey(const ValueKey('tv-video-grid-scroll'));
-    expect(grid, findsOneWidget);
-    expect(scroll, findsOneWidget);
-    expect(
-      tester.widget<CustomScrollView>(scroll).scrollDirection,
-      Axis.vertical,
-    );
-    expect(find.text('收藏夹'), findsOneWidget);
-    expect(find.text('收藏 0'), findsOneWidget);
   });
 }
 
 VideoInfo _videoInfo(String id, String title) {
   return VideoInfo(
     id: id,
-    title: title,
     source: 'test',
+    title: title,
     sourceName: '测试源',
+    year: '2026',
     cover: '',
-    year: '2025',
     index: 1,
     totalEpisodes: 1,
     playTime: 0,

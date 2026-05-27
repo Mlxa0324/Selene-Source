@@ -53,6 +53,11 @@ class _TvBackHandlerState extends State<TvBackHandler> {
   /// 内部焦点节点。
   final FocusNode _ownedFocusNode = FocusNode(debugLabel: 'tv-back-handler');
 
+  /// 是否已有待执行的返回分发任务。
+  ///
+  /// 避免长按 `Esc` 或遥控器返回键时，同一页面在一次返回完成前重复触发多次 pop。
+  bool _backDispatchScheduled = false;
+
   /// 当前实际使用的焦点节点。
   FocusNode get _effectiveFocusNode => widget.focusNode ?? _ownedFocusNode;
 
@@ -80,7 +85,13 @@ class _TvBackHandlerState extends State<TvBackHandler> {
   ///
   /// 先给页面自己的拦截机会，例如先关弹层；如果页面未消费，再走路由返回。
   void _dispatchBack() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    if (_backDispatchScheduled) {
+      return;
+    }
+    _backDispatchScheduled = true;
+
+    Future<void>.microtask(() async {
+      _backDispatchScheduled = false;
       if (!mounted) {
         return;
       }
@@ -90,7 +101,7 @@ class _TvBackHandlerState extends State<TvBackHandler> {
         return;
       }
 
-      Navigator.of(context).maybePop();
+      await Navigator.of(context).maybePop();
     });
   }
 

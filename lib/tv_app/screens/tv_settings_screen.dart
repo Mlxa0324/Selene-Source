@@ -7,6 +7,7 @@ import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/services/tv_account_config_service.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
@@ -372,46 +373,49 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: FutureBuilder<TvSettingsData>(
-        future: _settingsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return Center(
-              child: CircularProgressIndicator(
-                color: TvTheme.of(context).accent,
+    return TvBackHandler(
+      autofocus: true,
+      child: Material(
+        type: MaterialType.transparency,
+        child: FutureBuilder<TvSettingsData>(
+          future: _settingsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return Center(
+                child: CircularProgressIndicator(
+                  color: TvTheme.of(context).accent,
+                ),
+              );
+            }
+
+            _applyLoadedData(snapshot.data ?? TvSettingsData.empty());
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                TvLayout.pageHorizontalPadding,
+                8,
+                TvLayout.pageHorizontalPadding,
+                64,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _buildAccountSection()),
+                  const SizedBox(width: 28),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _buildDanmakuSection(),
+                        const SizedBox(height: 28),
+                        _buildCacheSection(),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             );
-          }
-
-          _applyLoadedData(snapshot.data ?? TvSettingsData.empty());
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              TvLayout.pageHorizontalPadding,
-              8,
-              TvLayout.pageHorizontalPadding,
-              64,
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: _buildAccountSection()),
-                const SizedBox(width: 28),
-                Expanded(
-                  child: Column(
-                    children: [
-                      _buildDanmakuSection(),
-                      const SizedBox(height: 28),
-                      _buildCacheSection(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }

@@ -224,6 +224,48 @@ void main() {
     expect(find.text('0 B'), findsOneWidget);
     expect(find.text('缓存已清除'), findsOneWidget);
   });
+
+  testWidgets('escape pops TV settings page like remote back key',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          Scaffold(
+                        body: TvSettingsScreen(
+                          loadSettings: () async => TvSettingsData.empty(),
+                        ),
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开设置页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开设置页'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('服务器配置'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('打开设置页'), findsOneWidget);
+    expect(find.text('服务器配置'), findsNothing);
+  });
 }
 
 Future<void> _activateTextField(WidgetTester tester, int index) async {

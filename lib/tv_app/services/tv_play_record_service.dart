@@ -60,10 +60,17 @@ class TvPlayRecordService {
       playTime: safePlayTime,
       totalTime: safeTotalTime,
       saveTime: recordTime.millisecondsSinceEpoch,
-      searchTitle: videoInfo.searchTitle.trim().isNotEmpty
-          ? videoInfo.searchTitle
-          : videoInfo.title,
+      searchTitle: resolveSearchTitle(videoInfo),
     );
+  }
+
+  /// 解析播放记录匹配用的搜索标题。
+  ///
+  /// 对齐手机端语义：优先沿用入口搜索标题，只有为空时才回退到影片标题。
+  static String resolveSearchTitle(VideoInfo videoInfo) {
+    return videoInfo.searchTitle.trim().isNotEmpty
+        ? videoInfo.searchTitle
+        : videoInfo.title;
   }
 
   /// 保存当前播放进度。
@@ -155,6 +162,21 @@ class TvPlayRecordService {
     } catch (error) {
       debugPrint('TV 清理其它源播放记录异常: $error');
     }
+  }
+
+  /// 按当前入口视频语义清理同影片其它源播放记录。
+  ///
+  /// 统一复用手机端同片判断关键字，避免详情页和全屏页各自拼接不一致。
+  static Future<void> cleanupOtherSourceRecordsForVideo({
+    required BuildContext context,
+    required SearchResult keepSource,
+    required VideoInfo videoInfo,
+  }) {
+    return cleanupOtherSourceRecords(
+      context: context,
+      keepSource: keepSource,
+      searchTitle: resolveSearchTitle(videoInfo),
+    );
   }
 
   /// 标准化同影片匹配关键字。

@@ -206,16 +206,6 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
   /// 卡片获得焦点时，把当前区块平滑滚动到大屏适合浏览的位置。
   void _handleItemFocusChange(bool hasFocus, int index) {
     if (!hasFocus) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || TvFocusable.groupHasFocusedChild(_focusMemoryGroupKey)) {
-          return;
-        }
-        // 首页横向分区最后一个焦点离组后，重置入口与滚动位置。
-        TvFocusable.resetGroupEntryToFirstFocusable(_focusMemoryGroupKey);
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(0);
-        }
-      });
       return;
     }
 

@@ -3,6 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:io' show Platform;
 
 class FontUtils {
+  /// 标记当前是否运行在 `flutter test` 环境，避免测试时触发字体联网请求。
+  static bool get _isFlutterTestEnvironment {
+    final flutterTest = Platform.environment['FLUTTER_TEST'];
+    return flutterTest != null && flutterTest != 'false';
+  }
+
   static List<String>? get _platformFontFallbacks {
     if (Platform.isIOS || Platform.isMacOS) {
       return const [
@@ -33,9 +39,9 @@ class FontUtils {
     double? height,
     FontStyle? fontStyle,
   }) {
-    if (Platform.isWindows) {
+    if (Platform.isWindows || _isFlutterTestEnvironment) {
       return TextStyle(
-        fontFamily: 'Microsoft YaHei',
+        fontFamily: Platform.isWindows ? 'Microsoft YaHei' : null,
         fontSize: fontSize,
         fontWeight: fontWeight ?? FontWeight.w500,
         color: color,
@@ -66,6 +72,17 @@ class FontUtils {
     double? height,
     FontStyle? fontStyle,
   }) {
+    if (_isFlutterTestEnvironment) {
+      return TextStyle(
+        fontSize: fontSize,
+        fontWeight: fontWeight ?? FontWeight.w500,
+        color: color,
+        letterSpacing: letterSpacing,
+        height: height,
+        fontStyle: fontStyle,
+      );
+    }
+
     return GoogleFonts.sourceCodePro(
       fontSize: fontSize,
       fontWeight: fontWeight,

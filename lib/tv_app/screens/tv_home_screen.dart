@@ -13,6 +13,7 @@ import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/services/tv_video_library_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
+import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_top_nav.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
@@ -329,6 +330,14 @@ class TvHomeScreen extends StatefulWidget {
 
 class _TvHomeScreenState extends State<TvHomeScreen>
     with SingleTickerProviderStateMixin {
+  /// 首页横向分区焦点记忆分组。
+  static const String _continueWatchingSectionFocusGroup =
+      'tv-home-section-继续观看';
+  static const String _hotMoviesSectionFocusGroup = 'tv-home-section-热门电影';
+  static const String _hotSeriesSectionFocusGroup = 'tv-home-section-热门剧集';
+  static const String _hotAnimeSectionFocusGroup = 'tv-home-section-新番放送';
+  static const String _hotVarietySectionFocusGroup = 'tv-home-section-热门综艺';
+
   /// TV 顶部固定区域半透遮罩色。
   static const Color _topScrimColor = Color(0xD00B0D0E);
 
@@ -431,6 +440,24 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 初次展开从排序开始；内容区回到筛选区时优先落到年份行。
   String? _categoryFilterPreferredFocusRowTitle;
 
+  /// 首页横向分区滚动控制器。
+  ///
+  /// 用于首页首次进入和开发期重载后把每个分区恢复到最左侧，
+  /// 避免横向滚动位置残留，导致视觉上像“默认焦点从中间卡片开始”。
+  final ScrollController _continueWatchingScrollController =
+      ScrollController(keepScrollOffset: false);
+  final ScrollController _hotMoviesScrollController =
+      ScrollController(keepScrollOffset: false);
+  final ScrollController _hotSeriesScrollController =
+      ScrollController(keepScrollOffset: false);
+  final ScrollController _hotAnimeScrollController =
+      ScrollController(keepScrollOffset: false);
+  final ScrollController _hotVarietyScrollController =
+      ScrollController(keepScrollOffset: false);
+
+  /// 首页分区初始入口状态是否待重置。
+  bool _shouldResetHomeEntryState = true;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -443,6 +470,14 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     super.initState();
     _tabSwitchController.value = 1;
     _tabSwitchController.addStatusListener(_handleTabSwitchStatus);
+    _resetHomeSectionFocusMemory();
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _resetHomeSectionFocusMemory();
+    _shouldResetHomeEntryState = true;
   }
 
   @override
@@ -452,6 +487,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     _hotSeriesFirstFocusNode.dispose();
     _hotAnimeFirstFocusNode.dispose();
     _hotVarietyFirstFocusNode.dispose();
+    _continueWatchingScrollController.dispose();
+    _hotMoviesScrollController.dispose();
+    _hotSeriesScrollController.dispose();
+    _hotAnimeScrollController.dispose();
+    _hotVarietyScrollController.dispose();
     for (final node in _categoryFirstFocusNodes.values) {
       node.dispose();
     }
@@ -617,6 +657,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 构建 TV 首页标签内容。
   Widget _buildHomeTab(TvHomeData data, bool isLoading) {
+    _scheduleInitialHomeEntryState();
     return Focus(
       canRequestFocus: false,
       onKeyEvent: _handleSelectedTabBackKey,
@@ -628,12 +669,15 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               title: '继续观看',
               videos: data.continueWatching,
               isLoading: isLoading,
+              scrollController: _continueWatchingScrollController,
               onVideoPressed: _openVideoFromRecord,
               autofocusFirstItem: true,
               firstItemFocusNode: _continueWatchingFirstFocusNode,
               onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
-              onArrowDownToNextSection: () =>
-                  _hotMoviesFirstFocusNode.requestFocus(),
+              onArrowDownToNextSection: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotMoviesSectionFocusGroup,
+                fallbackFocusNode: _hotMoviesFirstFocusNode,
+              ),
               // “继续观看”的“查看更多”进入独立播放历史页。
               onMorePressed: _openHistory,
             ),
@@ -641,46 +685,64 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               title: '热门电影',
               videos: data.hotMovies,
               isLoading: isLoading,
+              scrollController: _hotMoviesScrollController,
               onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
               firstItemFocusNode: _hotMoviesFirstFocusNode,
-              onArrowUpFromFirstItem: () =>
-                  _continueWatchingFirstFocusNode.requestFocus(),
-              onArrowDownToNextSection: () =>
-                  _hotSeriesFirstFocusNode.requestFocus(),
+              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
+                focusGroupKey: _continueWatchingSectionFocusGroup,
+                fallbackFocusNode: _continueWatchingFirstFocusNode,
+              ),
+              onArrowDownToNextSection: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotSeriesSectionFocusGroup,
+                fallbackFocusNode: _hotSeriesFirstFocusNode,
+              ),
               onMorePressed: () => _selectTab(1),
             ),
             TvHomeSection(
               title: '热门剧集',
               videos: data.hotTvShows,
               isLoading: isLoading,
+              scrollController: _hotSeriesScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotSeriesFirstFocusNode,
-              onArrowUpFromFirstItem: () =>
-                  _hotMoviesFirstFocusNode.requestFocus(),
-              onArrowDownToNextSection: () =>
-                  _hotAnimeFirstFocusNode.requestFocus(),
+              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotMoviesSectionFocusGroup,
+                fallbackFocusNode: _hotMoviesFirstFocusNode,
+              ),
+              onArrowDownToNextSection: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotAnimeSectionFocusGroup,
+                fallbackFocusNode: _hotAnimeFirstFocusNode,
+              ),
               onMorePressed: () => _selectTab(2),
             ),
             TvHomeSection(
               title: '新番放送',
               videos: data.bangumiCalendar,
               isLoading: isLoading,
+              scrollController: _hotAnimeScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotAnimeFirstFocusNode,
-              onArrowUpFromFirstItem: () =>
-                  _hotSeriesFirstFocusNode.requestFocus(),
-              onArrowDownToNextSection: () =>
-                  _hotVarietyFirstFocusNode.requestFocus(),
+              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotSeriesSectionFocusGroup,
+                fallbackFocusNode: _hotSeriesFirstFocusNode,
+              ),
+              onArrowDownToNextSection: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotVarietySectionFocusGroup,
+                fallbackFocusNode: _hotVarietyFirstFocusNode,
+              ),
               onMorePressed: () => _selectTab(3),
             ),
             TvHomeSection(
               title: '热门综艺',
               videos: data.hotShows,
               isLoading: isLoading,
+              scrollController: _hotVarietyScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotVarietyFirstFocusNode,
-              onArrowUpFromFirstItem: () =>
-                  _hotAnimeFirstFocusNode.requestFocus(),
+              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
+                focusGroupKey: _hotAnimeSectionFocusGroup,
+                fallbackFocusNode: _hotAnimeFirstFocusNode,
+              ),
               onMorePressed: () => _selectTab(4),
             ),
           ],
@@ -1067,11 +1129,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 处理顶部菜单项获焦后的下方向键。
   bool _handleTopNavArrowDown(int index) {
     if (index == 0) {
-      if (_continueWatchingFirstFocusNode.canRequestFocus) {
-        _continueWatchingFirstFocusNode.requestFocus();
-        return true;
-      }
-      return false;
+      return _requestFirstAvailableHomeSectionFocus();
     }
 
     if (!_isCategoryTabIndex(index)) {
@@ -1080,11 +1138,124 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
     final kind = _categoryKindForTabIndex(index);
     final focusNode = kind == null ? null : _categoryFirstFocusNodes[kind];
-    if (focusNode?.canRequestFocus == true) {
-      focusNode!.requestFocus();
+    if (focusNode != null && _isAttachedFocusableNode(focusNode)) {
+      final focusGroupKey = 'tv-category-grid-${kind!.name}';
+      if (TvFocusable.requestRememberedFocusForGroup(focusGroupKey)) {
+        return true;
+      }
+      focusNode.requestFocus();
       return true;
     }
     return false;
+  }
+
+  /// 请求首页首个可用分区的第一张卡片焦点。
+  ///
+  /// 首页首次进入时，如果“继续观看”为空，需要显式回退到下一个有内容的分区，
+  /// 避免焦点系统按几何距离默认跳到中间列卡片。
+  bool _requestFirstAvailableHomeSectionFocus() {
+    final focusTargets = <({Object groupKey, FocusNode firstNode})>[
+      (
+        groupKey: _continueWatchingSectionFocusGroup,
+        firstNode: _continueWatchingFirstFocusNode,
+      ),
+      (
+        groupKey: _hotMoviesSectionFocusGroup,
+        firstNode: _hotMoviesFirstFocusNode,
+      ),
+      (
+        groupKey: _hotSeriesSectionFocusGroup,
+        firstNode: _hotSeriesFirstFocusNode,
+      ),
+      (
+        groupKey: _hotAnimeSectionFocusGroup,
+        firstNode: _hotAnimeFirstFocusNode,
+      ),
+      (
+        groupKey: _hotVarietySectionFocusGroup,
+        firstNode: _hotVarietyFirstFocusNode,
+      ),
+    ];
+
+    for (final target in focusTargets) {
+      if (!_isAttachedFocusableNode(target.firstNode)) {
+        continue;
+      }
+      if (TvFocusable.requestRememberedFocusForGroup(target.groupKey)) {
+        return true;
+      }
+      target.firstNode.requestFocus();
+      return true;
+    }
+    return false;
+  }
+
+  /// 请求首页横向分区最近一次焦点。
+  ///
+  /// 多个横向分区上下切换时，统一优先回到分区里上次停留的卡片，
+  /// 没有焦点记忆时才回到该分区第一张卡片。
+  void _requestHomeSectionFocus({
+    required Object focusGroupKey,
+    required FocusNode fallbackFocusNode,
+  }) {
+    if (!_isAttachedFocusableNode(fallbackFocusNode)) {
+      return;
+    }
+    if (TvFocusable.requestRememberedFocusForGroup(focusGroupKey)) {
+      return;
+    }
+    fallbackFocusNode.requestFocus();
+  }
+
+  /// 判断首页分区首卡焦点节点是否已挂到真实控件上。
+  ///
+  /// 空分区虽然会保留页面级 FocusNode，但没有对应卡片可接收焦点，
+  /// 这里需要额外过滤未挂载节点，避免顶部按下后落回默认空间寻焦。
+  bool _isAttachedFocusableNode(FocusNode focusNode) {
+    return focusNode.canRequestFocus && focusNode.context != null;
+  }
+
+  /// 安排首页首次进入时重置横向分区的视觉入口状态。
+  ///
+  /// 这里仅用于首次挂载和开发期热重载后的首帧：
+  /// 1. 清掉首页分区焦点记忆，避免默认内容焦点落回中间卡片。
+  /// 2. 把每个横向分区滚动位置拉回最左，避免视觉上从中间卡片开始。
+  void _scheduleInitialHomeEntryState() {
+    if (!_shouldResetHomeEntryState) {
+      return;
+    }
+    _shouldResetHomeEntryState = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      for (final controller in <ScrollController>[
+        _continueWatchingScrollController,
+        _hotMoviesScrollController,
+        _hotSeriesScrollController,
+        _hotAnimeScrollController,
+        _hotVarietyScrollController,
+      ]) {
+        if (!controller.hasClients) {
+          continue;
+        }
+        controller.jumpTo(controller.position.minScrollExtent);
+      }
+    });
+  }
+
+  /// 清理首页横向分区的焦点记忆。
+  void _resetHomeSectionFocusMemory() {
+    for (final groupKey in <Object>[
+      _continueWatchingSectionFocusGroup,
+      _hotMoviesSectionFocusGroup,
+      _hotSeriesSectionFocusGroup,
+      _hotAnimeSectionFocusGroup,
+      _hotVarietySectionFocusGroup,
+    ]) {
+      TvFocusable.clearLastFocusedForGroup(groupKey);
+    }
   }
 
   /// 根据顶部菜单下标获取分类类型。

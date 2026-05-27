@@ -163,6 +163,106 @@ void main() {
     expect((leftTop - historyTop).abs(), lessThanOrEqualTo(6));
   });
 
+  testWidgets('left search controls use tighter sizing', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['庆余年'],
+            hotWords: ['剑来'],
+            recommends: [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final titleText = tester.widget<Text>(find.text('搜索'));
+    final hintText = tester.widget<Text>(find.text('按返回键可退出本页面'));
+    final keyboardGrid = tester.widget<GridView>(
+      find.byKey(const ValueKey('tv-search-keyboard')),
+    );
+    final searchField = tester.widget<Container>(
+      find.byKey(const ValueKey('tv-search-input')),
+    );
+    final clearButton = tester.widget<AnimatedContainer>(
+      find.ancestor(
+        of: find.text('清空'),
+        matching: find.byType(AnimatedContainer),
+      ).first,
+    );
+
+    final keyboardDelegate =
+        keyboardGrid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+
+    expect(titleText.style?.fontSize, 28);
+    expect(hintText.style?.fontSize, 15);
+    expect(searchField.constraints?.maxHeight ?? searchField.constraints?.minHeight, 46);
+    expect(keyboardDelegate.mainAxisExtent, 42);
+    expect(clearButton.constraints?.maxHeight ?? clearButton.constraints?.minHeight, 46);
+  });
+
+  testWidgets('autofocuses first search history item when history exists',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['庆余年', '长安的荔枝'],
+            hotWords: const ['剑来', '主角'],
+            recommends: [_videoInfo('recommend_1', '世界的主人')],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, '庆余年').hasFocus, isTrue);
+  });
+
+  testWidgets('autofocuses first hot word when history is empty',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const ['剑来', '主角'],
+            recommends: [_videoInfo('recommend_1', '世界的主人')],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, '剑来').hasFocus, isTrue);
+  });
+
+  testWidgets('autofocuses first recommendation card when words are empty',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const [],
+            recommends: [
+              _videoInfo('recommend_1', '世界的主人'),
+              _videoInfo('recommend_2', '飞驰人生'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, '世界的主人').hasFocus, isTrue);
+  });
+
   testWidgets('recommendation cards use TV card focus scale and edge feedback',
       (tester) async {
     await tester.pumpWidget(
@@ -208,14 +308,17 @@ void main() {
               body: TextButton(
                 onPressed: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => TvSearchScreen(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvSearchScreen(
                         loadSearchData: (_) async => const TvSearchData(
                           searchHistory: ['庆余年'],
                           hotWords: ['剑来'],
                           recommends: [],
                         ),
                       ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
                     ),
                   );
                 },
@@ -237,6 +340,48 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+
+    expect(find.text('打开搜索页'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-search-screen')), findsNothing);
+  });
+
+  testWidgets('escape pops TV search page without waiting for extra frame',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvSearchScreen(
+                        loadSearchData: (_) async => const TvSearchData(
+                          searchHistory: ['庆余年'],
+                          hotWords: ['剑来'],
+                          recommends: [],
+                        ),
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开搜索页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开搜索页'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
 
     expect(find.text('打开搜索页'), findsOneWidget);
     expect(find.byKey(const ValueKey('tv-search-screen')), findsNothing);
