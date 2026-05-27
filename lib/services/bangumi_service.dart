@@ -9,8 +9,58 @@ import 'douban_cache_service.dart';
 class BangumiService {
   static final DoubanCacheService _cache = DoubanCacheService();
   static bool _initialized = false;
+  static const String _calendarCacheKey = 'bangumi_calendar_raw_v1';
+  static const String _calendarFallbackCacheKey =
+      'bangumi_calendar_raw_fallback_v1';
+  static Future<http.Response> Function(
+    Uri uri,
+    Map<String, String> headers,
+  )? _calendarHttpGetForTest;
+  static Future<List<dynamic>?> Function(
+    String cacheKey,
+    bool allowExpired,
+  )? _calendarCacheReaderForTest;
+  static bool _skipCacheInitForTest = false;
+
+  /// 测试专用日历请求函数。
+  @visibleForTesting
+  static set calendarHttpGetForTest(
+    Future<http.Response> Function(
+      Uri uri,
+      Map<String, String> headers,
+    )? loader,
+  ) {
+    _calendarHttpGetForTest = loader;
+  }
+
+  /// 测试专用日历缓存读取函数。
+  @visibleForTesting
+  static set calendarCacheReaderForTest(
+    Future<List<dynamic>?> Function(String cacheKey, bool allowExpired)? reader,
+  ) {
+    _calendarCacheReaderForTest = reader;
+  }
+
+  /// 重置测试注入状态。
+  @visibleForTesting
+  static void resetForTest() {
+    _initialized = false;
+    _calendarHttpGetForTest = null;
+    _calendarCacheReaderForTest = null;
+    _skipCacheInitForTest = false;
+  }
+
+  /// 测试时跳过真实磁盘缓存初始化。
+  @visibleForTesting
+  static void skipCacheInitForTest() {
+    _skipCacheInitForTest = true;
+    _initialized = true;
+  }
 
   static Future<void> _initCache() async {
+    if (_skipCacheInitForTest) {
+      return;
+    }
     if (!_initialized) {
       await _cache.init();
       _initialized = true;
@@ -32,41 +82,27 @@ class BangumiService {
   ) async {
     await _initCache();
 
-    // 接口级缓存：缓存原始 API 数组，固定键，不含参数
-    const cacheKey = 'bangumi_calendar_raw_v1';
-
     // 先尝试读取原始数组缓存
-    try {
-      final cachedRaw = await _cache.get<List<dynamic>>(
-        cacheKey,
-        (raw) => raw as List<dynamic>,
-      );
-      if (cachedRaw != null && cachedRaw.isNotEmpty) {
-        final calendar = cachedRaw
-            .map((item) => BangumiCalendarResponse.fromJson(item as Map<String, dynamic>))
-            .toList();
-        BangumiCalendarResponse? targetDay;
-        for (final day in calendar) {
-          if (day.weekday.id == weekday) {
-            targetDay = day;
-            break;
-          }
-        }
-        final items = targetDay?.items ?? <BangumiItem>[];
-        return ApiResponse.success(items);
-      }
-    } catch (_) {}
+    final cachedItems = await _getCachedCalendarItems(
+      weekday,
+      allowExpired: false,
+    );
+    if (cachedItems != null) {
+      return ApiResponse.success(cachedItems);
+    }
 
     // 未命中缓存，请求接口
     try {
       const apiUrl = 'https://api.bgm.tv/calendar';
       final headers = {
-        'User-Agent': 'senshinya/selene/1.0.0 (Android) (http://github.com/senshinya/selene)',
+        'User-Agent':
+            'senshinya/selene/1.0.0 (Android) (http://github.com/senshinya/selene)',
         'Accept': 'application/json',
       };
 
-      final response = await http
-          .get(Uri.parse(apiUrl), headers: headers)
+      final uri = Uri.parse(apiUrl);
+      final response = await (_calendarHttpGetForTest?.call(uri, headers) ??
+              http.get(uri, headers: headers))
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
@@ -74,7 +110,8 @@ class BangumiService {
 
         // 解析所有星期数据
         final List<BangumiCalendarResponse> calendarData = responseData
-            .map((item) => BangumiCalendarResponse.fromJson(item as Map<String, dynamic>))
+            .map((item) =>
+                BangumiCalendarResponse.fromJson(item as Map<String, dynamic>))
             .toList();
 
         BangumiCalendarResponse? targetDay;
@@ -90,26 +127,101 @@ class BangumiService {
         // 写入接口级缓存：原始数组
         try {
           await _cache.set(
-            cacheKey,
+            _calendarCacheKey,
             responseData,
             const Duration(days: 1),
+          );
+          await _cache.set(
+            _calendarFallbackCacheKey,
+            responseData,
+            const Duration(days: 14),
           );
         } catch (_) {}
 
         return ApiResponse.success(items, statusCode: response.statusCode);
       } else {
+        final staleItems = await _getFallbackCalendarItems(weekday);
+        if (staleItems != null) {
+          return ApiResponse.success(staleItems);
+        }
         return ApiResponse.error(
           '获取 Bangumi 日历失败: ${response.statusCode}',
           statusCode: response.statusCode,
         );
       }
     } catch (e) {
+      final staleItems = await _getFallbackCalendarItems(weekday);
+      if (staleItems != null) {
+        return ApiResponse.success(staleItems);
+      }
       return ApiResponse.error('Bangumi 数据请求异常: ${e.toString()}');
     }
   }
 
+  /// 读取网络失败时的最后可用日历。
+  static Future<List<BangumiItem>?> _getFallbackCalendarItems(
+      int weekday) async {
+    final fallbackItems = await _getCachedCalendarItems(
+      weekday,
+      allowExpired: true,
+      cacheKey: _calendarFallbackCacheKey,
+    );
+    if (fallbackItems != null) {
+      return fallbackItems;
+    }
+
+    return _getCachedCalendarItems(
+      weekday,
+      allowExpired: true,
+      cacheKey: _calendarCacheKey,
+    );
+  }
+
+  /// 读取指定星期的日历缓存。
+  static Future<List<BangumiItem>?> _getCachedCalendarItems(
+    int weekday, {
+    required bool allowExpired,
+    String cacheKey = _calendarCacheKey,
+  }) async {
+    try {
+      final injectedReader = _calendarCacheReaderForTest;
+      final cachedRaw = injectedReader != null
+          ? await injectedReader(cacheKey, allowExpired)
+          : allowExpired
+              ? await _cache.getStale<List<dynamic>>(
+                  cacheKey,
+                  (raw) => raw as List<dynamic>,
+                )
+              : await _cache.get<List<dynamic>>(
+                  cacheKey,
+                  (raw) => raw as List<dynamic>,
+                );
+      if (cachedRaw == null || cachedRaw.isEmpty) {
+        return null;
+      }
+
+      final calendar = cachedRaw
+          .map(
+            (item) => BangumiCalendarResponse.fromJson(
+              item as Map<String, dynamic>,
+            ),
+          )
+          .toList();
+      BangumiCalendarResponse? targetDay;
+      for (final day in calendar) {
+        if (day.weekday.id == weekday) {
+          targetDay = day;
+          break;
+        }
+      }
+      return targetDay?.items ?? <BangumiItem>[];
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 获取 Bangumi 详情数据
-  /// 
+  ///
   /// 参数说明：
   /// - bangumiId: Bangumi ID
   static Future<ApiResponse<BangumiDetails>> getBangumiDetails(
@@ -149,20 +261,23 @@ class BangumiService {
     try {
       final apiUrl = 'https://api.bgm.tv/v0/subjects/$bangumiId';
       final headers = {
-        'User-Agent': 'senshinya/selene/1.0.0 (Android) (http://github.com/senshinya/selene)',
+        'User-Agent':
+            'senshinya/selene/1.0.0 (Android) (http://github.com/senshinya/selene)',
         'Accept': 'application/json',
       };
 
-      final response = await http.get(
-        Uri.parse(apiUrl),
-        headers: headers,
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .get(
+            Uri.parse(apiUrl),
+            headers: headers,
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         try {
           final Map<String, dynamic> data = json.decode(response.body);
           final details = BangumiDetails.fromJson(data);
-          
+
           // 缓存成功的结果，缓存时间为24小时
           try {
             await _cache.set(
@@ -173,10 +288,11 @@ class BangumiService {
           } catch (cacheError) {
             // 静默处理缓存错误
           }
-          
+
           return ApiResponse.success(details, statusCode: response.statusCode);
         } catch (parseError) {
-          return ApiResponse.error('Bangumi 详情数据解析失败: ${parseError.toString()}');
+          return ApiResponse.error(
+              'Bangumi 详情数据解析失败: ${parseError.toString()}');
         }
       } else {
         return ApiResponse.error(
@@ -189,5 +305,3 @@ class BangumiService {
     }
   }
 }
-
-

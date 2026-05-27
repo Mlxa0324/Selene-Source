@@ -70,7 +70,7 @@ abstract interface class TvFullscreenVideoControllerProvider {
 
 /// TV 全屏播放器遥控器 seek 步长规则。
 ///
-/// 左右键长按时从 5 秒逐步加速到 29 秒，避免一开始跳得太猛。
+/// 左右键长按前期保持小步进，持续操作后再平滑加速。
 class TvFullscreenSeekStep {
   /// 私有构造，避免工具类被实例化。
   const TvFullscreenSeekStep._();
@@ -79,16 +79,20 @@ class TvFullscreenSeekStep {
   static const int minSeconds = 5;
 
   /// 长按加速后的最大 seek 秒数。
-  static const int maxSeconds = 29;
+  static const int maxSeconds = 19;
 
-  /// 从起始到最大步长的加速时间。
-  static const Duration rampDuration = Duration(seconds: 3);
+  /// 固定小步进保持时间。
+  static const Duration holdDuration = Duration(seconds: 5);
+
+  /// 固定期结束后，从起始到最大步长的加速时间。
+  static const Duration rampDuration = Duration(seconds: 5);
 
   /// 根据长按持续时间计算当前 seek 秒数。
   static int secondsForElapsed(Duration elapsed) {
-    final progress = elapsed.inMilliseconds <= 0
+    final rampElapsed = elapsed - holdDuration;
+    final progress = rampElapsed.inMilliseconds <= 0
         ? 0.0
-        : (elapsed.inMilliseconds / rampDuration.inMilliseconds)
+        : (rampElapsed.inMilliseconds / rampDuration.inMilliseconds)
             .clamp(0.0, 1.0);
     return (minSeconds + (maxSeconds - minSeconds) * progress).round();
   }
@@ -175,6 +179,9 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
 enum _TvPlaylistSecondaryRow { episode, group }
 
 class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
+  /// 底部进度条左右时间槽位宽度。
+  static const double _progressTimeSlotWidth = 78;
+
   /// 根焦点节点，用于接收遥控器下键和返回键。
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'tv-fullscreen-root');
 
@@ -940,33 +947,44 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     return Duration(milliseconds: milliseconds);
   }
 
-  /// 从菜单跳转到指定播放时间。
-  void _seekFromMenu(Duration target) {
+  /// 将当前播放位置保存为片头跳过点。
+  void _setIntroToCurrentPosition() {
     final duration = _currentPlaybackDuration;
-    final clampedTarget = duration > Duration.zero
-        ? _clampDuration(target, Duration.zero, duration)
-        : (target < Duration.zero ? Duration.zero : target);
-    setState(() {
-      _seekPreviewPosition = clampedTarget;
-      _seekPreviewDuration = duration;
-      _seekOverlayVisible = true;
-    });
-    unawaited(_seekTo(clampedTarget));
-    _scheduleSeekOverlayHide();
+    final position = _currentPlaybackPosition;
+    final seconds = duration > Duration.zero
+        ? _clampDuration(position, Duration.zero, duration).inSeconds
+        : math.max(0, position.inSeconds);
+    setState(() => _skipIntroSeconds = seconds);
+    unawaited(UserDataService.saveSkipIntroDuration(seconds));
   }
 
-  /// 跳转到片头配置位置。
-  void _seekToIntroPosition() {
-    _seekFromMenu(Duration(seconds: _skipIntroSeconds));
+  /// 清空片头跳过点。
+  void _clearIntroPosition() {
+    setState(() => _skipIntroSeconds = 0);
+    unawaited(UserDataService.saveSkipIntroDuration(0));
   }
 
-  /// 跳转到片尾配置位置。
-  void _seekToOutroPosition() {
+  /// 将当前播放位置保存为片尾跳过点。
+  void _setOutroToCurrentPosition() {
     final duration = _currentPlaybackDuration;
     if (duration <= Duration.zero) {
       return;
     }
-    _seekFromMenu(duration - Duration(seconds: _skipOutroSeconds));
+    final position = _clampDuration(
+      _currentPlaybackPosition,
+      Duration.zero,
+      duration,
+    );
+    // 片尾配置沿用“距离结尾剩余秒数”的业务语义。
+    final seconds = (duration - position).inSeconds;
+    setState(() => _skipOutroSeconds = seconds);
+    unawaited(UserDataService.saveSkipOutroDuration(seconds));
+  }
+
+  /// 清空片尾跳过点。
+  void _clearOutroPosition() {
+    setState(() => _skipOutroSeconds = 0);
+    unawaited(UserDataService.saveSkipOutroDuration(0));
   }
 
   /// 安排 seek 提示自动隐藏。
@@ -1509,10 +1527,29 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (detail == null) {
       return 0;
     }
-    final index = widget.sources.indexWhere(
+    final index = _sourcesByEpisodeCountDesc.indexWhere(
       (source) => source.source == detail.source && source.id == detail.id,
     );
     return index < 0 ? 0 : index;
+  }
+
+  /// 获取按集数倒序展示的线路列表。
+  ///
+  /// 集数相同时保留原始传入顺序，避免同集数线路位置抖动。
+  List<SearchResult> get _sourcesByEpisodeCountDesc {
+    final indexedSources = List<({int index, SearchResult source})>.generate(
+      widget.sources.length,
+      (index) => (index: index, source: widget.sources[index]),
+    );
+    indexedSources.sort((a, b) {
+      final countCompare =
+          b.source.episodes.length.compareTo(a.source.episodes.length);
+      if (countCompare != 0) {
+        return countCompare;
+      }
+      return a.index.compareTo(b.index);
+    });
+    return indexedSources.map((entry) => entry.source).toList();
   }
 
   /// 获取当前画面比例下标。
@@ -2082,6 +2119,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             .clamp(0.0, 1.0);
     final statusIcon =
         _isPlaybackPlaying ? LucideIcons.pause : LucideIcons.play;
+    final timeTextStyle = FontUtils.poppins(
+      fontSize: 17,
+      fontWeight: FontWeight.w500,
+      color: Colors.white.withValues(alpha: 0.96),
+    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
 
     return Positioned(
       left: 34,
@@ -2099,12 +2141,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 size: 20,
               ),
               const SizedBox(width: 8),
-              Text(
-                _formatProgressBarDuration(clampedPosition),
-                style: FontUtils.poppins(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: 0.96),
+              SizedBox(
+                key: const ValueKey('tv-fullscreen-bottom-current-time-slot'),
+                width: _progressTimeSlotWidth,
+                child: Text(
+                  _formatProgressBarDuration(clampedPosition),
+                  style: timeTextStyle,
                 ),
               ),
               const SizedBox(width: 14),
@@ -2162,12 +2204,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 ),
               ),
               const SizedBox(width: 14),
-              Text(
-                _formatProgressBarDuration(duration),
-                style: FontUtils.poppins(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white.withValues(alpha: 0.96),
+              SizedBox(
+                width: _progressTimeSlotWidth,
+                child: Text(
+                  _formatProgressBarDuration(duration),
+                  textAlign: TextAlign.right,
+                  style: timeTextStyle,
                 ),
               ),
               const SizedBox(width: 10),
@@ -2275,8 +2317,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              const Color(0xFF111822).withValues(alpha: 0.94),
-              const Color(0xFF060A10).withValues(alpha: 0.98),
+              const Color(0xFF111822).withValues(alpha: 0.72),
+              const Color(0xFF060A10).withValues(alpha: 0.78),
             ],
           ),
         ),
@@ -2315,7 +2357,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                       focusNode: _menuFocusNodes[index],
                       label: _menuTabs[index],
                       selected: _activeMenuIndex == index,
-                      minWidth: 100,
+                      minWidth: 67,
                       onArrowLeft: isFirstItem
                           ? () => edgeShakeKey.currentState
                               ?.shake(AxisDirection.left)
@@ -2375,6 +2417,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         _buildHorizontalChoices(
           key: const ValueKey('tv-fullscreen-episode-list'),
           controller: _episodeListScrollController,
+          height: 104,
           itemCount: visibleIndexes.length,
           itemBuilder: (itemIndex) {
             final index = visibleIndexes[itemIndex];
@@ -2392,7 +2435,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   focusNode: _secondaryFocusNodeFor('episode', index),
                   label: label.isEmpty ? '第${index + 1}集' : label,
                   selected: index == _episodeIndex,
-                  minWidth: 56,
+                  minWidth: 190,
+                  maxWidth: 260,
+                  minHeight: 104,
+                  maxLines: 4,
+                  textOverflow: TextOverflow.clip,
                   autoScrollOnFocus: false,
                   onArrowLeft: isFirstItem
                       ? () =>
@@ -2486,23 +2533,30 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (widget.sources.isEmpty) {
       return _buildHint('暂无线路');
     }
+    final sources = _sourcesByEpisodeCountDesc;
     return _buildHorizontalChoices(
       key: const ValueKey('tv-fullscreen-source-list'),
-      itemCount: widget.sources.length,
+      height: 88,
+      itemCount: sources.length,
       itemBuilder: (index) {
-        final source = widget.sources[index];
+        final source = sources[index];
         final selected = source.source == _currentDetail?.source &&
             source.id == _currentDetail?.id;
         final edgeShakeKey = _secondaryEdgeShakeKeyFor('source', index);
         final isFirstItem = index == 0;
-        final isLastItem = index == widget.sources.length - 1;
+        final isLastItem = index == sources.length - 1;
         return TvEdgeShake(
           key: edgeShakeKey,
           child: _TvPlayerMenuButton(
             focusNode: _secondaryFocusNodeFor('source', index),
             label: source.sourceName,
+            trailingText: '（${source.episodes.length}）',
             selected: selected,
-            minWidth: 104,
+            minWidth: 190,
+            maxWidth: 260,
+            minHeight: 88,
+            maxLines: 2,
+            textOverflow: TextOverflow.clip,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -2535,7 +2589,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             focusNode: _secondaryFocusNodeFor('fit', index),
             label: item.$2,
             selected: item.$1 == _fitType,
-            minWidth: 100,
+            minWidth: 67,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -2568,7 +2622,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             focusNode: _secondaryFocusNodeFor('speed', index),
             label: '${speed}x',
             selected: (speed - _playbackSpeed).abs() < 0.01,
-            minWidth: 92,
+            minWidth: 62,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -2587,81 +2641,102 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建其它二级菜单。
   Widget _buildOtherChoices() {
-    return _buildHorizontalChoices(
-      key: const ValueKey('tv-fullscreen-other-list'),
-      itemCount: 3,
-      itemBuilder: (index) {
-        final edgeShakeKey = _secondaryEdgeShakeKeyFor('other', index);
-        final isFirstItem = index == 0;
-        final isLastItem = index == 2;
-        if (index == 0) {
-          return TvEdgeShake(
-            key: edgeShakeKey,
-            child: _TvPlayerMenuButton(
-              focusNode: _secondaryFocusNodeFor('other', index),
-              label: '片头 ${_formatProgressBarDuration(
-                Duration(seconds: _skipIntroSeconds),
-              )}',
-              selected: false,
-              minWidth: 116,
-              onArrowLeft: isFirstItem
-                  ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
-                  : null,
-              onArrowRight: isLastItem
-                  ? () => edgeShakeKey.currentState?.shake(AxisDirection.right)
-                  : null,
-              onArrowUp: _keepMenuFocusInCurrentRow,
-              onArrowDown: _focusCurrentPrimaryMenu,
-              onFocus: () => _rememberSecondaryFocus('other', index),
-              onPressed: _seekToIntroPosition,
-            ),
-          );
-        }
-        if (index == 1) {
-          return TvEdgeShake(
-            key: edgeShakeKey,
-            child: _TvPlayerMenuButton(
-              focusNode: _secondaryFocusNodeFor('other', index),
-              label: '片尾 ${_formatProgressBarDuration(
-                Duration(seconds: _skipOutroSeconds),
-              )}',
-              selected: false,
-              minWidth: 116,
-              onArrowLeft: isFirstItem
-                  ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
-                  : null,
-              onArrowRight: isLastItem
-                  ? () => edgeShakeKey.currentState?.shake(AxisDirection.right)
-                  : null,
-              onArrowUp: _keepMenuFocusInCurrentRow,
-              onArrowDown: _focusCurrentPrimaryMenu,
-              onFocus: () => _rememberSecondaryFocus('other', index),
-              onPressed: _seekToOutroPosition,
-            ),
-          );
-        }
-        return TvEdgeShake(
-          key: edgeShakeKey,
-          child: _TvPlayerMenuButton(
-            focusNode: _secondaryFocusNodeFor('other', index),
-            label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
-            selected: _danmakuEnabled,
-            minWidth: 116,
-            onArrowLeft: isFirstItem
-                ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
-                : null,
-            onArrowRight: isLastItem
-                ? () => edgeShakeKey.currentState?.shake(AxisDirection.right)
-                : null,
-            onArrowUp: _keepMenuFocusInCurrentRow,
-            onArrowDown: _focusCurrentPrimaryMenu,
-            onFocus: () => _rememberSecondaryFocus('other', index),
-            onPressed: () {
-              setState(() => _danmakuEnabled = !_danmakuEnabled);
-            },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '确认/空格/Enter 设置当前时间，长按清空',
+          style: FontUtils.poppins(
+            fontSize: 15,
+            color: const Color(0xFF98A2A8),
           ),
-        );
-      },
+        ),
+        const SizedBox(height: 8),
+        _buildHorizontalChoices(
+          key: const ValueKey('tv-fullscreen-other-list'),
+          itemCount: 3,
+          itemBuilder: (index) {
+            final edgeShakeKey = _secondaryEdgeShakeKeyFor('other', index);
+            final isFirstItem = index == 0;
+            final isLastItem = index == 2;
+            if (index == 0) {
+              return TvEdgeShake(
+                key: edgeShakeKey,
+                child: _TvPlayerMenuButton(
+                  focusNode: _secondaryFocusNodeFor('other', index),
+                  label: '片头 ${_formatProgressBarDuration(
+                    Duration(seconds: _skipIntroSeconds),
+                  )}',
+                  selected: false,
+                  minWidth: 78,
+                  onArrowLeft: isFirstItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.right)
+                      : null,
+                  onArrowUp: _keepMenuFocusInCurrentRow,
+                  onArrowDown: _focusCurrentPrimaryMenu,
+                  onFocus: () => _rememberSecondaryFocus('other', index),
+                  onPressed: _setIntroToCurrentPosition,
+                  onLongPressed: _clearIntroPosition,
+                ),
+              );
+            }
+            if (index == 1) {
+              return TvEdgeShake(
+                key: edgeShakeKey,
+                child: _TvPlayerMenuButton(
+                  focusNode: _secondaryFocusNodeFor('other', index),
+                  label: '片尾 ${_formatProgressBarDuration(
+                    Duration(seconds: _skipOutroSeconds),
+                  )}',
+                  selected: false,
+                  minWidth: 78,
+                  onArrowLeft: isFirstItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.right)
+                      : null,
+                  onArrowUp: _keepMenuFocusInCurrentRow,
+                  onArrowDown: _focusCurrentPrimaryMenu,
+                  onFocus: () => _rememberSecondaryFocus('other', index),
+                  onPressed: _setOutroToCurrentPosition,
+                  onLongPressed: _clearOutroPosition,
+                ),
+              );
+            }
+            return TvEdgeShake(
+              key: edgeShakeKey,
+              child: _TvPlayerMenuButton(
+                focusNode: _secondaryFocusNodeFor('other', index),
+                label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
+                selected: _danmakuEnabled,
+                minWidth: 78,
+                onArrowLeft: isFirstItem
+                    ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
+                    : null,
+                onArrowRight: isLastItem
+                    ? () =>
+                        edgeShakeKey.currentState?.shake(AxisDirection.right)
+                    : null,
+                onArrowUp: _keepMenuFocusInCurrentRow,
+                onArrowDown: _focusCurrentPrimaryMenu,
+                onFocus: () => _rememberSecondaryFocus('other', index),
+                onPressed: () {
+                  setState(() => _danmakuEnabled = !_danmakuEnabled);
+                },
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -2669,12 +2744,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Widget _buildHorizontalChoices({
     required Key key,
     ScrollController? controller,
+    double height = 56,
     required int itemCount,
     required Widget Function(int index) itemBuilder,
   }) {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: height,
       child: SingleChildScrollView(
         key: key,
         controller: controller,
@@ -2718,17 +2794,26 @@ class _TvPlayerMenuButton extends StatelessWidget {
     required this.selected,
     required this.onPressed,
     this.focusNode,
+    this.trailingText,
+    this.onLongPressed,
     this.onFocus,
     this.onArrowLeft,
     this.onArrowRight,
     this.onArrowUp,
     this.onArrowDown,
     this.minWidth = 118,
+    this.maxWidth = 147,
+    this.minHeight = 56,
+    this.maxLines = 1,
+    this.textOverflow = TextOverflow.ellipsis,
     this.autoScrollOnFocus = true,
   });
 
   /// 按钮文案。
   final String label;
+
+  /// 按钮文案右侧补充信息。
+  final String? trailingText;
 
   /// 是否选中。
   final bool selected;
@@ -2754,8 +2839,23 @@ class _TvPlayerMenuButton extends StatelessWidget {
   /// 点击回调。
   final VoidCallback onPressed;
 
+  /// 确认键长按回调。
+  final VoidCallback? onLongPressed;
+
   /// 最小宽度。
   final double minWidth;
+
+  /// 最大宽度。
+  final double maxWidth;
+
+  /// 最小高度。
+  final double minHeight;
+
+  /// 文案最大行数。
+  final int maxLines;
+
+  /// 文案溢出策略。
+  final TextOverflow textOverflow;
 
   /// 获焦时是否使用通用自动滚动。
   final bool autoScrollOnFocus;
@@ -2767,6 +2867,7 @@ class _TvPlayerMenuButton extends StatelessWidget {
       focusNode: focusNode,
       autoScrollOnFocus: autoScrollOnFocus,
       onPressed: onPressed,
+      onLongPressed: onLongPressed,
       onArrowLeft: onArrowLeft,
       onArrowRight: onArrowRight,
       onArrowUp: onArrowUp,
@@ -2779,8 +2880,11 @@ class _TvPlayerMenuButton extends StatelessWidget {
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
-          height: 56,
-          constraints: BoxConstraints(minWidth: minWidth, maxWidth: 220),
+          constraints: BoxConstraints(
+            minWidth: minWidth,
+            maxWidth: maxWidth,
+            minHeight: minHeight,
+          ),
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
@@ -2791,18 +2895,49 @@ class _TvPlayerMenuButton extends StatelessWidget {
               width: 2,
             ),
           ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: FontUtils.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
-          ),
+          child: _buildLabelText(),
         );
       },
+    );
+  }
+
+  /// 构建按钮主文案和右侧补充文案。
+  Widget _buildLabelText() {
+    final style = FontUtils.poppins(
+      fontSize: 18,
+      fontWeight: FontWeight.w800,
+      color: Colors.white,
+    );
+    final extraText = trailingText;
+    if (extraText == null || extraText.isEmpty) {
+      return Text(
+        label,
+        maxLines: maxLines,
+        overflow: textOverflow,
+        softWrap: maxLines > 1,
+        style: style,
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            maxLines: maxLines,
+            overflow: textOverflow,
+            softWrap: maxLines > 1,
+            style: style,
+          ),
+        ),
+        Text(
+          extraText,
+          maxLines: maxLines,
+          overflow: textOverflow,
+          softWrap: false,
+          style: style,
+        ),
+      ],
     );
   }
 }

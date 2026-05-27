@@ -192,6 +192,59 @@ class DoubanCacheService {
     return null;
   }
 
+  /// 获取最近缓存。
+  ///
+  /// 与 [get] 不同，这里允许读取已经过期但结构仍可用的数据。用于外部接口临时不可达时
+  /// 兜底展示旧数据，避免首页区块直接变成空列表。
+  Future<T?> getStale<T>(String key, T Function(dynamic) decode) async {
+    try {
+      final memoryItem = _memoryCache[key];
+      if (memoryItem != null) {
+        final decoded = _decodeCacheData<T>(key, memoryItem.data, decode);
+        if (decoded != null) {
+          return decoded;
+        }
+      }
+
+      if (_cacheDir == null) {
+        return null;
+      }
+
+      final file = File('${_cacheDir!.path}/$key.json');
+      if (!await file.exists()) {
+        return null;
+      }
+
+      final jsonString = await file.readAsString();
+      final jsonData = json.decode(jsonString);
+      if (jsonData is! Map<String, dynamic>) {
+        return null;
+      }
+
+      final cacheItem = CacheItem.fromJson<dynamic>(jsonData, (data) => data);
+      _memoryCache[key] = cacheItem;
+      return _decodeCacheData<T>(key, cacheItem.data, decode);
+    } catch (e) {
+      if (kDebugMode) {
+        print('读取过期豆瓣缓存失败: $e');
+      }
+      return null;
+    }
+  }
+
+  /// 解码缓存原始数据。
+  T? _decodeCacheData<T>(
+    String key,
+    dynamic raw,
+    T Function(dynamic) decode,
+  ) {
+    if (raw is Map && raw.containsKey('items')) {
+      _memoryCache.remove(key);
+      return null;
+    }
+    return decode(raw);
+  }
+
   /// 设置缓存
   Future<void> set<T>(String key, T data, Duration expiration) async {
     try {

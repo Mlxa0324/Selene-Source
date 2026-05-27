@@ -216,6 +216,48 @@ void main() {
     expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isFalse);
   });
 
+  testWidgets('escape from quick action returns to source top nav tab',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '剧集');
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '剧集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForAction(tester, 'search').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '剧集').hasFocus, isTrue);
+    expect(_focusNodeForAction(tester, 'search').hasFocus, isFalse);
+    expect(_focusNodeForVideoCard(tester, 'series_0').hasFocus, isFalse);
+  });
+
   testWidgets('opens search screen from top nav search icon', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -341,6 +383,32 @@ void main() {
     await tester.pump(const Duration(milliseconds: 80));
 
     expect(_focusNodeForAction(tester, 'settings').hasFocus, isTrue);
+  });
+
+  testWidgets('quick action keeps stable frame when focus changes',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData.empty(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final actionFinder = find.byKey(
+      const ValueKey('tv-top-nav-action-history'),
+    );
+    final unfocusedRect = tester.getRect(actionFinder);
+
+    _focusNodeForAction(tester, 'history').requestFocus();
+    await tester.pumpAndSettle();
+
+    final focusedRect = tester.getRect(actionFinder);
+    expect(focusedRect.left, unfocusedRect.left);
+    expect(focusedRect.width, unfocusedRect.width);
+    expect(focusedRect.height, unfocusedRect.height);
   });
 
   testWidgets('renders live tab as developing placeholder page',

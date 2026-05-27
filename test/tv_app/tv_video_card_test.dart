@@ -112,7 +112,8 @@ void main() {
     expect(progressFill.widthFactor, 0.25);
   });
 
-  testWidgets('TV video card echoes continue watching progress details',
+  testWidgets(
+      'TV video card shows only source name in continue watching subtitle',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -131,7 +132,9 @@ void main() {
     );
 
     expect(find.text('497/500'), findsOneWidget);
-    expect(find.text('第497集 · 08:17/01:00:00 · 测试源'), findsOneWidget);
+    expect(find.text('测试源'), findsOneWidget);
+    expect(find.textContaining('08:17'), findsNothing);
+    expect(find.textContaining('第497集'), findsNothing);
   });
 
   testWidgets('TV video card delays focus sweep until focus stays briefly',

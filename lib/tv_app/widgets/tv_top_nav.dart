@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
@@ -542,6 +544,7 @@ class _TvTopNavState extends State<TvTopNav> {
                                         focusNode: _actionFocusNodes[index],
                                         onFocusChanged:
                                             _handleActionFocusChange,
+                                        onBack: _focusActionSourceTab,
                                         onArrowDown: _focusActionSourceTab,
                                         onArrowRight: isLastItem
                                             ? () => edgeShakeKey.currentState
@@ -682,6 +685,7 @@ class _TvTopNavActionButton extends StatelessWidget {
     required this.action,
     required this.focusNode,
     required this.onFocusChanged,
+    this.onBack,
     this.onArrowDown,
     this.onArrowRight,
   });
@@ -695,6 +699,9 @@ class _TvTopNavActionButton extends StatelessWidget {
   /// 焦点变化回调。
   final ValueChanged<bool> onFocusChanged;
 
+  /// 返回键回到进入快捷区前的主菜单项。
+  final VoidCallback? onBack;
+
   /// 下方向键回调。
   final VoidCallback? onArrowDown;
 
@@ -704,59 +711,78 @@ class _TvTopNavActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
-    return TvFocusable(
-      key: ValueKey('tv-top-nav-action-${action.key}'),
-      focusNode: focusNode,
-      onFocusChanged: onFocusChanged,
-      onPressed: action.onPressed,
-      onArrowDown: onArrowDown,
-      onArrowRight: onArrowRight,
-      builder: (context, hasFocus) {
-        final active = hasFocus || action.selected;
-        return Semantics(
-          button: true,
-          label: action.label,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: action.selected
-                  ? palette.accent
-                  : hasFocus
-                      ? palette.focusFill
-                      : const Color(0xFF272C30),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: hasFocus ? palette.focus : Colors.transparent,
-                width: hasFocus ? 2 : 1,
+    return Focus(
+      canRequestFocus: false,
+      onKeyEvent: _handleBackKeyEvent,
+      child: TvFocusable(
+        key: ValueKey('tv-top-nav-action-${action.key}'),
+        focusNode: focusNode,
+        onFocusChanged: onFocusChanged,
+        onPressed: action.onPressed,
+        onArrowDown: onArrowDown,
+        onArrowRight: onArrowRight,
+        builder: (context, hasFocus) {
+          final active = hasFocus || action.selected;
+          return Semantics(
+            button: true,
+            label: action.label,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: action.selected
+                    ? palette.accent
+                    : hasFocus
+                        ? palette.focusFill
+                        : const Color(0xFF272C30),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: hasFocus ? palette.focus : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    action.icon,
+                    size: 19,
+                    color:
+                        action.selected ? palette.selectedText : Colors.white,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    action.label,
+                    style: FontUtils.poppins(
+                      fontSize: 16,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                      color: action.selected
+                          ? palette.selectedText
+                          : const Color(0xFFE6ECEA),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  action.icon,
-                  size: 19,
-                  color: action.selected ? palette.selectedText : Colors.white,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  action.label,
-                  style: FontUtils.poppins(
-                    fontSize: 16,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                    color: action.selected
-                        ? palette.selectedText
-                        : const Color(0xFFE6ECEA),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
+  }
+
+  /// 处理快捷按钮上的返回键。
+  ///
+  /// 返回键只表示离开右上角快捷区，焦点回到进入快捷区前的主菜单项。
+  KeyEventResult _handleBackKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (!TvBackIntent.isBackKey(event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
+    onBack?.call();
+    return KeyEventResult.handled;
   }
 }

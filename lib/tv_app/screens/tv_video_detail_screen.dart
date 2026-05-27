@@ -323,11 +323,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 详情页选项按钮纵向内边距。
   static const double _detailChoiceChipVerticalPadding = 8;
 
+  /// 横向列表首尾焦点绘制安全留白。
+  ///
+  /// 海报卡片获焦会按 1.08 放大，首尾留白需要覆盖放大溢出和焦点描边，
+  /// 否则从列表右端长按回到左端时首张卡片会贴边像被裁剪。
+  static const double _detailHorizontalFocusSafePadding = 18;
+
   /// 横向列表贴左时的轻微前靠偏移。
   ///
   /// 详情页这里用户关注的是“当前焦点尽量排到第一个”，所以在正常左对齐基础上
   /// 再多推进一点，让视觉上更靠前。
-  static const double _detailListLeadingBias = 2;
+  static const double _detailListLeadingBias = -6;
 
   /// 详情页纵向焦点跟随的稳定中线。
   ///
@@ -455,6 +461,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 后台补源是否加载完成。
   bool _moreSourcesLoaded = false;
+
+  /// 是否需要按播放记录优先恢复保存线路。
+  bool get _shouldPrioritizeResumeSource {
+    return TvPlayRecordService.hasResumeHint(widget.videoInfo) &&
+        widget.videoInfo.source.isNotEmpty;
+  }
 
   /// 推荐内容是否已经开始加载。
   bool _hasStartedRecommends = false;
@@ -623,6 +635,25 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         widget.loadRecommends == null;
   }
 
+  /// 获取按集数倒序展示的线路列表。
+  ///
+  /// 集数相同时保留原始返回顺序，避免同集数线路在刷新后位置抖动。
+  List<SearchResult> get _sourcesByEpisodeCountDesc {
+    final indexedSources = List<({int index, SearchResult source})>.generate(
+      _sources.length,
+      (index) => (index: index, source: _sources[index]),
+    );
+    indexedSources.sort((a, b) {
+      final countCompare =
+          b.source.episodes.length.compareTo(a.source.episodes.length);
+      if (countCompare != 0) {
+        return countCompare;
+      }
+      return a.index.compareTo(b.index);
+    });
+    return indexedSources.map((entry) => entry.source).toList();
+  }
+
   /// 加载收藏状态。
   Future<void> _loadFavoriteState() async {
     final isFavorite = PageCacheService().isFavoritedSync(
@@ -718,7 +749,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         return;
       }
 
-      _mergeSources(sources, preferAsCurrent: false);
+      _mergeSources(
+        sources,
+        preferAsCurrent: false,
+        allowResumeFallback: true,
+      );
     } catch (error) {
       debugPrint('TV 详情页后台补源失败: $error');
     }
@@ -755,6 +790,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _mergeSources(
     List<SearchResult> incoming, {
     required bool preferAsCurrent,
+    bool allowResumeFallback = false,
   }) {
     if (incoming.isEmpty && _currentDetail != null) {
       return;
@@ -771,10 +807,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
       // 首个可播源到达后立刻结束首屏转圈。
       if (_currentDetail == null && mutableSources.isNotEmpty) {
-        _currentDetail =
-            preferAsCurrent ? incoming.first : mutableSources.first;
-        _applyInitialResumeState(_currentDetail!);
-        shouldPlay = true;
+        final selectedSource = _resolveInitialPlayableSource(
+          incoming: incoming,
+          allSources: mutableSources,
+          preferAsCurrent: preferAsCurrent,
+          allowResumeFallback: allowResumeFallback,
+        );
+        if (selectedSource != null) {
+          _currentDetail = selectedSource;
+          _applyInitialResumeState(_currentDetail!);
+          shouldPlay = true;
+        }
       }
 
       _refreshInitialLoadingState();
@@ -788,6 +831,65 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           .addPostFrameCallback((_) => _playCurrentEpisode());
     }
     _loadRecommendsIfNeeded();
+  }
+
+  /// 解析详情页初始起播源。
+  SearchResult? _resolveInitialPlayableSource({
+    required List<SearchResult> incoming,
+    required List<SearchResult> allSources,
+    required bool preferAsCurrent,
+    required bool allowResumeFallback,
+  }) {
+    if (!_shouldPrioritizeResumeSource) {
+      return preferAsCurrent && incoming.isNotEmpty
+          ? incoming.first
+          : allSources.first;
+    }
+
+    final savedSource = _firstWhereOrNull(allSources, _matchesSavedSource);
+    if (savedSource != null) {
+      return savedSource;
+    }
+
+    if (!allowResumeFallback) {
+      return null;
+    }
+
+    final sameEpisodeCountSource = _firstWhereOrNull(
+      allSources,
+      _hasSameEpisodeCountAsRecord,
+    );
+    return sameEpisodeCountSource ?? _randomSource(allSources);
+  }
+
+  /// 查找第一个满足条件的播放源。
+  SearchResult? _firstWhereOrNull(
+    List<SearchResult> sources,
+    bool Function(SearchResult source) test,
+  ) {
+    for (final source in sources) {
+      if (test(source)) {
+        return source;
+      }
+    }
+    return null;
+  }
+
+  /// 判断播放源是否就是播放记录保存的线路。
+  bool _matchesSavedSource(SearchResult source) {
+    return source.source == widget.videoInfo.source &&
+        source.id == widget.videoInfo.id;
+  }
+
+  /// 判断播放源集数是否与播放记录一致。
+  bool _hasSameEpisodeCountAsRecord(SearchResult source) {
+    return widget.videoInfo.totalEpisodes > 0 &&
+        source.episodes.length == widget.videoInfo.totalEpisodes;
+  }
+
+  /// 从可用播放源中随机选择一个兜底线路。
+  SearchResult _randomSource(List<SearchResult> sources) {
+    return sources[math.Random().nextInt(sources.length)];
   }
 
   /// 刷新首屏加载状态。
@@ -1800,14 +1902,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         return;
       }
 
-      final selectedSourceIndex = _sources.indexWhere(
+      final sortedSources = _sourcesByEpisodeCountDesc;
+      final selectedSourceIndex = sortedSources.indexWhere(
         (source) => source.source == detail.source && source.id == detail.id,
       );
       if (selectedSourceIndex >= 0) {
         _jumpHorizontalListToLeadingIndex(
           controller: _sourceListScrollController,
           index: selectedSourceIndex,
-          itemCount: _sources.length,
+          itemCount: sortedSources.length,
           spacing: 12,
           fallbackItemExtent: 148,
         );
@@ -1967,7 +2070,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     final position = controller.position;
-    final deltaToLeadingEdge = targetRect.left - listRect.left;
+    final deltaToLeadingEdge =
+        targetRect.left - listRect.left - _detailHorizontalFocusSafePadding;
     final targetOffset = (position.pixels + deltaToLeadingEdge).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
@@ -2042,7 +2146,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 获取第一个已构建的播放源焦点节点，避免焦点落到未渲染项后看起来消失。
   FocusNode? _firstVisibleSourceFocusNode() {
-    for (final source in _sources) {
+    for (final source in _sourcesByEpisodeCountDesc) {
       final node = _visibleSourceFocusNodeFor(source);
       if (node != null) {
         return node;
@@ -2058,7 +2162,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   SearchResult? _preferredSourceForSourceRow() {
     final rememberedFocusKey = _lastFocusedSourceKey;
     if (rememberedFocusKey != null) {
-      for (final source in _sources) {
+      for (final source in _sourcesByEpisodeCountDesc) {
         if (_sourceFocusKey(source) == rememberedFocusKey) {
           return source;
         }
@@ -2071,7 +2175,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   FocusNode? _preferredVisibleSourceFocusNode() {
     final rememberedFocusKey = _lastFocusedSourceKey;
     if (rememberedFocusKey != null) {
-      for (final source in _sources) {
+      for (final source in _sourcesByEpisodeCountDesc) {
         if (_sourceFocusKey(source) != rememberedFocusKey) {
           continue;
         }
@@ -2378,6 +2482,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _fullscreenFocusNode.requestFocus();
   }
 
+  /// 将顶部搜索入口焦点送回左侧预览播放器。
+  ///
+  /// 搜索按钮位于固定顶栏，焦点左移后需要同步滚回顶部，保证播放器完整可见。
+  void _focusPlayerFromSearchAction() {
+    _playerFocusNode.requestFocus();
+    _scrollToTop();
+  }
+
   /// 回到页面顶部。
   void _scrollToTop() {
     _scrollController.animateTo(
@@ -2495,7 +2607,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           icon: LucideIcons.search,
           focusNode: _searchFocusNode,
           borderRadius: 22,
-          onArrowLeft: _keepCurrentFocusAtBoundary,
+          onArrowLeft: _focusPlayerFromSearchAction,
           onArrowRight: _keepCurrentFocusAtBoundary,
           onArrowUp: _keepCurrentFocusAtBoundary,
           onArrowDown: _focusFullscreenAction,
@@ -2998,27 +3110,31 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 构建换源区。
   Widget _buildSourcesSection() {
+    final sources = _sourcesByEpisodeCountDesc;
     return _TvDetailSection(
       title: '切换线路',
       subtitle: '遇播放卡顿，音画不同步或无法播放时，请切换播放线路',
-      child: _sources.isEmpty
+      child: sources.isEmpty
           ? _buildEmptyText('暂无可用源')
           : SizedBox(
               height: 52,
               child: ListView.separated(
                 key: const ValueKey('tv-detail-source-list'),
                 controller: _sourceListScrollController,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _detailHorizontalFocusSafePadding,
+                ),
                 scrollDirection: Axis.horizontal,
                 clipBehavior: Clip.none,
-                itemCount: _sources.length,
+                itemCount: sources.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 12),
                 itemBuilder: (context, index) {
-                  final source = _sources[index];
+                  final source = sources[index];
                   final selected = source.source == _currentDetail?.source &&
                       source.id == _currentDetail?.id;
                   final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
                   final isFirstItem = index == 0;
-                  final isLastItem = index == _sources.length - 1;
+                  final isLastItem = index == sources.length - 1;
                   return KeyedSubtree(
                     key: _sourceTargetKeyFor(source),
                     child: TvEdgeShake(
@@ -3026,6 +3142,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                       child: Builder(
                         builder: (chipContext) => _TvChoiceChip(
                           label: source.sourceName,
+                          trailingText: '（${source.episodes.length}）',
                           selected: selected,
                           focusNode: _sourceFocusNodeFor(source),
                           focusMemoryGroupKey: 'tv-detail-source-list',
@@ -3082,6 +3199,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   child: ListView.separated(
                     key: const ValueKey('tv-detail-episode-list'),
                     controller: _episodeListScrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _detailHorizontalFocusSafePadding,
+                    ),
                     scrollDirection: Axis.horizontal,
                     clipBehavior: Clip.none,
                     itemCount: visibleIndexes.length,
@@ -3134,6 +3254,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                     child: ListView.separated(
                       key: const ValueKey('tv-detail-episode-group-list'),
                       controller: _episodeGroupListScrollController,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: _detailHorizontalFocusSafePadding,
+                      ),
                       scrollDirection: Axis.horizontal,
                       clipBehavior: Clip.none,
                       itemCount: groupCount,
@@ -3164,9 +3287,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                   _focusEpisodeOptionForGroup(index),
                               onArrowDown: _focusPreferredRecommend,
                               onFocus: () {
-                                // 分组获焦后同步记忆，并把当前分组尽量贴到列表左侧。
+                                // 分组获焦即切换上方选集页，不再等待确认键。
                                 _rememberFocusedEpisodeGroup(index);
-                                _schedulePinEpisodeGroupNearLeadingEdge(index);
+                                _switchEpisodeGroup(index);
                               },
                               onPressed: () => _switchEpisodeGroup(index),
                               throttleGroupKey: 'tv-detail-episode-group-list',
@@ -3192,6 +3315,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               height: TvVideoCard.height + 28,
               child: ListView.separated(
                 key: const ValueKey('tv-detail-recommend-list'),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: _detailHorizontalFocusSafePadding,
+                ),
                 scrollDirection: Axis.horizontal,
                 clipBehavior: Clip.none,
                 itemCount: _recommends.length,
@@ -3589,6 +3715,7 @@ class _TvChoiceChip extends StatelessWidget {
     required this.selected,
     required this.onPressed,
     this.focusNode,
+    this.trailingText,
     this.allowMultiline = false,
     this.onFocus,
     this.onArrowLeft,
@@ -3600,6 +3727,9 @@ class _TvChoiceChip extends StatelessWidget {
 
   /// 文案。
   final String label;
+
+  /// 文案右侧补充信息。
+  final String? trailingText;
 
   /// 是否选中。
   final bool selected;
@@ -3677,21 +3807,43 @@ class _TvChoiceChip extends StatelessWidget {
               width: hasFocus ? 2 : 1,
             ),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: allowMultiline ? null : 1,
-            softWrap: allowMultiline,
-            overflow:
-                allowMultiline ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: FontUtils.poppins(
-              fontSize: 15,
-              color: selected ? palette.selectedText : const Color(0xFFD9E2E0),
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
+          child: _buildLabelText(palette),
         );
       },
+    );
+  }
+
+  /// 构建主文案和右侧补充文案。
+  Widget _buildLabelText(TvThemePalette palette) {
+    final style = FontUtils.poppins(
+      fontSize: 15,
+      color: selected ? palette.selectedText : const Color(0xFFD9E2E0),
+      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+    );
+    final extraText = trailingText;
+    if (extraText == null || extraText.isEmpty) {
+      return Text(
+        label,
+        textAlign: TextAlign.center,
+        maxLines: allowMultiline ? null : 1,
+        softWrap: allowMultiline,
+        overflow: allowMultiline ? TextOverflow.visible : TextOverflow.ellipsis,
+        style: style,
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          ),
+        ),
+        Text(extraText, style: style),
+      ],
     );
   }
 }

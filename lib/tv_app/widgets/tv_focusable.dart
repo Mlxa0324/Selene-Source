@@ -19,6 +19,7 @@ class TvFocusable extends StatefulWidget {
   ///
   /// [builder] 构建不同焦点态下的内容。
   /// [onPressed] 处理遥控器确认键或鼠标点击。
+  /// [onLongPressed] 处理遥控器确认键长按。
   /// [onFocusChanged] 处理焦点进入和离开。
   /// [autoScrollOnFocus] 控制获焦后是否自动滚动到可见区域。
   const TvFocusable({
@@ -26,6 +27,7 @@ class TvFocusable extends StatefulWidget {
     required this.builder,
     this.focusNode,
     this.onPressed,
+    this.onLongPressed,
     this.onFocusChanged,
     this.onArrowLeft,
     this.onArrowRight,
@@ -49,6 +51,9 @@ class TvFocusable extends StatefulWidget {
 
   /// 确认键点击回调。
   final VoidCallback? onPressed;
+
+  /// 确认键长按回调。
+  final VoidCallback? onLongPressed;
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
@@ -218,6 +223,15 @@ class _TvFocusableState extends State<TvFocusable> {
   /// 使用真实渲染节点的上下文，避免 StatefulWidget 上下文无法定位尺寸。
   final GlobalKey _scrollTargetKey = GlobalKey();
 
+  /// 当前确认键是否已经触发长按。
+  bool _confirmLongPressHandled = false;
+
+  /// 当前普通确认键按下态。
+  ///
+  /// 遥控器和模拟器可能同时派发 KeyDown、KeyRepeat、KeyUp。
+  /// 这里按一次物理按压只允许短按业务触发一次，避免详情页等路由重复打开。
+  LogicalKeyboardKey? _pressedConfirmKey;
+
   /// 当前控件是否获得焦点。
   bool _hasFocus = false;
 
@@ -248,15 +262,59 @@ class _TvFocusableState extends State<TvFocusable> {
 
   /// 处理遥控器确认键和边界方向键。
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    if (event is! KeyDownEvent &&
+        event is! KeyRepeatEvent &&
+        event is! KeyUpEvent) {
       return KeyEventResult.ignored;
     }
 
     if (event.logicalKey == LogicalKeyboardKey.select ||
         event.logicalKey == LogicalKeyboardKey.enter ||
         event.logicalKey == LogicalKeyboardKey.space) {
-      widget.onPressed?.call();
+      final longPressCallback = widget.onLongPressed;
+      if (longPressCallback != null) {
+        if (event is KeyDownEvent) {
+          _confirmLongPressHandled = false;
+          return KeyEventResult.handled;
+        }
+        if (event is KeyRepeatEvent) {
+          // 长按只执行一次清空类业务，避免重复写入配置。
+          if (!_confirmLongPressHandled) {
+            _confirmLongPressHandled = true;
+            longPressCallback.call();
+          }
+          return KeyEventResult.handled;
+        }
+        if (event is KeyUpEvent) {
+          // 没有出现重复事件时，松手才视为一次短按确认。
+          if (!_confirmLongPressHandled) {
+            widget.onPressed?.call();
+          }
+          _confirmLongPressHandled = false;
+          return KeyEventResult.handled;
+        }
+      }
+      if (event is KeyDownEvent) {
+        // 同一次按压内只在首次按下时触发短按业务。
+        if (_pressedConfirmKey != event.logicalKey) {
+          _pressedConfirmKey = event.logicalKey;
+          widget.onPressed?.call();
+        }
+        return KeyEventResult.handled;
+      }
+      if (event is KeyUpEvent) {
+        // 松手只负责结束本次按压，不再重复执行短按业务。
+        if (_pressedConfirmKey == event.logicalKey) {
+          _pressedConfirmKey = null;
+        }
+        return KeyEventResult.handled;
+      }
+      // 重复确认事件只消费，不重复触发点击。
       return KeyEventResult.handled;
+    }
+
+    if (event is KeyUpEvent) {
+      return KeyEventResult.ignored;
     }
 
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft &&
@@ -522,6 +580,11 @@ class _TvFocusableState extends State<TvFocusable> {
     setState(() {
       _hasFocus = hasFocus;
     });
+    if (!hasFocus) {
+      // 页面跳转或焦点离开时清掉按键状态，避免返回后下一次确认被误判为重复按压。
+      _pressedConfirmKey = null;
+      _confirmLongPressHandled = false;
+    }
     if (hasFocus) {
       final groupKey = _registeredFocusMemoryGroupKey;
       if (groupKey != null) {

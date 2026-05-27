@@ -10,11 +10,14 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.Bundle
 import android.os.StatFs
 import android.provider.Settings
 import android.util.Log
 import android.view.OrientationEventListener
 import android.view.Surface
+import android.view.View
+import android.view.ViewGroup
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -36,6 +39,11 @@ class MainActivity : FlutterActivity() {
     private var pipHasPrevious: Boolean = false
     private var pipHasNext: Boolean = false
     private var physicalOrientationListener: OrientationEventListener? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        disableAndroidDefaultFocusHighlight()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -192,6 +200,35 @@ class MainActivity : FlutterActivity() {
                     Log.d(tag, "收到未知 PiP 动作: $rawAction")
                 }
             }
+        }
+    }
+
+    private fun disableAndroidDefaultFocusHighlight() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+
+        // FlutterView 会承接遥控器按键，关闭原生默认焦点框避免整屏被系统描边。
+        val rootView = window.decorView
+        disableDefaultFocusHighlightForViewTree(rootView)
+        rootView.post {
+            disableDefaultFocusHighlightForViewTree(rootView)
+        }
+    }
+
+    private fun disableDefaultFocusHighlightForViewTree(view: View) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+
+        view.defaultFocusHighlightEnabled = false
+        if (view !is ViewGroup) {
+            return
+        }
+
+        // 子 View 由 FlutterActivity 动态挂载，递归处理所有原生容器。
+        for (index in 0 until view.childCount) {
+            disableDefaultFocusHighlightForViewTree(view.getChildAt(index))
         }
     }
 

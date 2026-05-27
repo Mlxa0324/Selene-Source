@@ -4,6 +4,7 @@ import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
+import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
@@ -148,6 +149,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 推荐影片横向列表控制器。
   final ScrollController _recommendScrollController = ScrollController();
 
+  /// 右侧内容纵向滚动控制器。
+  final ScrollController _rightPanelScrollController = ScrollController();
+
   /// 推荐影片卡片边界抖动控制键。
   final Map<int, GlobalKey<TvEdgeShakeState>> _recommendEdgeShakeKeys = {};
 
@@ -215,6 +219,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   @override
   void dispose() {
     _recommendScrollController.dispose();
+    _rightPanelScrollController.dispose();
     _historyFirstFocusNode.dispose();
     _hotWordFirstFocusNode.dispose();
     _recommendFirstFocusNode.dispose();
@@ -447,6 +452,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     final initialFocusTarget = _resolveInitialFocusTarget(data, isLoading);
 
     return SingleChildScrollView(
+      controller: _rightPanelScrollController,
       padding: const EdgeInsets.fromLTRB(22, _panelTopPadding, 70, 42),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -458,6 +464,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             firstItemFocusNode: _historyFirstFocusNode,
             autofocusFirstItem:
                 initialFocusTarget == _TvSearchInitialFocusTarget.history,
+            onItemFocus: _ensureRightPanelFocusCentered,
           ),
           const SizedBox(height: 28),
           _buildWordSection(
@@ -467,6 +474,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             firstItemFocusNode: _hotWordFirstFocusNode,
             autofocusFirstItem:
                 initialFocusTarget == _TvSearchInitialFocusTarget.hotWord,
+            onItemFocus: _ensureRightPanelFocusCentered,
           ),
           const SizedBox(height: 20),
           _buildRecommendationSection(
@@ -544,12 +552,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索页右侧已经有整体边距，这里不再复用首页分区的 72px 内边距。
   Widget _buildRecommendationSection(
     List<VideoInfo> recommends,
-    bool isLoading,
-    {
+    bool isLoading, {
     required FocusNode firstCardFocusNode,
     required bool autofocusFirstCard,
-  }
-  ) {
+  }) {
     return Column(
       key: const ValueKey('tv-search-recommend-section'),
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -647,18 +653,25 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         final isLastItem = index == recommends.length - 1;
         return TvEdgeShake(
           key: edgeShakeKey,
-          child: TvVideoCard(
-            videoInfo: videoInfo,
-            focusMemoryGroupKey: 'tv-search-recommend-list',
-            focusNode: isFirstItem ? firstCardFocusNode : null,
-            autofocus: autofocusFirstCard && isFirstItem,
-            onPressed: () => _openVideo(videoInfo),
-            onArrowLeft: isFirstItem
-                ? () => _handleRecommendEdge(index, AxisDirection.left)
-                : null,
-            onArrowRight: isLastItem
-                ? () => _handleRecommendEdge(index, AxisDirection.right)
-                : null,
+          child: Builder(
+            builder: (cardContext) => TvVideoCard(
+              videoInfo: videoInfo,
+              focusMemoryGroupKey: 'tv-search-recommend-list',
+              focusNode: isFirstItem ? firstCardFocusNode : null,
+              autofocus: autofocusFirstCard && isFirstItem,
+              onFocusChanged: (hasFocus) {
+                if (hasFocus) {
+                  _ensureRightPanelFocusCentered(cardContext);
+                }
+              },
+              onPressed: () => _openVideo(videoInfo),
+              onArrowLeft: isFirstItem
+                  ? () => _handleRecommendEdge(index, AxisDirection.left)
+                  : null,
+              onArrowRight: isLastItem
+                  ? () => _handleRecommendEdge(index, AxisDirection.right)
+                  : null,
+            ),
           ),
         );
       },
@@ -715,6 +728,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required String emptyText,
     required FocusNode firstItemFocusNode,
     required bool autofocusFirstItem,
+    required ValueChanged<BuildContext> onItemFocus,
   }) {
     return Column(
       key: ValueKey('tv-search-word-section-$title'),
@@ -743,14 +757,29 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               mainAxisSpacing: _wordTileMainSpacing,
             ),
             itemCount: words.length,
-            itemBuilder: (context, index) => _buildWordTile(
-              words[index],
-              focusNode: index == 0 ? firstItemFocusNode : null,
-              autofocus: autofocusFirstItem && index == 0,
-            ),
+            itemBuilder: (context, index) {
+              final isRightEdge = _isWordGridRightEdge(index, words.length);
+              return Builder(
+                builder: (tileContext) => _buildWordTile(
+                  words[index],
+                  focusNode: index == 0 ? firstItemFocusNode : null,
+                  autofocus: autofocusFirstItem && index == 0,
+                  onArrowRight: isRightEdge ? _keepFocusAtRightEdge : null,
+                  onFocus: () => onItemFocus(tileContext),
+                ),
+              );
+            },
           ),
       ],
     );
+  }
+
+  /// 判断搜索词是否位于当前网格行的最右侧。
+  bool _isWordGridRightEdge(int index, int itemCount) {
+    final columnIndex = index % _wordGridColumnCount;
+    final isFullRowRightEdge = columnIndex == _wordGridColumnCount - 1;
+    final isLastItemInShortRow = index == itemCount - 1;
+    return isFullRowRightEdge || isLastItemInShortRow;
   }
 
   /// 构建空搜索词状态。
@@ -779,12 +808,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     String word, {
     FocusNode? focusNode,
     required bool autofocus,
+    VoidCallback? onArrowRight,
+    VoidCallback? onFocus,
   }) {
     return TvFocusable(
       focusNode: focusNode,
       autofocus: autofocus,
       directionalRepeatThrottleGroupKey: 'tv-search-word-tiles',
       focusMemoryGroupKey: 'tv-search-word-tiles',
+      onArrowRight: onArrowRight,
+      onFocusChanged: (hasFocus) {
+        if (hasFocus) {
+          onFocus?.call();
+        }
+      },
       onPressed: () => _setQuery(word),
       builder: (context, hasFocus) {
         return AnimatedContainer(
@@ -826,6 +863,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     setState(() {
       _query = value;
     });
+  }
+
+  /// 吞掉右边界方向键，避免焦点跳出右侧内容区。
+  void _keepFocusAtRightEdge() {}
+
+  /// 让右侧内容获焦项尽量停留在屏幕中段。
+  void _ensureRightPanelFocusCentered(BuildContext itemContext) {
+    if (!_rightPanelScrollController.hasClients) {
+      return;
+    }
+    TvFocusScroll.ensureVisible(
+      itemContext,
+      alignment: 0.46,
+    );
   }
 
   /// 删除最后一个搜索字符。

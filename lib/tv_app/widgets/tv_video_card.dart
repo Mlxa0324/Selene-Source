@@ -166,21 +166,9 @@ class TvVideoCard extends StatelessWidget {
   /// 卡片副标题文案。
   String get _subtitle {
     if (videoInfo.playTime > 0 || videoInfo.index > 1) {
-      final progressParts = <String>[];
-      if (videoInfo.totalEpisodes > 1 && videoInfo.index > 0) {
-        progressParts.add('第${videoInfo.index}集');
-      }
-      if (videoInfo.playTime > 0) {
-        final timeText = videoInfo.totalTime > 0
-            ? '${videoInfo.formattedPlayTime}/${videoInfo.formattedTotalTime}'
-            : videoInfo.formattedPlayTime;
-        progressParts.add(timeText);
-      }
+      // 继续观看卡片下方只展示线路，集数和进度保留在封面徽标与进度条中表达。
       if (videoInfo.sourceName.isNotEmpty) {
-        progressParts.add(videoInfo.sourceName);
-      }
-      if (progressParts.isNotEmpty) {
-        return progressParts.join(' · ');
+        return videoInfo.sourceName;
       }
     }
 

@@ -475,6 +475,60 @@ void main() {
     expect(find.text('备用线路'), findsOneWidget);
   });
 
+  testWidgets('source menu shows episode counts sorted descending',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 45),
+          currentDetail: _searchResult(
+            'source_a',
+            '暴风资源',
+            episodeCount: 45,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '暴风资源',
+              episodeCount: 45,
+            ),
+            _searchResult(
+              'source_b',
+              '最大资源',
+              episodeCount: 99,
+            ),
+            _searchResult(
+              'source_c',
+              '短资源',
+              episodeCount: 12,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(find.text('最大资源'), findsOneWidget);
+    expect(find.text('（99）'), findsOneWidget);
+    expect(find.text('暴风资源'), findsOneWidget);
+    expect(find.text('（45）'), findsOneWidget);
+
+    final maxLeft = tester.getTopLeft(find.text('最大资源')).dx;
+    final stormLeft = tester.getTopLeft(find.text('暴风资源')).dx;
+    final shortLeft = tester.getTopLeft(find.text('短资源')).dx;
+    expect(maxLeft, lessThan(stormLeft));
+    expect(stormLeft, lessThan(shortLeft));
+  });
+
   testWidgets('menu auto hides after five seconds of inactivity',
       (tester) async {
     await tester.pumpWidget(
@@ -679,7 +733,7 @@ void main() {
     expect(find.text('第1集'), findsNothing);
   });
 
-  testWidgets('fullscreen player menu buttons use narrower widths',
+  testWidgets('fullscreen player menu shell and buttons use compact sizing',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -702,6 +756,14 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
+    final menuContainer = tester.widget<Container>(
+      find.byKey(const ValueKey('tv-fullscreen-menu')),
+    );
+    final menuDecoration = menuContainer.decoration! as BoxDecoration;
+    final menuGradient = menuDecoration.gradient! as LinearGradient;
+    expect(menuGradient.colors[0].a, moreOrLessEquals(0.72));
+    expect(menuGradient.colors[1].a, moreOrLessEquals(0.78));
+
     final primaryButton = tester.widget<AnimatedContainer>(
       find
           .ancestor(
@@ -711,18 +773,8 @@ void main() {
           .first,
     );
     final primaryConstraints = primaryButton.constraints!;
-    expect(primaryConstraints.minWidth, 100);
-    expect(primaryConstraints.maxWidth, 220);
-
-    final primarySize = tester.getSize(
-      find
-          .ancestor(
-            of: find.text('播放列表'),
-            matching: find.byType(AnimatedContainer),
-          )
-          .first,
-    );
-    expect(primarySize.width, greaterThanOrEqualTo(100));
+    expect(primaryConstraints.minWidth, 67);
+    expect(primaryConstraints.maxWidth, 147);
 
     final secondaryButton = tester.widget<AnimatedContainer>(
       find
@@ -733,7 +785,133 @@ void main() {
           .first,
     );
     final secondaryConstraints = secondaryButton.constraints!;
-    expect(secondaryConstraints.minWidth, 56);
+    expect(secondaryConstraints.minWidth, 190);
+    expect(secondaryConstraints.maxWidth, 260);
+    expect(secondaryConstraints.minHeight, 104);
+  });
+
+  testWidgets('fullscreen episode cards keep full title inside card',
+      (tester) async {
+    const longEpisodeTitle = '20260328乘风亲友连麦大会第1期';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeTitles: [
+              longEpisodeTitle,
+              '第20260518期发布会',
+            ],
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeTitles: [
+                longEpisodeTitle,
+                '第20260518期发布会',
+              ],
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    final titleWidget = tester.widget<Text>(find.text(longEpisodeTitle));
+    expect(titleWidget.maxLines, 4);
+    expect(titleWidget.overflow, TextOverflow.clip);
+
+    final buttonFinder = find
+        .ancestor(
+          of: find.text(longEpisodeTitle),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    final episodeButton = tester.widget<AnimatedContainer>(buttonFinder);
+    expect(episodeButton.constraints!.minWidth, 190);
+    expect(episodeButton.constraints!.maxWidth, 260);
+    expect(episodeButton.constraints!.minHeight, 104);
+
+    final buttonRect = tester.getRect(buttonFinder);
+    final textRect = tester.getRect(find.text(longEpisodeTitle));
+    expect(
+      buttonRect.inflate(0.5).contains(textRect.topLeft),
+      isTrue,
+    );
+    expect(
+      buttonRect.inflate(0.5).contains(textRect.bottomRight),
+      isTrue,
+    );
+  });
+
+  testWidgets('fullscreen source cards show source name and count in big card',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 77),
+          currentDetail: _searchResult(
+            'source_a',
+            '晋江超长线路资源',
+            episodeCount: 77,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '晋江超长线路资源',
+              episodeCount: 77,
+            ),
+            _searchResult(
+              'source_b',
+              '备用高清线路',
+              episodeCount: 64,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(find.text('晋江超长线路资源'), findsOneWidget);
+    expect(find.text('（77）'), findsOneWidget);
+
+    final sourceButtonFinder = find
+        .ancestor(
+          of: find.text('晋江超长线路资源'),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    final sourceButton = tester.widget<AnimatedContainer>(sourceButtonFinder);
+    expect(sourceButton.constraints!.minWidth, 190);
+    expect(sourceButton.constraints!.maxWidth, 260);
+    expect(sourceButton.constraints!.minHeight, 88);
+
+    final buttonRect = tester.getRect(sourceButtonFinder);
+    final nameRect = tester.getRect(find.text('晋江超长线路资源'));
+    final countRect = tester.getRect(find.text('（77）'));
+    expect(buttonRect.inflate(0.5).contains(nameRect.topLeft), isTrue);
+    expect(buttonRect.inflate(0.5).contains(nameRect.bottomRight), isTrue);
+    expect(buttonRect.inflate(0.5).contains(countRect.topLeft), isTrue);
+    expect(buttonRect.inflate(0.5).contains(countRect.bottomRight), isTrue);
   });
 
   testWidgets('primary menu shakes at left boundary', (tester) async {
@@ -856,7 +1034,7 @@ void main() {
     expect(find.text('拉伸'), findsNothing);
   });
 
-  testWidgets('other menu intro and outro actions seek to configured positions',
+  testWidgets('other menu intro and outro actions set current position',
       (tester) async {
     await UserDataService.saveSkipIntroDuration(75);
     await UserDataService.saveSkipOutroDuration(90);
@@ -877,7 +1055,7 @@ void main() {
               onControllerCreated(
                 _FakeVideoPlayerWidgetController(
                   isPlaying: true,
-                  currentPosition: const Duration(seconds: 8),
+                  currentPosition: const Duration(seconds: 88),
                   duration: const Duration(seconds: 1000),
                   onSeekTo: (position) async {
                     seekPositions.add(position);
@@ -900,13 +1078,84 @@ void main() {
     _focusNodeForMenuLabel(tester, '其它').requestFocus();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('片头 01:15'));
+    expect(find.text('确认/空格/Enter 设置当前时间，长按清空'), findsOneWidget);
+
+    _focusNodeForMenuLabel(tester, '片头 01:15').requestFocus();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('片尾 01:30'));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.text('片头 01:28'), findsOneWidget);
+    expect(await UserDataService.getSkipIntroDuration(), 88);
+
+    _focusNodeForMenuLabel(tester, '片尾 01:30').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('片尾 15:12'), findsOneWidget);
+    expect(await UserDataService.getSkipOutroDuration(), 912);
+
+    expect(seekPositions, isEmpty);
+  });
+
+  testWidgets('other menu intro and outro long press clears saved positions',
+      (tester) async {
+    await UserDataService.saveSkipIntroDuration(75);
+    await UserDataService.saveSkipOutroDuration(90);
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 2),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: const Duration(seconds: 88),
+                  duration: const Duration(seconds: 1000),
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '其它').requestFocus();
     await tester.pumpAndSettle();
 
-    expect(seekPositions, contains(const Duration(seconds: 75)));
-    expect(seekPositions, contains(const Duration(seconds: 910)));
+    _focusNodeForMenuLabel(tester, '片头 01:15').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.select);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.select);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    expect(find.text('片头 00:00'), findsOneWidget);
+    expect(await UserDataService.getSkipIntroDuration(), 0);
+
+    _focusNodeForMenuLabel(tester, '片尾 01:30').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('片尾 00:00'), findsOneWidget);
+    expect(await UserDataService.getSkipOutroDuration(), 0);
   });
 
   testWidgets('back key closes TV player menu before popping fullscreen route',
@@ -1447,6 +1696,68 @@ void main() {
     expect(overlaySize.width, 232);
   });
 
+  testWidgets('bottom progress track keeps leading edge stable while seeking',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 9, seconds: 59),
+      duration: const Duration(minutes: 46, seconds: 9),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    final firstTrackRect = tester.getRect(
+      find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+    );
+    final firstCurrentTimeRect = tester.getRect(
+      find.byKey(const ValueKey('tv-fullscreen-bottom-current-time-slot')),
+    );
+    expect(find.text('10:04'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    final secondTrackRect = tester.getRect(
+      find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+    );
+    final secondCurrentTimeRect = tester.getRect(
+      find.byKey(const ValueKey('tv-fullscreen-bottom-current-time-slot')),
+    );
+    expect(find.text('10:09'), findsOneWidget);
+    expect(
+      secondCurrentTimeRect.width,
+      moreOrLessEquals(firstCurrentTimeRect.width, epsilon: 0.01),
+    );
+    expect(
+      secondTrackRect.left,
+      moreOrLessEquals(firstTrackRect.left, epsilon: 0.01),
+    );
+    expect(
+      secondTrackRect.width,
+      moreOrLessEquals(firstTrackRect.width, epsilon: 0.01),
+    );
+  });
+
   testWidgets('starts fullscreen player from injected initial position',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -1647,11 +1958,27 @@ void main() {
     );
   });
 
-  test('TV fullscreen seek acceleration eases from 5s to 29s', () {
+  test('TV fullscreen seek acceleration holds then eases to 19s', () {
     expect(TvFullscreenSeekStep.secondsForElapsed(Duration.zero), 5);
     expect(
-      TvFullscreenSeekStep.secondsForElapsed(const Duration(seconds: 3)),
-      29,
+      TvFullscreenSeekStep.secondsForElapsed(
+        const Duration(milliseconds: 4900),
+      ),
+      5,
+    );
+    expect(
+      TvFullscreenSeekStep.secondsForElapsed(const Duration(seconds: 5)),
+      5,
+    );
+    expect(
+      TvFullscreenSeekStep.secondsForElapsed(
+        const Duration(milliseconds: 7500),
+      ),
+      12,
+    );
+    expect(
+      TvFullscreenSeekStep.secondsForElapsed(const Duration(seconds: 10)),
+      19,
     );
   });
 }
@@ -1728,21 +2055,23 @@ SearchResult _searchResult(
   String sourceName, {
   int episodeCount = 2,
   int selectedEpisodeIndex = 0,
+  List<String>? episodeTitles,
 }) {
   final episodes = List<String>.generate(
-    episodeCount,
+    episodeTitles?.length ?? episodeCount,
     (index) => 'https://example.com/${index + 1}.m3u8',
   );
-  final episodeTitles = List<String>.generate(
-    episodeCount,
-    (index) => '第${index + 1}集',
-  );
+  final titles = episodeTitles ??
+      List<String>.generate(
+        episodeCount,
+        (index) => '第${index + 1}集',
+      );
   return SearchResult(
     id: 'detail_$source',
     title: '主角',
     poster: '',
     episodes: episodes,
-    episodesTitles: episodeTitles,
+    episodesTitles: titles,
     source: source,
     sourceName: sourceName,
     year: '2026',

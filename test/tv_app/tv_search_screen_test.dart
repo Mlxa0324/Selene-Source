@@ -140,6 +140,62 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
   });
 
+  testWidgets('rightmost word tiles keep focus on right key', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['历史1', '历史2', '历史3', '历史4'],
+            hotWords: ['热词1', '热词2', '热词3'],
+            recommends: [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final rightmostHistoryNode = _focusNodeForText(tester, '历史3');
+    rightmostHistoryNode.requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(rightmostHistoryNode.hasFocus, isTrue);
+
+    final raggedRightNode = _focusNodeForText(tester, '历史4');
+    raggedRightNode.requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(raggedRightNode.hasFocus, isTrue);
+  });
+
+  testWidgets('right panel scroll keeps focused word near middle',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: List<String>.generate(15, (index) => '历史$index'),
+            hotWords: List<String>.generate(12, (index) => '热词$index'),
+            recommends: [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final lowerWordNode = _focusNodeForText(tester, '热词8');
+    lowerWordNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final focusedRect = tester.getRect(find.text('热词8'));
+    final viewportHeight = tester.view.physicalSize.height;
+    expect(focusedRect.center.dy, greaterThan(viewportHeight * 0.36));
+    expect(focusedRect.center.dy, lessThan(viewportHeight * 0.64));
+  });
+
   testWidgets('places search panels closer to top on first screen',
       (tester) async {
     await tester.pumpWidget(
@@ -187,10 +243,12 @@ void main() {
       find.byKey(const ValueKey('tv-search-input')),
     );
     final clearButton = tester.widget<AnimatedContainer>(
-      find.ancestor(
-        of: find.text('清空'),
-        matching: find.byType(AnimatedContainer),
-      ).first,
+      find
+          .ancestor(
+            of: find.text('清空'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
     );
 
     final keyboardDelegate =
@@ -198,9 +256,15 @@ void main() {
 
     expect(titleText.style?.fontSize, 28);
     expect(hintText.style?.fontSize, 15);
-    expect(searchField.constraints?.maxHeight ?? searchField.constraints?.minHeight, 46);
+    expect(
+        searchField.constraints?.maxHeight ??
+            searchField.constraints?.minHeight,
+        46);
     expect(keyboardDelegate.mainAxisExtent, 42);
-    expect(clearButton.constraints?.maxHeight ?? clearButton.constraints?.minHeight, 46);
+    expect(
+        clearButton.constraints?.maxHeight ??
+            clearButton.constraints?.minHeight,
+        46);
   });
 
   testWidgets('autofocuses first search history item when history exists',
