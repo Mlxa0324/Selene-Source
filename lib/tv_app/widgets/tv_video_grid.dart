@@ -28,6 +28,7 @@ class TvVideoGrid extends StatefulWidget {
     this.onArrowUp,
     this.focusMemoryGroupKey,
     this.firstItemFocusNode,
+    this.rightPadding = TvLayout.pageHorizontalPadding,
     this.isLoading = false,
     this.isLoadingMore = false,
     this.hasMore = false,
@@ -72,6 +73,11 @@ class TvVideoGrid extends StatefulWidget {
   /// 分类页从顶部菜单按下时用它稳定回到首张卡片。
   final FocusNode? firstItemFocusNode;
 
+  /// 列表右侧留白。
+  ///
+  /// 分类页可传 `0`，让末列卡片直接贴到内容区域右边界。
+  final double rightPadding;
+
   /// 是否处于加载状态。
   final bool isLoading;
 
@@ -92,12 +98,6 @@ class TvVideoGrid extends StatefulWidget {
 
   /// 焦点放大安全边距，避免首尾列卡片被滚动视口裁剪。
   static const double focusSafePadding = 12.0;
-
-  /// 右侧尾部额外安全留白。
-  ///
-  /// 末列卡片获焦后会整体放大，Grid 需要额外预留一段尾部空间，
-  /// 避免最右侧海报刚好贴住裁剪边界时仍像被削掉一截。
-  static const double trailingFocusSafePadding = 20.0;
 
   @override
   State<TvVideoGrid> createState() => _TvVideoGridState();
@@ -121,10 +121,10 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         TvLayout.pageHorizontalPadding,
         0,
-        TvLayout.pageHorizontalPadding,
+        widget.rightPadding,
         0,
       ),
       child: LayoutBuilder(
@@ -212,7 +212,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
       padding: const EdgeInsets.fromLTRB(
         TvVideoGrid.focusSafePadding,
         8,
-        TvVideoGrid.focusSafePadding + TvVideoGrid.trailingFocusSafePadding,
+        TvVideoGrid.focusSafePadding,
         64,
       ),
       sliver: SliverGrid(
@@ -246,8 +246,9 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   /// 构建空状态。
   Widget _buildEmptyState() {
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: TvVideoGrid.focusSafePadding,
+      padding: EdgeInsets.only(
+        left: TvVideoGrid.focusSafePadding,
+        right: widget.rightPadding == 0 ? 0 : TvVideoGrid.focusSafePadding,
       ),
       sliver: SliverToBoxAdapter(
         child: Container(
@@ -276,10 +277,10 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   /// 构建视频网格。
   Widget _buildVideoGrid(int crossAxisCount) {
     return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(
+      padding: EdgeInsets.fromLTRB(
         TvVideoGrid.focusSafePadding,
         8,
-        TvVideoGrid.focusSafePadding,
+        widget.rightPadding == 0 ? 0 : TvVideoGrid.focusSafePadding,
         64,
       ),
       sliver: SliverGrid(
@@ -298,6 +299,10 @@ class _TvVideoGridState extends State<TvVideoGrid> {
               index: index,
               itemCount: widget.videos.length,
               videoInfo: videoInfo,
+              scaleAlignment: _scaleAlignmentForGridItem(
+                index: index,
+                crossAxisCount: crossAxisCount,
+              ),
               focusNode: index == 0 ? widget.firstItemFocusNode : null,
               onPressed: () => widget.onVideoPressed?.call(videoInfo),
               onLongPressed: () => widget.onVideoLongPressed?.call(videoInfo),
@@ -318,16 +323,31 @@ class _TvVideoGridState extends State<TvVideoGrid> {
     );
   }
 
+  /// 根据列位置计算卡片放大方向。
+  ///
+  /// 右侧贴边的末列卡片向左内收放大，避免贴边后焦点描边超出裁剪区。
+  Alignment _scaleAlignmentForGridItem({
+    required int index,
+    required int crossAxisCount,
+  }) {
+    final isRightEdge = index % crossAxisCount == crossAxisCount - 1 ||
+        index == widget.videos.length - 1;
+    if (widget.rightPadding == 0 && isRightEdge) {
+      return Alignment.centerRight;
+    }
+    return Alignment.center;
+  }
+
   /// 构建底部分页加载提示。
   Widget _buildLoadMoreIndicator() {
     return SliverToBoxAdapter(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          TvVideoGrid.focusSafePadding,
-          0,
-          TvVideoGrid.focusSafePadding,
-          46,
-        ),
+      padding: EdgeInsets.fromLTRB(
+        TvVideoGrid.focusSafePadding,
+        0,
+        widget.rightPadding == 0 ? 0 : TvVideoGrid.focusSafePadding,
+        46,
+      ),
         child: Row(
           children: [
             const SizedBox(
@@ -438,6 +458,7 @@ class _TvGridEdgeItem extends StatefulWidget {
     this.onLongPressed,
     this.onFocusChanged,
     this.onArrowUp,
+    this.scaleAlignment = Alignment.center,
     this.focusMemoryGroupKey,
   });
 
@@ -467,6 +488,9 @@ class _TvGridEdgeItem extends StatefulWidget {
 
   /// 上方向键回调。
   final VoidCallback? onArrowUp;
+
+  /// 卡片放大对齐方向。
+  final Alignment scaleAlignment;
 
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
@@ -508,6 +532,7 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
         videoInfo: widget.videoInfo,
         focusNode: widget.focusNode,
         focusMemoryGroupKey: widget.focusMemoryGroupKey,
+        scaleAlignment: widget.scaleAlignment,
         onPressed: widget.onPressed,
         onLongPressed: widget.onLongPressed,
         onFocusChanged: widget.onFocusChanged,

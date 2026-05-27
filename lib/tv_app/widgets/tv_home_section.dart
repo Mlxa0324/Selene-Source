@@ -26,7 +26,10 @@ class TvHomeSection extends StatelessWidget {
     super.key,
     required this.title,
     required this.videos,
+    this.titleHint,
+    this.pendingFocusVideoId,
     this.onVideoPressed,
+    this.onVideoLongPressed,
     this.onMorePressed,
     this.isLoading = false,
     this.scrollController,
@@ -85,11 +88,20 @@ class TvHomeSection extends StatelessWidget {
   /// 区块标题。
   final String title;
 
+  /// 区块标题右侧弱提示文案。
+  final String? titleHint;
+
+  /// 刷新后优先恢复焦点的视频 ID。
+  final String? pendingFocusVideoId;
+
   /// 视频列表数据。
   final List<VideoInfo> videos;
 
   /// 卡片点击回调。
   final TvVideoPressed? onVideoPressed;
+
+  /// 卡片长按回调。
+  final TvVideoPressed? onVideoLongPressed;
 
   /// 查看更多点击回调。
   final VoidCallback? onMorePressed;
@@ -118,8 +130,11 @@ class TvHomeSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return _TvHomeSectionBody(
       title: title,
+      titleHint: titleHint,
+      pendingFocusVideoId: pendingFocusVideoId,
       videos: videos,
       onVideoPressed: onVideoPressed,
+      onVideoLongPressed: onVideoLongPressed,
       onMorePressed: onMorePressed,
       isLoading: isLoading,
       scrollController: scrollController,
@@ -138,7 +153,10 @@ class _TvHomeSectionBody extends StatefulWidget {
     required this.title,
     required this.videos,
     required this.isLoading,
+    this.titleHint,
+    this.pendingFocusVideoId,
     this.onVideoPressed,
+    this.onVideoLongPressed,
     this.onMorePressed,
     this.scrollController,
     this.autofocusFirstItem = false,
@@ -150,11 +168,20 @@ class _TvHomeSectionBody extends StatefulWidget {
   /// 区块标题。
   final String title;
 
+  /// 区块标题右侧弱提示文案。
+  final String? titleHint;
+
+  /// 刷新后优先恢复焦点的视频 ID。
+  final String? pendingFocusVideoId;
+
   /// 视频列表数据。
   final List<VideoInfo> videos;
 
   /// 卡片点击回调。
   final TvVideoPressed? onVideoPressed;
+
+  /// 卡片长按回调。
+  final TvVideoPressed? onVideoLongPressed;
 
   /// 查看更多点击回调。
   final VoidCallback? onMorePressed;
@@ -192,11 +219,42 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
   late final ScrollController _scrollController =
       widget.scrollController ?? ScrollController();
 
+  /// 区块内卡片稳定焦点节点。
+  final Map<String, FocusNode> _videoFocusNodes = {};
+
   /// 当前区块的焦点记忆分组。
   Object get _focusMemoryGroupKey => 'tv-home-section-${widget.title}';
 
+  /// 获取指定视频的稳定焦点节点。
+  FocusNode _focusNodeForVideoId(String videoId) {
+    return _videoFocusNodes.putIfAbsent(
+      videoId,
+      () => FocusNode(debugLabel: 'tv-home-section-video-$videoId'),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _TvHomeSectionBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final targetVideoId = widget.pendingFocusVideoId;
+    if (targetVideoId == null ||
+        targetVideoId == oldWidget.pendingFocusVideoId ||
+        !widget.videos.any((video) => video.id == targetVideoId)) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _focusNodeForVideoId(targetVideoId).requestFocus();
+    });
+  }
+
   @override
   void dispose() {
+    for (final node in _videoFocusNodes.values) {
+      node.dispose();
+    }
     if (widget.scrollController == null) {
       _scrollController.dispose();
     }
@@ -297,13 +355,33 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
             padding: const EdgeInsets.symmetric(
               horizontal: TvLayout.pageHorizontalPadding,
             ),
-            child: Text(
-              widget.title,
-              style: FontUtils.poppins(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  widget.title,
+                  style: FontUtils.poppins(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                if (widget.titleHint?.isNotEmpty == true) ...[
+                  const SizedBox(width: 14),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(
+                      widget.titleHint!,
+                      style: FontUtils.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF7F858F),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -420,12 +498,18 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
           );
         } else {
           final videoInfo = visibleVideos[index];
+          final cardFocusNode = index == 0 && widget.pendingFocusVideoId == null
+              ? widget.firstItemFocusNode
+              : _focusNodeForVideoId(videoInfo.id);
           item = TvVideoCard(
             videoInfo: videoInfo,
             focusMemoryGroupKey: _focusMemoryGroupKey,
             autofocus: widget.autofocusFirstItem && index == 0,
-            focusNode: index == 0 ? widget.firstItemFocusNode : null,
+            focusNode: cardFocusNode,
             onPressed: () => widget.onVideoPressed?.call(videoInfo),
+            onLongPressed: widget.onVideoLongPressed == null
+                ? null
+                : () => widget.onVideoLongPressed?.call(videoInfo),
             onFocusChanged: (hasFocus) =>
                 _handleItemFocusChange(hasFocus, index),
             // 首页横向列表的滚动节奏完全由区块统一控制，

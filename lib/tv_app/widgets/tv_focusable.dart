@@ -274,12 +274,14 @@ class _TvFocusableState extends State<TvFocusable> {
       final longPressCallback = widget.onLongPressed;
       if (longPressCallback != null) {
         if (event is KeyDownEvent) {
+          _pressedConfirmKey = event.logicalKey;
           _confirmLongPressHandled = false;
           return KeyEventResult.handled;
         }
         if (event is KeyRepeatEvent) {
           // 长按只执行一次清空类业务，避免重复写入配置。
-          if (!_confirmLongPressHandled) {
+          if (_pressedConfirmKey == event.logicalKey &&
+              !_confirmLongPressHandled) {
             _confirmLongPressHandled = true;
             longPressCallback.call();
           }
@@ -287,8 +289,12 @@ class _TvFocusableState extends State<TvFocusable> {
         }
         if (event is KeyUpEvent) {
           // 没有出现重复事件时，松手才视为一次短按确认。
-          if (!_confirmLongPressHandled) {
+          if (_pressedConfirmKey == event.logicalKey &&
+              !_confirmLongPressHandled) {
             widget.onPressed?.call();
+          }
+          if (_pressedConfirmKey == event.logicalKey) {
+            _pressedConfirmKey = null;
           }
           _confirmLongPressHandled = false;
           return KeyEventResult.handled;

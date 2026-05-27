@@ -32,6 +32,7 @@ class TvVideoCard extends StatelessWidget {
     this.autofocus = false,
     this.autoScrollOnFocus = true,
     this.focusScrollAlignment = TvFocusScroll.defaultAlignment,
+    this.scaleAlignment = Alignment.center,
     this.focusMemoryGroupKey,
   });
 
@@ -72,6 +73,11 @@ class TvVideoCard extends StatelessWidget {
 
   /// 获焦自动滚动时的目标对齐位置。
   final double focusScrollAlignment;
+
+  /// 焦点放大的对齐方向。
+  ///
+  /// 末列卡片贴右边时改为向内放大，避免右侧焦点描边被裁掉。
+  final Alignment scaleAlignment;
 
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
@@ -125,6 +131,7 @@ class TvVideoCard extends StatelessWidget {
       builder: (context, hasFocus) {
         return AnimatedScale(
           scale: hasFocus ? focusedScale : 1,
+          alignment: scaleAlignment,
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
           child: SizedBox(

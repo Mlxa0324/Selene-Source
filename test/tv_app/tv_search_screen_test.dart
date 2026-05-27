@@ -228,6 +228,73 @@ void main() {
     expect(raggedRightNode.hasFocus, isTrue);
   });
 
+  testWidgets(
+      'last hot word moves focus down to first recommendation card',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const ['热词1', '热词2', '热词3', '热词4'],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final lastHotWordFocusNode = _focusNodeForText(tester, '热词4');
+    lastHotWordFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, '推荐 1').hasFocus, isTrue);
+    expect(lastHotWordFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('leftmost recommendation card moves focus left to search panel',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const ['热词1'],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final keyboardFocusNode = _focusNodeForText(tester, 'A');
+    keyboardFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(keyboardFocusNode.hasFocus, isTrue);
+
+    final firstRecommendFocusNode = _focusNodeForText(tester, '推荐 1');
+    firstRecommendFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(firstRecommendFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(keyboardFocusNode.hasFocus, isTrue);
+    expect(firstRecommendFocusNode.hasFocus, isFalse);
+  });
+
   testWidgets('right panel scroll keeps focused word near middle',
       (tester) async {
     await tester.pumpWidget(
@@ -252,6 +319,46 @@ void main() {
     final viewportHeight = tester.view.physicalSize.height;
     expect(focusedRect.center.dy, greaterThan(viewportHeight * 0.36));
     expect(focusedRect.center.dy, lessThan(viewportHeight * 0.64));
+  });
+
+  testWidgets('right panel scrolls down when recommendation card gains focus',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: List<String>.generate(18, (index) => '历史$index'),
+            hotWords: List<String>.generate(15, (index) => '热词$index'),
+            recommends: List<VideoInfo>.generate(
+              6,
+              (index) => _videoInfo('recommend_$index', '推荐$index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final scrollViewFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is SingleChildScrollView &&
+          widget.controller != null &&
+          widget.controller!.hasClients,
+    );
+    final scrollViewBefore =
+        tester.widget<SingleChildScrollView>(scrollViewFinder.last);
+    final beforeOffset = scrollViewBefore.controller!.offset;
+
+    final recommendFocusNode = _focusNodeForText(tester, '推荐0');
+    recommendFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final scrollViewAfter =
+        tester.widget<SingleChildScrollView>(scrollViewFinder.last);
+    final afterOffset = scrollViewAfter.controller!.offset;
+
+    expect(afterOffset, greaterThan(beforeOffset));
   });
 
   testWidgets('places search panels closer to top on first screen',

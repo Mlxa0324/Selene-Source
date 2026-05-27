@@ -52,6 +52,14 @@ typedef TvSearchPageBuilder = Widget Function();
 /// 用于测试替换快捷入口打开的新页面。
 typedef TvStandalonePageBuilder = Widget Function();
 
+/// TV 首页继续观看删除函数。
+///
+/// 用于测试替换真实播放记录删除逻辑。
+typedef TvContinueWatchingDeleter = Future<bool> Function(
+  BuildContext context,
+  VideoInfo videoInfo,
+);
+
 /// TV 首页聚合数据。
 ///
 /// 只承载页面展示所需列表，避免 TV 页面直接依赖普通端组件状态。
@@ -115,6 +123,7 @@ class TvHomeScreen extends StatefulWidget {
     super.key,
     this.loadHomeData,
     this.loadCategoryData,
+    this.deleteContinueWatchingItem,
     this.buildDetailPage,
     this.buildSearchPage,
     this.buildHistoryPage,
@@ -127,6 +136,9 @@ class TvHomeScreen extends StatefulWidget {
 
   /// 分类筛选数据加载函数。
   final TvCategoryDataLoader? loadCategoryData;
+
+  /// 继续观看删除函数。
+  final TvContinueWatchingDeleter? deleteContinueWatchingItem;
 
   /// 详情页面构建函数。
   final TvDetailPageBuilder? buildDetailPage;
@@ -674,6 +686,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 首页分区初始入口状态是否待重置。
   bool _shouldResetHomeEntryState = true;
 
+  /// “继续观看”删除后优先恢复的焦点卡片 ID。
+  String? _pendingContinueWatchingFocusVideoId;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -883,10 +898,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           children: [
             TvHomeSection(
               title: '继续观看',
+              titleHint: '长按删除',
+              pendingFocusVideoId: _pendingContinueWatchingFocusVideoId,
               videos: data.continueWatching,
               isLoading: isLoading,
               scrollController: _continueWatchingScrollController,
               onVideoPressed: _openVideoFromRecord,
+              onVideoLongPressed: _deleteContinueWatchingItem,
               autofocusFirstItem: true,
               firstItemFocusNode: _continueWatchingFirstFocusNode,
               onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
@@ -1074,6 +1092,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         title: title,
         titleHint: !_categoryFilterVisible ? '按确认键打开分类筛选' : null,
         videos: currentVideos,
+        rightPadding: 0,
         isLoading: isLoading,
         isLoadingMore: _categoryLoadingMore[kind] ?? false,
         hasMore: _categoryHasMore[kind] ?? true,
@@ -1101,6 +1120,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           title: title,
           titleHint: !_categoryFilterVisible ? '按确认键打开分类筛选' : null,
           videos: currentVideos,
+          rightPadding: 0,
           isLoading: filterLoading,
           isLoadingMore: _categoryLoadingMore[kind] ?? false,
           hasMore: _categoryHasMore[kind] ?? false,
@@ -1655,6 +1675,48 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     _openVideo(
       videoInfo,
     );
+  }
+
+  /// 删除首页“继续观看”里的单条播放记录。
+  Future<void> _deleteContinueWatchingItem(VideoInfo videoInfo) async {
+    final currentData = await _homeDataFuture;
+    final continueWatching = currentData?.continueWatching ?? const <VideoInfo>[];
+    final deletedIndex = continueWatching.indexWhere(
+      (item) => item.source == videoInfo.source && item.id == videoInfo.id,
+    );
+    if (deletedIndex >= 0) {
+      final nextIndex = deletedIndex < continueWatching.length - 1
+          ? deletedIndex + 1
+          : deletedIndex - 1;
+      _pendingContinueWatchingFocusVideoId =
+          nextIndex >= 0 && nextIndex < continueWatching.length
+              ? continueWatching[nextIndex].id
+              : null;
+    } else {
+      _pendingContinueWatchingFocusVideoId = null;
+    }
+
+    final confirmed = await showTvConfirmDialog(
+      context: context,
+      title: '删除继续观看',
+      message: '确定要删除这条继续观看记录吗？',
+      confirmLabel: '删除',
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+
+    final deleted =
+        await (widget.deleteContinueWatchingItem ??
+            TvVideoLibraryService.deleteHistoryItem)(context, videoInfo);
+    if (!deleted || !mounted) {
+      _pendingContinueWatchingFocusVideoId = null;
+      return;
+    }
+
+    setState(() {
+      _homeDataFuture = _createHomeDataFuture();
+    });
   }
 
   /// 切换到指定顶部菜单。

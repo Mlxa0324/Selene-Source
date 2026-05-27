@@ -1616,6 +1616,35 @@ void main() {
         find.byKey(const ValueKey('tv-video-grid-title-hint')), findsOneWidget);
   });
 
+  testWidgets('category grid uses zero right padding for edge aligned cards',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              7,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    final categoryGrid = tester.widget<TvVideoGrid>(find.byType(TvVideoGrid));
+    expect(categoryGrid.rightPadding, 0);
+  });
+
   testWidgets('opens TV detail screen when video card is selected',
       (tester) async {
     await tester.pumpWidget(
@@ -1642,6 +1671,84 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TV 详情页已打开'), findsOneWidget);
+  });
+
+  testWidgets('continue watching shows long press delete hint',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_1', '继续观看影片')],
+            hotMovies: const [],
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续观看'), findsOneWidget);
+    expect(find.text('长按删除'), findsOneWidget);
+  });
+
+  testWidgets('continue watching card long press deletes current item',
+      (tester) async {
+    var records = <VideoInfo>[
+      _videoInfo('continue_1', '继续观看影片 1'),
+      _videoInfo('continue_2', '继续观看影片 2'),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: records,
+            hotMovies: const [],
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: records,
+            favorites: const [],
+          ),
+          deleteContinueWatchingItem: (_, videoInfo) async {
+            records = records
+                .where(
+                  (item) =>
+                      item.source != videoInfo.source || item.id != videoInfo.id,
+                )
+                .toList();
+            return true;
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final focusNode = _focusNodeForVideoCard(tester, 'continue_1');
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-confirm-dialog')), findsOneWidget);
+    expect(find.text('删除继续观看'), findsOneWidget);
+    expect(find.text('确定要删除这条继续观看记录吗？'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tv-confirm-confirm-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续观看影片 1'), findsNothing);
+    expect(find.text('继续观看影片 2'), findsOneWidget);
+    expect(_focusNodeForVideoCard(tester, 'continue_2').hasFocus, isTrue);
   });
 
   testWidgets('home section more card jumps to matching top category',

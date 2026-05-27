@@ -154,8 +154,18 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索词列表纵向间距。
   static const double _wordTileMainSpacing = 18;
 
+  /// 左侧搜索操作区焦点记忆分组。
+  ///
+  /// 推荐区回到搜索侧时，优先回到左侧最近一次停留的输入操作按钮。
+  static const Object _leftPanelFocusMemoryGroupKey = 'tv-search-left-panel';
+
   /// 搜索页数据任务。
   Future<TvSearchData>? _searchDataFuture;
+
+  /// 右侧内容滚动目标对齐比例。
+  ///
+  /// 让获焦项尽量停留在视口中段略偏上的稳定浏览位置。
+  static const double _rightPanelFocusAlignment = 0.46;
 
   /// 当前搜索输入内容。
   String _query = '';
@@ -379,6 +389,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       itemBuilder: (context, index) {
         final keyLabel = _keyboardKeys[index];
         return TvFocusable(
+          focusMemoryGroupKey: _leftPanelFocusMemoryGroupKey,
           onPressed: () => _appendQuery(keyLabel),
           builder: (context, hasFocus) {
             return AnimatedContainer(
@@ -434,6 +445,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required VoidCallback onPressed,
   }) {
     return TvFocusable(
+      focusMemoryGroupKey: _leftPanelFocusMemoryGroupKey,
       onPressed: onPressed,
       builder: (context, hasFocus) {
         return AnimatedContainer(
@@ -491,6 +503,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             autofocusFirstItem:
                 initialFocusTarget == _TvSearchInitialFocusTarget.hotWord,
             onItemFocus: _ensureRightPanelFocusCentered,
+            onLastRowArrowDown: data.recommends.isEmpty
+                ? null
+                : () => _recommendFirstFocusNode.requestFocus(),
           ),
           const SizedBox(height: 20),
           _buildRecommendationSection(
@@ -682,7 +697,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               },
               onPressed: () => _openVideo(videoInfo),
               onArrowLeft: isFirstItem
-                  ? () => _handleRecommendEdge(index, AxisDirection.left)
+                  ? () => _moveRecommendFocusToSearchPanel(index)
                   : null,
               onArrowRight: isLastItem
                   ? () => _handleRecommendEdge(index, AxisDirection.right)
@@ -710,6 +725,19 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       return;
     }
     _recommendEdgeShakeKeys[index]?.currentState?.shake(direction);
+  }
+
+  /// 让推荐区最左卡片可以返回左侧搜索操作区。
+  ///
+  /// 优先回到左侧上一次停留的键盘或按钮；没有历史位置时回退到首个可聚焦项。
+  void _moveRecommendFocusToSearchPanel(int index) {
+    final moved = TvFocusable.requestRememberedFocusForGroup(
+      _leftPanelFocusMemoryGroupKey,
+    );
+    if (moved) {
+      return;
+    }
+    _handleRecommendEdge(index, AxisDirection.left);
   }
 
   /// 优先露出推荐列表首尾安全留白，再触发边界抖动。
@@ -746,6 +774,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required bool autofocusFirstItem,
     required ValueChanged<BuildContext> onItemFocus,
     VoidCallback? onClearPressed,
+    VoidCallback? onLastRowArrowDown,
   }) {
     return Column(
       key: ValueKey('tv-search-word-section-$title'),
@@ -785,12 +814,14 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             itemCount: words.length,
             itemBuilder: (context, index) {
               final isRightEdge = _isWordGridRightEdge(index, words.length);
+              final isLastRow = _isWordGridLastRow(index, words.length);
               return Builder(
                 builder: (tileContext) => _buildWordTile(
                   words[index],
                   focusNode: index == 0 ? firstItemFocusNode : null,
                   autofocus: autofocusFirstItem && index == 0,
                   onArrowRight: isRightEdge ? _keepFocusAtRightEdge : null,
+                  onArrowDown: isLastRow ? onLastRowArrowDown : null,
                   onFocus: () => onItemFocus(tileContext),
                 ),
               );
@@ -806,6 +837,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     final isFullRowRightEdge = columnIndex == _wordGridColumnCount - 1;
     final isLastItemInShortRow = index == itemCount - 1;
     return isFullRowRightEdge || isLastItemInShortRow;
+  }
+
+  /// 判断搜索词是否位于当前网格最后一行。
+  bool _isWordGridLastRow(int index, int itemCount) {
+    final lastRowStart =
+        ((itemCount - 1) ~/ _wordGridColumnCount) * _wordGridColumnCount;
+    return index >= lastRowStart;
   }
 
   /// 构建空搜索词状态。
@@ -835,6 +873,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     FocusNode? focusNode,
     required bool autofocus,
     VoidCallback? onArrowRight,
+    VoidCallback? onArrowDown,
     VoidCallback? onFocus,
   }) {
     return TvFocusable(
@@ -843,6 +882,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       directionalRepeatThrottleGroupKey: 'tv-search-word-tiles',
       focusMemoryGroupKey: 'tv-search-word-tiles',
       onArrowRight: onArrowRight,
+      onArrowDown: onArrowDown,
       onFocusChanged: (hasFocus) {
         if (hasFocus) {
           onFocus?.call();
@@ -899,10 +939,51 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     if (!_rightPanelScrollController.hasClients) {
       return;
     }
-    TvFocusScroll.ensureVisible(
-      itemContext,
-      alignment: 0.46,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !itemContext.mounted || !_rightPanelScrollController.hasClients) {
+        return;
+      }
+      final itemRect = _globalRectForContext(itemContext);
+      final viewportContext =
+          _rightPanelScrollController.position.context.notificationContext;
+      if (itemRect == null ||
+          viewportContext == null ||
+          !viewportContext.mounted) {
+        return;
+      }
+      final viewportRect = _globalRectForContext(viewportContext);
+      if (viewportRect == null) {
+        return;
+      }
+
+      final position = _rightPanelScrollController.position;
+      final desiredTop = viewportRect.top +
+          ((viewportRect.height - itemRect.height) * _rightPanelFocusAlignment);
+      final targetOffset = (position.pixels + (itemRect.top - desiredTop))
+          .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if ((position.pixels - targetOffset).abs() < 1) {
+        return;
+      }
+      position.animateTo(
+        targetOffset.toDouble(),
+        duration: TvFocusScroll.duration,
+        curve: TvFocusScroll.curve,
+      );
+    });
+  }
+
+  /// 获取指定上下文对应控件的全局矩形。
+  Rect? _globalRectForContext(BuildContext context) {
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) {
+      return null;
+    }
+    final size = renderObject.size;
+    if (size.isEmpty) {
+      return null;
+    }
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & size;
   }
 
   /// 删除最后一个搜索字符。

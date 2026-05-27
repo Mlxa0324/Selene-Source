@@ -393,23 +393,37 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
                 TvLayout.pageHorizontalPadding,
-                8,
+                56,
                 TvLayout.pageHorizontalPadding,
                 64,
               ),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: _buildAccountSection()),
-                  const SizedBox(width: 28),
-                  Expanded(
-                    child: Column(
-                      children: [
-                        _buildDanmakuSection(),
-                        const SizedBox(height: 28),
-                        _buildCacheSection(),
-                      ],
+                  Text(
+                    '设置',
+                    style: FontUtils.poppins(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
                     ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _buildAccountSection()),
+                      const SizedBox(width: 28),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _buildDanmakuSection(),
+                            const SizedBox(height: 28),
+                            _buildCacheSection(),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

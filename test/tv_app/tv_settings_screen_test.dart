@@ -47,6 +47,28 @@ void main() {
     expect(find.text('清除所有缓存'), findsOneWidget);
   });
 
+  testWidgets('shows settings title at top left above settings panels',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final settingsTop = tester.getTopLeft(find.text('设置')).dy;
+    final sectionTop = tester.getTopLeft(find.text('服务器配置')).dy;
+
+    expect(find.text('设置'), findsOneWidget);
+    expect(settingsTop, lessThanOrEqualTo(64));
+    expect(settingsTop, lessThan(sectionTop));
+  });
+
   testWidgets('keeps TV text fields readonly until confirm is pressed',
       (tester) async {
     await tester.pumpWidget(

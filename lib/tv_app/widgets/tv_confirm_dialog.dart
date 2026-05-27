@@ -240,16 +240,24 @@ Future<bool> showTvConfirmDialog({
   required String confirmLabel,
   String cancelLabel = '取消',
 }) async {
+  final themeService = TvTheme.maybeServiceOf(context);
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     barrierColor: Colors.black.withValues(alpha: 0.72),
     builder: (dialogContext) {
-      return TvConfirmDialog(
+      final dialog = TvConfirmDialog(
         title: title,
         message: message,
         confirmLabel: confirmLabel,
         cancelLabel: cancelLabel,
+      );
+      if (themeService == null) {
+        return dialog;
+      }
+      return TvTheme(
+        service: themeService,
+        child: dialog,
       );
     },
   );
