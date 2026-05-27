@@ -544,6 +544,21 @@ class ApiService {
     }
   }
 
+  /// 清空收藏夹
+  static Future<ApiResponse<void>> clearFavorites(
+      BuildContext context) async {
+    try {
+      final response = await delete<void>(
+        '/api/favorites',
+        context: context,
+      );
+
+      return response;
+    } catch (e) {
+      return ApiResponse.error('清空收藏夹异常: ${e.toString()}');
+    }
+  }
+
   /// 检查网络连接状态
   static Future<bool> checkConnection() async {
     try {

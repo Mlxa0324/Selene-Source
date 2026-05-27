@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -455,9 +456,9 @@ class _VideoPlayerState implements PlayerAdapterState {
 /// WebView-based player adapter (mobile + desktop online streams)
 class WebViewPlayerAdapter implements PlayerAdapter {
   InAppWebViewController? _controller;
-  final String url;
-  final Map<String, String>? headers;
-  final Duration? startAt;
+  String _url;
+  Map<String, String>? _headers;
+  Duration? _startAt;
   final bool adFilterEnabled;
   final bool seekBoostEnabled;
   final PlaybackPreloadLevel preloadLevel;
@@ -502,6 +503,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _videoHeight = 0; // 💡 新增
   bool _isDisposed = false;
   int _suppressTransientBufferingUntilMs = 0;
+  bool _needsReloadWhenControllerReady = false;
 
   @override
   late final PlayerAdapterStream stream;
@@ -514,18 +516,29 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   int _lastDebugToastAtMs = 0;
 
   WebViewPlayerAdapter({
-    required this.url,
-    this.headers,
-    this.startAt,
+    required String url,
+    Map<String, String>? headers,
+    Duration? startAt,
     this.onReady,
     this.onDebugToast,
     this.adFilterEnabled = false,
     this.seekBoostEnabled = false,
     this.preloadLevel = PlaybackPreloadLevel.off,
-  }) {
+  })  : _url = url,
+        _headers = headers,
+        _startAt = startAt {
     stream = _WebViewPlayerStream(this);
     state = _WebViewPlayerState(this);
   }
+
+  /// 当前播放地址。
+  String get url => _url;
+
+  /// 当前请求头。
+  Map<String, String>? get headers => _headers;
+
+  /// 当前起播时间。
+  Duration? get startAt => _startAt;
 
   void _suppressTransientBuffering(Duration duration) {
     final nextUntil =
@@ -566,6 +579,59 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         final event = args[0] as Map<String, dynamic>;
         _handlePlayerEvent(event);
       },
+    );
+    if (_needsReloadWhenControllerReady) {
+      _needsReloadWhenControllerReady = false;
+      unawaited(
+        controller.loadData(
+          data: _buildHtmlContent(),
+          baseUrl: WebUri('https://localhost'),
+        ),
+      );
+    }
+  }
+
+  /// 在同一个 WebView 控制器内切换播放源。
+  ///
+  /// 这样可以避免切源或切集时重建原生视图，减少页面白闪和转圈。
+  Future<void> updateSource({
+    required String url,
+    Duration? startAt,
+    Map<String, String>? headers,
+  }) async {
+    _url = url;
+    _startAt = startAt;
+    _headers = headers;
+    // 切换新源前先清空上一条源留下的瞬时状态，避免外层继续读到旧时长或旧缓冲态。
+    _playing = false;
+    _position = Duration.zero;
+    _duration = Duration.zero;
+    _buffering = true;
+    _cachedRanges = const [];
+    if (!_playingController.isClosed) {
+      _playingController.add(false);
+    }
+    if (!_positionController.isClosed) {
+      _positionController.add(Duration.zero);
+    }
+    if (!_durationController.isClosed) {
+      _durationController.add(Duration.zero);
+    }
+    if (!_bufferingController.isClosed) {
+      _bufferingController.add(true);
+    }
+    if (!_cachedRangesController.isClosed) {
+      _cachedRangesController.add(const []);
+    }
+    final controller = _controller;
+    if (controller == null) {
+      _needsReloadWhenControllerReady = true;
+      return;
+    }
+    _needsReloadWhenControllerReady = false;
+    await controller.loadData(
+      data: _buildHtmlContent(),
+      baseUrl: WebUri('https://localhost'),
     );
   }
 
@@ -941,7 +1007,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   String _buildHtmlContent() {
     final preloadTuning =
         resolveWebViewPreloadTuning(preloadLevel: preloadLevel);
-    final startSeconds = startAt != null ? startAt!.inMilliseconds / 1000 : 0;
+    final startSeconds = _startAt != null ? _startAt!.inMilliseconds / 1000 : 0;
+    final encodedVideoUrl = jsonEncode(_url);
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
     final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false'; // 暂时先关闭该功能
     final preloadEnabledJs = preloadLevel.isEnabled ? 'true' : 'false';
@@ -980,7 +1047,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     window.hlsInstance = null;
     var lastFastSeekSec = -1;
     var lastFastSeekTs = 0;
-    var videoUrl = '$url';
+    var videoUrl = $encodedVideoUrl;
     var startTime = $startSeconds;
     var adFilterEnabled = $adFilterEnabledJs;
     var seekBoostEnabled = $seekBoostEnabledJs;

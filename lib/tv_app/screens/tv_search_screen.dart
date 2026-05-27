@@ -3,6 +3,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
+import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
@@ -14,6 +15,9 @@ import 'package:selene/utils/font_utils.dart';
 /// [context] 用于复用现有搜索历史和推荐数据上下文。
 typedef TvSearchDataLoader = Future<TvSearchData> Function(
     BuildContext context);
+
+/// TV 搜索历史清空函数。
+typedef TvSearchHistoryClearer = Future<bool> Function(BuildContext context);
 
 /// TV 搜索页数据。
 class TvSearchData {
@@ -53,10 +57,14 @@ class TvSearchScreen extends StatefulWidget {
   const TvSearchScreen({
     super.key,
     this.loadSearchData,
+    this.onClearSearchHistory,
   });
 
   /// 搜索页数据加载函数。
   final TvSearchDataLoader? loadSearchData;
+
+  /// 搜索历史清空函数。
+  final TvSearchHistoryClearer? onClearSearchHistory;
 
   /// mock 搜索热词。
   ///
@@ -119,6 +127,12 @@ class TvSearchScreen extends StatefulWidget {
     } catch (_) {
       return <VideoInfo>[];
     }
+  }
+
+  /// 默认搜索历史清空逻辑。
+  static Future<bool> defaultClearSearchHistory(BuildContext context) async {
+    final result = await PageCacheService().clearSearchHistory(context);
+    return result.success;
   }
 }
 
@@ -465,6 +479,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             autofocusFirstItem:
                 initialFocusTarget == _TvSearchInitialFocusTarget.history,
             onItemFocus: _ensureRightPanelFocusCentered,
+            onClearPressed:
+                data.searchHistory.isEmpty ? null : () => _clearSearchHistory(),
           ),
           const SizedBox(height: 28),
           _buildWordSection(
@@ -729,18 +745,28 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required FocusNode firstItemFocusNode,
     required bool autofocusFirstItem,
     required ValueChanged<BuildContext> onItemFocus,
+    VoidCallback? onClearPressed,
   }) {
     return Column(
       key: ValueKey('tv-search-word-section-$title'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: FontUtils.poppins(
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: FontUtils.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            if (onClearPressed != null) ...[
+              const SizedBox(width: 16),
+              _buildHistoryClearButton(onClearPressed),
+            ],
+          ],
         ),
         const SizedBox(height: 14),
         if (words.isEmpty)
@@ -887,6 +913,68 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     setState(() {
       _query = _query.substring(0, _query.length - 1);
     });
+  }
+
+  /// 清空搜索历史。
+  Future<void> _clearSearchHistory() async {
+    final confirmed = await showTvConfirmDialog(
+      context: context,
+      title: '清空搜索历史',
+      message: '确定要清空全部搜索记录吗？',
+      confirmLabel: '清空',
+    );
+    if (!confirmed || !mounted) {
+      return;
+    }
+
+    final clearHistory =
+        widget.onClearSearchHistory ?? TvSearchScreen.defaultClearSearchHistory;
+    final cleared = await clearHistory(context);
+    if (!cleared || !mounted) {
+      return;
+    }
+
+    setState(() {
+      // 清空后重新请求搜索页数据，让历史、热词和推荐区一起保持统一来源。
+      _didDispatchInitialContentFocus = false;
+      _searchDataFuture =
+          (widget.loadSearchData ?? TvSearchScreen.defaultLoadSearchData)(
+        context,
+      );
+    });
+  }
+
+  /// 构建搜索历史标题右侧清空按钮。
+  Widget _buildHistoryClearButton(VoidCallback onPressed) {
+    return TvFocusable(
+      onPressed: onPressed,
+      autoScrollOnFocus: false,
+      builder: (context, hasFocus) {
+        return AnimatedContainer(
+          key: const ValueKey('tv-search-history-clear-button'),
+          duration: const Duration(milliseconds: 140),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: hasFocus ? const Color(0xFF747881) : const Color(0xFF3C4048),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(
+              color: hasFocus ? Colors.white : const Color(0xFF535861),
+              width: hasFocus ? 2 : 1,
+            ),
+          ),
+          child: Text(
+            '清空',
+            style: FontUtils.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// 打开 TV 详情页。

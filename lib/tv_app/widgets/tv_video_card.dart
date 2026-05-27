@@ -22,6 +22,7 @@ class TvVideoCard extends StatelessWidget {
     super.key,
     required this.videoInfo,
     this.onPressed,
+    this.onLongPressed,
     this.onFocusChanged,
     this.onArrowLeft,
     this.onArrowRight,
@@ -39,6 +40,9 @@ class TvVideoCard extends StatelessWidget {
 
   /// 卡片点击回调。
   final VoidCallback? onPressed;
+
+  /// 卡片长按回调。
+  final VoidCallback? onLongPressed;
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
@@ -112,6 +116,7 @@ class TvVideoCard extends StatelessWidget {
       focusScrollAlignment: focusScrollAlignment,
       focusMemoryGroupKey: focusMemoryGroupKey,
       onPressed: onPressed,
+      onLongPressed: onLongPressed,
       onFocusChanged: onFocusChanged,
       onArrowLeft: onArrowLeft,
       onArrowRight: onArrowRight,

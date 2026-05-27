@@ -29,6 +29,9 @@ class TvHistoryScreen extends StatelessWidget {
       title: '播放历史',
       loadVideos: loadVideos ?? defaultLoadVideos,
       buildDetailPage: buildDetailPage,
+      onDeleteVideo: TvVideoLibraryService.deleteHistoryItem,
+      onClearVideos: TvVideoLibraryService.clearHistory,
+      popResultOnBack: true,
     );
   }
 }

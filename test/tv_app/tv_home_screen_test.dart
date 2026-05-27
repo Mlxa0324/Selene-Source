@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_home_screen.dart';
+import 'package:selene/tv_app/screens/tv_history_screen.dart';
 import 'package:selene/tv_app/tv_layout.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
@@ -31,6 +33,199 @@ void main() {
   test('TV layout uses compact page padding and fixed grid columns', () {
     expect(TvLayout.pageHorizontalPadding, 36);
     expect(TvLayout.gridCrossAxisCount, 7);
+  });
+
+  test('TV category filters mirror mobile filter option sets', () {
+    expect(
+      _rowLabels(TvCategoryFilterKind.movie),
+      ['分类', '地区'],
+    );
+    expect(
+      _optionLabels(TvCategoryFilterKind.movie, '分类'),
+      ['全部', '热门电影', '最新电影', '豆瓣高分', '冷门佳片'],
+    );
+    expect(
+      _optionLabels(TvCategoryFilterKind.movie, '地区'),
+      ['全部', '华语', '欧美', '韩国', '日本'],
+    );
+    expect(
+      _rowLabels(
+        TvCategoryFilterKind.movie,
+        category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+      ),
+      ['分类', '类型', '地区', '年代', '平台', '排序'],
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.movie,
+        '类型',
+        category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+      ),
+      containsAll([
+        '恐怖',
+        '战争',
+        '传记',
+        '歌舞',
+        '武侠',
+        '情色',
+        '灾难',
+        '西部',
+        '纪录片',
+        '短片',
+      ]),
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.movie,
+        '平台',
+        category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+      ),
+      [
+        '全部',
+        '腾讯视频',
+        '爱奇艺',
+        '优酷',
+        '湖南卫视',
+        'Netflix',
+        'HBO',
+        'BBC',
+        'NHK',
+        'CBS',
+        'NBC',
+        'tvN'
+      ],
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.movie,
+        '排序',
+        category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+      ),
+      ['综合排序', '近期热度', '首映时间', '高分优先'],
+    );
+
+    expect(
+      _optionLabels(TvCategoryFilterKind.series, '类型'),
+      ['全部', '国产', '欧美', '日本', '韩国', '动漫', '纪录片'],
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.series,
+        '类型',
+        category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+      ),
+      containsAll([
+        '恐怖',
+        '历史',
+        '战争',
+        '动作',
+        '冒险',
+        '传记',
+        '剧情',
+        '奇幻',
+        '惊悚',
+        '灾难',
+        '歌舞',
+        '音乐'
+      ]),
+    );
+
+    expect(
+      _optionLabels(TvCategoryFilterKind.variety, '类型'),
+      ['全部', '国内', '国外'],
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.variety,
+        '类型',
+        category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+      ),
+      ['全部', '真人秀', '脱口秀', '音乐', '歌舞'],
+    );
+
+    expect(
+      _rowLabels(TvCategoryFilterKind.anime),
+      ['分类', '星期'],
+    );
+    expect(
+      _optionLabels(TvCategoryFilterKind.anime, '分类'),
+      ['每日放送', '番剧', '剧场版'],
+    );
+    expect(
+      _optionLabels(TvCategoryFilterKind.anime, '星期'),
+      ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+    );
+    expect(
+      _rowLabels(
+        TvCategoryFilterKind.anime,
+        category: const TvCategoryFilterOption(label: '番剧', value: '番剧'),
+      ),
+      ['分类', '类型', '地区', '年代', '平台', '排序'],
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.anime,
+        '类型',
+        category: const TvCategoryFilterOption(label: '番剧', value: '番剧'),
+      ),
+      [
+        '全部',
+        '黑色幽默',
+        '历史',
+        '歌舞',
+        '励志',
+        '恶搞',
+        '治愈',
+        '运动',
+        '后宫',
+        '情色',
+        '国漫',
+        '人性',
+        '悬疑',
+        '恋爱',
+        '魔幻',
+        '科幻'
+      ],
+    );
+    expect(
+      _rowLabels(
+        TvCategoryFilterKind.anime,
+        category: const TvCategoryFilterOption(label: '剧场版', value: '剧场版'),
+      ),
+      ['分类', '类型', '地区', '年代', '排序'],
+    );
+    expect(
+      _optionLabels(
+        TvCategoryFilterKind.anime,
+        '类型',
+        category: const TvCategoryFilterOption(label: '剧场版', value: '剧场版'),
+      ),
+      [
+        '全部',
+        '定格动画',
+        '传记',
+        '美国动画',
+        '爱情',
+        '黑色幽默',
+        '歌舞',
+        '儿童',
+        '二次元',
+        '动物',
+        '青春',
+        '历史',
+        '励志',
+        '恶搞',
+        '治愈',
+        '运动',
+        '后宫',
+        '情色',
+        '人性',
+        '悬疑',
+        '恋爱',
+        '魔幻',
+        '科幻'
+      ],
+    );
   });
 
   testWidgets('renders TV home tabs and homepage sections', (tester) async {
@@ -310,6 +505,48 @@ void main() {
     expect(find.text('TV 播放历史页已打开'), findsOneWidget);
   });
 
+  testWidgets('history page return refreshes home continue watching data',
+      (tester) async {
+    var loadCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async {
+            loadCount++;
+            return TvHomeData(
+              continueWatching: [
+                _videoInfo('continue_$loadCount', '继续 $loadCount'),
+              ],
+              hotMovies: const [],
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: const [],
+              favorites: const [],
+            );
+          },
+          buildHistoryPage: () => TvHistoryScreen(
+            loadVideos: (_) async => [
+              _videoInfo('history_1', '历史 1'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('继续 1'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-history')));
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(loadCount, 2);
+    expect(find.text('继续 2'), findsOneWidget);
+  });
+
   testWidgets('opens favorites page from top nav quick action', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -455,7 +692,7 @@ void main() {
             favorites: const [],
           ),
           loadCategoryData: (_, __, filters, ___) async {
-            final year = filters['年份']?.label ?? '全部';
+            final year = filters['年代']?.label ?? '全部';
             return [_videoInfo('movie_filtered', '筛选后 $year')];
           },
         ),
@@ -591,14 +828,25 @@ void main() {
           .color,
       const Color(0xD00B0D0E),
     );
+    expect(find.text('分类:'), findsOneWidget);
+    expect(find.text('排序:'), findsNothing);
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-全部'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
     expect(find.text('排序:'), findsOneWidget);
     expect(find.text('类型:'), findsOneWidget);
     expect(find.text('地区:'), findsOneWidget);
-    expect(find.text('年份:'), findsOneWidget);
+    expect(find.text('年代:'), findsOneWidget);
+    expect(find.text('平台:'), findsOneWidget);
     expect(find.text('全部'), findsWidgets);
     expect(
       tester
-          .widget<ListView>(find.byKey(const ValueKey('tv-filter-row-类型')))
+          .widget<SingleChildScrollView>(
+            find.byKey(const ValueKey('tv-filter-row-scroll-类型')),
+          )
           .scrollDirection,
       Axis.horizontal,
     );
@@ -726,26 +974,107 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           backgroundColor: Color(0xFF0B0D0E),
-          body: TvCategoryFilterPanel(kind: TvCategoryFilterKind.movie),
+          body: TvCategoryFilterPanel(
+            kind: TvCategoryFilterKind.movie,
+            selectedOptions: {
+              '分类': TvCategoryFilterOption(label: '全部', value: '全部'),
+            },
+          ),
         ),
       ),
     );
 
     await tester.pumpAndSettle();
 
-    final typeListView = tester.widget<ListView>(
-      find.byKey(const ValueKey('tv-filter-row-类型')),
+    final typeScrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('tv-filter-row-scroll-类型')),
     );
-    expect(typeListView.clipBehavior, Clip.hardEdge);
+    expect(typeScrollView.clipBehavior, Clip.hardEdge);
     expect(find.byKey(const ValueKey('tv-edge-shake')), findsWidgets);
 
-    final scoreFocusNode = _focusNodeForText(tester, '评分');
+    final scoreFocusNode = _focusNodeForText(tester, '高分优先');
     scoreFocusNode.requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(scoreFocusNode.hasFocus, isTrue);
+  });
+
+  testWidgets(
+      'category filter vertical move remembers last chip and falls back to nearest chip',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF0B0D0E),
+          body: TvCategoryFilterPanel(
+            kind: TvCategoryFilterKind.movie,
+            selectedOptions: {
+              '分类': TvCategoryFilterOption(label: '全部', value: '全部'),
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    _focusNodeForChipInRow(tester, '地区', '意大利').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_rowHasFocusedChip(tester, '类型'), isTrue);
+    expect(_focusedChipLabelInRow(tester, '类型'), isNot('全部'));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForChipInRow(tester, '地区', '意大利').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(
+      _focusedChipLabelInRow(tester, '类型'),
+      isNot('全部'),
+    );
+  });
+
+  testWidgets('category filter reveals rightmost chip inside row viewport',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF0B0D0E),
+          body: TvCategoryFilterPanel(
+            kind: TvCategoryFilterKind.movie,
+            selectedOptions: {
+              '分类': TvCategoryFilterOption(label: '全部', value: '全部'),
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    _focusNodeForChipInRow(tester, '地区', '丹麦').requestFocus();
+    await tester.pumpAndSettle();
+
+    final rowRect = tester.getRect(
+      find.byKey(const ValueKey('tv-filter-row-scroll-地区')),
+    );
+    final chipRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-filter-row-地区')),
+        matching: find.byKey(const ValueKey('tv-filter-chip-丹麦')),
+      ),
+    );
+
+    expect(chipRect.right, lessThanOrEqualTo(rowRect.right - 1));
   });
 
   testWidgets('selecting category filter refreshes current grid data',
@@ -784,6 +1113,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-全部'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    queryCount = 0;
     _focusNodeForKey(tester, const ValueKey('tv-filter-chip-犯罪'))
         .requestFocus();
     await tester.pumpAndSettle();
@@ -848,11 +1184,7 @@ void main() {
     expect(find.text('筛选'), findsOneWidget);
     expect(find.text('排序:'), findsNothing);
     expect(
-      find.byKey(const ValueKey('tv-category-filter-summary-排序')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('tv-category-filter-summary-类型')),
+      find.byKey(const ValueKey('tv-category-filter-summary-分类')),
       findsOneWidget,
     );
     expect(
@@ -860,8 +1192,8 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('tv-category-filter-summary-年份')),
-      findsOneWidget,
+      find.byKey(const ValueKey('tv-category-filter-summary-类型')),
+      findsNothing,
     );
   });
 
@@ -925,6 +1257,9 @@ void main() {
             history: const [],
             favorites: const [],
           ),
+          loadCategoryData: (_, __, ___, ____) async => [
+            _videoInfo('movie_0', '电影 0'),
+          ],
         ),
       ),
     );
@@ -1022,16 +1357,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
-    expect(
-      _rowHasFocusedChip(tester, '排序'),
-      isTrue,
-    );
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-
-    expect(_rowHasFocusedChip(tester, '类型'), isTrue);
-    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+    expect(_rowHasFocusedChip(tester, '分类'), isTrue);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -1039,11 +1365,30 @@ void main() {
     expect(_rowHasFocusedChip(tester, '地区'), isTrue);
     expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
 
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-全部'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+    await tester.pump();
+
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
-    expect(_rowHasFocusedChip(tester, '年份'), isTrue);
-    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isFalse);
+    expect(_rowHasFocusedChip(tester, '类型'), isTrue);
+    expect(_rowHasFocusedChip(tester, '分类'), isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_rowHasFocusedChip(tester, '地区'), isTrue);
+    expect(_rowHasFocusedChip(tester, '类型'), isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_rowHasFocusedChip(tester, '年代'), isTrue);
+    expect(_rowHasFocusedChip(tester, '地区'), isFalse);
   });
 
   testWidgets('selected category filter chip keeps focus after refresh',
@@ -1064,8 +1409,8 @@ void main() {
             favorites: const [],
           ),
           loadCategoryData: (_, __, filters, ___) async {
-            final region = filters['地区']?.label ?? '全部';
-            return [_videoInfo('filtered_$region', '筛选后 $region')];
+            final platform = filters['平台']?.label ?? '全部';
+            return [_videoInfo('filtered_$platform', '筛选后 $platform')];
           },
         ),
       ),
@@ -1080,15 +1425,22 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
-    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-香港'))
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-全部'))
         .requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
-    expect(find.text('筛选后 香港'), findsOneWidget);
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-Netflix'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    expect(find.text('筛选后 Netflix'), findsOneWidget);
     expect(
-      _focusNodeForKey(tester, const ValueKey('tv-filter-chip-香港')).hasFocus,
+      _focusNodeForKey(tester, const ValueKey('tv-filter-chip-Netflix'))
+          .hasFocus,
       isTrue,
     );
     expect(
@@ -1097,7 +1449,7 @@ void main() {
     );
   });
 
-  testWidgets('focus returns to selected year chip when moving up from grid',
+  testWidgets('focus returns to bottom filter row when moving up from grid',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -1115,8 +1467,8 @@ void main() {
             favorites: const [],
           ),
           loadCategoryData: (_, __, filters, ___) async {
-            final year = filters['年份']?.label ?? '全部';
-            return [_videoInfo('filtered_$year', '筛选后 $year')];
+            final sort = filters['排序']?.label ?? '综合排序';
+            return [_videoInfo('filtered_$sort', '筛选后 $sort')];
           },
         ),
       ),
@@ -1131,19 +1483,27 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('tv-filter-chip-2025')).first,
+    _focusNodeForKey(tester, const ValueKey('tv-filter-chip-全部'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tv-filter-chip-近期热度')).first,
         warnIfMissed: false);
     await tester.pumpAndSettle();
 
-    _focusNodeForVideoCard(tester, 'filtered_2025').requestFocus();
+    _focusNodeForVideoCard(tester, 'filtered_近期热度').requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
 
     expect(
-      _focusNodeForKey(tester, const ValueKey('tv-filter-chip-2025')).hasFocus,
+      _focusNodeForKey(tester, const ValueKey('tv-filter-chip-近期热度')).hasFocus,
       isTrue,
     );
+    expect(_rowHasFocusedChip(tester, '排序'), isTrue);
+    expect(_rowHasFocusedChip(tester, '年代'), isFalse);
   });
 
   testWidgets('category filter expanded chips use compact sizing',
@@ -1378,6 +1738,86 @@ void main() {
       contains('第1页电影 0'),
     );
   });
+
+  testWidgets('root back shows exit confirm dialog and confirms before exit',
+      (tester) async {
+    final platformCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvBackHandler(
+          autofocus: true,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: [_videoInfo('continue_0', '继续 0')],
+              hotMovies: List.generate(
+                6,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: const [],
+              favorites: const [],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(
+      platformCalls.where((call) => call.method == 'SystemNavigator.pop'),
+      isEmpty,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定退出 IvyTV？'), findsOneWidget);
+    expect(find.text('取消'), findsOneWidget);
+    expect(find.text('确认'), findsOneWidget);
+    expect(
+      platformCalls.where((call) => call.method == 'SystemNavigator.pop'),
+      isEmpty,
+    );
+    expect(_focusNodeForText(tester, '取消').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+    expect(
+      platformCalls.where((call) => call.method == 'SystemNavigator.pop'),
+      isEmpty,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    final exitCalls =
+        platformCalls.where((call) => call.method == 'SystemNavigator.pop');
+    expect(exitCalls, hasLength(1));
+  });
 }
 
 Future<void> _tapTopNavLabel(WidgetTester tester, String label) async {
@@ -1395,6 +1835,33 @@ FocusNode _focusNodeForText(WidgetTester tester, String label) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+List<String> _rowLabels(
+  TvCategoryFilterKind kind, {
+  TvCategoryFilterOption? category,
+}) {
+  final filters = <String, TvCategoryFilterOption>{
+    if (category != null) '分类': category,
+  };
+  return TvCategoryFilterOptions.rowsFor(kind, filters)
+      .map((row) => row.title)
+      .toList();
+}
+
+List<String> _optionLabels(
+  TvCategoryFilterKind kind,
+  String rowTitle, {
+  TvCategoryFilterOption? category,
+}) {
+  final filters = <String, TvCategoryFilterOption>{
+    if (category != null) '分类': category,
+  };
+  return TvCategoryFilterOptions.rowsFor(kind, filters)
+      .firstWhere((row) => row.title == rowTitle)
+      .options
+      .map((option) => option.label)
+      .toList();
 }
 
 Offset _slideOffsetForText(WidgetTester tester, String label) {
@@ -1457,6 +1924,63 @@ bool _rowHasFocusedChip(WidgetTester tester, String rowTitle) {
     ),
   );
   return focusFinder.evaluate().isNotEmpty;
+}
+
+FocusNode _focusNodeForChipInRow(
+  WidgetTester tester,
+  String rowTitle,
+  String label,
+) {
+  final focusFinder = find.descendant(
+    of: find.byKey(ValueKey('tv-filter-row-$rowTitle')),
+    matching: find.ancestor(
+      of: find.byKey(ValueKey('tv-filter-chip-$label')),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Focus && widget.focusNode != null,
+      ),
+    ),
+  );
+  return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+String? _focusedChipLabelInRow(WidgetTester tester, String rowTitle) {
+  const allSelectedCategory = TvCategoryFilterOption(label: '全部', value: '全部');
+  const animeSeriesCategory = TvCategoryFilterOption(label: '番剧', value: '番剧');
+  const animeMovieCategory = TvCategoryFilterOption(label: '剧场版', value: '剧场版');
+  final labels = <String>{};
+  for (final kind in TvCategoryFilterKind.values) {
+    for (final category in <TvCategoryFilterOption?>[
+      null,
+      allSelectedCategory,
+      animeSeriesCategory,
+      animeMovieCategory,
+    ]) {
+      try {
+        labels.addAll(_optionLabels(kind, rowTitle, category: category));
+      } on StateError {
+        // 当前分类下没有这行时跳过，继续尝试其它配置。
+      }
+    }
+  }
+  for (final label in labels) {
+    final chipFinder = find.descendant(
+      of: find.byKey(ValueKey('tv-filter-row-$rowTitle')),
+      matching: find.byKey(ValueKey('tv-filter-chip-$label')),
+    );
+    if (chipFinder.evaluate().isEmpty) {
+      continue;
+    }
+    final focusFinder = find.ancestor(
+      of: chipFinder.first,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is Focus && widget.focusNode?.hasPrimaryFocus == true,
+      ),
+    );
+    if (focusFinder.evaluate().isNotEmpty) {
+      return label;
+    }
+  }
+  return null;
 }
 
 FocusNode _focusNodeForFocusableKey(WidgetTester tester, Key key) {

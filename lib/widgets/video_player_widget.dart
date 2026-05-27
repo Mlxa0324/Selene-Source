@@ -22,6 +22,16 @@ import 'player_settings_panel.dart';
 import 'player_adapter.dart';
 import '../utils/player_cached_range_utils.dart';
 
+/// 构建稳定的视频表面 Key，避免切源或切集时误重建原生视频视图。
+String buildVideoSurfaceKey({
+  required VideoPlayerSurface surface,
+  required Type adapterType,
+  required VideoFitType fitType,
+}) {
+  return 'video_${surface.name}_${adapterType}_'
+      '${fitType.name}';
+}
+
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
   final String? url;
@@ -1072,16 +1082,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         // Clean up old one after switching to minimize gap
         unawaited(oldAdapter?.dispose());
       } else {
-        // For WebView player, recreate with new URL
-        final oldAdapter = _adapter;
-        _adapter = _createWebViewPlayerAdapter(
+        // WebView 直接复用同一个控制器切换数据源，避免重建原生视图。
+        await (_adapter as WebViewPlayerAdapter).updateSource(
           url: url,
           startAt: startAt,
-          logReason: 'VideoPlayerWidget: WebViewPlayerAdapter 切换数据源',
+          headers: _currentHeaders,
         );
-        _setupPlayerListeners();
-        _adapter?.updateVideoFit(_getBoxFit());
-        unawaited(oldAdapter?.dispose());
       }
 
       _playbackSpeed.value = currentSpeed;
@@ -1478,10 +1484,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         widget.surface == VideoPlayerSurface.desktop &&
             widget.showControls &&
             _adapter is MediaKitAdapter;
-    final videoKey = _adapter is MediaKitAdapter
-        ? ValueKey(
-            'media_${_currentFitType.name}_${_currentUrl ?? ''}_${widget.surface.name}')
-        : ValueKey('video_${_currentUrl}_${_adapter.runtimeType}');
+    final videoKey = ValueKey(
+      buildVideoSurfaceKey(
+        surface: widget.surface,
+        adapterType: _adapter.runtimeType,
+        fitType: _currentFitType,
+      ),
+    );
     Widget videoWidget = _adapter!.buildVideo(
       context,
       fit: _getBoxFit(),

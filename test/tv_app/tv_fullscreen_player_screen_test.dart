@@ -786,12 +786,13 @@ void main() {
     );
     final secondaryConstraints = secondaryButton.constraints!;
     expect(secondaryConstraints.minWidth, 190);
-    expect(secondaryConstraints.maxWidth, 260);
-    expect(secondaryConstraints.minHeight, 104);
+    expect(secondaryConstraints.maxWidth, greaterThanOrEqualTo(190));
+    expect(secondaryConstraints.minHeight, greaterThanOrEqualTo(104));
   });
 
-  testWidgets('fullscreen episode cards keep full title inside card',
+  testWidgets('fullscreen episode cards widen with longer titles',
       (tester) async {
+    const shortEpisodeTitle = '第1集';
     const longEpisodeTitle = '20260328乘风亲友连麦大会第1期';
     await tester.pumpWidget(
       MaterialApp(
@@ -801,6 +802,7 @@ void main() {
             'source_a',
             '主线路',
             episodeTitles: [
+              shortEpisodeTitle,
               longEpisodeTitle,
               '第20260518期发布会',
             ],
@@ -810,6 +812,7 @@ void main() {
               'source_a',
               '主线路',
               episodeTitles: [
+                shortEpisodeTitle,
                 longEpisodeTitle,
                 '第20260518期发布会',
               ],
@@ -831,18 +834,34 @@ void main() {
     expect(titleWidget.maxLines, 4);
     expect(titleWidget.overflow, TextOverflow.clip);
 
-    final buttonFinder = find
+    final shortButtonFinder = find
+        .ancestor(
+          of: find.text(shortEpisodeTitle),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    final shortEpisodeButton =
+        tester.widget<AnimatedContainer>(shortButtonFinder);
+
+    final longButtonFinder = find
         .ancestor(
           of: find.text(longEpisodeTitle),
           matching: find.byType(AnimatedContainer),
         )
         .first;
-    final episodeButton = tester.widget<AnimatedContainer>(buttonFinder);
-    expect(episodeButton.constraints!.minWidth, 190);
-    expect(episodeButton.constraints!.maxWidth, 260);
-    expect(episodeButton.constraints!.minHeight, 104);
+    final longEpisodeButton = tester.widget<AnimatedContainer>(longButtonFinder);
 
-    final buttonRect = tester.getRect(buttonFinder);
+    expect(
+      longEpisodeButton.constraints!.minWidth,
+      greaterThan(shortEpisodeButton.constraints!.minWidth),
+    );
+    expect(
+      longEpisodeButton.constraints!.maxWidth,
+      greaterThan(shortEpisodeButton.constraints!.maxWidth),
+    );
+    expect(longEpisodeButton.constraints!.minHeight, 104);
+
+    final buttonRect = tester.getRect(longButtonFinder);
     final textRect = tester.getRect(find.text(longEpisodeTitle));
     expect(
       buttonRect.inflate(0.5).contains(textRect.topLeft),
@@ -1156,6 +1175,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('片尾 00:00'), findsOneWidget);
     expect(await UserDataService.getSkipOutroDuration(), 0);
+  });
+
+  testWidgets('other menu shows danmaku toggle and manual match entry',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '其它').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(find.text('弹幕 开'), findsOneWidget);
+    expect(find.text('手动匹配'), findsOneWidget);
   });
 
   testWidgets('back key closes TV player menu before popping fullscreen route',

@@ -29,6 +29,9 @@ class TvFavoritesScreen extends StatelessWidget {
       title: '收藏夹',
       loadVideos: loadVideos ?? defaultLoadVideos,
       buildDetailPage: buildDetailPage,
+      onDeleteVideo: TvVideoLibraryService.deleteFavoriteItem,
+      onClearVideos: TvVideoLibraryService.clearFavorites,
+      popResultOnBack: true,
     );
   }
 }

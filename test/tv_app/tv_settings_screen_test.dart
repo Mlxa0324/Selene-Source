@@ -187,12 +187,15 @@ void main() {
       'https://danmaku.example.com',
     );
     await tester.tap(find.byType(Switch).first);
+    await tester.drag(find.byType(Slider).at(0), const Offset(-120, 0));
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('保存弹幕配置'));
     await tester.tap(find.text('保存弹幕配置'));
     await tester.pumpAndSettle();
 
     expect(savedBaseApi, 'https://danmaku.example.com');
     expect(savedSettings?.enabled, isFalse);
+    expect(savedSettings?.opacity, lessThan(1.0));
   });
 
   testWidgets('clears all TV caches from settings', (tester) async {

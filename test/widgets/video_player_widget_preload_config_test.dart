@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/playback_preload.dart';
 import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/widgets/player_adapter.dart';
+import 'package:selene/widgets/player_settings_panel.dart';
+import 'package:selene/widgets/video_player_surface.dart';
 import 'package:selene/widgets/video_player_widget.dart';
 
 void main() {
@@ -37,6 +39,17 @@ void main() {
 
     expect(defaultWidget.enablePip, isTrue);
     expect(tvWidget.enablePip, isFalse);
+  });
+
+  test('video player surface key stays stable across source changes', () {
+    expect(
+      buildVideoSurfaceKey(
+        surface: VideoPlayerSurface.desktop,
+        adapterType: WebViewPlayerAdapter,
+        fitType: VideoFitType.contain,
+      ),
+      'video_desktop_WebViewPlayerAdapter_contain',
+    );
   });
 
   test('player adapter exposes cached ranges through stream and state',

@@ -3,6 +3,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
+import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
 
@@ -20,7 +21,9 @@ class TvVideoGrid extends StatefulWidget {
     required this.title,
     required this.videos,
     this.titleHint,
+    this.onClearPressed,
     this.onVideoPressed,
+    this.onVideoLongPressed,
     this.onVideoFocusChanged,
     this.onArrowUp,
     this.focusMemoryGroupKey,
@@ -39,11 +42,17 @@ class TvVideoGrid extends StatefulWidget {
   /// 分类页用它提示用户可按确认键呼出筛选面板。
   final String? titleHint;
 
+  /// 页面标题右侧清空按钮回调。
+  final VoidCallback? onClearPressed;
+
   /// 视频列表。
   final List<VideoInfo> videos;
 
   /// 卡片点击回调。
   final TvVideoPressed? onVideoPressed;
+
+  /// 卡片长按回调。
+  final TvVideoPressed? onVideoLongPressed;
 
   /// 卡片焦点变化回调。
   ///
@@ -83,6 +92,12 @@ class TvVideoGrid extends StatefulWidget {
 
   /// 焦点放大安全边距，避免首尾列卡片被滚动视口裁剪。
   static const double focusSafePadding = 12.0;
+
+  /// 右侧尾部额外安全留白。
+  ///
+  /// 末列卡片获焦后会整体放大，Grid 需要额外预留一段尾部空间，
+  /// 避免最右侧海报刚好贴住裁剪边界时仍像被削掉一截。
+  static const double trailingFocusSafePadding = 20.0;
 
   @override
   State<TvVideoGrid> createState() => _TvVideoGridState();
@@ -147,28 +162,42 @@ class _TvVideoGridState extends State<TvVideoGrid> {
         ),
         child: Row(
           children: [
-            Text(
-              widget.title,
-              style: FontUtils.poppins(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+            Expanded(
+              child: Row(
+                children: [
+                  Text(
+                    widget.title,
+                    style: FontUtils.poppins(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (widget.titleHint != null) ...[
+                    const SizedBox(width: 14),
+                    Flexible(
+                      child: Text(
+                        key: const ValueKey('tv-video-grid-title-hint'),
+                        widget.titleHint!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: FontUtils.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF7F8A8F),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-            if (widget.titleHint != null) ...[
-              const SizedBox(width: 14),
-              Flexible(
-                child: Text(
-                  key: const ValueKey('tv-video-grid-title-hint'),
-                  widget.titleHint!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: FontUtils.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF7F8A8F),
-                  ),
-                ),
+            if (widget.onClearPressed != null) ...[
+              const SizedBox(width: 16),
+              _TvVideoGridActionButton(
+                key: const ValueKey('tv-video-library-clear-button'),
+                label: '删除全部',
+                onPressed: widget.onClearPressed,
               ),
             ],
           ],
@@ -183,7 +212,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
       padding: const EdgeInsets.fromLTRB(
         TvVideoGrid.focusSafePadding,
         8,
-        TvVideoGrid.focusSafePadding,
+        TvVideoGrid.focusSafePadding + TvVideoGrid.trailingFocusSafePadding,
         64,
       ),
       sliver: SliverGrid(
@@ -271,6 +300,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
               videoInfo: videoInfo,
               focusNode: index == 0 ? widget.firstItemFocusNode : null,
               onPressed: () => widget.onVideoPressed?.call(videoInfo),
+              onLongPressed: () => widget.onVideoLongPressed?.call(videoInfo),
               onFocusChanged: (hasFocus) {
                 if (hasFocus) {
                   _tryTriggerLoadMore(index, crossAxisCount);
@@ -350,6 +380,51 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   }
 }
 
+/// TV 视频库标题操作按钮。
+class _TvVideoGridActionButton extends StatelessWidget {
+  /// 创建视频库标题操作按钮。
+  const _TvVideoGridActionButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+  });
+
+  /// 按钮文案。
+  final String label;
+
+  /// 点击回调。
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return TvFocusable(
+      onPressed: onPressed,
+      builder: (context, hasFocus) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: hasFocus ? const Color(0xFF27AE60) : const Color(0xFF1A1E21),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: hasFocus ? Colors.white : const Color(0xFF2A2F32),
+              width: 2,
+            ),
+          ),
+          child: Text(
+            label,
+            style: FontUtils.poppins(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// TV 网格卡片边界反馈项。
 class _TvGridEdgeItem extends StatefulWidget {
   /// 创建 TV 网格卡片边界反馈项。
@@ -360,6 +435,7 @@ class _TvGridEdgeItem extends StatefulWidget {
     required this.crossAxisCount,
     this.focusNode,
     this.onPressed,
+    this.onLongPressed,
     this.onFocusChanged,
     this.onArrowUp,
     this.focusMemoryGroupKey,
@@ -382,6 +458,9 @@ class _TvGridEdgeItem extends StatefulWidget {
 
   /// 点击回调。
   final VoidCallback? onPressed;
+
+  /// 长按回调。
+  final VoidCallback? onLongPressed;
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
@@ -430,6 +509,7 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
         focusNode: widget.focusNode,
         focusMemoryGroupKey: widget.focusMemoryGroupKey,
         onPressed: widget.onPressed,
+        onLongPressed: widget.onLongPressed,
         onFocusChanged: widget.onFocusChanged,
         onArrowLeft: _isLeftEdge ? () => _shake(AxisDirection.left) : null,
         onArrowRight: _isRightEdge ? () => _shake(AxisDirection.right) : null,

@@ -68,6 +68,9 @@ abstract class FavoriteOperationInterface {
   
   /// 取消收藏
   Future<DataOperationResult<void>> removeFavorite(String source, String id, BuildContext context);
+
+  /// 清空收藏夹
+  Future<DataOperationResult<void>> clearFavorites(BuildContext context);
   
   /// 同步检查是否已收藏
   bool isFavoritedSync(String source, String id);

@@ -1,16 +1,22 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:canvas_danmaku/canvas_danmaku.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/services/danmaku_service.dart';
 import 'package:selene/services/user_data_service.dart';
+import 'package:selene/tv_app/screens/tv_danmaku_match_screen.dart';
+import 'package:selene/tv_app/services/tv_danmaku_service.dart';
 import 'package:selene/tv_app/services/tv_play_record_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
+import 'package:selene/tv_app/widgets/tv_danmaku_overlay.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
@@ -118,6 +124,7 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     this.onExitRequested,
     this.onEpisodeChanged,
     this.onSourceChanged,
+    this.danmakuService,
     this.reuseExistingPlayer = false,
     this.testHooks,
   });
@@ -167,6 +174,11 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
   /// 全屏内播放源变化回调。
   final ValueChanged<SearchResult>? onSourceChanged;
 
+  /// TV 专属弹幕服务。
+  ///
+  /// 默认复用共享数据层实现；测试时可注入假服务覆盖自动匹配结果。
+  final TvDanmakuService? danmakuService;
+
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvFullscreenPlayerScreenTestHooks? testHooks;
 
@@ -181,6 +193,21 @@ enum _TvPlaylistSecondaryRow { episode, group }
 class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 底部进度条左右时间槽位宽度。
   static const double _progressTimeSlotWidth = 78;
+
+  /// 选集卡片基础最小宽度。
+  static const double _episodeCardBaseMinWidth = 190;
+
+  /// 选集卡片基础最大宽度。
+  static const double _episodeCardMaxWidth = 260;
+
+  /// 选集卡片基础最小高度。
+  static const double _episodeCardBaseMinHeight = 104;
+
+  /// 选集卡片横向内边距总和。
+  static const double _episodeCardHorizontalPadding = 28;
+
+  /// 选集卡片纵向预留空间。
+  static const double _episodeCardVerticalPadding = 24;
 
   /// 根焦点节点，用于接收遥控器下键和返回键。
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'tv-fullscreen-root');
@@ -257,6 +284,39 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// TV 菜单里的弹幕开关展示状态。
   bool _danmakuEnabled = true;
+
+  /// TV 弹幕设置。
+  DanmakuSettings _danmakuSettings = const DanmakuSettings();
+
+  /// 当前弹幕列表。
+  List<DanmakuComment> _danmakuList = const <DanmakuComment>[];
+
+  /// 当前命中的弹幕剧集 ID。
+  int? _currentDanmakuEpisodeId;
+
+  /// 当前弹幕游标。
+  int _danmakuIndex = 0;
+
+  /// 上一次弹幕时间轴检查点。
+  double _lastDanmakuCheckTime = -1;
+
+  /// 当前弹幕控制器。
+  DanmakuController? _danmakuController;
+
+  /// 当前弹幕叠层版本。
+  int _danmakuOverlayVersion = 0;
+
+  /// 当前是否正在加载弹幕。
+  bool _isDanmakuLoading = false;
+
+  /// 弹幕加载任务序号，避免旧结果回写。
+  int _danmakuLoadToken = 0;
+
+  /// 当前活跃的弹幕加载请求标识。
+  ///
+  /// 首次进入全屏时设置加载和播放器地址加载会非常接近，
+  /// 这里用请求标识避免同一集数被重复自动匹配。
+  String? _activeDanmakuRequestKey;
 
   /// 片头跳过秒数。
   int _skipIntroSeconds = 0;
@@ -362,6 +422,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 采用 20 集一组，减少长剧集的分组切换次数。
   static const int _episodeGroupSize = 20;
 
+  /// TV 端弹幕字号倍率。
+  static const double _tvDanmakuFontMultiplier = 1.12;
+
   /// 横向列表贴左时的轻微前靠偏移。
   ///
   /// 保持“焦点基本不动，列表自己滚”的观感，让当前项尽量贴在最左侧。
@@ -412,6 +475,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       setState(() => _clockText = _formatClock(DateTime.now()));
     });
     unawaited(_loadSkipDurations());
+    unawaited(_loadDanmakuSettings());
     _loadCurrentEpisode(updateController: false);
   }
 
@@ -474,6 +538,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekOverlayTimer?.cancel();
     _menuAutoHideTimer?.cancel();
     _fullscreenLoadingHoldTimer?.cancel();
+    _detachDanmakuController();
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
     if (!widget.reuseExistingPlayer) {
       _playerController?.dispose();
@@ -491,6 +556,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _episodeListScrollController.dispose();
     _episodeGroupListScrollController.dispose();
     super.dispose();
+  }
+
+  /// 读取 TV 弹幕设置并同步菜单状态。
+  Future<void> _loadDanmakuSettings() async {
+    final service = widget.danmakuService ?? TvDanmakuService();
+    final settings = await service.getSettings();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _danmakuSettings = settings;
+      _danmakuEnabled = settings.enabled;
+    });
+    if (_danmakuEnabled) {
+      unawaited(_loadDanmakuForCurrentEpisode(force: false));
+    }
   }
 
   /// 绑定测试钩子。
@@ -629,6 +710,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     // 首次进入全屏时接续详情页小播放器的当前进度，后续换源换集不复用。
     final startAt = updateController ? _takeInitialPlaybackPosition() : null;
     if (updateController) {
+      _clearDanmakuState(clearList: true);
       _markFullscreenPlayerLoading();
       _scheduleChromeRefresh();
       await _effectiveVideoController?.updateDataSource(url, startAt: startAt);
@@ -640,6 +722,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           _finishFullscreenPlayerLoading();
         }
       });
+      if (_danmakuEnabled) {
+        unawaited(_loadDanmakuForCurrentEpisode(force: false));
+      }
     }
   }
 
@@ -808,6 +893,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       // 共享详情页播放器时，壳层不会自动收到本页控制器的播放态变更回调，
       // 这里需要主动刷新一次，确保暂停图标、顶部装饰和底部进度条稳定出现。
       _scheduleChromeRefresh();
+      _syncDanmakuPlaybackState(forcePlaying: !injectedController.isPlaying);
       return;
     }
 
@@ -825,6 +911,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (mounted) {
       setState(() {});
     }
+    _syncDanmakuPlaybackState(forcePlaying: !controller.isPlaying);
   }
 
   /// 按左右方向键执行相对 seek。
@@ -860,6 +947,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       _seekPreviewDuration = duration;
       _seekOverlayVisible = true;
     });
+    _resetDanmakuIndex(target, clearVisible: false);
     unawaited(_seekTo(target));
     _scheduleSeekOverlayHide();
   }
@@ -1820,6 +1908,324 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Future<void> _switchSpeed(double speed) async {
     setState(() => _playbackSpeed = speed);
     await _effectiveVideoController?.setSpeed(speed);
+    _refreshDanmakuOption();
+  }
+
+  /// 释放已绑定的弹幕控制器。
+  void _detachDanmakuController() {
+    _danmakuController = null;
+  }
+
+  /// 根据当前播放上下文自动加载弹幕。
+  Future<void> _loadDanmakuForCurrentEpisode({required bool force}) async {
+    if (!_danmakuEnabled) {
+      return;
+    }
+
+    final detail = _currentDetail;
+    if (detail == null) {
+      return;
+    }
+
+    final service = widget.danmakuService ?? TvDanmakuService();
+    final token = ++_danmakuLoadToken;
+    final requestKey =
+        '${detail.source}::${detail.id}::$_episodeIndex::${detail.title}';
+
+    if (!force &&
+        _isDanmakuLoading &&
+        _activeDanmakuRequestKey == requestKey) {
+      return;
+    }
+    _activeDanmakuRequestKey = requestKey;
+
+    setState(() {
+      _isDanmakuLoading = true;
+    });
+
+    final result = await service.loadDanmaku(
+      currentSource: detail.source,
+      currentId: detail.id,
+      episodeIndex: _episodeIndex,
+      videoTitle: _title,
+      sourceName: _sourceName,
+      episodeTitle: _episodeIndex < _episodeTitles.length
+          ? _episodeTitles[_episodeIndex]
+          : null,
+    );
+
+    if (!mounted || token != _danmakuLoadToken) {
+      return;
+    }
+
+    if (result == null) {
+      setState(() {
+        _isDanmakuLoading = false;
+      });
+      _activeDanmakuRequestKey = null;
+      _clearDanmakuState(clearList: true);
+      return;
+    }
+
+    if (!force &&
+        _currentDanmakuEpisodeId == result.episodeId &&
+        _danmakuList.isNotEmpty) {
+      setState(() {
+        _isDanmakuLoading = false;
+      });
+      _activeDanmakuRequestKey = null;
+      return;
+    }
+
+    setState(() {
+      _danmakuList = result.comments;
+      _currentDanmakuEpisodeId = result.episodeId;
+      _isDanmakuLoading = false;
+      _danmakuOverlayVersion++;
+    });
+    _activeDanmakuRequestKey = null;
+    _resetDanmakuIndex(_currentPlaybackPosition, clearVisible: true);
+    _refreshDanmakuOption();
+    _syncDanmakuPlaybackState();
+    _sendDanmakuByPosition(_currentPlaybackPosition);
+  }
+
+  /// 手动加载指定弹幕剧集。
+  Future<void> _loadManualDanmaku({
+    required int episodeId,
+    required String searchKeyword,
+    required DanmakuSearchAnime anime,
+    required int episodeOffset,
+  }) async {
+    final detail = _currentDetail;
+    if (detail == null) {
+      return;
+    }
+
+    final service = widget.danmakuService ?? TvDanmakuService();
+    final comments = await service.loadDanmakuByEpisodeId(episodeId);
+    if (!mounted) {
+      return;
+    }
+
+    await service.saveManualSelection(
+      currentSource: detail.source,
+      currentId: detail.id,
+      episodeIndex: _episodeIndex,
+      episodeId: episodeId,
+      searchKeyword: searchKeyword,
+      fallbackTitle: _title,
+      orderedEpisodes: anime.episodes,
+      selectedEpisodeOffset: episodeOffset,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _danmakuList = comments;
+      _currentDanmakuEpisodeId = episodeId;
+      _danmakuOverlayVersion++;
+    });
+    _resetDanmakuIndex(_currentPlaybackPosition, clearVisible: true);
+    _refreshDanmakuOption();
+    _syncDanmakuPlaybackState();
+    _sendDanmakuByPosition(_currentPlaybackPosition);
+  }
+
+  /// 切换弹幕开关并同步持久化配置。
+  Future<void> _toggleDanmakuEnabled() async {
+    final nextEnabled = !_danmakuEnabled;
+    final nextSettings = _danmakuSettings.copyWith(enabled: nextEnabled);
+    setState(() {
+      _danmakuEnabled = nextEnabled;
+      _danmakuSettings = nextSettings;
+    });
+
+    final service = widget.danmakuService ?? TvDanmakuService();
+    await service.saveSettings(nextSettings);
+
+    if (!nextEnabled) {
+      _clearDanmakuState(clearList: true);
+      return;
+    }
+    await _loadDanmakuForCurrentEpisode(force: true);
+  }
+
+  /// 清理当前弹幕时间轴与控制器内容。
+  void _clearDanmakuState({required bool clearList}) {
+    _danmakuIndex = 0;
+    _lastDanmakuCheckTime = -1;
+    _danmakuController?.clear();
+    if (!clearList || !mounted) {
+      return;
+    }
+    setState(() {
+      _danmakuList = const <DanmakuComment>[];
+      _currentDanmakuEpisodeId = null;
+      _danmakuOverlayVersion++;
+    });
+  }
+
+  /// 重新计算当前播放位置对应的弹幕游标。
+  void _resetDanmakuIndex(
+    Duration position, {
+    required bool clearVisible,
+  }) {
+    _danmakuIndex = _findDanmakuIndex(position);
+    _lastDanmakuCheckTime = -1;
+    if (clearVisible) {
+      _danmakuController?.clear();
+    }
+  }
+
+  /// 二分定位当前时间应从哪条弹幕继续发送。
+  int _findDanmakuIndex(Duration position) {
+    if (_danmakuList.isEmpty) {
+      return 0;
+    }
+
+    final currentSeconds = position.inMilliseconds / 1000.0;
+    var low = 0;
+    var high = _danmakuList.length;
+    while (low < high) {
+      final mid = low + ((high - low) >> 1);
+      if (_danmakuList[mid].time < currentSeconds) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low;
+  }
+
+  /// 按当前播放位置推送弹幕。
+  void _sendDanmakuByPosition(Duration position) {
+    if (!_danmakuEnabled ||
+        _danmakuController == null ||
+        _danmakuList.isEmpty ||
+        _isPlaybackLoading) {
+      return;
+    }
+
+    final currentSeconds = position.inMilliseconds / 1000.0;
+    if ((currentSeconds - _lastDanmakuCheckTime).abs() < 0.15) {
+      return;
+    }
+    _lastDanmakuCheckTime = currentSeconds;
+
+    while (_danmakuIndex < _danmakuList.length) {
+      final comment = _danmakuList[_danmakuIndex];
+      if (comment.time > currentSeconds) {
+        break;
+      }
+      if (_danmakuSettings.hideColor && comment.color != 16777215) {
+        _danmakuIndex++;
+        continue;
+      }
+      _danmakuController?.addDanmaku(
+        DanmakuService.convertToDanmakuItem(comment),
+      );
+      _danmakuIndex++;
+    }
+  }
+
+  /// 同步弹幕的播放和暂停状态。
+  void _syncDanmakuPlaybackState({bool? forcePlaying}) {
+    final controller = _danmakuController;
+    if (!_danmakuEnabled || controller == null) {
+      return;
+    }
+    final shouldPlay = forcePlaying ?? _isPlaybackPlaying;
+    if (shouldPlay) {
+      controller.resume();
+    } else {
+      controller.pause();
+    }
+  }
+
+  /// 同步弹幕渲染参数。
+  void _refreshDanmakuOption() {
+    final controller = _danmakuController;
+    if (!_danmakuEnabled || controller == null) {
+      return;
+    }
+    controller.updateOption(
+      TvDanmakuService.buildDanmakuOption(
+        _resolvedDanmakuSettings,
+        playbackSpeed: _playbackSpeed,
+      ),
+    );
+  }
+
+  /// 绑定底层弹幕控制器。
+  void _handleDanmakuControllerCreated(DanmakuController controller) {
+    _danmakuController = controller;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !identical(_danmakuController, controller)) {
+        return;
+      }
+      _refreshDanmakuOption();
+      _resetDanmakuIndex(_currentPlaybackPosition, clearVisible: true);
+      _syncDanmakuPlaybackState();
+      _sendDanmakuByPosition(_currentPlaybackPosition);
+    });
+  }
+
+  /// 获取 TV 端实际渲染用弹幕设置。
+  DanmakuSettings get _resolvedDanmakuSettings {
+    return _danmakuSettings.copyWith(
+      fontSize: _danmakuSettings.fontSize * _tvDanmakuFontMultiplier,
+    );
+  }
+
+  /// 是否需要展示 TV 弹幕叠层。
+  bool get _shouldShowDanmakuOverlay {
+    return _danmakuEnabled &&
+        !_isDanmakuLoading &&
+        _currentDanmakuEpisodeId != null;
+  }
+
+  /// 打开 TV 手动匹配弹幕面板。
+  Future<void> _showDanmakuMatchScreen() async {
+    final service = widget.danmakuService ?? TvDanmakuService();
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      barrierColor: Colors.black.withValues(alpha: 0.56),
+      transitionDuration: const Duration(milliseconds: 180),
+      pageBuilder: (dialogContext, animation, secondaryAnimation) {
+        return Center(
+          child: SizedBox(
+            width: 780,
+            height: 720,
+            child: TvDanmakuMatchScreen(
+              initialQuery: _title,
+              currentEpisodeId: _currentDanmakuEpisodeId,
+              currentEpisodeCommentCount: _danmakuList.length,
+              onSearch: service.searchEpisodes,
+              onEpisodeSelected:
+                  (episodeId, searchKeyword, anime, episodeOffset) {
+                Navigator.of(dialogContext).pop();
+                unawaited(
+                  _loadManualDanmaku(
+                    episodeId: episodeId,
+                    searchKeyword: searchKeyword,
+                    anime: anime,
+                    episodeOffset: episodeOffset,
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+    if (mounted && _menuVisible) {
+      _scheduleMenuAutoHide();
+    }
   }
 
   /// 判断是否属于菜单交互按键。
@@ -1862,6 +2268,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           body: Stack(
             children: [
               Positioned.fill(child: _buildPlayer()),
+              if (_shouldShowDanmakuOverlay)
+                Positioned.fill(
+                  child: TvDanmakuOverlay(
+                    settings: _resolvedDanmakuSettings,
+                    playbackSpeed: _playbackSpeed,
+                    overlayVersion: _danmakuOverlayVersion,
+                    currentEpisodeId: _currentDanmakuEpisodeId,
+                    onControllerCreated: _handleDanmakuControllerCreated,
+                  ),
+                ),
               if (_shouldShowPlaybackChrome)
                 Positioned.fill(child: _buildPlaybackChromeScrim()),
               if (_shouldShowTopDecorations) _buildTopDecorations(),
@@ -2424,6 +2840,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             final label = _episodeTitles.length == _episodes.length
                 ? _episodeTitles[index]
                 : '第${index + 1}集';
+            final cardSize = _resolveEpisodeCardSize(label);
             final edgeShakeKey = _secondaryEdgeShakeKeyFor('episode', index);
             final isFirstItem = itemIndex == 0;
             final isLastItem = itemIndex == visibleIndexes.length - 1;
@@ -2435,9 +2852,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   focusNode: _secondaryFocusNodeFor('episode', index),
                   label: label.isEmpty ? '第${index + 1}集' : label,
                   selected: index == _episodeIndex,
-                  minWidth: 190,
-                  maxWidth: 260,
-                  minHeight: 104,
+                  minWidth: cardSize.width,
+                  maxWidth: cardSize.width,
+                  minHeight: cardSize.height,
                   maxLines: 4,
                   textOverflow: TextOverflow.clip,
                   autoScrollOnFocus: false,
@@ -2655,11 +3072,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         const SizedBox(height: 8),
         _buildHorizontalChoices(
           key: const ValueKey('tv-fullscreen-other-list'),
-          itemCount: 3,
+          itemCount: 4,
           itemBuilder: (index) {
             final edgeShakeKey = _secondaryEdgeShakeKeyFor('other', index);
             final isFirstItem = index == 0;
-            final isLastItem = index == 2;
+            final isLastItem = index == 3;
             if (index == 0) {
               return TvEdgeShake(
                 key: edgeShakeKey,
@@ -2712,13 +3129,38 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 ),
               );
             }
+            if (index == 2) {
+              return TvEdgeShake(
+                key: edgeShakeKey,
+                child: _TvPlayerMenuButton(
+                  focusNode: _secondaryFocusNodeFor('other', index),
+                  label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
+                  selected: _danmakuEnabled,
+                  minWidth: 78,
+                  onArrowLeft: isFirstItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.right)
+                      : null,
+                  onArrowUp: _keepMenuFocusInCurrentRow,
+                  onArrowDown: _focusCurrentPrimaryMenu,
+                  onFocus: () => _rememberSecondaryFocus('other', index),
+                  onPressed: () {
+                    unawaited(_toggleDanmakuEnabled());
+                  },
+                ),
+              );
+            }
             return TvEdgeShake(
               key: edgeShakeKey,
               child: _TvPlayerMenuButton(
                 focusNode: _secondaryFocusNodeFor('other', index),
-                label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
-                selected: _danmakuEnabled,
-                minWidth: 78,
+                label: '手动匹配',
+                selected: false,
+                minWidth: 96,
                 onArrowLeft: isFirstItem
                     ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                     : null,
@@ -2730,7 +3172,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 onArrowDown: _focusCurrentPrimaryMenu,
                 onFocus: () => _rememberSecondaryFocus('other', index),
                 onPressed: () {
-                  setState(() => _danmakuEnabled = !_danmakuEnabled);
+                  unawaited(_showDanmakuMatchScreen());
                 },
               ),
             );
@@ -2784,6 +3226,69 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       ),
     );
   }
+
+  /// 按片名文本测量选集卡片尺寸。
+  ///
+  /// 先根据单行标题宽度算出卡片宽度，再按该宽度测量折行后的高度。
+  _TvPlayerMenuCardSize _resolveEpisodeCardSize(String label) {
+    final safeLabel = label.trim().isEmpty ? '第${_episodeIndex + 1}集' : label;
+    final textStyle = FontUtils.poppins(
+      fontSize: 18,
+      fontWeight: FontWeight.w800,
+      color: Colors.white,
+    );
+
+    final widthPainter = TextPainter(
+      text: TextSpan(text: safeLabel, style: textStyle),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout(maxWidth: double.infinity);
+
+    final cardWidth = math.max(
+      _episodeCardBaseMinWidth,
+      math.min(
+        _episodeCardMaxWidth,
+        widthPainter.size.width + _episodeCardHorizontalPadding,
+      ),
+    ).ceilToDouble();
+
+    final heightPainter = TextPainter(
+      text: TextSpan(text: safeLabel, style: textStyle),
+      textDirection: TextDirection.ltr,
+      maxLines: 4,
+      ellipsis: '…',
+    )..layout(
+        maxWidth: math.max(
+          1,
+          cardWidth - _episodeCardHorizontalPadding,
+        ),
+      );
+
+    final cardHeight = math.max(
+      _episodeCardBaseMinHeight,
+      heightPainter.height + _episodeCardVerticalPadding,
+    ).ceilToDouble();
+
+    return _TvPlayerMenuCardSize(
+      width: cardWidth,
+      height: cardHeight,
+    );
+  }
+}
+
+/// TV 播放器二级卡片尺寸。
+class _TvPlayerMenuCardSize {
+  /// 创建 TV 播放器二级卡片尺寸。
+  const _TvPlayerMenuCardSize({
+    required this.width,
+    required this.height,
+  });
+
+  /// 卡片宽度。
+  final double width;
+
+  /// 卡片高度。
+  final double height;
 }
 
 /// TV 播放器菜单按钮。

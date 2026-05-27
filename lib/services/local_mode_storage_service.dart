@@ -178,7 +178,7 @@ class LocalModeStorageService {
     try {
       final records = await getPlayRecords();
       final now = DateTime.now().millisecondsSinceEpoch;
-      final sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+      const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
 
       final initialCount = records.length;
       records.removeWhere((record) {

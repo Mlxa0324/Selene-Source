@@ -138,6 +138,65 @@ void main() {
     expect(stormLeft, lessThan(shortLeft));
   });
 
+  testWidgets('detail episode card height stays at least source card height',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 3,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 3),
+              _searchResult('source_b', '备用源', episodeCount: 3),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final sourceButtonFinder = find
+        .ancestor(
+          of: find.text('主源'),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    final sourceButton = tester.widget<AnimatedContainer>(sourceButtonFinder);
+
+    final episodeButtonFinder = find
+        .ancestor(
+          of: find.text('第1集'),
+          matching: find.byType(AnimatedContainer),
+        )
+        .first;
+    final episodeButton = tester.widget<AnimatedContainer>(episodeButtonFinder);
+    final sourceButtonRect = tester.getRect(sourceButtonFinder);
+    final episodeButtonRect = tester.getRect(episodeButtonFinder);
+
+    expect(
+      episodeButtonRect.height,
+      greaterThanOrEqualTo(sourceButtonRect.height),
+    );
+    expect(sourceButton.constraints!.minHeight, greaterThan(0));
+    expect(episodeButton.constraints!.minHeight, greaterThan(0));
+  });
+
   testWidgets('detail header search action uses configured button radius',
       (tester) async {
     await _setTvSurfaceSize(tester);

@@ -37,6 +37,44 @@ class TvVideoLibraryService {
     }
   }
 
+  /// 删除单个播放历史。
+  static Future<bool> deleteHistoryItem(
+    BuildContext context,
+    VideoInfo videoInfo,
+  ) async {
+    final result = await PageCacheService().deletePlayRecord(
+      videoInfo.source,
+      videoInfo.id,
+      context,
+    );
+    return result.success;
+  }
+
+  /// 清空播放历史。
+  static Future<bool> clearHistory(BuildContext context) async {
+    final result = await PageCacheService().clearPlayRecord(context);
+    return result.success;
+  }
+
+  /// 删除单个收藏项。
+  static Future<bool> deleteFavoriteItem(
+    BuildContext context,
+    VideoInfo videoInfo,
+  ) async {
+    final result = await PageCacheService().removeFavorite(
+      videoInfo.source,
+      videoInfo.id,
+      context,
+    );
+    return result.success;
+  }
+
+  /// 清空收藏夹。
+  static Future<bool> clearFavorites(BuildContext context) async {
+    final result = await PageCacheService().clearFavorites(context);
+    return result.success;
+  }
+
   /// 把收藏条目转换为 TV 卡片展示结构。
   static VideoInfo _favoriteToVideoInfo(FavoriteItem item) {
     return VideoInfo(

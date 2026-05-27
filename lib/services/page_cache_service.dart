@@ -389,6 +389,28 @@ class PageCacheService
   }
 
   @override
+  Future<DataOperationResult<void>> clearFavorites(
+      BuildContext context) async {
+    final isLocalMode = await UserDataService.getIsLocalMode();
+    if (isLocalMode) {
+      await LocalModeStorageService.clearFavorites();
+      return DataOperationResult.success(null);
+    }
+
+    clearCache('favorites');
+
+    try {
+      final response = await ApiService.clearFavorites(context);
+      if (response.success) {
+        return DataOperationResult.success(null);
+      }
+      return DataOperationResult.error(response.message ?? '清空收藏夹失败');
+    } catch (e) {
+      return DataOperationResult.error('清空收藏夹异常: ${e.toString()}');
+    }
+  }
+
+  @override
   bool isFavoritedSync(String source, String id) {
     final isLocalMode = UserDataService.getIsLocalModeSync();
     if (isLocalMode) {

@@ -13,6 +13,7 @@ import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/services/tv_video_library_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
+import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_top_nav.dart';
@@ -178,100 +179,304 @@ class TvHomeScreen extends StatefulWidget {
 
   /// 默认分类筛选查询逻辑。
   ///
-  /// 复用普通端豆瓣推荐接口，TV 端只负责把筛选项转换为查询参数。
+  /// 复用手机端同一套豆瓣与 Bangumi 请求分支，TV 端只保留大屏样式和焦点交互。
   static Future<List<VideoInfo>> defaultLoadCategoryData(
     BuildContext context,
     TvCategoryFilterKind kind,
     Map<String, TvCategoryFilterOption> filters,
     int page,
   ) async {
-    final params = _buildCategoryQueryParams(kind, filters, page: page);
+    switch (kind) {
+      case TvCategoryFilterKind.movie:
+        return _loadMovieCategoryData(context, filters, page);
+      case TvCategoryFilterKind.series:
+        return _loadSeriesCategoryData(context, filters, page);
+      case TvCategoryFilterKind.anime:
+        return _loadAnimeCategoryData(context, filters, page);
+      case TvCategoryFilterKind.variety:
+        return _loadVarietyCategoryData(context, filters, page);
+    }
+  }
+
+  /// 加载电影分类筛选数据。
+  static Future<List<VideoInfo>> _loadMovieCategoryData(
+    BuildContext context,
+    Map<String, TvCategoryFilterOption> filters,
+    int page,
+  ) async {
+    final category = TvCategoryFilterOptions.selectedOptionFor(
+      filters,
+      '分类',
+      TvCategoryFilterOptions.movieCategoryOptions,
+      defaultValue: '热门',
+    );
+    if (category.value != '全部') {
+      final response = await DoubanService.getCategoryData(
+        context,
+        kind: 'movie',
+        category: category.value,
+        type: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '地区',
+          TvCategoryFilterOptions.movieSimpleRegionOptions,
+          '全部',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      );
+      return (response.data ?? []).map((movie) => movie.toVideoInfo()).toList();
+    }
+
+    return _loadDoubanRecommends(
+      context,
+      DoubanRecommendsParams(
+        kind: 'movie',
+        category: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '类型',
+          TvCategoryFilterOptions.movieTypeOptions,
+        ),
+        region: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '地区',
+          TvCategoryFilterOptions.regionOptions,
+        ),
+        year: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '年代',
+          TvCategoryFilterOptions.yearOptions,
+        ),
+        platform: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '平台',
+          TvCategoryFilterOptions.platformOptions,
+        ),
+        sort: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '排序',
+          TvCategoryFilterOptions.movieSortOptions,
+          'T',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      ),
+    );
+  }
+
+  /// 加载剧集分类筛选数据。
+  static Future<List<VideoInfo>> _loadSeriesCategoryData(
+    BuildContext context,
+    Map<String, TvCategoryFilterOption> filters,
+    int page,
+  ) async {
+    final category = TvCategoryFilterOptions.selectedOptionFor(
+      filters,
+      '分类',
+      TvCategoryFilterOptions.seriesCategoryOptions,
+      defaultValue: '最近热门',
+    );
+    if (category.value != '全部') {
+      final response = await DoubanService.getCategoryData(
+        context,
+        kind: 'tv',
+        category: category.value,
+        type: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '类型',
+          TvCategoryFilterOptions.seriesSimpleTypeOptions,
+          'tv',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      );
+      return (response.data ?? []).map((movie) => movie.toVideoInfo()).toList();
+    }
+
+    return _loadDoubanRecommends(
+      context,
+      DoubanRecommendsParams(
+        kind: 'tv',
+        category: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '类型',
+          TvCategoryFilterOptions.seriesTypeOptions,
+        ),
+        format: '电视剧',
+        region: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '地区',
+          TvCategoryFilterOptions.regionOptions,
+        ),
+        year: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '年代',
+          TvCategoryFilterOptions.yearOptions,
+        ),
+        platform: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '平台',
+          TvCategoryFilterOptions.platformOptions,
+        ),
+        sort: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '排序',
+          TvCategoryFilterOptions.seriesSortOptions,
+          'T',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      ),
+    );
+  }
+
+  /// 加载动漫分类筛选数据。
+  static Future<List<VideoInfo>> _loadAnimeCategoryData(
+    BuildContext context,
+    Map<String, TvCategoryFilterOption> filters,
+    int page,
+  ) async {
+    final category = TvCategoryFilterOptions.selectedOptionFor(
+      filters,
+      '分类',
+      TvCategoryFilterOptions.animeCategoryOptions,
+      defaultValue: '每日放送',
+    );
+    if (category.value == '每日放送') {
+      final weekday = int.tryParse(
+            TvCategoryFilterOptions.valueOrDefault(
+              filters,
+              '星期',
+              TvCategoryFilterOptions.weekdayOptions,
+              DateTime.now().weekday.toString(),
+            ),
+          ) ??
+          DateTime.now().weekday;
+      final response = await BangumiService.getCalendarByWeekday(
+        context,
+        weekday,
+      );
+      return (response.data ?? []).map((item) => item.toVideoInfo()).toList();
+    }
+
+    final isSeries = category.value == '番剧';
+    return _loadDoubanRecommends(
+      context,
+      DoubanRecommendsParams(
+        kind: isSeries ? 'tv' : 'movie',
+        category: '动画',
+        label: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '类型',
+          isSeries
+              ? TvCategoryFilterOptions.animeSeriesTypeOptions
+              : TvCategoryFilterOptions.animeMovieTypeOptions,
+        ),
+        format: isSeries ? '电视剧' : 'all',
+        region: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '地区',
+          TvCategoryFilterOptions.regionOptions,
+        ),
+        year: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '年代',
+          TvCategoryFilterOptions.yearOptions,
+        ),
+        platform: isSeries
+            ? TvCategoryFilterOptions.labelOrAll(
+                filters,
+                '平台',
+                TvCategoryFilterOptions.platformOptions,
+              )
+            : 'all',
+        sort: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '排序',
+          TvCategoryFilterOptions.animeSortOptions,
+          'T',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      ),
+    );
+  }
+
+  /// 加载综艺分类筛选数据。
+  static Future<List<VideoInfo>> _loadVarietyCategoryData(
+    BuildContext context,
+    Map<String, TvCategoryFilterOption> filters,
+    int page,
+  ) async {
+    final category = TvCategoryFilterOptions.selectedOptionFor(
+      filters,
+      '分类',
+      TvCategoryFilterOptions.varietyCategoryOptions,
+      defaultValue: '最近热门',
+    );
+    if (category.value != '全部') {
+      final response = await DoubanService.getCategoryData(
+        context,
+        kind: 'tv',
+        category: 'show',
+        type: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '类型',
+          TvCategoryFilterOptions.varietySimpleTypeOptions,
+          'show',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      );
+      return (response.data ?? []).map((movie) => movie.toVideoInfo()).toList();
+    }
+
+    return _loadDoubanRecommends(
+      context,
+      DoubanRecommendsParams(
+        kind: 'tv',
+        category: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '类型',
+          TvCategoryFilterOptions.varietyTypeOptions,
+        ),
+        format: '综艺',
+        region: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '地区',
+          TvCategoryFilterOptions.regionOptions,
+        ),
+        year: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '年代',
+          TvCategoryFilterOptions.yearOptions,
+        ),
+        platform: TvCategoryFilterOptions.labelOrAll(
+          filters,
+          '平台',
+          TvCategoryFilterOptions.platformOptions,
+        ),
+        sort: TvCategoryFilterOptions.valueOrDefault(
+          filters,
+          '排序',
+          TvCategoryFilterOptions.varietySortOptions,
+          'T',
+        ),
+        pageLimit: TvCategoryFilterOptions.pageLimit,
+        page: page,
+      ),
+    );
+  }
+
+  /// 执行豆瓣推荐请求并转换为 TV 卡片数据。
+  static Future<List<VideoInfo>> _loadDoubanRecommends(
+    BuildContext context,
+    DoubanRecommendsParams params,
+  ) async {
     final response = await DoubanService.fetchDoubanRecommends(
       context,
       params,
     );
     return (response.data ?? []).map((movie) => movie.toVideoInfo()).toList();
-  }
-
-  /// 根据 TV 分类筛选项构建豆瓣推荐查询参数。
-  static DoubanRecommendsParams _buildCategoryQueryParams(
-      TvCategoryFilterKind kind, Map<String, TvCategoryFilterOption> filters,
-      {required int page}) {
-    final type = _filterLabel(filters, '类型');
-    final region = _filterLabel(filters, '地区');
-    final year = _filterLabel(filters, '年份');
-    final sort = _filterValue(filters, '排序', fallback: 'T');
-
-    switch (kind) {
-      case TvCategoryFilterKind.movie:
-        return DoubanRecommendsParams(
-          kind: 'movie',
-          category: type,
-          region: region,
-          year: year,
-          sort: sort,
-          pageLimit: 30,
-          page: page,
-        );
-      case TvCategoryFilterKind.series:
-        return DoubanRecommendsParams(
-          kind: 'tv',
-          category: type,
-          format: '电视剧',
-          region: region,
-          year: year,
-          sort: sort,
-          pageLimit: 30,
-          page: page,
-        );
-      case TvCategoryFilterKind.anime:
-        return DoubanRecommendsParams(
-          kind: 'tv',
-          category: '动画',
-          label: type,
-          region: region,
-          year: year,
-          sort: sort,
-          pageLimit: 30,
-          page: page,
-        );
-      case TvCategoryFilterKind.variety:
-        return DoubanRecommendsParams(
-          kind: 'tv',
-          category: type,
-          format: '综艺',
-          region: region,
-          year: year,
-          sort: sort,
-          pageLimit: 30,
-          page: page,
-        );
-    }
-  }
-
-  /// 获取筛选项标签，全部场景转换为接口默认值。
-  static String _filterLabel(
-    Map<String, TvCategoryFilterOption> filters,
-    String rowTitle,
-  ) {
-    final option = filters[rowTitle];
-    if (option == null || option.value == 'all') {
-      return 'all';
-    }
-    return option.label;
-  }
-
-  /// 获取筛选项值，全部场景使用指定默认值。
-  static String _filterValue(
-    Map<String, TvCategoryFilterOption> filters,
-    String rowTitle, {
-    required String fallback,
-  }) {
-    final option = filters[rowTitle];
-    if (option == null || option.value == 'all') {
-      return fallback;
-    }
-    return option.value;
   }
 
   /// 加载热门电影。
@@ -330,6 +535,11 @@ class TvHomeScreen extends StatefulWidget {
 
 class _TvHomeScreenState extends State<TvHomeScreen>
     with SingleTickerProviderStateMixin {
+  /// 根页退出确认弹框显示态。
+  ///
+  /// 避免长按返回键或 `Esc` 时重复弹出多层退出确认。
+  bool _exitDialogVisible = false;
+
   /// 首页横向分区焦点记忆分组。
   static const String _continueWatchingSectionFocusGroup =
       'tv-home-section-继续观看';
@@ -440,6 +650,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 初次展开从排序开始；内容区回到筛选区时优先落到年份行。
   String? _categoryFilterPreferredFocusRowTitle;
 
+  /// 分类筛选面板展开后各行优先回到的筛选项值。
+  ///
+  /// 记录用户最近一次停留的横向位置，便于上下切换行或从 Grid 返回时恢复手感。
+  final Map<TvCategoryFilterKind, Map<String, String>>
+      _categoryFilterPreferredFocusOptionValues = {};
+
   /// 首页横向分区滚动控制器。
   ///
   /// 用于首页首次进入和开发期重载后把每个分区恢复到最左侧，
@@ -461,8 +677,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _homeDataFuture ??=
-        (widget.loadHomeData ?? TvHomeScreen.defaultLoadHomeData)(context);
+    _homeDataFuture ??= _createHomeDataFuture();
   }
 
   @override
@@ -504,8 +719,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_categoryFilterVisible,
-      onPopInvokedWithResult: (didPop, result) => _handlePopInvoked(didPop),
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) =>
+          _handlePopInvokedWithResult(didPop),
       child: Scaffold(
         backgroundColor: const Color(0xFF0B0D0E),
         body: SafeArea(
@@ -945,11 +1161,21 @@ class _TvHomeScreenState extends State<TvHomeScreen>
                   ? TvCategoryFilterPanelMode.compact
                   : TvCategoryFilterPanelMode.expanded,
               preferredFocusRowTitle: _categoryFilterPreferredFocusRowTitle,
+              preferredFocusOptionValues: Map<String, String>.unmodifiable(
+                _categoryFilterPreferredFocusOptionValues[kind] ??
+                    const <String, String>{},
+              ),
               selectedOptions: Map<String, TvCategoryFilterOption>.unmodifiable(
                 _categoryFilters[kind] ??
                     const <String, TvCategoryFilterOption>{},
               ),
               onChanged: (rowTitle, option) => _handleCategoryFilterChanged(
+                kind,
+                rowTitle,
+                option,
+              ),
+              onFocusChanged: (rowTitle, option) =>
+                  _handleCategoryFilterFocusChanged(
                 kind,
                 rowTitle,
                 option,
@@ -969,6 +1195,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       _categoryFilters[kind] ?? const <String, TvCategoryFilterOption>{},
     );
     currentFilters[rowTitle] = option;
+    _pruneUnavailableCategoryFilters(kind, currentFilters);
 
     final loader =
         widget.loadCategoryData ?? TvHomeScreen.defaultLoadCategoryData;
@@ -986,6 +1213,8 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     setState(() {
       _categoryFilters[kind] = currentFilters;
       _categoryFilterPreferredFocusRowTitle = rowTitle;
+      (_categoryFilterPreferredFocusOptionValues[kind] ??= {})[rowTitle] =
+          option.value;
       _categoryDataFutures[kind] = firstPageFuture;
       _categoryVideos.remove(kind);
       _categoryNextPages[kind] = 1;
@@ -1010,6 +1239,20 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         _categoryHasMore[kind] = false;
       });
     });
+  }
+
+  /// 记录分类筛选面板最近一次停留的焦点位置。
+  void _handleCategoryFilterFocusChanged(
+    TvCategoryFilterKind kind,
+    String rowTitle,
+    TvCategoryFilterOption option,
+  ) {
+    final rowMemories = _categoryFilterPreferredFocusOptionValues.putIfAbsent(
+      kind,
+      () => <String, String>{},
+    );
+    rowMemories[rowTitle] = option.value;
+    _categoryFilterPreferredFocusRowTitle = rowTitle;
   }
 
   /// 加载当前分类页下一页数据。
@@ -1092,12 +1335,32 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     return requestSerial == (_categoryRequestSerials[kind] ?? 0);
   }
 
+  /// 清理当前分类模式下已经不可见的筛选项。
+  ///
+  /// 例如电影从“全部”切回“热门电影”后，类型/年代/平台等高级筛选不再参与请求。
+  void _pruneUnavailableCategoryFilters(
+    TvCategoryFilterKind kind,
+    Map<String, TvCategoryFilterOption> filters,
+  ) {
+    final rows = TvCategoryFilterOptions.rowsFor(kind, filters);
+    final visibleRows = {
+      for (final row in rows) row.title: row,
+    };
+    filters.removeWhere((rowTitle, option) {
+      final row = visibleRows[rowTitle];
+      if (row == null) {
+        return true;
+      }
+      return !row.options.any((item) => item.value == option.value);
+    });
+  }
+
   /// 展示分类筛选面板。
   void _showCategoryFilter() {
     setState(() {
       _categoryFilterVisible = true;
       _categoryFilterCompact = false;
-      _categoryFilterPreferredFocusRowTitle ??= '排序';
+      _categoryFilterPreferredFocusRowTitle ??= '分类';
     });
   }
 
@@ -1106,9 +1369,18 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     if (!_categoryFilterVisible || !_categoryFilterCompact) {
       return;
     }
+    final kind = _categoryKindForTabIndex(_selectedIndex);
     setState(() {
       _categoryFilterCompact = false;
-      _categoryFilterPreferredFocusRowTitle = '年份';
+      if (kind != null) {
+        final visibleRows = TvCategoryFilterOptions.rowsFor(
+          kind,
+          _categoryFilters[kind] ?? const <String, TvCategoryFilterOption>{},
+        );
+        if (visibleRows.isNotEmpty) {
+          _categoryFilterPreferredFocusRowTitle = visibleRows.last.title;
+        }
+      }
     });
   }
 
@@ -1305,11 +1577,24 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 处理系统返回。
-  void _handlePopInvoked(bool didPop) {
-    if (didPop || !_categoryFilterVisible) {
+  ///
+  /// 根页返回优先关闭筛选面板，其次把焦点送回顶部导航，只有已经处于根级
+  /// 浏览态时才弹出退出确认，避免误触返回直接离开 TV 首页。
+  Future<void> _handlePopInvokedWithResult(bool didPop) async {
+    if (didPop) {
       return;
     }
-    _hideCategoryFilter();
+
+    if (_categoryFilterVisible) {
+      _hideCategoryFilter();
+      return;
+    }
+
+    if (!_topNavController.hasFocus && _topNavController.requestSelectedFocus()) {
+      return;
+    }
+
+    await _showExitConfirmDialog();
   }
 
   /// 处理当前标签内容区的返回键。
@@ -1332,6 +1617,37 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 判断是否为返回类按键。
   bool _isBackKey(LogicalKeyboardKey key) {
     return TvBackIntent.isBackKey(key);
+  }
+
+  /// 展示 TV 根页退出确认弹框。
+  ///
+  /// 根页返回时通过确认弹框降低误退出概率，并保持 TV 遥控器焦点手感一致。
+  Future<void> _showExitConfirmDialog() async {
+    if (_exitDialogVisible || !mounted) {
+      return;
+    }
+
+    _exitDialogVisible = true;
+    final confirmed = await showTvConfirmDialog(
+      context: context,
+      title: '确定退出 IvyTV？',
+      message: '退出后将返回系统桌面',
+      confirmLabel: '确认',
+    );
+    _exitDialogVisible = false;
+
+    if (!confirmed || !mounted) {
+      return;
+    }
+
+    await _exitTvApp();
+  }
+
+  /// 执行 TV 根页退出。
+  ///
+  /// 统一复用系统返回，让 Android TV 和模拟器都回到宿主桌面。
+  Future<void> _exitTvApp() async {
+    await SystemNavigator.pop();
   }
 
   /// 按播放记录语义打开视频。
@@ -1368,20 +1684,26 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 打开现有播放器页面。
-  void _openVideo(
+  Future<void> _openVideo(
     VideoInfo videoInfo, {
     String? stype,
-  }) {
+  }) async {
     final detailPage = widget.buildDetailPage?.call(videoInfo, stype) ??
         TvVideoDetailScreen(
           videoInfo: videoInfo,
           stype: stype,
         );
-    Navigator.of(context).push(
+    final refreshHome = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (context) => detailPage,
       ),
     );
+    if (!mounted || refreshHome != true) {
+      return;
+    }
+    setState(() {
+      _homeDataFuture = _createHomeDataFuture();
+    });
   }
 
   /// 打开搜索页面。
@@ -1391,25 +1713,37 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 打开播放历史页面。
-  void _openHistory() {
+  Future<void> _openHistory() async {
     final historyPage = widget.buildHistoryPage?.call() ??
         TvHistoryScreen(
           buildDetailPage: (videoInfo) =>
               widget.buildDetailPage?.call(videoInfo, null) ??
               TvVideoDetailScreen(videoInfo: videoInfo),
         );
-    _pushQuickPage(historyPage);
+    final refreshHome = await _pushQuickPage<bool>(historyPage);
+    if (!mounted || refreshHome != true) {
+      return;
+    }
+    setState(() {
+      _homeDataFuture = _createHomeDataFuture();
+    });
   }
 
   /// 打开收藏夹页面。
-  void _openFavorites() {
+  Future<void> _openFavorites() async {
     final favoritesPage = widget.buildFavoritesPage?.call() ??
         TvFavoritesScreen(
           buildDetailPage: (videoInfo) =>
               widget.buildDetailPage?.call(videoInfo, null) ??
               TvVideoDetailScreen(videoInfo: videoInfo),
         );
-    _pushQuickPage(favoritesPage);
+    final refreshHome = await _pushQuickPage<bool>(favoritesPage);
+    if (!mounted || refreshHome != true) {
+      return;
+    }
+    setState(() {
+      _homeDataFuture = _createHomeDataFuture();
+    });
   }
 
   /// 打开设置页面。
@@ -1420,13 +1754,18 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 统一打开顶部快捷入口对应的独立页面。
-  void _pushQuickPage(Widget page) {
-    Navigator.of(context).push(
+  Future<T?> _pushQuickPage<T extends Object?>(Widget page) {
+    return Navigator.of(context).push<T>(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) => page,
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
     );
+  }
+
+  /// 创建首页数据加载任务。
+  Future<TvHomeData> _createHomeDataFuture() {
+    return (widget.loadHomeData ?? TvHomeScreen.defaultLoadHomeData)(context);
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 
@@ -98,6 +99,63 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('clears search history through TV confirm dialog',
+      (tester) async {
+    var history = <String>['庆余年', '长安的荔枝'];
+    final themeService = TvThemeService()
+      ..setThemeKey(TvThemePalette.netflixRedKey);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: TvSearchScreen(
+            loadSearchData: (_) async => TvSearchData(
+              searchHistory: history,
+              hotWords: const ['剑来'],
+              recommends: [],
+            ),
+            onClearSearchHistory: (_) async {
+              history = <String>[];
+              return true;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-search-history-clear-button')),
+        findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-history-clear-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-confirm-dialog')), findsOneWidget);
+    expect(find.text('清空搜索历史'), findsOneWidget);
+    expect(find.text('确定要清空全部搜索记录吗？'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('tv-confirm-dialog'))),
+      const Size(372, 182),
+    );
+    expect(
+      (tester.widget<AnimatedContainer>(
+        find.byKey(const ValueKey('tv-confirm-cancel-button')),
+      ).decoration as BoxDecoration)
+          .color,
+      TvThemePalette.netflixRed.accent,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('tv-confirm-confirm-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('庆余年'), findsNothing);
+    expect(find.text('长安的荔枝'), findsNothing);
+    expect(find.text('暂无搜索历史'), findsOneWidget);
   });
 
   testWidgets('throttles repeat focus traversal on text word tiles',

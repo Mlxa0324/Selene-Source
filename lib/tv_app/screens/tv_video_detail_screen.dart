@@ -311,8 +311,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 选集分组大小，避免长剧集在 TV 端一次性横向铺满过长。
   static const int _episodeGroupSize = 20;
 
-  /// 详情页选项按钮最小高度。
-  static const double _detailChoiceChipMinHeight = 42;
+  /// 详情页线路卡片和选集卡片统一的基础高度。
+  ///
+  /// 选集短标题默认也要和线路卡片保持同档高度，避免上下两个列表切换时
+  /// 视觉上出现选集卡片明显更矮的断层。
+  static const double _detailChoiceChipMinHeight = 52;
 
   /// 详情页选项按钮最大宽度。
   static const double _detailChoiceChipMaxWidth = 180;
@@ -2408,7 +2411,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _consumeFullscreenOverlayBack = false;
       return true;
     }
-    return false;
+    Navigator.of(context).pop(true);
+    return true;
   }
 
   /// 处理详情页全局返回按键，兜底平台视图等会抢走焦点的场景。
@@ -2453,11 +2457,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 从全局返回兜底链路分发详情页返回动作。
   Future<void> _dispatchDetailBackFromGlobal() async {
-    final handled = await _handleDetailBackPressed();
-    if (handled || !mounted) {
-      return;
-    }
-    await Navigator.of(context).maybePop();
+    await _handleDetailBackPressed();
   }
 
   /// 打开 TV 搜索页。
@@ -3117,7 +3117,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       child: sources.isEmpty
           ? _buildEmptyText('暂无可用源')
           : SizedBox(
-              height: 52,
+              height: _detailChoiceChipMinHeight,
               child: ListView.separated(
                 key: const ValueKey('tv-detail-source-list'),
                 controller: _sourceListScrollController,
