@@ -119,6 +119,11 @@ class TvMobileSettingsBridgeSession {
 ///
 /// 负责在局域网里起一个轻量网页，让手机扫码后填写配置并回传给电视。
 class TvMobileSettingsBridge {
+  /// 手机扫码配置固定端口。
+  ///
+  /// 同一 App 生命周期内保持端口不变，方便电视端和手机端重复使用同一地址。
+  static const int sharePort = 18321;
+
   /// 手机网页可用时的默认提示。
   static const String readyStatus = '请使用与电视同一局域网的手机扫码填写配置';
 
@@ -127,6 +132,11 @@ class TvMobileSettingsBridge {
 
   /// 局域网地址不可用时的提示。
   static const String unavailableStatus = '未获取到局域网地址，请检查电视网络连接';
+
+  /// 当前 App 生命周期内缓存的分享主机地址。
+  ///
+  /// 只要应用进程不退出，就尽量复用第一次成功解析出的地址，避免二维码频繁变动。
+  static String? _cachedShareHost;
 
   /// 启动一个新的手机配置桥接会话。
   static Future<TvMobileSettingsBridgeSession> startSession(
@@ -152,7 +162,7 @@ class TvMobileSettingsBridge {
 
     final server = await HttpServer.bind(
       bindAddress ?? InternetAddress.anyIPv4,
-      0,
+      sharePort,
     );
     final runner = _RunningTvMobileSettingsBridge(
       server: server,
@@ -174,7 +184,13 @@ class TvMobileSettingsBridge {
   static Future<String?> _resolveShareHost(String? preferredHost) async {
     final normalizedPreferredHost = preferredHost?.trim();
     if (normalizedPreferredHost != null && normalizedPreferredHost.isNotEmpty) {
+      _cachedShareHost = normalizedPreferredHost;
       return normalizedPreferredHost;
+    }
+
+    final cachedShareHost = _cachedShareHost;
+    if (cachedShareHost != null && cachedShareHost.isNotEmpty) {
+      return cachedShareHost;
     }
 
     final interfaces = await NetworkInterface.list(
@@ -185,6 +201,7 @@ class TvMobileSettingsBridge {
       for (final address in interface.addresses) {
         // 优先选择常见的内网 IPv4 地址，避免把不可达地址暴露给手机。
         if (!address.isLoopback && _isPrivateIpv4(address.address)) {
+          _cachedShareHost = address.address;
           return address.address;
         }
       }
@@ -193,6 +210,7 @@ class TvMobileSettingsBridge {
     for (final interface in interfaces) {
       for (final address in interface.addresses) {
         if (!address.isLoopback) {
+          _cachedShareHost = address.address;
           return address.address;
         }
       }

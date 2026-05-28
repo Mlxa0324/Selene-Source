@@ -5,7 +5,7 @@ import 'package:selene/services/user_data_service.dart';
 
 /// TV 端服务器账号配置。
 ///
-/// 用于保存服务器地址、账号和密码，并在 TV 设置页发起登录。
+/// 用于保存服务器地址、账号和密码，并在需要时发起登录。
 class TvServerCredentials {
   /// 创建 TV 端服务器账号配置。
   const TvServerCredentials({
@@ -77,6 +77,7 @@ class TvAccountConfigService {
   /// 当前 TV 首版设置页只保存服务器地址、账号和密码，不立即发起登录。
   /// 若当前激活账号仍是同一组服务器和用户名，则继续沿用已有 cookies；
   /// 否则清空 cookies，避免把旧登录态误绑定到新配置上。
+  /// 同时强制退出本地模式，确保后续业务链路真正读取这份服务器配置。
   Future<TvAccountSaveResult> saveCredentials(
     TvServerCredentials credentials,
   ) async {
@@ -102,6 +103,8 @@ class TvAccountConfigService {
       password: credentials.password,
       cookies: isSameAccount ? currentCookies : '',
     );
+    // TV 设置页一旦保存服务器配置，后续首页、搜索和详情链路都应该回到服务器模式。
+    await UserDataService.saveIsLocalMode(false);
 
     return const TvAccountSaveResult(
       success: true,

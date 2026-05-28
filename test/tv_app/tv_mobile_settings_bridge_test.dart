@@ -67,4 +67,37 @@ void main() {
     expect(appliedDraft.adFilterEnabled, isFalse);
     expect(appliedDraft.danmakuBaseApi, 'https://danmaku.tv.example.com/');
   });
+
+  test('reuses the same share uri within one app lifetime', () async {
+    final firstSession = await TvMobileSettingsBridge.startSession(
+      TvMobileSettingsDraft.empty(),
+      (_) {},
+      bindAddress: InternetAddress.loopbackIPv4,
+      preferredHost: '127.0.0.1',
+    );
+    var firstSessionDisposed = false;
+    addTearDown(() async {
+      if (!firstSessionDisposed) {
+        await firstSession.dispose();
+      }
+    });
+
+    expect(firstSession.shareUri, isNotNull);
+    expect(firstSession.shareUri?.port, 18321);
+
+    await firstSession.dispose();
+    firstSessionDisposed = true;
+
+    final secondSession = await TvMobileSettingsBridge.startSession(
+      TvMobileSettingsDraft.empty(),
+      (_) {},
+      bindAddress: InternetAddress.loopbackIPv4,
+      preferredHost: '127.0.0.1',
+    );
+    addTearDown(() async {
+      await secondSession.dispose();
+    });
+
+    expect(secondSession.shareUri, firstSession.shareUri);
+  });
 }

@@ -6,7 +6,7 @@ class DeviceModeConfig {
   ///
   /// 默认关闭，保持自动识别。需要在本机直接把平板切到 TV 模式时，
   /// 把这里临时改成 true 即可。
-  static const bool localDebugForceTvMode = true;
+  static const bool localDebugForceTvMode = false;
 
   /// `dart-define` 强制 TV 模式开关。
   ///

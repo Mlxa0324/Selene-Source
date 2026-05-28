@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -201,6 +203,65 @@ void main() {
     expect(find.text('手机扫码配置'), findsOneWidget);
     expect(find.text('使用手机扫码打开配置页'), findsOneWidget);
     expect(find.text('192.168.1.8:18321'), findsOneWidget);
+  });
+
+  testWidgets('reopening TV settings keeps the same mobile scan address',
+      (tester) async {
+    var showSettings = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            return Scaffold(
+              body: showSettings
+                  ? TvSettingsScreen(
+                      loadSettings: () async => TvSettingsData.empty(),
+                      startMobileConfigBridge: (draft, onDraftSubmitted) {
+                        return TvMobileSettingsBridge.startSession(
+                          draft,
+                          onDraftSubmitted,
+                          bindAddress: InternetAddress.loopbackIPv4,
+                          preferredHost: '127.0.0.1',
+                        );
+                      },
+                    )
+                  : Center(
+                      child: ElevatedButton(
+                        onPressed: () => setState(() {
+                          showSettings = true;
+                        }),
+                        child: const Text('重新打开设置'),
+                      ),
+                    ),
+              floatingActionButton: showSettings
+                  ? FloatingActionButton(
+                      onPressed: () => setState(() {
+                        showSettings = false;
+                      }),
+                      child: const Icon(Icons.close),
+                    )
+                  : null,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.textContaining('127.0.0.1:'), findsOneWidget);
+    final firstAddress = tester.widget<SelectableText>(
+      find.byType(SelectableText).first,
+    ).data;
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新打开设置'));
+    await tester.pumpAndSettle();
+
+    final secondAddress = tester.widget<SelectableText>(
+      find.byType(SelectableText).first,
+    ).data;
+    expect(secondAddress, firstAddress);
   });
 
   testWidgets('applies mobile scan draft back into TV settings form',
