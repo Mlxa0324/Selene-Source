@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    UserDataService.debugResetMemoryCaches();
   });
 
   testWidgets('opens TV player menu with down key and hides unsupported tabs',
@@ -443,6 +444,65 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(updatedUrls, contains('https://example.com/2.m3u8'));
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsNothing);
+  });
+
+  testWidgets('reselecting current episode does not reload player data source',
+      (tester) async {
+    final updatedUrls = <String>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 3),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 3,
+            ),
+          ],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: const Duration(seconds: 8),
+                  duration: const Duration(seconds: 1000),
+                  onUpdateDataSource: (url, {headers, startAt}) async {
+                    updatedUrls.add(url);
+                  },
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    updatedUrls.clear();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第1集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('第1集'));
+    await tester.pumpAndSettle();
+
+    expect(updatedUrls, isEmpty);
     expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsNothing);
   });
 
@@ -924,7 +984,8 @@ void main() {
           matching: find.byType(AnimatedContainer),
         )
         .first;
-    final longEpisodeButton = tester.widget<AnimatedContainer>(longButtonFinder);
+    final longEpisodeButton =
+        tester.widget<AnimatedContainer>(longButtonFinder);
 
     expect(
       longEpisodeButton.constraints!.minWidth,
@@ -1927,7 +1988,8 @@ void main() {
     expect(startPosition, const Duration(minutes: 9, seconds: 51));
   });
 
-  testWidgets('fullscreen progress listener saves record and clears old sources',
+  testWidgets(
+      'fullscreen progress listener saves record and clears old sources',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     await UserDataService.saveIsLocalMode(true);

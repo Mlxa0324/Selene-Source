@@ -394,6 +394,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 是否已经应用过初始续播位置。
   bool _hasAppliedInitialPlaybackPosition = false;
 
+  /// 最近一次下发给全屏播放器的地址。
+  ///
+  /// 同一地址且不带新的续播点时，直接跳过重复下发，避免无意义 reload。
+  String? _lastRequestedPlaybackUrl;
+
   /// 是否已经把首次播放地址下发给全屏播放器控制器。
   bool _hasRequestedInitialControllerLoad = false;
 
@@ -490,10 +495,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       }
       setState(() => _clockText = _formatClock(DateTime.now()));
     });
+    // 提前预热代理配置，尽量把配置读取和全屏壳初始化并行掉。
+    unawaited(UserDataService.getM3u8ProxyUrl());
     unawaited(_loadSkipDurations());
     unawaited(_loadDanmakuSettings());
     _loadAdFilterPreference();
-    _loadCurrentEpisode(updateController: false);
   }
 
   @override
@@ -724,6 +730,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 加载当前选集地址。
   Future<void> _loadCurrentEpisode({required bool updateController}) async {
+    if (!updateController) {
+      return;
+    }
     final token = ++_loadToken;
     if (_episodes.isEmpty) {
       return;
@@ -741,23 +750,26 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     // 首次进入全屏时接续详情页小播放器的当前进度，后续换源换集不复用。
-    final startAt = updateController ? _takeInitialPlaybackPosition() : null;
-    if (updateController) {
-      _clearDanmakuState(clearList: true);
-      _markFullscreenPlayerLoading();
-      _scheduleChromeRefresh();
-      await _effectiveVideoController?.updateDataSource(url, startAt: startAt);
-      _fullscreenLoadingHoldTimer?.cancel();
-      _fullscreenLoadingHoldTimer = Timer(_initialFullscreenLoadingHold, () {
-        if (mounted &&
-            token == _loadToken &&
-            !(_effectiveVideoController?.isLoading ?? false)) {
-          _finishFullscreenPlayerLoading();
-        }
-      });
-      if (_danmakuEnabled) {
-        unawaited(_loadDanmakuForCurrentEpisode(force: false));
+    final startAt = _takeInitialPlaybackPosition();
+    if (_lastRequestedPlaybackUrl == url && startAt == null) {
+      return;
+    }
+    _lastRequestedPlaybackUrl = url;
+
+    _clearDanmakuState(clearList: true);
+    _markFullscreenPlayerLoading();
+    _scheduleChromeRefresh();
+    await _effectiveVideoController?.updateDataSource(url, startAt: startAt);
+    _fullscreenLoadingHoldTimer?.cancel();
+    _fullscreenLoadingHoldTimer = Timer(_initialFullscreenLoadingHold, () {
+      if (mounted &&
+          token == _loadToken &&
+          !(_effectiveVideoController?.isLoading ?? false)) {
+        _finishFullscreenPlayerLoading();
       }
+    });
+    if (_danmakuEnabled) {
+      unawaited(_loadDanmakuForCurrentEpisode(force: false));
     }
   }
 
@@ -1778,7 +1790,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   }
 
   /// 保存当前播放进度。
-  Future<void> _saveProgress({bool force = false, required String scene}) async {
+  Future<void> _saveProgress(
+      {bool force = false, required String scene}) async {
     final detail = _currentDetail;
     final position = _currentPlaybackPosition;
     final duration = _currentPlaybackDuration;
@@ -1872,6 +1885,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (index < 0 || index >= _episodes.length) {
       return;
     }
+    if (index == _episodeIndex) {
+      _lastFocusedEpisodeIndex = index;
+      _lastFocusedEpisodeGroupIndex = index ~/ _episodeGroupSize;
+      _ensureCurrentSelectionsVisible();
+      _hideMenu();
+      return;
+    }
     unawaited(_saveProgress(force: true, scene: scene));
     final nextGroupIndex = index ~/ _episodeGroupSize;
     setState(() {
@@ -1929,9 +1949,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           source.episodes.isEmpty ? 0 : source.episodes.length - 1;
       _episodeIndex = currentEpisode.clamp(0, maxEpisodeIndex).toInt();
       _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
-      _pendingInitialPlaybackPosition = currentProgress > 0
-          ? Duration(seconds: currentProgress)
-          : null;
+      _pendingInitialPlaybackPosition =
+          currentProgress > 0 ? Duration(seconds: currentProgress) : null;
       _hasAppliedInitialPlaybackPosition =
           _pendingInitialPlaybackPosition == null;
     });
@@ -1987,9 +2006,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final requestKey =
         '${detail.source}::${detail.id}::$_episodeIndex::${detail.title}';
 
-    if (!force &&
-        _isDanmakuLoading &&
-        _activeDanmakuRequestKey == requestKey) {
+    if (!force && _isDanmakuLoading && _activeDanmakuRequestKey == requestKey) {
       return;
     }
     _activeDanmakuRequestKey = requestKey;
@@ -2401,6 +2418,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       controller.addProgressListener(_onVideoProgressUpdate);
     }
     _playerController = controller;
+    _lastRequestedPlaybackUrl = null;
     _scheduleChromeRefresh();
     if (_hasRequestedInitialControllerLoad) {
       return;
@@ -3313,13 +3331,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       maxLines: 1,
     )..layout(maxWidth: double.infinity);
 
-    final cardWidth = math.max(
-      _episodeCardBaseMinWidth,
-      math.min(
-        _episodeCardMaxWidth,
-        widthPainter.size.width + _episodeCardHorizontalPadding,
-      ),
-    ).ceilToDouble();
+    final cardWidth = math
+        .max(
+          _episodeCardBaseMinWidth,
+          math.min(
+            _episodeCardMaxWidth,
+            widthPainter.size.width + _episodeCardHorizontalPadding,
+          ),
+        )
+        .ceilToDouble();
 
     final heightPainter = TextPainter(
       text: TextSpan(text: safeLabel, style: textStyle),
@@ -3333,10 +3353,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         ),
       );
 
-    final cardHeight = math.max(
-      _episodeCardBaseMinHeight,
-      heightPainter.height + _episodeCardVerticalPadding,
-    ).ceilToDouble();
+    final cardHeight = math
+        .max(
+          _episodeCardBaseMinHeight,
+          heightPainter.height + _episodeCardVerticalPadding,
+        )
+        .ceilToDouble();
 
     return _TvPlayerMenuCardSize(
       width: cardWidth,

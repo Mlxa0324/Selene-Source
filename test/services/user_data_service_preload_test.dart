@@ -7,6 +7,10 @@ import 'package:selene/services/user_data_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  setUp(() {
+    UserDataService.debugResetMemoryCaches();
+  });
+
   test('getPlaybackPreloadLevel defaults to medium when nothing is stored',
       () async {
     SharedPreferences.setMockInitialValues({});
@@ -56,5 +60,30 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('playback_preload_level_v1'), 'medium');
+  });
+
+  test('getM3u8ProxyUrl uses in-memory cache after first read', () async {
+    SharedPreferences.setMockInitialValues({
+      'm3u8_proxy_url': 'https://proxy-a.example.com/',
+    });
+
+    expect(
+      await UserDataService.getM3u8ProxyUrl(),
+      'https://proxy-a.example.com/',
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('m3u8_proxy_url', 'https://proxy-b.example.com/');
+
+    expect(
+      await UserDataService.getM3u8ProxyUrl(),
+      'https://proxy-a.example.com/',
+    );
+
+    UserDataService.debugResetMemoryCaches();
+    expect(
+      await UserDataService.getM3u8ProxyUrl(),
+      'https://proxy-b.example.com/',
+    );
   });
 }

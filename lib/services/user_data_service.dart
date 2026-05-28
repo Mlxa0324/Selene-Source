@@ -87,6 +87,15 @@ class UserDataService {
   /// M3U8 代理 URL Key
   static const String _m3u8ProxyUrlKey = 'm3u8_proxy_url';
 
+  /// M3U8 代理 URL 内存缓存。
+  ///
+  /// TV 详情页和 TV 全屏播放器在起播、换集、换源时会频繁读取该配置。
+  /// 这里保留一份进程内缓存，避免每次主链路都重复等待 `SharedPreferences`。
+  static String _cachedM3u8ProxyUrl = '';
+
+  /// M3U8 代理 URL 是否已经完成过一次内存预热。
+  static bool _hasCachedM3u8ProxyUrl = false;
+
   /// 是否开启优选测速 Key
   static const String _preferSpeedTestKey = 'prefer_speed_test';
 
@@ -217,6 +226,13 @@ class UserDataService {
 
   /// 搜索缓存有效期 (2小时)
   static const Duration _sourcesDataCacheTtl = Duration(seconds: 7200);
+
+  /// 重置进程内缓存，供测试隔离使用。
+  @visibleForTesting
+  static void debugResetMemoryCaches() {
+    _cachedM3u8ProxyUrl = '';
+    _hasCachedM3u8ProxyUrl = false;
+  }
 
   /// 搜索缓存是否已从磁盘加载标识
   static bool _isCacheLoaded = false;
@@ -817,14 +833,22 @@ class UserDataService {
 
   // 保存 M3U8 代理 URL
   static Future<void> saveM3u8ProxyUrl(String url) async {
+    _cachedM3u8ProxyUrl = url;
+    _hasCachedM3u8ProxyUrl = true;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_m3u8ProxyUrlKey, url);
   }
 
   // 获取 M3U8 代理 URL
   static Future<String> getM3u8ProxyUrl() async {
+    if (_hasCachedM3u8ProxyUrl) {
+      return _cachedM3u8ProxyUrl;
+    }
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_m3u8ProxyUrlKey) ?? '';
+    final url = prefs.getString(_m3u8ProxyUrlKey) ?? '';
+    _cachedM3u8ProxyUrl = url;
+    _hasCachedM3u8ProxyUrl = true;
+    return url;
   }
 
   // 保存优选测速设置

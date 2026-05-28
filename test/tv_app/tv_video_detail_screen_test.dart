@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    UserDataService.debugResetMemoryCaches();
     TvSearchRecommendService.clearDebugCache();
   });
 
@@ -174,7 +175,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
 
     expect(find.text('相关推荐'), findsNothing);
-    expect(find.byKey(const ValueKey('tv-detail-recommend-list')), findsNothing);
+    expect(
+        find.byKey(const ValueKey('tv-detail-recommend-list')), findsNothing);
     expect(find.text('回到顶部'), findsNothing);
   });
 
@@ -260,7 +262,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
     await tester.pumpAndSettle();
 
-    final cachedRecommends = await TvSearchRecommendService.loadSearchRecommends(
+    final cachedRecommends =
+        await TvSearchRecommendService.loadSearchRecommends(
       fallbackLoader: () async => const <VideoInfo>[],
     );
 

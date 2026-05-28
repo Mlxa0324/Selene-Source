@@ -584,6 +584,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       }
       setState(() => _currentTime = _formatCurrentTime(DateTime.now()));
     });
+    // 提前预热代理配置，尽量把配置读取和详情数据加载并行掉。
+    unawaited(UserDataService.getM3u8ProxyUrl());
     _startDetailLoading();
     _loadFavoriteState();
     _loadAdFilterPreference();
@@ -696,7 +698,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 加载 TV 详情页自动去广告偏好。
   Future<void> _loadAdFilterPreference() async {
-    final loader = widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
+    final loader =
+        widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
     final adFilterEnabled = await loader();
     if (!mounted) {
       return;
@@ -1122,7 +1125,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   }
 
   /// 保存当前播放进度。
-  Future<void> _saveProgress({bool force = false, required String scene}) async {
+  Future<void> _saveProgress(
+      {bool force = false, required String scene}) async {
     final detail = _currentDetail;
     final controller = _playerController;
     if (detail == null || controller == null) {
@@ -1263,8 +1267,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           source.episodes.isEmpty ? 0 : source.episodes.length - 1;
       _episodeIndex = currentEpisode.clamp(0, maxEpisodeIndex).toInt();
       _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
-      _pendingInitialPlaybackPosition =
-          currentPlaybackPosition != null &&
+      _pendingInitialPlaybackPosition = currentPlaybackPosition != null &&
               currentPlaybackPosition > Duration.zero
           ? currentPlaybackPosition
           : null;
@@ -1316,8 +1319,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           source.episodes.isEmpty ? 0 : source.episodes.length - 1;
       _episodeIndex = _episodeIndex.clamp(0, maxEpisodeIndex).toInt();
       _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
-      _pendingInitialPlaybackPosition =
-          currentPlaybackPosition != null &&
+      _pendingInitialPlaybackPosition = currentPlaybackPosition != null &&
               currentPlaybackPosition > Duration.zero
           ? currentPlaybackPosition
           : null;
