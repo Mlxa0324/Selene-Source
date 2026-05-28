@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:selene/tv_app/widgets/tv_design_canvas.dart';
 
 /// TV 主题色调色板。
 ///
@@ -164,12 +165,19 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
     required Widget child,
   }) {
     final service = maybeServiceOf(context);
-    if (service == null) {
-      return child;
+    final wrappedChild = service == null
+        ? child
+        : TvTheme(
+            service: service,
+            child: child,
+          );
+
+    if (TvDesignCanvas.maybeOf(context) == null) {
+      return wrappedChild;
     }
-    return TvTheme(
-      service: service,
-      child: child,
+
+    return TvDesignCanvas(
+      child: wrappedChild,
     );
   }
 }

@@ -302,6 +302,17 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'continue_3').hasFocus, isFalse);
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+
+    _focusNodeForVideoCard(tester, 'continue_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
     expect(_focusNodeForVideoCard(tester, 'continue_3').hasFocus, isTrue);
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
   });
@@ -341,12 +352,106 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isTrue);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
     expect(_focusNodeForVideoCard(tester, 'series_3').hasFocus, isTrue);
+  });
+
+  testWidgets('home top nav down initially focuses first item in first non empty section',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForVideoCard(tester, 'series_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+  });
+
+  testWidgets('home top nav down restores remembered focus after first manual browse',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'movie_0').hasFocus, isTrue);
+
+    _focusNodeForVideoCard(tester, 'movie_3').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForTopNavLabel(tester, '首页').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isTrue);
   });
 
   testWidgets('escape from home list focuses selected home top nav tab',

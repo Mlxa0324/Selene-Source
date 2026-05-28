@@ -688,6 +688,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 首页分区初始入口状态是否待重置。
   bool _shouldResetHomeEntryState = true;
 
+  /// 首页内容区是否已经完成过首次人工浏览。
+  ///
+  /// 首次冷启动进入首页时，顶部导航按下应该固定进入首个非空分区，
+  /// 不读取历史焦点记忆；只有用户真正浏览过首页内容后，才恢复记忆逻辑。
+  bool _hasEnteredHomeContentOnce = false;
+
   /// “继续观看”删除后优先恢复的焦点卡片 ID。
   String? _pendingContinueWatchingFocusVideoId;
 
@@ -1475,9 +1481,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       if (!_isAttachedFocusableNode(target.firstNode)) {
         continue;
       }
-      if (TvFocusable.requestRememberedFocusForGroup(target.groupKey)) {
+      if (_hasEnteredHomeContentOnce &&
+          TvFocusable.requestRememberedFocusForGroup(target.groupKey)) {
         return true;
       }
+      _hasEnteredHomeContentOnce = true;
       target.firstNode.requestFocus();
       return true;
     }

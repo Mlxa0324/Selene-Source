@@ -65,14 +65,15 @@ lib/tv_app/
 class DeviceModeConfig {
   static const bool forceTvMode = bool.fromEnvironment(
     'SELENE_FORCE_TV_MODE',
-    defaultValue: kDebugMode,
+    defaultValue: false,
   );
 }
 ```
 
 约定：
 
-- Debug 默认强制 TV，方便 BlueStacks 和平板调试。
+- 默认自动识别设备类型，避免手机开发包误进 TV 壳。
+- 调试 BlueStacks 或平板 TV 壳时，可显式传入 `SELENE_FORCE_TV_MODE=true`。
 - Release 默认不强制 TV。
 - 命令行可通过 `--dart-define=SELENE_FORCE_TV_MODE=true` 覆盖。
 
@@ -97,6 +98,22 @@ class TvHomeData {
 - `TvHomeScreen.defaultLoadHomeData` 负责聚合首页数据。
 - `TvHomeScreen` 可注入 `loadHomeData` 以支持测试。
 - 首页卡片点击进入 TV 详情页，不进入普通播放器页。
+
+### 3.4 TV 设计视口
+
+```dart
+class TvDesignCanvas extends StatelessWidget {
+  static const double designWidth = 1920;
+  static const double designHeight = 1080;
+}
+```
+
+约定：
+
+- TV 端统一以 `1920x1080` 作为设计稿逻辑尺寸。
+- 当前设备分辨率低于设计稿时，TV 页面整体按较短边等比缩小，避免较低分辨率设备把设计稿视觉占比放大一圈。
+- 当前设备分辨率高于或等于设计稿时，不额外放大，保持设计稿原始比例。
+- TV 独立路由和 TV 风格弹窗都必须继承同一套设计视口，避免首页、详情页、搜索页、设置页和弹窗比例不一致。
 
 ### 3.3 TV 详情页数据加载
 

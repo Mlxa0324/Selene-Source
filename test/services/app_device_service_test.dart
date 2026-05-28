@@ -6,8 +6,8 @@ import 'package:selene/services/app_device_service.dart';
 
 void main() {
   group('AppDeviceService', () {
-    test('force TV mode config follows debug default', () {
-      expect(DeviceModeConfig.forceTvMode, kDebugMode);
+    test('force TV mode config defaults to auto detect', () {
+      expect(DeviceModeConfig.forceTvMode, isFalse);
     });
 
     test('resolves TV when force TV mode is enabled', () async {
@@ -35,14 +35,79 @@ void main() {
       expect(await service.resolveDeviceType(), AppDeviceType.tv);
     });
 
-    test('resolves Android phone when native checker returns false', () async {
+    test('resolves Android phone when native checker returns false',
+        () async {
       final service = AppDeviceService(
         targetPlatform: TargetPlatform.android,
         forceTvMode: false,
+        shortestSideDp: 411,
         androidTvChecker: () async => false,
       );
 
       expect(await service.resolveDeviceType(), AppDeviceType.phone);
+    });
+
+    test('resolves physical Android tablet when shortest side is wide',
+        () async {
+      final service = AppDeviceService(
+        targetPlatform: TargetPlatform.android,
+        forceTvMode: false,
+        shortestSideDp: 720,
+        androidTvChecker: () async => false,
+      );
+
+      expect(
+        await service.resolvePhysicalDeviceType(),
+        AppDeviceType.tablet,
+      );
+    });
+
+    test('resolves physical Android phone when shortest side is narrow',
+        () async {
+      final service = AppDeviceService(
+        targetPlatform: TargetPlatform.android,
+        forceTvMode: false,
+        shortestSideDp: 411,
+        androidTvChecker: () async => false,
+      );
+
+      expect(
+        await service.resolvePhysicalDeviceType(),
+        AppDeviceType.phone,
+      );
+    });
+
+    test('resolves physical iOS tablet from shortest side', () async {
+      const service = AppDeviceService(
+        targetPlatform: TargetPlatform.iOS,
+        forceTvMode: false,
+        shortestSideDp: 768,
+      );
+
+      expect(
+        await service.resolvePhysicalDeviceType(),
+        AppDeviceType.tablet,
+      );
+    });
+
+    test('ignores force TV mode when resolving physical device type',
+        () async {
+      var called = false;
+      final service = AppDeviceService(
+        targetPlatform: TargetPlatform.android,
+        forceTvMode: true,
+        shortestSideDp: 720,
+        androidTvChecker: () async {
+          called = true;
+          return false;
+        },
+      );
+
+      expect(
+        await service.resolvePhysicalDeviceType(),
+        AppDeviceType.tablet,
+      );
+      expect(called, isTrue);
     });
 
     test('resolves desktop platforms without calling Android checker',

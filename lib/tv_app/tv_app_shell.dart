@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/screens/tv_home_screen.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
+import 'package:selene/tv_app/widgets/tv_design_canvas.dart';
 
 /// TV 端应用根壳。
 ///
@@ -34,9 +35,11 @@ class _TvAppShellState extends State<TvAppShell> {
   Widget build(BuildContext context) {
     return TvBackHandler(
       autofocus: true,
-      child: TvTheme(
-        service: _themeService,
-        child: const TvHomeScreen(),
+      child: TvDesignCanvas(
+        child: TvTheme(
+          service: _themeService,
+          child: const TvHomeScreen(),
+        ),
       ),
     );
   }
