@@ -31,12 +31,18 @@ typedef TvFullscreenPlayerBuilder = Widget Function(
   void Function(VideoPlayerWidgetController controller) onControllerCreated,
 );
 
+/// TV 全屏播放器自动去广告开关读取函数。
+typedef TvFullscreenAdFilterLoader = Future<bool> Function();
+
 /// TV 全屏播放器测试钩子。
 ///
 /// 仅测试场景使用，用于在占位播放器下模拟“视频播放完成”这类播放器事件。
 class TvFullscreenPlayerScreenTestHooks {
   /// 视频播放完成回调。
   VoidCallback? onVideoCompleted;
+
+  /// 默认播放器构建前最终使用的自动去广告开关。
+  ValueChanged<bool>? onAdFilterResolved;
 }
 
 /// TV 全屏播放器播放控制接口。
@@ -126,6 +132,7 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     this.onSourceChanged,
     this.danmakuService,
     this.reuseExistingPlayer = false,
+    this.loadAdFilterEnabled,
     this.testHooks,
   });
 
@@ -178,6 +185,9 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
   ///
   /// 默认复用共享数据层实现；测试时可注入假服务覆盖自动匹配结果。
   final TvDanmakuService? danmakuService;
+
+  /// 自动去广告开关读取函数，测试时可注入。
+  final TvFullscreenAdFilterLoader? loadAdFilterEnabled;
 
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvFullscreenPlayerScreenTestHooks? testHooks;
@@ -254,6 +264,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前播放源详情。
   late SearchResult? _currentDetail = widget.currentDetail;
+
+  /// 是否已完成自动去广告偏好加载。
+  bool _adFilterPreferenceLoaded = false;
+
+  /// 当前自动去广告开关状态。
+  bool _adFilterEnabled = true;
 
   /// 当前选集下标。
   late int _episodeIndex = _safeInitialEpisodeIndex();
@@ -476,6 +492,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     });
     unawaited(_loadSkipDurations());
     unawaited(_loadDanmakuSettings());
+    _loadAdFilterPreference();
     _loadCurrentEpisode(updateController: false);
   }
 
@@ -522,6 +539,20 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     });
   }
 
+  /// 加载 TV 全屏播放器自动去广告偏好。
+  Future<void> _loadAdFilterPreference() async {
+    final loader =
+        widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
+    final adFilterEnabled = await loader();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _adFilterEnabled = adFilterEnabled;
+      _adFilterPreferenceLoaded = true;
+    });
+  }
+
   /// 过滤非法初始续播位置。
   Duration? _safeInitialPlaybackPosition(Duration? position) {
     if (position == null || position <= Duration.zero) {
@@ -539,6 +570,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _menuAutoHideTimer?.cancel();
     _fullscreenLoadingHoldTimer?.cancel();
     _detachDanmakuController();
+    // 播放器壳销毁前兜底保存一次进度，避免系统返回直接销毁时漏记。
+    unawaited(_saveProgress(force: true, scene: '全屏页销毁'));
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
     if (!widget.reuseExistingPlayer) {
       _playerController?.dispose();
@@ -856,12 +889,23 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       _hideMenu();
       return;
     }
+    unawaited(_handleExitWithSave());
+  }
+
+  /// 退出全屏前先保存一次当前进度。
+  ///
+  /// 返回首页后可能立刻刷新“继续观看”，这里等待保存完成，减少新旧源记录并存窗口。
+  Future<void> _handleExitWithSave() async {
+    await _saveProgress(force: true, scene: '全屏返回');
+    if (!mounted) {
+      return;
+    }
     final exitRequested = widget.onExitRequested;
     if (exitRequested != null) {
       exitRequested();
       return;
     }
-    unawaited(Navigator.of(context).maybePop());
+    await Navigator.of(context).maybePop();
   }
 
   /// 展示底部菜单。
@@ -1110,7 +1154,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 处理系统返回。
   void _handlePopInvoked(bool didPop) {
-    if (didPop || !_menuVisible) {
+    if (didPop) {
+      // 系统返回已完成路由退出时补一次兜底保存，覆盖手势返回等非按键路径。
+      unawaited(_saveProgress(force: true, scene: '全屏系统返回'));
+      return;
+    }
+    if (!_menuVisible) {
       return;
     }
     _hideMenu();
@@ -1725,11 +1774,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
-    _saveProgress(scene: '全屏定时保存');
+    unawaited(_saveProgress(scene: '全屏定时保存'));
   }
 
   /// 保存当前播放进度。
-  void _saveProgress({bool force = false, required String scene}) {
+  Future<void> _saveProgress({bool force = false, required String scene}) async {
     final detail = _currentDetail;
     final position = _currentPlaybackPosition;
     final duration = _currentPlaybackDuration;
@@ -1760,13 +1809,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       totalTime: duration.inSeconds,
     );
 
-    unawaited(
-      TvPlayRecordService.saveRecord(context, playRecord).then((saved) {
-        if (!saved) {
-          debugPrint('TV 全屏保存播放进度失败 [场景: $scene]');
-        }
-      }),
+    final saved = await TvPlayRecordService.saveRecordAndCleanupOtherSources(
+      context: context,
+      playRecord: playRecord,
+      keepSource: detail,
+      videoInfo: widget.videoInfo,
     );
+    if (!saved) {
+      debugPrint('TV 全屏保存播放进度失败 [场景: $scene]');
+    }
   }
 
   /// 保存换源后的新播放记录，成功后再清理旧源记录。
@@ -1791,7 +1842,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _lastSaveTime = DateTime.now();
     _lastSavePosition = playTime;
 
-    final saved = await TvPlayRecordService.saveRecord(context, playRecord);
+    final saved = await TvPlayRecordService.saveRecordAndCleanupOtherSources(
+      context: context,
+      playRecord: playRecord,
+      keepSource: source,
+      videoInfo: widget.videoInfo,
+    );
     if (!saved) {
       debugPrint('TV 全屏换源记录保护：新记录保存失败，跳过旧记录清理');
       return;
@@ -1804,12 +1860,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       debugPrint('TV 全屏换源记录保护：切源任务已过期，跳过旧记录清理');
       return;
     }
-
-    await TvPlayRecordService.cleanupOtherSourceRecords(
-      context: context,
-      keepSource: source,
-      searchTitle: TvPlayRecordService.resolveSearchTitle(widget.videoInfo),
-    );
   }
 
   /// 切换选集。
@@ -1822,7 +1872,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (index < 0 || index >= _episodes.length) {
       return;
     }
-    _saveProgress(force: true, scene: scene);
+    unawaited(_saveProgress(force: true, scene: scene));
     final nextGroupIndex = index ~/ _episodeGroupSize;
     setState(() {
       _episodeIndex = index;
@@ -1879,6 +1929,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           source.episodes.isEmpty ? 0 : source.episodes.length - 1;
       _episodeIndex = currentEpisode.clamp(0, maxEpisodeIndex).toInt();
       _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
+      _pendingInitialPlaybackPosition = currentProgress > 0
+          ? Duration(seconds: currentProgress)
+          : null;
+      _hasAppliedInitialPlaybackPosition =
+          _pendingInitialPlaybackPosition == null;
     });
     _lastFocusedEpisodeIndex = _episodeIndex;
     _lastFocusedEpisodeGroupIndex = _episodeGroupIndex;
@@ -2295,6 +2350,19 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建播放器画面。
   Widget _buildPlayer() {
+    final shouldRenderReusedPlayerImmediately =
+        widget.reuseExistingPlayer && widget.playerBuilder != null;
+    // 详情页同页全屏会把同一个播放器子树直接挪到覆盖层。
+    // 这里如果还等自动去广告配置加载，旧子树会先从详情页移除一帧，
+    // 导致平台播放器黑屏重建并从 0 秒重新起播。
+    if (!shouldRenderReusedPlayerImmediately && !_adFilterPreferenceLoaded) {
+      return const ColoredBox(color: Colors.black);
+    }
+
+    if (_adFilterPreferenceLoaded) {
+      widget.testHooks?.onAdFilterResolved?.call(_adFilterEnabled);
+    }
+
     return widget.playerBuilder?.call(
           context,
           _handlePlayerControllerCreated,
@@ -2313,6 +2381,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           isShortDrama: false,
           showControls: false,
           enablePip: false,
+          adFilterEnabled: _adFilterEnabled,
           onControllerCreated: _handlePlayerControllerCreated,
           onReady: _finishFullscreenPlayerLoading,
           onPlay: () {

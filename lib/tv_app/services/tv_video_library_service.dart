@@ -24,6 +24,21 @@ class TvVideoLibraryService {
     }
   }
 
+  /// 直接从接口加载播放历史列表。
+  ///
+  /// TV 首页“继续观看”要优先展示远端最新状态，不能只依赖缓存命中。
+  static Future<List<VideoInfo>> loadHistoryDirect(BuildContext context) async {
+    final cacheService = PageCacheService();
+    try {
+      final result = await cacheService.getPlayRecordsDirect(context);
+      return (result.data ?? <PlayRecord>[])
+          .map(VideoInfo.fromPlayRecord)
+          .toList();
+    } catch (_) {
+      return <VideoInfo>[];
+    }
+  }
+
   /// 加载收藏夹列表。
   static Future<List<VideoInfo>> loadFavorites(BuildContext context) async {
     final cacheService = PageCacheService();

@@ -138,6 +138,53 @@ void main() {
     expect(stormLeft, lessThan(shortLeft));
   });
 
+  testWidgets('waits for ad filter preference before building default player',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final adFilterCompleter = Completer<bool>();
+    bool? resolvedAdFilterEnabled;
+    final testHooks = TvVideoDetailScreenTestHooks()
+      ..onAdFilterResolved = (value) {
+        resolvedAdFilterEnabled = value;
+      };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+            ],
+            recommends: const [],
+          ),
+          loadAdFilterEnabled: () => adFilterCompleter.future,
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          testHooks: testHooks,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-detail-player-placeholder')),
+        findsNothing);
+    expect(resolvedAdFilterEnabled, isNull);
+
+    adFilterCompleter.complete(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-detail-player-placeholder')),
+        findsOneWidget);
+    expect(resolvedAdFilterEnabled, isTrue);
+  });
+
   testWidgets('detail episode card height stays at least source card height',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -2969,12 +3016,44 @@ void main() {
     expect(startPosition, const Duration(seconds: 497));
   });
 
-  testWidgets('progress listener saves TV play record like mobile player',
+  testWidgets('progress listener saves TV play record and clears old sources',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     await UserDataService.saveIsLocalMode(true);
     addTearDown(() async => UserDataService.saveIsLocalMode(false));
     await _setTvSurfaceSize(tester);
+    await LocalModeStorageService.savePlayRecord(
+      PlayRecord(
+        id: 'detail_source_b',
+        source: 'source_b',
+        title: '主影片',
+        sourceName: '备用源',
+        year: '2026',
+        cover: '',
+        index: 496,
+        totalEpisodes: 500,
+        playTime: 496,
+        totalTime: 3600,
+        saveTime: 1,
+        searchTitle: '主影片',
+      ),
+    );
+    await LocalModeStorageService.savePlayRecord(
+      PlayRecord(
+        id: 'other_video',
+        source: 'source_x',
+        title: '其它影片',
+        sourceName: '其它线路',
+        year: '2026',
+        cover: '',
+        index: 3,
+        totalEpisodes: 10,
+        playTime: 222,
+        totalTime: 800,
+        saveTime: 2,
+        searchTitle: '其它影片',
+      ),
+    );
 
     late _FakeVideoPlayerWidgetController controller;
     var controllerCreated = false;
@@ -3031,13 +3110,115 @@ void main() {
     await tester.pump();
 
     final records = await LocalModeStorageService.getPlayRecords();
+    expect(records.where((record) => record.title == '主影片'), hasLength(1));
+    expect(records.where((record) => record.source == 'source_b'), isEmpty);
+    expect(
+      records.where((record) => record.title == '其它影片'),
+      hasLength(1),
+    );
+    final savedRecord =
+        records.firstWhere((record) => record.source == 'source_a');
+    expect(savedRecord.id, 'detail_source_a');
+    expect(savedRecord.sourceName, '主源');
+    expect(savedRecord.index, 497);
+    expect(savedRecord.playTime, 498);
+    expect(savedRecord.totalTime, 3600);
+  });
+
+  testWidgets('escape pops TV detail page and saves progress immediately',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await UserDataService.saveIsLocalMode(true);
+    addTearDown(() async => UserDataService.saveIsLocalMode(false));
+    await _setTvSurfaceSize(tester);
+
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvVideoDetailScreen(
+                        videoInfo: _videoInfo(
+                          'detail_source_a',
+                          '主影片',
+                          source: 'source_a',
+                          sourceName: '主源',
+                          index: 497,
+                          totalEpisodes: 500,
+                          playTime: 497,
+                          totalTime: 3600,
+                        ),
+                        loadDetail: (_, __) async => TvVideoDetailData(
+                          currentDetail: _searchResult(
+                            'source_a',
+                            '主源',
+                            episodeCount: 500,
+                          ),
+                          sources: [
+                            _searchResult(
+                              'source_a',
+                              '主源',
+                              episodeCount: 500,
+                            ),
+                          ],
+                          recommends: const [],
+                        ),
+                        playerBuilder: (_, onControllerCreated) {
+                          if (!controllerCreated) {
+                            controllerCreated = true;
+                            onControllerCreated(
+                              _FakeVideoPlayerWidgetController(
+                                isPlaying: true,
+                                currentPosition: const Duration(seconds: 512),
+                                duration: const Duration(seconds: 3600),
+                              ),
+                            );
+                          }
+                          return Container(
+                            key: const ValueKey(
+                              'tv-detail-player-placeholder',
+                            ),
+                            color: Colors.black,
+                          );
+                        },
+                        fullscreenPlayerBuilder: (_, __) => Container(
+                          key: const ValueKey(
+                            'tv-fullscreen-player-placeholder',
+                          ),
+                          color: Colors.black,
+                        ),
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开详情页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开详情页'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    final records = await LocalModeStorageService.getPlayRecords();
     expect(records, hasLength(1));
     expect(records.first.source, 'source_a');
     expect(records.first.id, 'detail_source_a');
-    expect(records.first.sourceName, '主源');
-    expect(records.first.index, 497);
-    expect(records.first.playTime, 498);
-    expect(records.first.totalTime, 3600);
+    expect(records.first.playTime, 512);
   });
 
   testWidgets('switching TV source saves new record before old one is cleaned',
@@ -3080,6 +3261,7 @@ void main() {
     await _setTvSurfaceSize(tester);
 
     var controllerCreated = false;
+    final startPositions = <Duration?>[];
     await tester.pumpWidget(
       MaterialApp(
         home: TvVideoDetailScreen(
@@ -3113,6 +3295,9 @@ void main() {
                   isPlaying: true,
                   currentPosition: const Duration(seconds: 777),
                   duration: const Duration(seconds: 3600),
+                  onUpdateDataSource: (url, {startAt, headers}) {
+                    startPositions.add(startAt);
+                  },
                 ),
               );
             }
@@ -3133,6 +3318,9 @@ void main() {
     await tester.tap(find.text('备用源'));
     await tester.pumpAndSettle();
     await tester.pump();
+
+    expect(startPositions, isNotEmpty);
+    expect(startPositions.last, const Duration(seconds: 777));
 
     final records = await LocalModeStorageService.getPlayRecords();
     expect(records.where((record) => record.source == 'source_a'), isEmpty);

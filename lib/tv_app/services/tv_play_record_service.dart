@@ -90,6 +90,30 @@ class TvPlayRecordService {
     }
   }
 
+  /// 保存当前播放进度，并在成功后立即清理同片其它源记录。
+  ///
+  /// TV 端普通保存也要和换源保护保持一致，避免首页“继续观看”同时出现同片多源。
+  static Future<bool> saveRecordAndCleanupOtherSources({
+    required BuildContext context,
+    required PlayRecord playRecord,
+    required SearchResult keepSource,
+    required VideoInfo videoInfo,
+  }) async {
+    final saved = await saveRecord(context, playRecord);
+    if (!saved) {
+      return false;
+    }
+
+    await cleanupOtherSourceRecordsForVideo(
+      // 保存成功后立即清理其它源，调用方已在页面侧做 mounted 保护。
+      // ignore: use_build_context_synchronously
+      context: context,
+      keepSource: keepSource,
+      videoInfo: videoInfo,
+    );
+    return true;
+  }
+
   /// 判断播放记录是否属于当前影片的其它源。
   static bool isSameVideoForPlayRecord({
     required PlayRecord record,

@@ -295,6 +295,157 @@ void main() {
     expect(firstRecommendFocusNode.hasFocus, isFalse);
   });
 
+  testWidgets('last recommendation card moves focus up to remembered hot word',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['历史1', '历史2'],
+            hotWords: const ['热词1', '热词2', '热词3', '热词4'],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+              _videoInfo('recommend_3', '推荐 3'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final rememberedHotWordNode = _focusNodeForText(tester, '热词4');
+    rememberedHotWordNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(rememberedHotWordNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForText(tester, '推荐 1').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForText(tester, '推荐 3').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(rememberedHotWordNode.hasFocus, isTrue);
+    expect(_focusNodeForText(tester, '推荐 3').hasFocus, isFalse);
+  });
+
+  testWidgets('recommendation focus up prefers hot words over history memory',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['历史1', '历史2', '历史3', '历史4'],
+            hotWords: const ['热词1', '热词2', '热词3', '热词4'],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+              _videoInfo('recommend_3', '推荐 3'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final rememberedHotWordNode = _focusNodeForText(tester, '热词4');
+    rememberedHotWordNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(rememberedHotWordNode.hasFocus, isTrue);
+
+    final historyNode = _focusNodeForText(tester, '历史4');
+    historyNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(historyNode.hasFocus, isTrue);
+
+    final recommendFocusNode = _focusNodeForText(tester, '推荐 3');
+    recommendFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(recommendFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(rememberedHotWordNode.hasFocus, isTrue);
+    expect(historyNode.hasFocus, isFalse);
+    expect(recommendFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('recommendation card moves focus up to history when hot words are empty',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['历史1', '历史2', '历史3', '历史4'],
+            hotWords: const [],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final rememberedHistoryNode = _focusNodeForText(tester, '历史4');
+    rememberedHistoryNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(rememberedHistoryNode.hasFocus, isTrue);
+
+    final recommendFocusNode = _focusNodeForText(tester, '推荐 2');
+    recommendFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(recommendFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(rememberedHistoryNode.hasFocus, isTrue);
+    expect(recommendFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('recommendation cards keep focus on arrow down', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['历史1', '历史2'],
+            hotWords: const ['热词1', '热词2', '热词3'],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+              _videoInfo('recommend_3', '推荐 3'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final middleRecommendNode = _focusNodeForText(tester, '推荐 2');
+    middleRecommendNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(middleRecommendNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(middleRecommendNode.hasFocus, isTrue);
+  });
+
   testWidgets('right panel scroll keeps focused word near middle',
       (tester) async {
     await tester.pumpWidget(
@@ -430,6 +581,45 @@ void main() {
         clearButton.constraints?.maxHeight ??
             clearButton.constraints?.minHeight,
         46);
+  });
+
+  testWidgets('right search panels use more compact sizing', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['庆余年', '长安的荔枝'],
+            hotWords: const ['剑来', '主角', '黑袍纠察队第五季'],
+            recommends: [_videoInfo('recommend_1', '世界的主人')],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final historyTitle = tester.widget<Text>(find.text('搜索历史'));
+    final hotWordTitle = tester.widget<Text>(find.text('搜索热词'));
+    final recommendTitle = tester.widget<Text>(find.text('影片推荐'));
+    final historyGrid = tester.widget<GridView>(
+      find.byKey(const ValueKey('tv-search-word-grid-搜索历史')),
+    );
+    final historyTileText = tester.widget<Text>(find.text('庆余年'));
+    final recommendList = tester.widget<ListView>(
+      find.byKey(const ValueKey('tv-search-recommend-list')),
+    );
+
+    final historyDelegate =
+        historyGrid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+
+    expect(historyTitle.style?.fontSize, 24);
+    expect(hotWordTitle.style?.fontSize, 24);
+    expect(recommendTitle.style?.fontSize, 26);
+    expect(historyDelegate.mainAxisExtent, 46);
+    expect(historyDelegate.crossAxisSpacing, 16);
+    expect(historyDelegate.mainAxisSpacing, 14);
+    expect(historyTileText.style?.fontSize, 17);
+    expect(recommendList.padding, const EdgeInsets.fromLTRB(0, 8, 70, 16));
   });
 
   testWidgets('autofocuses first search history item when history exists',

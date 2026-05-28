@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/danmaku_model.dart';
+import 'package:selene/tv_app/screens/tv_home_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
 import 'package:selene/tv_app/services/tv_account_config_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
@@ -16,6 +17,7 @@ void main() {
               serverUrl: 'https://example.com',
               username: 'demo',
               password: 'secret',
+              adFilterEnabled: false,
               doubanImageSource: '豆瓣官方精品 CDN',
               danmakuBaseApi: 'https://danmaku.example.com/',
               danmakuSettings: DanmakuSettings(),
@@ -38,6 +40,7 @@ void main() {
     expect(find.text('奈飞红'), findsOneWidget);
     expect(find.text('图片代理'), findsOneWidget);
     expect(find.text('豆瓣官方精品 CDN'), findsOneWidget);
+    expect(find.text('自动去广告'), findsOneWidget);
     expect(find.text('弹幕服务器地址'), findsOneWidget);
     expect(find.text('弹幕开关'), findsOneWidget);
     expect(find.text('显示区域'), findsOneWidget);
@@ -122,6 +125,39 @@ void main() {
     expect(find.text('图片代理已保存'), findsOneWidget);
   });
 
+  testWidgets('saves TV ad filter option', (tester) async {
+    bool? savedAdFilterEnabled;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => const TvSettingsData(
+              serverUrl: '',
+              username: '',
+              password: '',
+              adFilterEnabled: true,
+              doubanImageSource: '直连',
+              danmakuBaseApi: '',
+              danmakuSettings: DanmakuSettings(),
+            ),
+            saveAdFilterEnabled: (enabled) async {
+              savedAdFilterEnabled = enabled;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tv-settings-ad-filter-switch')));
+    await tester.pumpAndSettle();
+
+    expect(savedAdFilterEnabled, isFalse);
+    expect(find.text('自动去广告已关闭'), findsOneWidget);
+  });
+
   testWidgets('saves TV theme color option', (tester) async {
     String? savedThemeKey;
 
@@ -144,6 +180,47 @@ void main() {
 
     expect(savedThemeKey, TvThemePalette.netflixRedKey);
     expect(find.text('主题色已保存'), findsOneWidget);
+  });
+
+  testWidgets('applies TV theme immediately after opening settings from home',
+      (tester) async {
+    final themeService = TvThemeService();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData.empty(),
+            buildSettingsPage: () => TvSettingsScreen(
+              loadSettings: () async => TvSettingsData.empty(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-settings')));
+    await tester.pumpAndSettle();
+
+    Switch initialAdFilterSwitch = tester.widget<Switch>(
+      find.byKey(const ValueKey('tv-settings-ad-filter-switch')),
+    );
+    expect(initialAdFilterSwitch.activeThumbColor, TvThemePalette.ivyGreen.accent);
+
+    await tester.tap(find.text('奈飞红'));
+    await tester.pumpAndSettle();
+
+    expect(themeService.themeKey, TvThemePalette.netflixRedKey);
+
+    final updatedAdFilterSwitch = tester.widget<Switch>(
+      find.byKey(const ValueKey('tv-settings-ad-filter-switch')),
+    );
+    expect(
+      updatedAdFilterSwitch.activeThumbColor,
+      TvThemePalette.netflixRed.accent,
+    );
   });
 
   testWidgets('saves TV server account fields', (tester) async {
@@ -208,7 +285,9 @@ void main() {
       find.byType(TextField).at(3),
       'https://danmaku.example.com',
     );
-    await tester.tap(find.byType(Switch).first);
+    await tester.tap(
+      find.byKey(const ValueKey('tv-settings-danmaku-enabled-switch')),
+    );
     await tester.drag(find.byType(Slider).at(0), const Offset(-120, 0));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('保存弹幕配置'));

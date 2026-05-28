@@ -10,6 +10,7 @@ import 'package:selene/tv_app/screens/tv_live_screen.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/services/tv_video_library_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
@@ -161,14 +162,15 @@ class TvHomeScreen extends StatefulWidget {
   /// 默认首页数据加载逻辑。
   static Future<TvHomeData> defaultLoadHomeData(BuildContext context) async {
     final cacheService = PageCacheService();
-    final playRecordsFuture = TvVideoLibraryService.loadHistory(context);
+    final continueWatchingFuture =
+        TvVideoLibraryService.loadHistoryDirect(context);
     final favoritesFuture = TvVideoLibraryService.loadFavorites(context);
     final hotMoviesFuture = _loadHotMovies(context, cacheService);
     final hotTvShowsFuture = _loadHotTvShows(context, cacheService);
     final bangumiCalendarFuture = _loadBangumiCalendar(context);
     final hotShowsFuture = _loadHotShows(context, cacheService);
 
-    final playRecords = await playRecordsFuture;
+    final continueWatching = await continueWatchingFuture;
     final favorites = await favoritesFuture;
     final hotMovies = await hotMoviesFuture;
     final hotTvShows = await hotTvShowsFuture;
@@ -176,7 +178,7 @@ class TvHomeScreen extends StatefulWidget {
     final hotShows = await hotShowsFuture;
 
     return TvHomeData(
-      continueWatching: playRecords
+      continueWatching: continueWatching
           .where((video) => video.source != 'local')
           .take(20)
           .toList(),
@@ -184,7 +186,7 @@ class TvHomeScreen extends StatefulWidget {
       hotTvShows: hotTvShows.take(20).toList(),
       bangumiCalendar: bangumiCalendar.take(20).toList(),
       hotShows: hotShows.take(20).toList(),
-      history: playRecords.take(60).toList(),
+      history: continueWatching.take(60).toList(),
       favorites: favorites.take(60).toList(),
     );
   }
@@ -1696,6 +1698,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       _pendingContinueWatchingFocusVideoId = null;
     }
 
+    if (!mounted) {
+      return;
+    }
     final confirmed = await showTvConfirmDialog(
       context: context,
       title: '删除继续观看',
@@ -1757,7 +1762,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         );
     final refreshHome = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (context) => detailPage,
+        builder: (routeContext) => TvTheme.wrapScope(
+          context: context,
+          child: detailPage,
+        ),
       ),
     );
     if (!mounted || refreshHome != true) {
@@ -1819,7 +1827,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   Future<T?> _pushQuickPage<T extends Object?>(Widget page) {
     return Navigator.of(context).push<T>(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => page,
+        pageBuilder: (routeContext, animation, secondaryAnimation) =>
+            TvTheme.wrapScope(
+          context: context,
+          child: page,
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

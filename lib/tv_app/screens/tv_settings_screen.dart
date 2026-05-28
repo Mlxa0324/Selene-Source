@@ -29,6 +29,12 @@ typedef TvDanmakuSaver = Future<void> Function(
 /// TV 图片代理保存函数。
 typedef TvImageSourceSaver = Future<void> Function(String imageSource);
 
+/// TV 自动去广告开关读取函数。
+typedef TvAdFilterLoader = Future<bool> Function();
+
+/// TV 自动去广告开关保存函数。
+typedef TvAdFilterSaver = Future<void> Function(bool enabled);
+
 /// TV 主题色保存函数。
 typedef TvThemeSaver = Future<void> Function(String themeKey);
 
@@ -46,6 +52,7 @@ class TvSettingsData {
     required this.username,
     required this.password,
     this.themeKey = TvThemePalette.ivyGreenKey,
+    required this.adFilterEnabled,
     required this.doubanImageSource,
     required this.danmakuBaseApi,
     required this.danmakuSettings,
@@ -63,6 +70,9 @@ class TvSettingsData {
   /// TV 主题色标识。
   final String themeKey;
 
+  /// 是否开启自动去广告。
+  final bool adFilterEnabled;
+
   /// 豆瓣图片代理显示名称。
   final String doubanImageSource;
 
@@ -79,6 +89,7 @@ class TvSettingsData {
       username: '',
       password: '',
       themeKey: TvThemePalette.ivyGreenKey,
+      adFilterEnabled: true,
       doubanImageSource: '直连',
       danmakuBaseApi: '',
       danmakuSettings: DanmakuSettings(),
@@ -97,6 +108,8 @@ class TvSettingsScreen extends StatefulWidget {
     this.saveAccount,
     this.saveTheme,
     this.saveDoubanImageSource,
+    this.loadAdFilterEnabled,
+    this.saveAdFilterEnabled,
     this.saveDanmaku,
     this.loadCacheSize,
     this.clearAllCaches,
@@ -113,6 +126,12 @@ class TvSettingsScreen extends StatefulWidget {
 
   /// 图片代理保存函数。
   final TvImageSourceSaver? saveDoubanImageSource;
+
+  /// 自动去广告开关读取函数。
+  final TvAdFilterLoader? loadAdFilterEnabled;
+
+  /// 自动去广告开关保存函数。
+  final TvAdFilterSaver? saveAdFilterEnabled;
 
   /// 弹幕设置保存函数。
   final TvDanmakuSaver? saveDanmaku;
@@ -136,6 +155,7 @@ class TvSettingsScreen extends StatefulWidget {
       username: credentials.username,
       password: credentials.password,
       themeKey: await TvThemeService.loadSavedThemeKey(),
+      adFilterEnabled: await UserDataService.getAdFilterEnabled(),
       doubanImageSource:
           await UserDataService.getDoubanImageSourceDisplayName(),
       danmakuBaseApi: await danmakuService.getBaseApi() ?? '',
@@ -163,6 +183,11 @@ class TvSettingsScreen extends StatefulWidget {
   /// 默认图片代理保存逻辑。
   static Future<void> defaultSaveDoubanImageSource(String imageSource) {
     return UserDataService.saveDoubanImageSource(imageSource);
+  }
+
+  /// 默认自动去广告保存逻辑。
+  static Future<void> defaultSaveAdFilterEnabled(bool enabled) {
+    return UserDataService.saveAdFilterEnabled(enabled);
   }
 
   /// 默认主题色保存逻辑。
@@ -207,6 +232,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 当前豆瓣图片代理。
   String _doubanImageSource = '直连';
 
+  /// 当前是否开启自动去广告。
+  bool _adFilterEnabled = true;
+
   /// 当前 TV 主题色标识。
   String _themeKey = TvThemePalette.ivyGreen.key;
 
@@ -249,6 +277,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _usernameController.text = data.username;
     _passwordController.text = data.password;
     _themeKey = TvThemePalette.fromKey(data.themeKey).key;
+    _adFilterEnabled = data.adFilterEnabled;
     _doubanImageSource = data.doubanImageSource;
     _danmakuBaseApiController.text = data.danmakuBaseApi;
     _danmakuSettings = data.danmakuSettings;
@@ -327,6 +356,23 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       _doubanImageSource = imageSource;
     });
     _showToast('图片代理已保存', TvTheme.of(context).accent);
+  }
+
+  /// 保存自动去广告开关。
+  Future<void> _saveAdFilterEnabled(bool enabled) async {
+    final saver =
+        widget.saveAdFilterEnabled ?? TvSettingsScreen.defaultSaveAdFilterEnabled;
+    await saver(enabled);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _adFilterEnabled = enabled;
+    });
+    _showToast(
+      enabled ? '自动去广告已开启' : '自动去广告已关闭',
+      TvTheme.of(context).accent,
+    );
   }
 
   /// 清理全部非配置缓存并刷新缓存大小。
@@ -490,6 +536,13 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           onChanged: _saveDoubanImageSource,
         ),
         const SizedBox(height: 18),
+        _TvSwitchRow(
+          switchKey: const ValueKey('tv-settings-ad-filter-switch'),
+          label: '自动去广告',
+          value: _adFilterEnabled,
+          onChanged: _saveAdFilterEnabled,
+        ),
+        const SizedBox(height: 18),
         _TvTextField(
           label: '弹幕服务器地址',
           hintText: 'https://danmaku.example.com/',
@@ -497,6 +550,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         ),
         const SizedBox(height: 18),
         _TvSwitchRow(
+          switchKey: const ValueKey('tv-settings-danmaku-enabled-switch'),
           label: '弹幕开关',
           value: _danmakuSettings.enabled,
           onChanged: (value) {
@@ -1077,10 +1131,14 @@ class _TvActionButton extends StatelessWidget {
 class _TvSwitchRow extends StatelessWidget {
   /// 创建 TV 设置开关行。
   const _TvSwitchRow({
+    this.switchKey,
     required this.label,
     required this.value,
     required this.onChanged,
   });
+
+  /// 开关键。
+  final Key? switchKey;
 
   /// 设置项文案。
   final String label;
@@ -1108,6 +1166,7 @@ class _TvSwitchRow extends StatelessWidget {
             ),
           ),
           Switch(
+            key: switchKey,
             value: value,
             activeThumbColor: palette.accent,
             activeTrackColor: palette.accent.withValues(alpha: 0.32),

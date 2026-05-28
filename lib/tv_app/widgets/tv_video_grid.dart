@@ -4,6 +4,7 @@ import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
+import 'package:selene/tv_app/widgets/tv_section_title.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
 
@@ -163,33 +164,12 @@ class _TvVideoGridState extends State<TvVideoGrid> {
         child: Row(
           children: [
             Expanded(
-              child: Row(
-                children: [
-                  Text(
-                    widget.title,
-                    style: FontUtils.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  if (widget.titleHint != null) ...[
-                    const SizedBox(width: 14),
-                    Flexible(
-                      child: Text(
-                        key: const ValueKey('tv-video-grid-title-hint'),
-                        widget.titleHint!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: FontUtils.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF7F8A8F),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
+              child: TvSectionTitle(
+                title: widget.title,
+                titleHint: widget.titleHint,
+                titleHintKey: const ValueKey('tv-video-grid-title-hint'),
+                flexibleHint: true,
+                hintOverflow: TextOverflow.ellipsis,
               ),
             ),
             if (widget.onClearPressed != null) ...[

@@ -153,4 +153,23 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
   static TvThemeService? maybeServiceOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<TvTheme>()?.notifier;
   }
+
+  /// 使用当前作用域中的 TV 主题服务包装新的子树。
+  ///
+  /// `Navigator.push` 和 `showDialog` 创建的新路由会脱离当前页面的
+  /// `TvTheme` 作用域，这里把同一份主题服务继续透传过去，保证独立页
+  /// 和弹窗在主题切换后立即刷新。
+  static Widget wrapScope({
+    required BuildContext context,
+    required Widget child,
+  }) {
+    final service = maybeServiceOf(context);
+    if (service == null) {
+      return child;
+    }
+    return TvTheme(
+      service: service,
+      child: child,
+    );
+  }
 }

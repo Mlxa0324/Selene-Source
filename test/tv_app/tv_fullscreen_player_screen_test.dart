@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -112,6 +114,79 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('备用线路'), findsOneWidget);
+  });
+
+  testWidgets(
+      'waits for ad filter preference before building default fullscreen player',
+      (tester) async {
+    final adFilterCompleter = Completer<bool>();
+    bool? resolvedAdFilterEnabled;
+    final testHooks = TvFullscreenPlayerScreenTestHooks()
+      ..onAdFilterResolved = (value) {
+        resolvedAdFilterEnabled = value;
+      };
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          loadAdFilterEnabled: () => adFilterCompleter.future,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+          testHooks: testHooks,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
+        findsNothing);
+    expect(resolvedAdFilterEnabled, isNull);
+
+    adFilterCompleter.complete(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
+        findsOneWidget);
+    expect(resolvedAdFilterEnabled, isTrue);
+  });
+
+  testWidgets(
+      'reused fullscreen player renders immediately without waiting ad filter preference',
+      (tester) async {
+    final adFilterCompleter = Completer<bool>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          reuseExistingPlayer: true,
+          loadAdFilterEnabled: () => adFilterCompleter.future,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
+        findsOneWidget);
   });
 
   testWidgets('primary and other menu keep current vertical focus context',
@@ -1852,11 +1927,43 @@ void main() {
     expect(startPosition, const Duration(minutes: 9, seconds: 51));
   });
 
-  testWidgets('fullscreen progress listener saves TV play record',
+  testWidgets('fullscreen progress listener saves record and clears old sources',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     await UserDataService.saveIsLocalMode(true);
     addTearDown(() async => UserDataService.saveIsLocalMode(false));
+    await LocalModeStorageService.savePlayRecord(
+      PlayRecord(
+        id: 'detail_source_b',
+        source: 'source_b',
+        title: '主角',
+        sourceName: '备用线路',
+        year: '2026',
+        cover: '',
+        index: 2,
+        totalEpisodes: 2,
+        playTime: 66,
+        totalTime: 1000,
+        saveTime: 1,
+        searchTitle: '主角',
+      ),
+    );
+    await LocalModeStorageService.savePlayRecord(
+      PlayRecord(
+        id: 'other_video',
+        source: 'source_x',
+        title: '其它影片',
+        sourceName: '其它线路',
+        year: '2026',
+        cover: '',
+        index: 3,
+        totalEpisodes: 10,
+        playTime: 222,
+        totalTime: 800,
+        saveTime: 2,
+        searchTitle: '其它影片',
+      ),
+    );
 
     late _FakeVideoPlayerWidgetController controller;
     var controllerCreated = false;
@@ -1900,11 +2007,89 @@ void main() {
     await tester.pump();
 
     final records = await LocalModeStorageService.getPlayRecords();
+    expect(records.where((record) => record.title == '主角'), hasLength(1));
+    expect(records.where((record) => record.source == 'source_b'), isEmpty);
+    expect(
+      records.where((record) => record.title == '其它影片'),
+      hasLength(1),
+    );
+    final savedRecord =
+        records.firstWhere((record) => record.source == 'source_a');
+    expect(savedRecord.id, 'detail_source_a');
+    expect(savedRecord.index, 2);
+    expect(savedRecord.playTime, 88);
+  });
+
+  testWidgets('escape pops fullscreen player and saves progress immediately',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await UserDataService.saveIsLocalMode(true);
+    addTearDown(() async => UserDataService.saveIsLocalMode(false));
+
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => TvFullscreenPlayerScreen(
+                        videoInfo: _videoInfo(
+                          id: 'detail_source_a',
+                          index: 2,
+                          totalEpisodes: 2,
+                          playTime: 30,
+                          totalTime: 1000,
+                        ),
+                        currentDetail: _searchResult('source_a', '主线路'),
+                        sources: [
+                          _searchResult('source_a', '主线路'),
+                        ],
+                        initialEpisodeIndex: 1,
+                        playerBuilder: (_, onControllerCreated) {
+                          if (!controllerCreated) {
+                            controllerCreated = true;
+                            onControllerCreated(
+                              _FakeVideoPlayerWidgetController(
+                                isPlaying: true,
+                                currentPosition: const Duration(seconds: 144),
+                                duration: const Duration(seconds: 1000),
+                              ),
+                            );
+                          }
+                          return const ColoredBox(
+                            key: ValueKey('tv-fullscreen-player-placeholder'),
+                            color: Colors.black,
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('详情页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('详情页'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    final records = await LocalModeStorageService.getPlayRecords();
     expect(records, hasLength(1));
     expect(records.first.source, 'source_a');
     expect(records.first.id, 'detail_source_a');
     expect(records.first.index, 2);
-    expect(records.first.playTime, 88);
+    expect(records.first.playTime, 144);
   });
 
   testWidgets('fullscreen source switch migrates play record safely',
@@ -1944,6 +2129,7 @@ void main() {
         searchTitle: '其它影片',
       ),
     );
+    final startPositions = <Duration?>[];
     var controllerCreated = false;
 
     await tester.pumpWidget(
@@ -1970,6 +2156,9 @@ void main() {
                   isPlaying: true,
                   currentPosition: const Duration(seconds: 90),
                   duration: const Duration(seconds: 1000),
+                  onUpdateDataSource: (_, {startAt, headers}) async {
+                    startPositions.add(startAt);
+                  },
                 ),
               );
             }
@@ -1989,6 +2178,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('备用线路'));
     await tester.pumpAndSettle();
+
+    expect(startPositions, isNotEmpty);
+    expect(startPositions.last, const Duration(seconds: 90));
 
     final records = await LocalModeStorageService.getPlayRecords();
     expect(records.where((record) => record.source == 'source_a'), isEmpty);

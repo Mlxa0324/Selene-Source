@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
@@ -146,18 +147,36 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   static const int _wordGridColumnCount = 3;
 
   /// 搜索词列表项高度。
-  static const double _wordTileExtent = 52;
+  static const double _wordTileExtent = 46;
 
   /// 搜索词列表横向间距。
-  static const double _wordTileCrossSpacing = 20;
+  static const double _wordTileCrossSpacing = 16;
 
   /// 搜索词列表纵向间距。
-  static const double _wordTileMainSpacing = 18;
+  static const double _wordTileMainSpacing = 14;
 
   /// 左侧搜索操作区焦点记忆分组。
   ///
   /// 推荐区回到搜索侧时，优先回到左侧最近一次停留的输入操作按钮。
   static const Object _leftPanelFocusMemoryGroupKey = 'tv-search-left-panel';
+
+  /// 搜索历史焦点记忆分组。
+  ///
+  /// 推荐区向上回退时，热词区没有可用焦点项才回退到搜索历史区。
+  static const Object _historyWordFocusMemoryGroupKey =
+      'tv-search-history-word-tiles';
+
+  /// 搜索热词焦点记忆分组。
+  ///
+  /// 推荐区向上回退时优先回到热词区最近一次停留的位置。
+  static const Object _hotWordFocusMemoryGroupKey =
+      'tv-search-hot-word-tiles';
+
+  /// 右侧纯文字词条方向键长按节流分组。
+  ///
+  /// 搜索历史和热词需要共用逐项节流，避免长按时直接跳过中间获焦态。
+  static const String _wordTileDirectionalThrottleGroupKey =
+      'tv-search-word-tiles';
 
   /// 搜索页数据任务。
   Future<TvSearchData>? _searchDataFuture;
@@ -490,11 +509,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             firstItemFocusNode: _historyFirstFocusNode,
             autofocusFirstItem:
                 initialFocusTarget == _TvSearchInitialFocusTarget.history,
+            focusMemoryGroupKey: _historyWordFocusMemoryGroupKey,
             onItemFocus: _ensureRightPanelFocusCentered,
             onClearPressed:
                 data.searchHistory.isEmpty ? null : () => _clearSearchHistory(),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 22),
           _buildWordSection(
             title: '搜索热词',
             words: data.hotWords,
@@ -502,12 +522,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             firstItemFocusNode: _hotWordFirstFocusNode,
             autofocusFirstItem:
                 initialFocusTarget == _TvSearchInitialFocusTarget.hotWord,
+            focusMemoryGroupKey: _hotWordFocusMemoryGroupKey,
             onItemFocus: _ensureRightPanelFocusCentered,
             onLastRowArrowDown: data.recommends.isEmpty
                 ? null
                 : () => _recommendFirstFocusNode.requestFocus(),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           _buildRecommendationSection(
             data.recommends,
             isLoading,
@@ -594,14 +615,14 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         Text(
           '影片推荐',
           style: FontUtils.poppins(
-            fontSize: 30,
+            fontSize: 26,
             fontWeight: FontWeight.w800,
             color: Colors.white,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         SizedBox(
-          height: TvVideoCard.height + 42,
+          height: TvVideoCard.height + 32,
           child: isLoading
               ? _buildRecommendationLoadingList()
               : _buildRecommendationList(
@@ -620,7 +641,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       key: const ValueKey('tv-search-recommend-loading-list'),
       scrollDirection: Axis.horizontal,
       clipBehavior: Clip.none,
-      padding: const EdgeInsets.fromLTRB(0, 12, 70, 22),
+      padding: const EdgeInsets.fromLTRB(0, 8, 70, 16),
       itemBuilder: (context, index) {
         return SizedBox(
           width: TvVideoCard.width,
@@ -676,7 +697,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       controller: _recommendScrollController,
       scrollDirection: Axis.horizontal,
       clipBehavior: Clip.none,
-      padding: const EdgeInsets.fromLTRB(0, 12, 70, 22),
+      padding: const EdgeInsets.fromLTRB(0, 8, 70, 16),
       itemBuilder: (context, index) {
         final videoInfo = recommends[index];
         final edgeShakeKey = _recommendEdgeShakeKeyFor(index);
@@ -702,6 +723,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               onArrowRight: isLastItem
                   ? () => _handleRecommendEdge(index, AxisDirection.right)
                   : null,
+              onArrowUp: _moveRecommendFocusToUpperWordSection,
+              onArrowDown: _keepRecommendFocusOnArrowDown,
             ),
           ),
         );
@@ -740,6 +763,26 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _handleRecommendEdge(index, AxisDirection.left);
   }
 
+  /// 让推荐区向上优先回到热词区，再回退到搜索历史区。
+  ///
+  /// 这样可以避免搜索历史最近拿过焦点后，推荐区上移直接跳错到历史区。
+  void _moveRecommendFocusToUpperWordSection() {
+    final movedToHotWords = TvFocusable.requestRememberedFocusForGroup(
+      _hotWordFocusMemoryGroupKey,
+    );
+    if (movedToHotWords) {
+      return;
+    }
+    TvFocusable.requestRememberedFocusForGroup(
+      _historyWordFocusMemoryGroupKey,
+    );
+  }
+
+  /// 吞掉推荐区下方向键，避免焦点掉出影片推荐列表。
+  ///
+  /// 搜索页推荐区是右侧内容末端，继续按下键应保持当前卡片不动。
+  void _keepRecommendFocusOnArrowDown() {}
+
   /// 优先露出推荐列表首尾安全留白，再触发边界抖动。
   bool _revealRecommendScrollableEdge(AxisDirection direction) {
     if (!_recommendScrollController.hasClients) {
@@ -772,6 +815,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required String emptyText,
     required FocusNode firstItemFocusNode,
     required bool autofocusFirstItem,
+    required Object focusMemoryGroupKey,
     required ValueChanged<BuildContext> onItemFocus,
     VoidCallback? onClearPressed,
     VoidCallback? onLastRowArrowDown,
@@ -786,18 +830,18 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             Text(
               title,
               style: FontUtils.poppins(
-                fontSize: 28,
+                fontSize: 24,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
               ),
             ),
             if (onClearPressed != null) ...[
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               _buildHistoryClearButton(onClearPressed),
             ],
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         if (words.isEmpty)
           _buildEmptyWords(emptyText)
         else
@@ -820,6 +864,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                   words[index],
                   focusNode: index == 0 ? firstItemFocusNode : null,
                   autofocus: autofocusFirstItem && index == 0,
+                  focusMemoryGroupKey: focusMemoryGroupKey,
                   onArrowRight: isRightEdge ? _keepFocusAtRightEdge : null,
                   onArrowDown: isLastRow ? onLastRowArrowDown : null,
                   onFocus: () => onItemFocus(tileContext),
@@ -872,6 +917,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     String word, {
     FocusNode? focusNode,
     required bool autofocus,
+    required Object focusMemoryGroupKey,
     VoidCallback? onArrowRight,
     VoidCallback? onArrowDown,
     VoidCallback? onFocus,
@@ -879,8 +925,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     return TvFocusable(
       focusNode: focusNode,
       autofocus: autofocus,
-      directionalRepeatThrottleGroupKey: 'tv-search-word-tiles',
-      focusMemoryGroupKey: 'tv-search-word-tiles',
+      directionalRepeatThrottleGroupKey: _wordTileDirectionalThrottleGroupKey,
+      focusMemoryGroupKey: focusMemoryGroupKey,
       onArrowRight: onArrowRight,
       onArrowDown: onArrowDown,
       onFocusChanged: (hasFocus) {
@@ -907,7 +953,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: FontUtils.poppins(
-              fontSize: 19,
+              fontSize: 17,
               fontWeight: FontWeight.w800,
               color: Colors.white,
             ),
@@ -1062,8 +1108,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   void _openVideo(VideoInfo videoInfo) {
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            TvVideoDetailScreen(videoInfo: videoInfo),
+        pageBuilder: (routeContext, animation, secondaryAnimation) =>
+            TvTheme.wrapScope(
+          context: context,
+          child: TvVideoDetailScreen(videoInfo: videoInfo),
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

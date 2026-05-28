@@ -10,6 +10,7 @@ import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
+import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
 void main() {
@@ -1695,6 +1696,59 @@ void main() {
 
     expect(find.text('继续观看'), findsOneWidget);
     expect(find.text('长按删除'), findsOneWidget);
+  });
+
+  testWidgets('continue hint matches category hint font size and vertical slot',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TvHomeSection(
+                title: '继续观看',
+                titleHint: '长按删除',
+                videos: [_videoInfo('continue_1', '继续观看影片')],
+              ),
+              const Expanded(
+                child: TvVideoGrid(
+                  title: '电影',
+                  titleHint: '按确认键打开分类筛选',
+                  videos: [],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final continueHintText = tester.widget<Text>(find.text('长按删除'));
+    final categoryHintText = tester.widget<Text>(
+      find.byKey(const ValueKey('tv-video-grid-title-hint')),
+    );
+    final continueTitleBottom =
+        tester.getBottomLeft(find.text('继续观看')).dy;
+    final continueHintBottom = tester.getBottomLeft(find.text('长按删除')).dy;
+    final categoryTitleBottom = tester.getBottomLeft(find.text('电影')).dy;
+    final categoryHintBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('tv-video-grid-title-hint')))
+        .dy;
+
+    // 首页“继续观看”和分类页提示需要共用同一字号，避免右侧提示观感不一致。
+    expect(
+      continueHintText.style?.fontSize,
+      categoryHintText.style?.fontSize,
+    );
+    // 两类标题右侧提示都要落在同一时间槽位，保持标题行上下对齐手感一致。
+    expect(
+      categoryTitleBottom - categoryHintBottom,
+      closeTo(continueTitleBottom - continueHintBottom, 0.1),
+    );
   });
 
   testWidgets('continue watching card long press deletes current item',

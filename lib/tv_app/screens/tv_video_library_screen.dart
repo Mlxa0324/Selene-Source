@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
@@ -113,7 +114,11 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
         TvVideoDetailScreen(videoInfo: videoInfo);
     final shouldRefresh = await Navigator.of(context).push<bool>(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => detailPage,
+        pageBuilder: (routeContext, animation, secondaryAnimation) =>
+            TvTheme.wrapScope(
+          context: context,
+          child: detailPage,
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

@@ -62,12 +62,18 @@ typedef TvDetailPlayerBuilder = Widget Function(
   void Function(VideoPlayerWidgetController controller) onControllerCreated,
 );
 
+/// TV 详情页自动去广告开关读取函数。
+typedef TvDetailAdFilterLoader = Future<bool> Function();
+
 /// TV 详情页测试钩子。
 ///
 /// 仅测试场景使用，用于在占位播放器下模拟“视频播放完成”这类播放器事件。
 class TvVideoDetailScreenTestHooks {
   /// 视频播放完成回调。
   VoidCallback? onVideoCompleted;
+
+  /// 默认播放器构建前最终使用的自动去广告开关。
+  ValueChanged<bool>? onAdFilterResolved;
 }
 
 /// TV 详情页聚合数据。
@@ -104,6 +110,7 @@ class TvVideoDetailScreen extends StatefulWidget {
     this.loadRecommends,
     this.playerBuilder,
     this.fullscreenPlayerBuilder,
+    this.loadAdFilterEnabled,
     this.testHooks,
   });
 
@@ -130,6 +137,9 @@ class TvVideoDetailScreen extends StatefulWidget {
 
   /// 全屏播放器构建函数，测试时可替换。
   final TvFullscreenPlayerBuilder? fullscreenPlayerBuilder;
+
+  /// 自动去广告开关读取函数，测试时可注入。
+  final TvDetailAdFilterLoader? loadAdFilterEnabled;
 
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvVideoDetailScreenTestHooks? testHooks;
@@ -447,6 +457,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 详情页小播放器是否正在加载当前视频。
   bool _previewPlayerLoading = false;
 
+  /// 是否已完成自动去广告偏好加载。
+  bool _adFilterPreferenceLoaded = false;
+
+  /// 当前自动去广告开关状态。
+  bool _adFilterEnabled = true;
+
   /// 当前是否收藏。
   bool _isFavorite = false;
 
@@ -563,6 +579,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     });
     _startDetailLoading();
     _loadFavoriteState();
+    _loadAdFilterPreference();
   }
 
   @override
@@ -580,6 +597,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
     _clockTimer?.cancel();
     _previewLoadingHoldTimer?.cancel();
+    // 路由销毁前兜底保存一次进度，避免返回过快时错过定时节流窗口。
+    _saveProgress(force: true, scene: '详情页销毁');
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
     _playerController?.dispose();
     _playerFocusNode.dispose();
@@ -666,6 +685,19 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (mounted) {
       setState(() => _isFavorite = isFavorite);
     }
+  }
+
+  /// 加载 TV 详情页自动去广告偏好。
+  Future<void> _loadAdFilterPreference() async {
+    final loader = widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
+    final adFilterEnabled = await loader();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _adFilterEnabled = adFilterEnabled;
+      _adFilterPreferenceLoaded = true;
+    });
   }
 
   /// 使用旧聚合加载函数加载详情。
@@ -1070,14 +1102,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
-    _saveProgress(scene: '定时保存');
+    unawaited(_saveProgress(scene: '定时保存'));
     if (_playerController?.isPlaying == false) {
       _schedulePreviewChromeRefresh();
     }
   }
 
   /// 保存当前播放进度。
-  void _saveProgress({bool force = false, required String scene}) {
+  Future<void> _saveProgress({bool force = false, required String scene}) async {
     final detail = _currentDetail;
     final controller = _playerController;
     if (detail == null || controller == null) {
@@ -1113,13 +1145,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       totalTime: duration.inSeconds,
     );
 
-    unawaited(
-      TvPlayRecordService.saveRecord(context, playRecord).then((saved) {
-        if (!saved) {
-          debugPrint('TV 保存播放进度失败 [场景: $scene]');
-        }
-      }),
+    final saved = await TvPlayRecordService.saveRecordAndCleanupOtherSources(
+      context: context,
+      playRecord: playRecord,
+      keepSource: detail,
+      videoInfo: widget.videoInfo,
     );
+    if (!saved) {
+      debugPrint('TV 保存播放进度失败 [场景: $scene]');
+    }
   }
 
   /// 保存换源后的新播放记录，成功后再清理旧源记录。
@@ -1144,7 +1178,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _lastSaveTime = DateTime.now();
     _lastSavePosition = playTime;
 
-    final saved = await TvPlayRecordService.saveRecord(context, playRecord);
+    final saved = await TvPlayRecordService.saveRecordAndCleanupOtherSources(
+      context: context,
+      playRecord: playRecord,
+      keepSource: source,
+      videoInfo: widget.videoInfo,
+    );
     if (!saved) {
       debugPrint('TV 换源记录保护：新记录保存失败，跳过旧记录清理');
       return;
@@ -1157,12 +1196,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       debugPrint('TV 换源记录保护：切源任务已过期，跳过旧记录清理');
       return;
     }
-
-    await TvPlayRecordService.cleanupOtherSourceRecords(
-      context: context,
-      keepSource: source,
-      searchTitle: TvPlayRecordService.resolveSearchTitle(widget.videoInfo),
-    );
   }
 
   /// 播放当前选集。
@@ -1204,8 +1237,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     final switchSerial = ++_sourceSwitchRecordSerial;
+    final currentPlaybackPosition = _playerController?.currentPosition;
     final currentProgress =
-        _playerController?.currentPosition?.inSeconds ?? _lastSavePosition ?? 0;
+        currentPlaybackPosition?.inSeconds ?? _lastSavePosition ?? 0;
     final currentTotalTime =
         _playerController?.duration?.inSeconds ?? widget.videoInfo.totalTime;
     final currentEpisode = _episodeIndex;
@@ -1216,8 +1250,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           source.episodes.isEmpty ? 0 : source.episodes.length - 1;
       _episodeIndex = currentEpisode.clamp(0, maxEpisodeIndex).toInt();
       _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
-      _pendingInitialPlaybackPosition = null;
-      _hasAppliedInitialPlaybackPosition = true;
+      _pendingInitialPlaybackPosition =
+          currentPlaybackPosition != null &&
+              currentPlaybackPosition > Duration.zero
+          ? currentPlaybackPosition
+          : null;
+      _hasAppliedInitialPlaybackPosition =
+          _pendingInitialPlaybackPosition == null;
       _lastRequestedPlaybackUrl = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1257,14 +1296,20 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (!mounted) {
       return;
     }
+    final currentPlaybackPosition = _playerController?.currentPosition;
     setState(() {
       _currentDetail = source;
       final maxEpisodeIndex =
           source.episodes.isEmpty ? 0 : source.episodes.length - 1;
       _episodeIndex = _episodeIndex.clamp(0, maxEpisodeIndex).toInt();
       _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
-      _pendingInitialPlaybackPosition = null;
-      _hasAppliedInitialPlaybackPosition = true;
+      _pendingInitialPlaybackPosition =
+          currentPlaybackPosition != null &&
+              currentPlaybackPosition > Duration.zero
+          ? currentPlaybackPosition
+          : null;
+      _hasAppliedInitialPlaybackPosition =
+          _pendingInitialPlaybackPosition == null;
       _lastRequestedPlaybackUrl = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1279,7 +1324,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 按指定场景切换选集。
   void _switchEpisodeWithScene(int index, {required String scene}) {
-    _saveProgress(force: true, scene: scene);
+    unawaited(_saveProgress(force: true, scene: scene));
     setState(() {
       _episodeIndex = index;
       _episodeGroupIndex = index ~/ _episodeGroupSize;
@@ -2411,6 +2456,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _consumeFullscreenOverlayBack = false;
       return true;
     }
+    // 真正离开详情页前强制保存当前进度，保持与普通端返回语义一致。
+    await _saveProgress(force: true, scene: '详情页返回');
+    if (!mounted) {
+      return true;
+    }
     Navigator.of(context).pop(true);
     return true;
   }
@@ -2464,8 +2514,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _openSearch() {
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const TvSearchScreen(),
+        pageBuilder: (routeContext, animation, secondaryAnimation) =>
+            TvTheme.wrapScope(
+          context: context,
+          child: const TvSearchScreen(),
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
@@ -2966,6 +3019,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     void Function(VideoPlayerWidgetController controller)?
         onControllerCreatedOverride,
   }) {
+    if (!_adFilterPreferenceLoaded) {
+      return const ColoredBox(color: Colors.black);
+    }
+
+    widget.testHooks?.onAdFilterResolved?.call(_adFilterEnabled);
+
     void controllerCreated(VideoPlayerWidgetController controller) {
       _attachPlayerController(controller);
       if (onControllerCreatedOverride != null) {
@@ -2992,6 +3051,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             sourceName: detail?.sourceName ?? widget.videoInfo.sourceName,
             showControls: false,
             enablePip: false,
+            adFilterEnabled: _adFilterEnabled,
             onControllerCreated: controllerCreated,
             onFullscreenChanged: (_) {},
             onReady: _finishPreviewPlayerLoading,
@@ -3353,10 +3413,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                         onPressed: () {
                           Navigator.of(context).pushReplacement(
                             PageRouteBuilder(
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) =>
-                                      TvVideoDetailScreen(
-                                videoInfo: videoInfo,
+                              pageBuilder: (routeContext, animation,
+                                      secondaryAnimation) =>
+                                  TvTheme.wrapScope(
+                                context: context,
+                                child: TvVideoDetailScreen(
+                                  videoInfo: videoInfo,
+                                ),
                               ),
                               transitionDuration: Duration.zero,
                               reverseTransitionDuration: Duration.zero,

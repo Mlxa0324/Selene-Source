@@ -5,6 +5,7 @@ import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
+import 'package:selene/tv_app/widgets/tv_section_title.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
 
@@ -355,33 +356,9 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
             padding: const EdgeInsets.symmetric(
               horizontal: TvLayout.pageHorizontalPadding,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  widget.title,
-                  style: FontUtils.poppins(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-                if (widget.titleHint?.isNotEmpty == true) ...[
-                  const SizedBox(width: 14),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text(
-                      widget.titleHint!,
-                      style: FontUtils.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF7F858F),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+            child: TvSectionTitle(
+              title: widget.title,
+              titleHint: widget.titleHint,
             ),
           ),
           const SizedBox(height: 12),
