@@ -270,6 +270,40 @@ void main() {
     expect(find.text('热门综艺'), findsOneWidget);
   });
 
+  testWidgets(
+      'home sections render independently while another section is still loading',
+      (tester) async {
+    final hotMoviesCompleter = Completer<List<VideoInfo>>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomePlayRecords: (_) async => [_videoInfo('continue_1', '继续 1')],
+          loadHomeHotMovies: (_) => hotMoviesCompleter.future,
+          loadHomeHotTvShows: (_) async => [_videoInfo('series_1', '剧集 1')],
+          loadHomeBangumiCalendar: (_) async => const <VideoInfo>[],
+          loadHomeHotShows: (_) async => const <VideoInfo>[],
+          loadHomeFavorites: (_) async => const <VideoInfo>[],
+        ),
+      ),
+    );
+
+    // 热门电影仍在加载时，已完成的其它分区应该先显示真实内容，
+    // 不能因为单个分区 pending 就把整页继续挂在骨架屏上。
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('继续 1'), findsOneWidget);
+    expect(find.text('剧集 1'), findsOneWidget);
+    expect(find.text('热门电影 1'), findsNothing);
+    expect(find.byKey(const ValueKey('tv-home-loading-card')), findsWidgets);
+
+    hotMoviesCompleter.complete([_videoInfo('movie_1', '热门电影 1')]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('热门电影 1'), findsOneWidget);
+  });
+
   testWidgets('home top nav down restores remembered continue watching card',
       (tester) async {
     await tester.pumpWidget(
@@ -373,7 +407,8 @@ void main() {
     expect(_focusNodeForVideoCard(tester, 'series_3').hasFocus, isTrue);
   });
 
-  testWidgets('home top nav down initially focuses first item in first non empty section',
+  testWidgets(
+      'home top nav down initially focuses first item in first non empty section',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -412,7 +447,8 @@ void main() {
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
   });
 
-  testWidgets('home top nav down restores remembered focus after first manual browse',
+  testWidgets(
+      'home top nav down restores remembered focus after first manual browse',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -613,26 +649,30 @@ void main() {
     expect(find.text('TV 播放历史页已打开'), findsOneWidget);
   });
 
-  testWidgets('history page return refreshes home continue watching data',
+  testWidgets(
+      'history page return refreshes continue watching without reloading home sections',
       (tester) async {
-    var loadCount = 0;
+    var homeLoadCount = 0;
+    var continueWatchingLoadCount = 0;
 
     await tester.pumpWidget(
       MaterialApp(
         home: TvHomeScreen(
           loadHomeData: (_) async {
-            loadCount++;
+            homeLoadCount++;
             return TvHomeData(
-              continueWatching: [
-                _videoInfo('continue_$loadCount', '继续 $loadCount'),
-              ],
-              hotMovies: const [],
+              continueWatching: [_videoInfo('continue_1', '继续 1')],
+              hotMovies: [_videoInfo('movie_1', '热门电影 1')],
               hotTvShows: const [],
               bangumiCalendar: const [],
               hotShows: const [],
-              history: const [],
+              history: [_videoInfo('continue_1', '继续 1')],
               favorites: const [],
             );
+          },
+          loadContinueWatching: (_) async {
+            continueWatchingLoadCount++;
+            return [_videoInfo('continue_2', '继续 2')];
           },
           buildHistoryPage: () => TvHistoryScreen(
             loadVideos: (_) async => [
@@ -645,13 +685,17 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.text('继续 1'), findsOneWidget);
+    expect(find.text('热门电影 1'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-history')));
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    expect(loadCount, 2);
+    expect(homeLoadCount, 1);
+    expect(continueWatchingLoadCount, 1);
+    expect(find.text('热门电影 1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-home-loading-card')), findsNothing);
     expect(find.text('继续 2'), findsOneWidget);
   });
 
@@ -1781,8 +1825,68 @@ void main() {
     expect(find.text('TV 详情页已打开'), findsOneWidget);
   });
 
-  testWidgets('continue watching shows long press delete hint',
+  testWidgets(
+      'detail page return refreshes continue watching without reloading hot sections',
       (tester) async {
+    var homeLoadCount = 0;
+    var continueWatchingLoadCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async {
+            homeLoadCount++;
+            return TvHomeData(
+              continueWatching: [_videoInfo('continue_1', '继续 1')],
+              hotMovies: [_videoInfo('movie_1', '热门电影 1')],
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: [_videoInfo('continue_1', '继续 1')],
+              favorites: const [],
+            );
+          },
+          loadContinueWatching: (_) async {
+            continueWatchingLoadCount++;
+            return [_videoInfo('continue_2', '继续 2')];
+          },
+          buildDetailPage: (_, __) => Builder(
+            builder: (context) {
+              return Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('返回首页'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('继续 1'), findsOneWidget);
+    expect(find.text('热门电影 1'), findsOneWidget);
+
+    await tester.tap(find.text('继续 1'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('返回首页'), findsOneWidget);
+    await tester.tap(find.text('返回首页'));
+    await tester.pumpAndSettle();
+
+    expect(homeLoadCount, 1);
+    expect(continueWatchingLoadCount, 1);
+    expect(find.text('热门电影 1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-home-loading-card')), findsNothing);
+    expect(find.text('继续 2'), findsOneWidget);
+    expect(find.text('继续 1'), findsNothing);
+    expect(find.text('热门电影 1'), findsOneWidget);
+  });
+
+  testWidgets('continue watching shows long press delete hint', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: TvHomeScreen(
@@ -1838,8 +1942,7 @@ void main() {
     final categoryHintText = tester.widget<Text>(
       find.byKey(const ValueKey('tv-video-grid-title-hint')),
     );
-    final continueTitleBottom =
-        tester.getBottomLeft(find.text('继续观看')).dy;
+    final continueTitleBottom = tester.getBottomLeft(find.text('继续观看')).dy;
     final continueHintBottom = tester.getBottomLeft(find.text('长按删除')).dy;
     final categoryTitleBottom = tester.getBottomLeft(find.text('电影')).dy;
     final categoryHintBottom = tester
@@ -1881,7 +1984,8 @@ void main() {
             records = records
                 .where(
                   (item) =>
-                      item.source != videoInfo.source || item.id != videoInfo.id,
+                      item.source != videoInfo.source ||
+                      item.id != videoInfo.id,
                 )
                 .toList();
             return true;
@@ -1954,7 +2058,8 @@ void main() {
             records = records
                 .where(
                   (item) =>
-                      item.source != videoInfo.source || item.id != videoInfo.id,
+                      item.source != videoInfo.source ||
+                      item.id != videoInfo.id,
                 )
                 .toList();
             return true;
@@ -2315,7 +2420,8 @@ String? _focusedChipLabelInRow(WidgetTester tester, String rowTitle) {
     final focusFinder = find.ancestor(
       of: chipFinder.first,
       matching: find.byWidgetPredicate(
-        (widget) => widget is Focus && widget.focusNode?.hasPrimaryFocus == true,
+        (widget) =>
+            widget is Focus && widget.focusNode?.hasPrimaryFocus == true,
       ),
     );
     if (focusFinder.evaluate().isNotEmpty) {

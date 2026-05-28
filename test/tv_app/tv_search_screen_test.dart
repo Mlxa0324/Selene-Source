@@ -316,6 +316,38 @@ void main() {
     expect(decoration.border, isNull);
   });
 
+  testWidgets('aligns suggestion content with recommendation section',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const [],
+            recommends: [_videoInfo('recommend_1', '世界的主人')],
+          ),
+          loadSuggestions: (_) async => const ['开始推理吧', '开心锤锤'],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('K'));
+    await tester.pumpAndSettle();
+
+    final suggestionTitleLeft = tester.getTopLeft(find.text('联想结果')).dx;
+    final suggestionTileLeft = tester
+        .getTopLeft(
+          find.byKey(const ValueKey('tv-search-suggestion-tile-开始推理吧')),
+        )
+        .dx;
+    final recommendTitleLeft = tester.getTopLeft(find.text('影片推荐')).dx;
+
+    expect(suggestionTitleLeft, recommendTitleLeft);
+    expect(suggestionTileLeft, recommendTitleLeft);
+  });
+
   testWidgets('pressing a suggestion starts search and shows result grid',
       (tester) async {
     final searchedQueries = <String>[];
@@ -370,6 +402,13 @@ void main() {
     expect(find.text('共：1个影片'), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tv-search-suggestion-panel')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-search-input')),
+        matching: find.text('世界的主人'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('pressing history item starts search with confirm keys',
@@ -534,6 +573,45 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(suggestionFocusNode.hasFocus, isTrue);
+  });
+
+  testWidgets('suggestion focus down returns to remembered recommendation tile',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const [],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+            ],
+          ),
+          loadSuggestions: (_) async => const ['世界的主人', '时间的证人'],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('S'));
+    await tester.pumpAndSettle();
+
+    final rememberedRecommendFocusNode = _focusNodeForText(tester, '推荐 2');
+    rememberedRecommendFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(rememberedRecommendFocusNode.hasFocus, isTrue);
+
+    final suggestionFocusNode = _focusNodeForText(tester, '时间的证人');
+    suggestionFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(suggestionFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(rememberedRecommendFocusNode.hasFocus, isTrue);
   });
 
   testWidgets('search results aggregate duplicated titles into one card',
@@ -770,6 +848,55 @@ void main() {
         .dx;
 
     expect(headerLeft, firstCardLeft);
+  });
+
+  testWidgets('keeps search home content aligned with search result content',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['庆余年'],
+            hotWords: const [],
+            recommends: [_videoInfo('recommend_1', '世界的主人')],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResults: (_) async => <SearchResult>[
+            SearchResult(
+              id: 'video_1',
+              title: '剑来',
+              poster: '',
+              episodes: const ['episode-1'],
+              episodesTitles: const ['第1集'],
+              source: 'source_a',
+              sourceName: '源A',
+              year: '2025',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final searchHomeSectionLeft = tester.getTopLeft(find.text('搜索历史')).dx;
+    final searchHomeRecommendCardLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
+        .dx;
+
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await tester.pumpAndSettle();
+
+    final searchResultHeaderLeft = tester.getTopLeft(find.text('搜索结果')).dx;
+    final searchResultCardLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-video_1')))
+        .dx;
+
+    expect(searchHomeSectionLeft, searchResultHeaderLeft);
+    expect(searchHomeRecommendCardLeft, searchResultCardLeft);
   });
 
   testWidgets('pins search result header above result grid content',
@@ -1246,7 +1373,47 @@ void main() {
     expect(lastHotWordFocusNode.hasFocus, isFalse);
   });
 
-  testWidgets('last history item moves focus down to first recommendation card',
+  testWidgets('last history item moves focus down to remembered recommendation card',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: ['历史1', '历史2', '历史3', '历史4'],
+            hotWords: const [],
+            recommends: [
+              _videoInfo('recommend_1', '推荐 1'),
+              _videoInfo('recommend_2', '推荐 2'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final historyFocusNode = _focusNodeForText(tester, '历史4');
+    historyFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(historyFocusNode.hasFocus, isTrue);
+
+    final rememberedRecommendFocusNode = _focusNodeForText(tester, '推荐 2');
+    rememberedRecommendFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(rememberedRecommendFocusNode.hasFocus, isTrue);
+
+    historyFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(historyFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(rememberedRecommendFocusNode.hasFocus, isTrue);
+    expect(_focusNodeForText(tester, 'A').hasFocus, isFalse);
+  });
+
+  testWidgets('last history item falls back to first recommendation card',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -1274,7 +1441,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_focusNodeForText(tester, '推荐 1').hasFocus, isTrue);
-    expect(_focusNodeForText(tester, 'A').hasFocus, isFalse);
   });
 
   testWidgets(
@@ -1850,6 +2016,37 @@ void main() {
     );
   });
 
+  testWidgets('recommendation list masks the leading gutter while scrolling',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['历史1'],
+            hotWords: const [],
+            recommends: List<VideoInfo>.generate(
+              10,
+              (index) => _videoInfo('recommend_$index', '推荐$index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final thirdCardFocusNode = _focusNodeForText(tester, '推荐2');
+    thirdCardFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final leadingMaskFinder =
+        find.byKey(const ValueKey('tv-search-recommend-leading-mask'));
+    final leadingMaskRect = tester.getRect(leadingMaskFinder);
+
+    expect(leadingMaskFinder, findsOneWidget);
+    expect(leadingMaskRect.width, 24);
+  });
+
   testWidgets('places search panels closer to top on first screen',
       (tester) async {
     await tester.pumpWidget(
@@ -1987,7 +2184,7 @@ void main() {
     expect(historyDelegate.crossAxisSpacing, 16);
     expect(historyDelegate.mainAxisSpacing, 14);
     expect(historyTileText.style?.fontSize, 17);
-    expect(recommendList.padding, const EdgeInsets.fromLTRB(40, 12, 110, 18));
+    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 118, 18));
     expect(recommendList.clipBehavior, Clip.hardEdge);
   });
 
@@ -2206,6 +2403,68 @@ void main() {
     expect(find.byKey(const ValueKey('tv-search-screen')), findsOneWidget);
     expect(find.text('联想结果'), findsNothing);
     expect(find.text('搜索历史'), findsOneWidget);
+  });
+
+  testWidgets('escape returns search results back to previous suggestion page',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['庆余年'],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['蜡笔小新', '拉布拉多警长'],
+          loadSearchResults: (query) async => [
+            SearchResult(
+              id: 'result_$query',
+              title: query,
+              poster: '',
+              url: 'https://example.com/$query',
+              episodesTitles: const [],
+              source: 'source_a',
+              sourceName: '源 A',
+              year: '2024',
+              doubanId: 1,
+              episodes: const [],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('L'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-拉布拉多警长')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('搜索结果'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-search-input')),
+        matching: find.text('拉布拉多警长'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('联想结果'), findsOneWidget);
+    expect(find.text('搜索结果'), findsNothing);
+    expect(find.text('拉布拉多警长'), findsOneWidget);
+    expect(find.text('蜡笔小新'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-search-input')),
+        matching: find.text('L'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('escape pops TV search page without waiting for extra frame',

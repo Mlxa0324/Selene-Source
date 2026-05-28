@@ -3036,6 +3036,73 @@ void main() {
     expect(find.text('打开详情页'), findsNothing);
   });
 
+  testWidgets(
+      'closing shared fullscreen overlay returns detail to top player focus',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 40,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 40),
+            ],
+            recommends: [
+              _videoInfo('recommend_1', '推荐影片'),
+            ],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: null,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final controller = _detailScrollController(tester);
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(0));
+
+    Focus.of(tester
+            .element(find.byKey(const ValueKey('tv-detail-player-entry'))))
+        .requestFocus();
+    await tester.pumpAndSettle();
+    expect(
+      Focus.of(tester
+              .element(find.byKey(const ValueKey('tv-detail-player-entry'))))
+          .hasFocus,
+      isTrue,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tv-fullscreen-player')), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-player')), findsNothing);
+    expect(controller.offset, 0);
+    expect(
+      Focus.of(tester
+              .element(find.byKey(const ValueKey('tv-detail-player-entry'))))
+          .hasFocus,
+      isTrue,
+    );
+  });
+
   testWidgets('resumes continue watching episode and playback position',
       (tester) async {
     await _setTvSurfaceSize(tester);

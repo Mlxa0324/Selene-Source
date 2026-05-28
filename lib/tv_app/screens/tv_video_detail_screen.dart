@@ -2454,7 +2454,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _playerFocusNode.requestFocus();
+        _scrollToTopAndFocusPlayer();
       }
     });
   }

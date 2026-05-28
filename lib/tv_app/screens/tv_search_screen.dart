@@ -260,16 +260,16 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 右侧默认内容区统一左侧起点。
   ///
-  /// 搜索历史、联想结果和影片推荐都按这条线对齐，
-  /// 避免标题、文字词条和推荐海报各自从不同位置起步显得散乱。
+  /// 搜索主页和搜索结果页共用同一条起始线，
+  /// 避免左右两栏之间的视觉间隙在不同状态下忽大忽小。
   static const double _rightPanelContentLeftInset =
-      _recommendListHorizontalSafePadding;
+      _searchResultContentLeftInset;
 
   /// 搜索结果固定头部高度。
   ///
   /// 结果区标题、聚合数量和资源站进度统一占据这一行高度，
   /// 下方列表只在剩余区域滚动，避免标题被滚动内容覆盖。
-  static const double _searchResultHeaderHeight = 40;
+  static const double _searchResultHeaderHeight = 50;
 
   /// 搜索结果头部向上延展的遮罩高度。
   ///
@@ -280,16 +280,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索结果头部与列表之间的垂直间距。
   static const double _searchResultHeaderBottomSpacing = 16;
 
-  /// 推荐横向列表左右焦点安全留白。
-  ///
-  /// 搜索页右侧需要把推荐卡片裁剪在内容区内，同时给获焦放大预留基础留白。
-  static const double _recommendListHorizontalSafePadding = 10;
-
   /// 推荐横向列表卡片间距。
   ///
   /// 推荐区需要和实际 `ListView.separated` 的卡片间距保持同一份常量，
   /// 这样滚动锚点换算出来的位置才不会和真实视觉卡位产生偏差。
   static const double _recommendCardSpacing = 24;
+
+  /// 推荐横向列表左侧露头遮罩宽度。
+  ///
+  /// 当前卡片固定停在第 2 个卡位时，前一张卡片会在最左边露出一小截。
+  /// 这里用一条和页面背景同色的遮罩把这段切掉，保持左边缘干净。
+  static const double _recommendLeadingMaskWidth =
+      _rightPanelContentLeftInset > _recommendCardSpacing
+          ? _rightPanelContentLeftInset - _recommendCardSpacing
+          : 0;
 
   /// 推荐横向列表滚动锚点卡位。
   ///
@@ -328,6 +332,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   static const Object _suggestionFocusMemoryGroupKey =
       'tv-search-suggestion-tiles';
 
+  /// 右下推荐区焦点记忆分组。
+  ///
+  /// 搜索历史、热词和联想词再次向下进入推荐区时，应尽量回到上次离开的位置。
+  static const Object _recommendFocusMemoryGroupKey =
+      'tv-search-recommend-list';
+
   /// 右侧纯文字词条方向键长按节流分组。
   ///
   /// 搜索历史和热词需要共用逐项节流，避免长按时直接跳过中间获焦态。
@@ -345,8 +355,19 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 当前搜索输入内容。
   String _query = '';
 
+  /// 从联想页进入搜索结果前的原始输入串。
+  ///
+  /// 命中联想词后，结果页左侧需要显示完整片名；
+  /// 但按返回回退时，还要恢复成原来的首字母输入串，方便继续挑其它联想词。
+  String? _suggestionQueryBeforeSearch;
+
   /// 当前联想结果列表。
   List<String> _suggestions = <String>[];
+
+  /// 从联想页进入搜索结果前的联想词快照。
+  ///
+  /// 返回结果页上一层时，直接恢复这份快照，避免重新请求联想接口导致闪烁。
+  List<String> _suggestionsBeforeSearch = <String>[];
 
   /// 当前搜索结果列表。
   List<SearchResult> _searchResults = <SearchResult>[];
@@ -555,12 +576,19 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 当右侧正处于联想态或搜索结果态时，先回到搜索主页；
   /// 只有已经回到主页时，才继续执行页面级返回。
   Future<bool> _handleBackPressed() async {
+    if (_shouldShowSearchResultPanel && _canRestoreSuggestionPanel) {
+      _restoreSuggestionPanel();
+      return true;
+    }
     if (_shouldReturnToSearchHomeOnBack) {
       _resetToSearchHome();
       return true;
     }
     return false;
   }
+
+  /// 当前结果页是否可以回退到联想页。
+  bool get _canRestoreSuggestionPanel => _suggestionQueryBeforeSearch != null;
 
   /// 当前返回键是否应该先把右侧恢复为搜索主页。
   bool get _shouldReturnToSearchHomeOnBack {
@@ -575,6 +603,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   ///
   /// 清掉联想词、搜索结果和加载状态，让右侧重新展示搜索历史与影片推荐。
   void _resetToSearchHome() {
+    _invalidateSearchRequests();
     setState(() {
       _query = '';
       _suggestions = <String>[];
@@ -583,6 +612,54 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _searchCompletedResourceCount = 0;
       _isSuggestionLoading = false;
       _isSearchResultLoading = false;
+    });
+    _clearSuggestionSearchContext();
+  }
+
+  /// 让当前联想请求和搜索请求全部失效。
+  ///
+  /// 用户已经切走页面状态后，旧请求回包不应再把右侧内容重新顶回来。
+  void _invalidateSearchRequests() {
+    _suggestionRequestVersion++;
+    _searchRequestVersion++;
+  }
+
+  /// 清理“联想页进入结果页”上下文。
+  void _clearSuggestionSearchContext() {
+    _suggestionQueryBeforeSearch = null;
+    _suggestionsBeforeSearch = <String>[];
+  }
+
+  /// 回退到进入结果页之前的联想页。
+  ///
+  /// 恢复首字母输入串和联想词快照，让用户可直接继续换其它联想结果。
+  void _restoreSuggestionPanel() {
+    final suggestionQuery = _suggestionQueryBeforeSearch;
+    if (suggestionQuery == null) {
+      return;
+    }
+    final suggestionSnapshot = List<String>.from(_suggestionsBeforeSearch);
+    _invalidateSearchRequests();
+    setState(() {
+      _query = suggestionQuery;
+      _suggestions = suggestionSnapshot;
+      _searchResults = <SearchResult>[];
+      _searchTotalResourceCount = 0;
+      _searchCompletedResourceCount = 0;
+      _isSuggestionLoading = false;
+      _isSearchResultLoading = false;
+    });
+    _clearSuggestionSearchContext();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final restored = TvFocusable.requestRememberedFocusForGroup(
+        _suggestionFocusMemoryGroupKey,
+      );
+      if (!restored) {
+        _suggestionFirstFocusNode.requestFocus();
+      }
     });
   }
 
@@ -849,7 +926,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             focusMemoryGroupKey: _historyWordFocusMemoryGroupKey,
             onItemFocus: _ensureRightPanelFocusCentered,
             onLastRowArrowDown: data.recommends.isNotEmpty
-                ? () => _recommendFirstFocusNode.requestFocus()
+                ? _moveWordFocusDownToRecommendations
                 : _keepWordFocusOnArrowDown,
             onClearPressed:
                 data.searchHistory.isEmpty ? null : () => _clearSearchHistory(),
@@ -869,7 +946,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               onItemFocus: _ensureRightPanelFocusCentered,
               onLastRowArrowDown: data.recommends.isEmpty
                   ? _keepWordFocusOnArrowDown
-                  : () => _recommendFirstFocusNode.requestFocus(),
+                  : _moveWordFocusDownToRecommendations,
             ),
           ],
           const SizedBox(height: 34),
@@ -889,6 +966,17 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   ///
   /// 输入首字母后，右侧展示联想词，并在下方保留影片推荐区。
   Widget _buildSuggestionPanel(TvSearchData data, bool isLoading) {
+    final suggestionContent = _isSuggestionLoading
+        ? _buildSuggestionLoading()
+        : _suggestions.isEmpty
+            ? _buildEmptyWords('暂无联想结果')
+            : _buildSuggestionGrid(
+                _suggestions,
+                onLastRowArrowDown: data.recommends.isNotEmpty
+                    ? _moveWordFocusDownToRecommendations
+                    : _keepWordFocusOnArrowDown,
+              );
+
     return SingleChildScrollView(
       controller: _rightPanelScrollController,
       padding: const EdgeInsets.fromLTRB(
@@ -901,26 +989,23 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         key: const ValueKey('tv-search-suggestion-panel'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '联想结果',
-            style: FontUtils.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
+          Padding(
+            padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
+            child: Text(
+              '联想结果',
+              style: FontUtils.poppins(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
             ),
           ),
           const SizedBox(height: 10),
-          if (_isSuggestionLoading)
-            _buildSuggestionLoading()
-          else if (_suggestions.isEmpty)
-            _buildEmptyWords('暂无联想结果')
-          else ...[
-            _buildSuggestionGrid(
-              _suggestions,
-              onLastRowArrowDown: data.recommends.isNotEmpty
-                  ? () => _recommendFirstFocusNode.requestFocus()
-                  : _keepWordFocusOnArrowDown,
-            ),
+          Padding(
+            padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
+            child: suggestionContent,
+          ),
+          if (!_isSuggestionLoading && _suggestions.isNotEmpty) ...[
             const SizedBox(height: 34),
             _buildRecommendationSection(
               data.recommends,
@@ -1115,7 +1200,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           onFocus?.call();
         }
       },
-      onPressed: () => _performSearch(word),
+      onPressed: () => _performSearch(
+        word,
+        preserveSuggestionContext: true,
+      ),
       builder: (context, hasFocus) {
         return AnimatedContainer(
           key: ValueKey('tv-search-suggestion-tile-$word'),
@@ -1231,14 +1319,33 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           height: TvVideoCard.height +
               _recommendListTopSafePadding +
               _recommendListBottomSafePadding,
-          child: ClipRect(
-            child: isLoading
-                ? _buildRecommendationLoadingList()
-                : _buildRecommendationList(
-                    recommends,
-                    firstCardFocusNode: firstCardFocusNode,
-                    autofocusFirstCard: autofocusFirstCard,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: ClipRect(
+                  child: isLoading
+                      ? _buildRecommendationLoadingList()
+                      : _buildRecommendationList(
+                          recommends,
+                          firstCardFocusNode: firstCardFocusNode,
+                          autofocusFirstCard: autofocusFirstCard,
+                        ),
+                ),
+              ),
+              if (_recommendLeadingMaskWidth > 0)
+                const Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: _recommendLeadingMaskWidth,
+                  child: IgnorePointer(
+                    child: ColoredBox(
+                      key: ValueKey('tv-search-recommend-leading-mask'),
+                      color: _pageBackgroundColor,
+                    ),
                   ),
+                ),
+            ],
           ),
         ),
       ],
@@ -1329,7 +1436,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           child: Builder(
             builder: (cardContext) => TvVideoCard(
               videoInfo: videoInfo,
-              focusMemoryGroupKey: 'tv-search-recommend-list',
+              focusMemoryGroupKey: _recommendFocusMemoryGroupKey,
               autoScrollOnFocus: false,
               focusNode: isFirstItem ? firstCardFocusNode : null,
               autofocus: autofocusFirstCard && isFirstItem,
@@ -1487,6 +1594,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 当下方已经没有推荐区或其它合法目标时，继续按下应保持当前词条焦点不变。
   void _keepWordFocusOnArrowDown() {}
 
+  /// 把词条区焦点移动到推荐区。
+  ///
+  /// 搜索历史、热词和联想词再次向下进入推荐区时，优先回到上次离开的推荐卡片；
+  /// 如果当前还没有记忆焦点，再回退到推荐区首张卡片。
+  void _moveWordFocusDownToRecommendations() {
+    final moved = TvFocusable.requestRememberedFocusForGroup(
+      _recommendFocusMemoryGroupKey,
+    );
+    if (moved) {
+      return;
+    }
+    _recommendFirstFocusNode.requestFocus();
+  }
+
   /// 吞掉推荐区下方向键，避免焦点掉出影片推荐列表。
   ///
   /// 搜索页推荐区是右侧内容末端，继续按下键应保持当前卡片不动。
@@ -1557,7 +1678,6 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 10),
         Padding(
           padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
           child: words.isEmpty
@@ -1698,7 +1818,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               _searchResultContentLeftInset,
               0,
               0,
-              0,
+              10,
             ),
             child: Row(
               children: [
@@ -2155,12 +2275,14 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       return;
     }
 
+    _searchRequestVersion++;
     setState(() {
       _query = normalizedQuery;
       _searchResults = <SearchResult>[];
       _searchTotalResourceCount = 0;
       _searchCompletedResourceCount = 0;
       _isSearchResultLoading = false;
+      _clearSuggestionSearchContext();
       if (!_shouldShowSuggestionPanel) {
         _suggestions = <String>[];
         _isSuggestionLoading = false;
@@ -2211,7 +2333,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 执行真正的搜索。
   ///
   /// 联想词确认后立即发起搜索，并让右侧切换成结果 Grid。
-  Future<void> _performSearch(String query) async {
+  Future<void> _performSearch(
+    String query, {
+    bool preserveSuggestionContext = false,
+  }) async {
     final normalizedQuery = query.trim();
     if (normalizedQuery.isEmpty) {
       return;
@@ -2219,6 +2344,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
     final requestVersion = ++_searchRequestVersion;
     setState(() {
+      if (preserveSuggestionContext) {
+        _suggestionQueryBeforeSearch = _query;
+        _suggestionsBeforeSearch = List<String>.from(_suggestions);
+      } else {
+        _clearSuggestionSearchContext();
+      }
       _query = normalizedQuery;
       _suggestions = <String>[];
       _isSuggestionLoading = false;
@@ -2429,7 +2560,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
 
     final moved = TvFocusable.requestRememberedFocusForGroup(
-      'tv-search-recommend-list',
+      _recommendFocusMemoryGroupKey,
     );
     if (moved) {
       return;

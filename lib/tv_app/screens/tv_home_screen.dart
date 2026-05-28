@@ -25,6 +25,20 @@ import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 /// [context] 用于复用现有 service 中的请求上下文。
 typedef TvHomeDataLoader = Future<TvHomeData> Function(BuildContext context);
 
+/// TV 首页单个分区视频列表加载函数。
+///
+/// 返回当前分区已经转换好的卡片数据，页面会自行维护该分区的加载态。
+typedef TvHomeVideoListLoader = Future<List<VideoInfo>> Function(
+  BuildContext context,
+);
+
+/// TV 首页继续观看刷新函数。
+///
+/// 返回当前播放记录快照，页面会自行拆分出“继续观看”和历史列表。
+typedef TvContinueWatchingLoader = Future<List<VideoInfo>> Function(
+  BuildContext context,
+);
+
 /// TV 分类筛选数据加载函数。
 ///
 /// [kind] 表示当前大类，[filters] 保存已确认的筛选项。
@@ -60,6 +74,49 @@ typedef TvContinueWatchingDeleter = Future<bool> Function(
   BuildContext context,
   VideoInfo videoInfo,
 );
+
+/// TV 首页各分区的本地状态键。
+///
+/// 用于把首页聚合数据拆成多个独立请求后的局部状态。
+enum _TvHomeSectionKey {
+  /// 继续观看分区。
+  continueWatching,
+
+  /// 热门电影分区。
+  hotMovies,
+
+  /// 热门剧集分区。
+  hotTvShows,
+
+  /// 新番放送分区。
+  bangumiCalendar,
+
+  /// 热门综艺分区。
+  hotShows,
+
+  /// 播放历史快照。
+  history,
+
+  /// 收藏夹快照。
+  favorites,
+}
+
+/// TV 首页单个分区的本地快照。
+///
+/// 每个分区独立维护自己的数据和骨架屏状态，避免整页共享一个总 loading。
+class _TvHomeSectionSnapshot {
+  /// 创建 TV 首页单个分区快照。
+  const _TvHomeSectionSnapshot({
+    this.videos = const <VideoInfo>[],
+    this.isLoading = true,
+  });
+
+  /// 当前分区已拿到的视频卡片数据。
+  final List<VideoInfo> videos;
+
+  /// 当前分区是否仍在加载。
+  final bool isLoading;
+}
 
 /// TV 首页聚合数据。
 ///
@@ -118,11 +175,19 @@ class TvHomeScreen extends StatefulWidget {
   /// 创建 TV 首页页面。
   ///
   /// [loadHomeData] 可在测试中注入数据加载逻辑。
+  /// [loadContinueWatching] 用于详情页或独立页返回后，只局部刷新继续观看。
   /// [buildDetailPage] 可在测试中替换详情页，生产环境默认打开 TV 详情页。
   /// [buildSearchPage] 可在测试中替换搜索页，生产环境默认打开普通搜索页。
   const TvHomeScreen({
     super.key,
     this.loadHomeData,
+    this.loadHomePlayRecords,
+    this.loadHomeHotMovies,
+    this.loadHomeHotTvShows,
+    this.loadHomeBangumiCalendar,
+    this.loadHomeHotShows,
+    this.loadHomeFavorites,
+    this.loadContinueWatching,
     this.loadCategoryData,
     this.deleteContinueWatchingItem,
     this.buildDetailPage,
@@ -134,6 +199,29 @@ class TvHomeScreen extends StatefulWidget {
 
   /// 首页数据加载函数。
   final TvHomeDataLoader? loadHomeData;
+
+  /// 首页播放记录加载函数。
+  ///
+  /// 返回播放记录原始快照，页面会拆成“继续观看”和历史列表两个分区。
+  final TvContinueWatchingLoader? loadHomePlayRecords;
+
+  /// 首页热门电影分区加载函数。
+  final TvHomeVideoListLoader? loadHomeHotMovies;
+
+  /// 首页热门剧集分区加载函数。
+  final TvHomeVideoListLoader? loadHomeHotTvShows;
+
+  /// 首页新番放送分区加载函数。
+  final TvHomeVideoListLoader? loadHomeBangumiCalendar;
+
+  /// 首页热门综艺分区加载函数。
+  final TvHomeVideoListLoader? loadHomeHotShows;
+
+  /// 首页收藏夹快照加载函数。
+  final TvHomeVideoListLoader? loadHomeFavorites;
+
+  /// 首页继续观看局部刷新函数。
+  final TvContinueWatchingLoader? loadContinueWatching;
 
   /// 分类筛选数据加载函数。
   final TvCategoryDataLoader? loadCategoryData;
@@ -160,17 +248,17 @@ class TvHomeScreen extends StatefulWidget {
   State<TvHomeScreen> createState() => _TvHomeScreenState();
 
   /// 默认首页数据加载逻辑。
+  ///
+  /// 保留聚合加载入口，兼容旧测试注入和需要一次性回填首页的场景。
   static Future<TvHomeData> defaultLoadHomeData(BuildContext context) async {
-    final cacheService = PageCacheService();
-    final continueWatchingFuture =
-        TvVideoLibraryService.loadHistoryDirect(context);
-    final favoritesFuture = TvVideoLibraryService.loadFavorites(context);
-    final hotMoviesFuture = _loadHotMovies(context, cacheService);
-    final hotTvShowsFuture = _loadHotTvShows(context, cacheService);
-    final bangumiCalendarFuture = _loadBangumiCalendar(context);
-    final hotShowsFuture = _loadHotShows(context, cacheService);
+    final playRecordVideosFuture = defaultLoadHomePlayRecords(context);
+    final favoritesFuture = defaultLoadHomeFavorites(context);
+    final hotMoviesFuture = defaultLoadHomeHotMovies(context);
+    final hotTvShowsFuture = defaultLoadHomeHotTvShows(context);
+    final bangumiCalendarFuture = defaultLoadHomeBangumiCalendar(context);
+    final hotShowsFuture = defaultLoadHomeHotShows(context);
 
-    final continueWatching = await continueWatchingFuture;
+    final playRecordVideos = await playRecordVideosFuture;
     final favorites = await favoritesFuture;
     final hotMovies = await hotMoviesFuture;
     final hotTvShows = await hotTvShowsFuture;
@@ -178,16 +266,107 @@ class TvHomeScreen extends StatefulWidget {
     final hotShows = await hotShowsFuture;
 
     return TvHomeData(
-      continueWatching: continueWatching
-          .where((video) => video.source != 'local')
-          .take(20)
-          .toList(),
+      continueWatching: _buildContinueWatchingVideos(playRecordVideos),
       hotMovies: hotMovies.take(20).toList(),
       hotTvShows: hotTvShows.take(20).toList(),
       bangumiCalendar: bangumiCalendar.take(20).toList(),
       hotShows: hotShows.take(20).toList(),
-      history: continueWatching.take(60).toList(),
+      history: _buildHistoryVideos(playRecordVideos),
       favorites: favorites.take(60).toList(),
+    );
+  }
+
+  /// 默认首页播放记录加载逻辑。
+  ///
+  /// 首次进入首页时直接读取播放记录快照，给“继续观看”和历史列表共用。
+  static Future<List<VideoInfo>> defaultLoadHomePlayRecords(
+    BuildContext context,
+  ) {
+    return TvVideoLibraryService.loadHistoryDirect(context);
+  }
+
+  /// 默认首页热门电影分区加载逻辑。
+  static Future<List<VideoInfo>> defaultLoadHomeHotMovies(
+    BuildContext context,
+  ) async {
+    final cacheService = PageCacheService();
+    final videos = await _loadHotMovies(context, cacheService);
+    return videos.take(20).toList();
+  }
+
+  /// 默认首页热门剧集分区加载逻辑。
+  static Future<List<VideoInfo>> defaultLoadHomeHotTvShows(
+    BuildContext context,
+  ) async {
+    final cacheService = PageCacheService();
+    final videos = await _loadHotTvShows(context, cacheService);
+    return videos.take(20).toList();
+  }
+
+  /// 默认首页新番放送分区加载逻辑。
+  static Future<List<VideoInfo>> defaultLoadHomeBangumiCalendar(
+    BuildContext context,
+  ) async {
+    final videos = await _loadBangumiCalendar(context);
+    return videos.take(20).toList();
+  }
+
+  /// 默认首页热门综艺分区加载逻辑。
+  static Future<List<VideoInfo>> defaultLoadHomeHotShows(
+    BuildContext context,
+  ) async {
+    final cacheService = PageCacheService();
+    final videos = await _loadHotShows(context, cacheService);
+    return videos.take(20).toList();
+  }
+
+  /// 默认首页收藏夹快照加载逻辑。
+  static Future<List<VideoInfo>> defaultLoadHomeFavorites(
+    BuildContext context,
+  ) async {
+    final favorites = await TvVideoLibraryService.loadFavorites(context);
+    return favorites.take(60).toList();
+  }
+
+  /// 默认继续观看局部刷新逻辑。
+  ///
+  /// 详情页返回首页时优先复用缓存中的播放记录，避免再次等待首页整页聚合请求。
+  static Future<List<VideoInfo>> defaultLoadContinueWatching(
+    BuildContext context,
+  ) {
+    return TvVideoLibraryService.loadHistory(context);
+  }
+
+  /// 从播放记录里提取首页“继续观看”分区数据。
+  static List<VideoInfo> _buildContinueWatchingVideos(
+    Iterable<VideoInfo> playRecordVideos,
+  ) {
+    return playRecordVideos
+        .where((video) => video.source != 'local')
+        .take(20)
+        .toList();
+  }
+
+  /// 从播放记录里提取首页历史快照。
+  static List<VideoInfo> _buildHistoryVideos(
+    Iterable<VideoInfo> playRecordVideos,
+  ) {
+    return playRecordVideos.take(60).toList();
+  }
+
+  /// 在保留热门分区的前提下，只替换首页播放记录相关数据。
+  static TvHomeData copyWithContinueWatchingRecords({
+    required TvHomeData baseData,
+    required List<VideoInfo> playRecordVideos,
+  }) {
+    return TvHomeData(
+      continueWatching: _buildContinueWatchingVideos(playRecordVideos),
+      hotMovies: baseData.hotMovies,
+      hotTvShows: baseData.hotTvShows,
+      bangumiCalendar: baseData.bangumiCalendar,
+      hotShows: baseData.hotShows,
+      history: _buildHistoryVideos(playRecordVideos),
+      favorites: baseData.favorites,
     );
   }
 
@@ -630,8 +809,23 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       kind: FocusNode(debugLabel: 'tv-category-first-${kind.name}'),
   };
 
-  /// 首页数据加载任务。
-  Future<TvHomeData>? _homeDataFuture;
+  /// 首页数据加载是否已经启动。
+  ///
+  /// `didChangeDependencies` 可能会多次触发，这里只允许首页首轮数据请求启动一次。
+  bool _homeDataLoadStarted = false;
+
+  /// 首页整轮分区加载序号。
+  ///
+  /// 热重载或未来需要主动重刷整页时，可用它丢弃过期分区回包。
+  int _homeDataLoadVersion = 0;
+
+  /// 首页各分区本地快照。
+  ///
+  /// 每个分区独立维护自己的数据和 loading，避免共享整页骨架屏。
+  final Map<_TvHomeSectionKey, _TvHomeSectionSnapshot> _homeSectionSnapshots = {
+    for (final section in _TvHomeSectionKey.values)
+      section: const _TvHomeSectionSnapshot(),
+  };
 
   /// 分类页筛选面板是否已显示。
   bool _categoryFilterVisible = false;
@@ -702,10 +896,15 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 删除继续观看等本地操作优先在这份快照上做局部更新，避免整页重新挂骨架。
   TvHomeData? _lastResolvedHomeData;
 
+  /// 继续观看局部刷新序号。
+  ///
+  /// 详情页或独立列表页返回时只刷新继续观看，旧请求回包不应覆盖更新后的首页快照。
+  int _continueWatchingRefreshVersion = 0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _homeDataFuture ??= _createHomeDataFuture();
+    _ensureHomeDataLoadStarted();
   }
 
   @override
@@ -760,19 +959,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               Expanded(
                 child: ClipRect(
                   key: const ValueKey('tv-home-content-clip'),
-                  child: FutureBuilder<TvHomeData>(
-                    future: _homeDataFuture,
-                    builder: (context, snapshot) {
-                      final data = snapshot.data ?? TvHomeData.empty();
-                      final isLoading =
-                          snapshot.connectionState != ConnectionState.done;
-                      if (snapshot.connectionState == ConnectionState.done) {
-                        _lastResolvedHomeData = data;
-                      }
-
-                      return _buildAnimatedSelectedTab(data, isLoading);
-                    },
-                  ),
+                  child: _buildAnimatedSelectedTab(_buildCurrentHomeData()),
                 ),
               ),
             ],
@@ -780,6 +967,248 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         ),
       ),
     );
+  }
+
+  /// 确保首页首轮数据加载已经启动。
+  void _ensureHomeDataLoadStarted() {
+    if (_homeDataLoadStarted) {
+      return;
+    }
+    _homeDataLoadStarted = true;
+    _loadHomeData();
+  }
+
+  /// 触发首页数据加载。
+  ///
+  /// 生产环境默认拆成多个独立分区请求；只有注入旧版聚合 loader 时，
+  /// 才保留一次性回填全部首页数据的兼容路径。
+  void _loadHomeData() {
+    final loadVersion = ++_homeDataLoadVersion;
+    if (widget.loadHomeData != null) {
+      _loadLegacyHomeData(loadVersion);
+      return;
+    }
+
+    _loadHomeRecordSections(loadVersion);
+    _loadHomeVideoSection(
+      loadVersion,
+      section: _TvHomeSectionKey.hotMovies,
+      loader: widget.loadHomeHotMovies ?? TvHomeScreen.defaultLoadHomeHotMovies,
+    );
+    _loadHomeVideoSection(
+      loadVersion,
+      section: _TvHomeSectionKey.hotTvShows,
+      loader:
+          widget.loadHomeHotTvShows ?? TvHomeScreen.defaultLoadHomeHotTvShows,
+    );
+    _loadHomeVideoSection(
+      loadVersion,
+      section: _TvHomeSectionKey.bangumiCalendar,
+      loader: widget.loadHomeBangumiCalendar ??
+          TvHomeScreen.defaultLoadHomeBangumiCalendar,
+    );
+    _loadHomeVideoSection(
+      loadVersion,
+      section: _TvHomeSectionKey.hotShows,
+      loader: widget.loadHomeHotShows ?? TvHomeScreen.defaultLoadHomeHotShows,
+    );
+    _loadHomeVideoSection(
+      loadVersion,
+      section: _TvHomeSectionKey.favorites,
+      loader: widget.loadHomeFavorites ?? TvHomeScreen.defaultLoadHomeFavorites,
+    );
+  }
+
+  /// 加载旧版聚合首页数据。
+  ///
+  /// 该分支主要用于兼容测试注入的 `loadHomeData`，避免一次改动打散现有用例。
+  Future<void> _loadLegacyHomeData(int loadVersion) async {
+    try {
+      final data =
+          await (widget.loadHomeData ?? TvHomeScreen.defaultLoadHomeData)(
+        context,
+      );
+      if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
+        return;
+      }
+      setState(() => _applyResolvedHomeData(data));
+    } catch (_) {
+      if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
+        return;
+      }
+      // 聚合 loader 失败时整页回退为空态，但必须结束骨架，避免首页永久停留在 loading。
+      setState(() => _applyResolvedHomeData(TvHomeData.empty()));
+    }
+  }
+
+  /// 加载首页播放记录相关分区。
+  ///
+  /// 播放记录会同时驱动“继续观看”和历史快照两个分区，因此要一次回写两份状态。
+  Future<void> _loadHomeRecordSections(int loadVersion) async {
+    final requestVersion = _continueWatchingRefreshVersion;
+    final loader = widget.loadHomePlayRecords ??
+        widget.loadContinueWatching ??
+        TvHomeScreen.defaultLoadHomePlayRecords;
+
+    try {
+      final playRecordVideos = await loader(context);
+      if (!mounted ||
+          !_isCurrentHomeLoadVersion(loadVersion) ||
+          requestVersion != _continueWatchingRefreshVersion) {
+        return;
+      }
+      setState(() {
+        _setHomeSectionSnapshot(
+          _TvHomeSectionKey.continueWatching,
+          TvHomeScreen._buildContinueWatchingVideos(playRecordVideos),
+          isLoading: false,
+        );
+        _setHomeSectionSnapshot(
+          _TvHomeSectionKey.history,
+          TvHomeScreen._buildHistoryVideos(playRecordVideos),
+          isLoading: false,
+        );
+        _syncLastResolvedHomeData();
+      });
+    } catch (_) {
+      if (!mounted ||
+          !_isCurrentHomeLoadVersion(loadVersion) ||
+          requestVersion != _continueWatchingRefreshVersion) {
+        return;
+      }
+      // 记录请求失败时只让对应分区回退为空列表，不能拖累其它热门分区继续显示。
+      setState(() {
+        _setHomeSectionSnapshot(
+          _TvHomeSectionKey.continueWatching,
+          const <VideoInfo>[],
+          isLoading: false,
+        );
+        _setHomeSectionSnapshot(
+          _TvHomeSectionKey.history,
+          const <VideoInfo>[],
+          isLoading: false,
+        );
+        _syncLastResolvedHomeData();
+      });
+    }
+  }
+
+  /// 加载首页单个热门分区。
+  Future<void> _loadHomeVideoSection(
+    int loadVersion, {
+    required _TvHomeSectionKey section,
+    required TvHomeVideoListLoader loader,
+  }) async {
+    try {
+      final videos = await loader(context);
+      if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
+        return;
+      }
+      setState(() {
+        _setHomeSectionSnapshot(section, videos, isLoading: false);
+        _syncLastResolvedHomeData();
+      });
+    } catch (_) {
+      if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
+        return;
+      }
+      // 单分区失败时只结束自己的骨架，避免首页被单个慢源或坏源拖死。
+      setState(() {
+        _setHomeSectionSnapshot(section, const <VideoInfo>[], isLoading: false);
+        _syncLastResolvedHomeData();
+      });
+    }
+  }
+
+  /// 判断当前回包是否仍属于最新一轮首页加载。
+  bool _isCurrentHomeLoadVersion(int loadVersion) {
+    return loadVersion == _homeDataLoadVersion;
+  }
+
+  /// 更新首页单个分区快照。
+  void _setHomeSectionSnapshot(
+    _TvHomeSectionKey section,
+    List<VideoInfo> videos, {
+    required bool isLoading,
+  }) {
+    _homeSectionSnapshots[section] = _TvHomeSectionSnapshot(
+      videos: videos,
+      isLoading: isLoading,
+    );
+  }
+
+  /// 读取首页单个分区 loading 状态。
+  bool _isHomeSectionLoading(_TvHomeSectionKey section) {
+    return _homeSectionSnapshots[section]?.isLoading ?? false;
+  }
+
+  /// 根据分区快照重新拼出当前首页数据。
+  TvHomeData _buildCurrentHomeData() {
+    return TvHomeData(
+      continueWatching:
+          _homeSectionSnapshots[_TvHomeSectionKey.continueWatching]?.videos ??
+              const <VideoInfo>[],
+      hotMovies: _homeSectionSnapshots[_TvHomeSectionKey.hotMovies]?.videos ??
+          const <VideoInfo>[],
+      hotTvShows: _homeSectionSnapshots[_TvHomeSectionKey.hotTvShows]?.videos ??
+          const <VideoInfo>[],
+      bangumiCalendar:
+          _homeSectionSnapshots[_TvHomeSectionKey.bangumiCalendar]?.videos ??
+              const <VideoInfo>[],
+      hotShows: _homeSectionSnapshots[_TvHomeSectionKey.hotShows]?.videos ??
+          const <VideoInfo>[],
+      history: _homeSectionSnapshots[_TvHomeSectionKey.history]?.videos ??
+          const <VideoInfo>[],
+      favorites: _homeSectionSnapshots[_TvHomeSectionKey.favorites]?.videos ??
+          const <VideoInfo>[],
+    );
+  }
+
+  /// 把当前分区快照同步成首页聚合缓存。
+  ///
+  /// 继续观看删除、详情返回刷新等局部更新逻辑仍然依赖这份快照复用已有分区数据。
+  void _syncLastResolvedHomeData() {
+    _lastResolvedHomeData = _buildCurrentHomeData();
+  }
+
+  /// 用聚合数据一次性回填首页全部分区。
+  void _applyResolvedHomeData(TvHomeData data) {
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.continueWatching,
+      data.continueWatching,
+      isLoading: false,
+    );
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.hotMovies,
+      data.hotMovies,
+      isLoading: false,
+    );
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.hotTvShows,
+      data.hotTvShows,
+      isLoading: false,
+    );
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.bangumiCalendar,
+      data.bangumiCalendar,
+      isLoading: false,
+    );
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.hotShows,
+      data.hotShows,
+      isLoading: false,
+    );
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.history,
+      data.history,
+      isLoading: false,
+    );
+    _setHomeSectionSnapshot(
+      _TvHomeSectionKey.favorites,
+      data.favorites,
+      isLoading: false,
+    );
+    _lastResolvedHomeData = data;
   }
 
   /// 构建带收起动画的顶部导航。
@@ -824,7 +1253,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 构建带左右滑页动画的当前标签内容。
-  Widget _buildAnimatedSelectedTab(TvHomeData data, bool isLoading) {
+  Widget _buildAnimatedSelectedTab(TvHomeData data) {
     final outgoingIndex = _outgoingTabIndex;
     return AnimatedBuilder(
       animation: _tabSwitchController,
@@ -847,13 +1276,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
                 child: _buildSelectedTabByIndex(
                   outgoingIndex,
                   data,
-                  isLoading,
                 ),
               ),
             _buildTabTransitionLayer(
               key: ValueKey('tv-home-tab-incoming-$_selectedIndex'),
               offset: incomingOffset,
-              child: _buildSelectedTab(data, isLoading),
+              child: _buildSelectedTab(data),
             ),
           ],
         );
@@ -875,35 +1303,34 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 构建当前选中的 TV 标签内容。
-  Widget _buildSelectedTab(TvHomeData data, bool isLoading) {
-    return _buildSelectedTabByIndex(_selectedIndex, data, isLoading);
+  Widget _buildSelectedTab(TvHomeData data) {
+    return _buildSelectedTabByIndex(_selectedIndex, data);
   }
 
   /// 按指定下标构建 TV 标签内容。
   Widget _buildSelectedTabByIndex(
     int index,
     TvHomeData data,
-    bool isLoading,
   ) {
     switch (index) {
       case 1:
-        return _buildMovieTab(data, isLoading);
+        return _buildMovieTab(data);
       case 2:
-        return _buildSeriesTab(data, isLoading);
+        return _buildSeriesTab(data);
       case 3:
-        return _buildAnimeTab(data, isLoading);
+        return _buildAnimeTab(data);
       case 4:
-        return _buildVarietyTab(data, isLoading);
+        return _buildVarietyTab(data);
       case 5:
         return const TvLiveScreen();
       case 0:
       default:
-        return _buildHomeTab(data, isLoading);
+        return _buildHomeTab(data);
     }
   }
 
   /// 构建 TV 首页标签内容。
-  Widget _buildHomeTab(TvHomeData data, bool isLoading) {
+  Widget _buildHomeTab(TvHomeData data) {
     _scheduleInitialHomeEntryState();
     return Focus(
       canRequestFocus: false,
@@ -917,7 +1344,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               titleHint: '长按删除',
               pendingFocusVideoId: _pendingContinueWatchingFocusVideoId,
               videos: data.continueWatching,
-              isLoading: isLoading,
+              isLoading: _isHomeSectionLoading(
+                _TvHomeSectionKey.continueWatching,
+              ),
               scrollController: _continueWatchingScrollController,
               onVideoPressed: _openVideoFromRecord,
               onVideoLongPressed: _deleteContinueWatchingItem,
@@ -934,7 +1363,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
             TvHomeSection(
               title: '热门电影',
               videos: data.hotMovies,
-              isLoading: isLoading,
+              isLoading: _isHomeSectionLoading(_TvHomeSectionKey.hotMovies),
               scrollController: _hotMoviesScrollController,
               onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
               firstItemFocusNode: _hotMoviesFirstFocusNode,
@@ -951,7 +1380,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
             TvHomeSection(
               title: '热门剧集',
               videos: data.hotTvShows,
-              isLoading: isLoading,
+              isLoading: _isHomeSectionLoading(_TvHomeSectionKey.hotTvShows),
               scrollController: _hotSeriesScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotSeriesFirstFocusNode,
@@ -968,7 +1397,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
             TvHomeSection(
               title: '新番放送',
               videos: data.bangumiCalendar,
-              isLoading: isLoading,
+              isLoading: _isHomeSectionLoading(
+                _TvHomeSectionKey.bangumiCalendar,
+              ),
               scrollController: _hotAnimeScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotAnimeFirstFocusNode,
@@ -985,7 +1416,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
             TvHomeSection(
               title: '热门综艺',
               videos: data.hotShows,
-              isLoading: isLoading,
+              isLoading: _isHomeSectionLoading(_TvHomeSectionKey.hotShows),
               scrollController: _hotVarietyScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotVarietyFirstFocusNode,
@@ -1002,45 +1433,45 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 构建电影分类标签内容。
-  Widget _buildMovieTab(TvHomeData data, bool isLoading) {
+  Widget _buildMovieTab(TvHomeData data) {
     return _buildCategoryTab(
       kind: TvCategoryFilterKind.movie,
       title: '电影',
       videos: data.hotMovies,
-      isLoading: isLoading,
+      isLoading: _isHomeSectionLoading(_TvHomeSectionKey.hotMovies),
       onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
     );
   }
 
   /// 构建剧集分类标签内容。
-  Widget _buildSeriesTab(TvHomeData data, bool isLoading) {
+  Widget _buildSeriesTab(TvHomeData data) {
     return _buildCategoryTab(
       kind: TvCategoryFilterKind.series,
       title: '剧集',
       videos: data.hotTvShows,
-      isLoading: isLoading,
+      isLoading: _isHomeSectionLoading(_TvHomeSectionKey.hotTvShows),
       onVideoPressed: _openVideo,
     );
   }
 
   /// 构建动漫分类标签内容。
-  Widget _buildAnimeTab(TvHomeData data, bool isLoading) {
+  Widget _buildAnimeTab(TvHomeData data) {
     return _buildCategoryTab(
       kind: TvCategoryFilterKind.anime,
       title: '动漫',
       videos: data.bangumiCalendar,
-      isLoading: isLoading,
+      isLoading: _isHomeSectionLoading(_TvHomeSectionKey.bangumiCalendar),
       onVideoPressed: _openVideo,
     );
   }
 
   /// 构建综艺分类标签内容。
-  Widget _buildVarietyTab(TvHomeData data, bool isLoading) {
+  Widget _buildVarietyTab(TvHomeData data) {
     return _buildCategoryTab(
       kind: TvCategoryFilterKind.variety,
       title: '综艺',
       videos: data.hotShows,
-      isLoading: isLoading,
+      isLoading: _isHomeSectionLoading(_TvHomeSectionKey.hotShows),
       onVideoPressed: _openVideo,
     );
   }
@@ -1626,7 +2057,8 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return;
     }
 
-    if (!_topNavController.hasFocus && _topNavController.requestSelectedFocus()) {
+    if (!_topNavController.hasFocus &&
+        _topNavController.requestSelectedFocus()) {
       return;
     }
 
@@ -1695,8 +2127,8 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 删除首页“继续观看”里的单条播放记录。
   Future<void> _deleteContinueWatchingItem(VideoInfo videoInfo) async {
-    final currentData = _lastResolvedHomeData ?? await _homeDataFuture;
-    final continueWatching = currentData?.continueWatching ?? const <VideoInfo>[];
+    final currentData = _lastResolvedHomeData ?? _buildCurrentHomeData();
+    final continueWatching = currentData.continueWatching;
     final deletedIndex = continueWatching.indexWhere(
       (item) => item.source == videoInfo.source && item.id == videoInfo.id,
     );
@@ -1725,34 +2157,39 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return;
     }
 
-    final deleted =
-        await (widget.deleteContinueWatchingItem ??
-            TvVideoLibraryService.deleteHistoryItem)(context, videoInfo);
+    final deleted = await (widget.deleteContinueWatchingItem ??
+        TvVideoLibraryService.deleteHistoryItem)(context, videoInfo);
     if (!deleted || !mounted) {
       _pendingContinueWatchingFocusVideoId = null;
       return;
     }
 
-    final baseData = _lastResolvedHomeData ?? currentData ?? TvHomeData.empty();
+    final baseData = _lastResolvedHomeData ?? currentData;
     final refreshedContinueWatching = baseData.continueWatching
         .where(
-          (item) =>
-              item.source != videoInfo.source || item.id != videoInfo.id,
+          (item) => item.source != videoInfo.source || item.id != videoInfo.id,
         )
         .toList();
-    final refreshedHomeData = TvHomeData(
-      continueWatching: refreshedContinueWatching,
-      hotMovies: baseData.hotMovies,
-      hotTvShows: baseData.hotTvShows,
-      bangumiCalendar: baseData.bangumiCalendar,
-      hotShows: baseData.hotShows,
-      history: refreshedContinueWatching.take(60).toList(),
-      favorites: baseData.favorites,
-    );
+    final refreshedHistory = baseData.history
+        .where(
+          (item) => item.source != videoInfo.source || item.id != videoInfo.id,
+        )
+        .take(60)
+        .toList();
 
     setState(() {
-      _lastResolvedHomeData = refreshedHomeData;
-      _homeDataFuture = Future<TvHomeData>.value(refreshedHomeData);
+      _continueWatchingRefreshVersion++;
+      _setHomeSectionSnapshot(
+        _TvHomeSectionKey.continueWatching,
+        refreshedContinueWatching,
+        isLoading: false,
+      );
+      _setHomeSectionSnapshot(
+        _TvHomeSectionKey.history,
+        refreshedHistory,
+        isLoading: false,
+      );
+      _syncLastResolvedHomeData();
     });
   }
 
@@ -1803,9 +2240,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     if (!mounted || refreshHome != true) {
       return;
     }
-    setState(() {
-      _homeDataFuture = _createHomeDataFuture();
-    });
+    await _refreshContinueWatchingOnly();
   }
 
   /// 打开搜索页面。
@@ -1826,9 +2261,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     if (!mounted || refreshHome != true) {
       return;
     }
-    setState(() {
-      _homeDataFuture = _createHomeDataFuture();
-    });
+    await _refreshContinueWatchingOnly();
   }
 
   /// 打开收藏夹页面。
@@ -1843,9 +2276,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     if (!mounted || refreshHome != true) {
       return;
     }
-    setState(() {
-      _homeDataFuture = _createHomeDataFuture();
-    });
+    await _refreshContinueWatchingOnly();
   }
 
   /// 打开设置页面。
@@ -1870,8 +2301,38 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     );
   }
 
-  /// 创建首页数据加载任务。
-  Future<TvHomeData> _createHomeDataFuture() {
-    return (widget.loadHomeData ?? TvHomeScreen.defaultLoadHomeData)(context);
+  /// 只刷新首页“继续观看”和历史快照。
+  ///
+  /// 详情页返回时保留首页现有热门分区，避免整页重新进入骨架屏。
+  Future<void> _refreshContinueWatchingOnly() async {
+    final requestVersion = ++_continueWatchingRefreshVersion;
+    final loader = widget.loadContinueWatching ??
+        widget.loadHomePlayRecords ??
+        TvHomeScreen.defaultLoadContinueWatching;
+
+    List<VideoInfo> refreshedPlayRecordVideos;
+    try {
+      refreshedPlayRecordVideos = await loader(context);
+    } catch (_) {
+      return;
+    }
+
+    if (!mounted || requestVersion != _continueWatchingRefreshVersion) {
+      return;
+    }
+
+    setState(() {
+      _setHomeSectionSnapshot(
+        _TvHomeSectionKey.continueWatching,
+        TvHomeScreen._buildContinueWatchingVideos(refreshedPlayRecordVideos),
+        isLoading: false,
+      );
+      _setHomeSectionSnapshot(
+        _TvHomeSectionKey.history,
+        TvHomeScreen._buildHistoryVideos(refreshedPlayRecordVideos),
+        isLoading: false,
+      );
+      _syncLastResolvedHomeData();
+    });
   }
 }
