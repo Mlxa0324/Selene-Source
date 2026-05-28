@@ -5,6 +5,47 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_video_library_screen.dart';
 
 void main() {
+  testWidgets('video library page moves initial focus to first card after load',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvVideoLibraryScreen(
+                        title: '播放历史',
+                        loadVideos: (_) async => [
+                          _videoInfo('history_1', '历史影片 1'),
+                          _videoInfo('history_2', '历史影片 2'),
+                          _videoInfo('history_3', '历史影片 3'),
+                        ],
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开视频库页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开视频库页'));
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForCard(tester, 'history_1').hasFocus, isTrue);
+    expect(_focusNodeForCard(tester, 'history_2').hasFocus, isFalse);
+    expect(_focusNodeForCard(tester, 'history_3').hasFocus, isFalse);
+  });
+
   testWidgets('escape pops TV video library page without waiting extra frame',
       (tester) async {
     await tester.pumpWidget(

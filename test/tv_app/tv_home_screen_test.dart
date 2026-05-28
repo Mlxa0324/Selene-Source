@@ -447,6 +447,51 @@ void main() {
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
   });
 
+  testWidgets('home section focus skips empty sections in both directions',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            hotMovies: const [],
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: const [],
+            hotShows: [_videoInfo('variety_0', '综艺 0')],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final continueFocusNode = _focusNodeForVideoCard(tester, 'continue_0');
+    final seriesFocusNode = _focusNodeForVideoCard(tester, 'series_0');
+
+    continueFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(continueFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    // “热门电影”为空时，首页纵向切换需要直接跳到下一个有内容的分区。
+    expect(seriesFocusNode.hasFocus, isTrue);
+    expect(continueFocusNode.hasFocus, isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    // 反向返回时也要跳过空分区，直接回到“继续观看”。
+    expect(continueFocusNode.hasFocus, isTrue);
+    expect(seriesFocusNode.hasFocus, isFalse);
+  });
+
   testWidgets(
       'home top nav down restores remembered focus after first manual browse',
       (tester) async {
@@ -1118,6 +1163,40 @@ void main() {
     _focusNodeForVideoCard(tester, 'grid_8').requestFocus();
     await tester.pumpAndSettle();
     expect(loadMoreCount, 1);
+  });
+
+  testWidgets('vertical grid down key falls back to nearest lower card',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvVideoGrid(
+            title: '电影',
+            crossAxisCount: 5,
+            videos: List.generate(
+              8,
+              (index) => _videoInfo('grid_$index', '电影 $index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final upperRightNode = _focusNodeForVideoCard(tester, 'grid_4');
+    final nearestLowerNode = _focusNodeForVideoCard(tester, 'grid_7');
+    upperRightNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(upperRightNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    // 当前列正下方没有卡片时，需要落到下一行横向距离最近的卡片。
+    expect(nearestLowerNode.hasFocus, isTrue);
+    expect(upperRightNode.hasFocus, isFalse);
   });
 
   testWidgets('category filter rows clip options and keep edge focus',

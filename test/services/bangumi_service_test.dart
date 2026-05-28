@@ -36,6 +36,99 @@ void main() {
     expect(response.data, hasLength(1));
     expect(response.data!.single.nameCn, '周三番剧');
   });
+
+  testWidgets('falls back to calendar page html when api and cache both fail',
+      (tester) async {
+    // 跳过真实缓存初始化，避免测试依赖磁盘与插件环境。
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      return http.Response('', HttpStatus.serviceUnavailable);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      return _calendarHtmlPayload();
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await BangumiService.getCalendarByWeekday(
+      tester.element(find.byType(Placeholder)),
+      5,
+    );
+
+    expect(response.success, isTrue);
+    expect(response.data, hasLength(2));
+    expect(response.data!.first.id, 900001);
+    expect(response.data!.first.nameCn, '测试中文标题');
+    expect(response.data!.first.name, 'テスト原題');
+    expect(
+      response.data!.first.images.bestImageUrl,
+      'https://lain.bgm.tv/r/400/pic/cover/l/aa/bb/900001_test.jpg',
+    );
+    expect(response.data!.last.nameCn, isNull);
+    expect(response.data!.last.name, '只有原题');
+  });
+
+  testWidgets('parses whole week payload from calendar page fallback',
+      (tester) async {
+    // 跳过真实缓存初始化，避免测试依赖磁盘与插件环境。
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      return http.Response('', HttpStatus.serviceUnavailable);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      return _calendarHtmlPayload();
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await BangumiService.getCalendarByWeekday(
+      tester.element(find.byType(Placeholder)),
+      6,
+    );
+
+    expect(response.success, isTrue);
+    expect(response.data, hasLength(1));
+    expect(response.data!.single.id, 900003);
+    expect(response.data!.single.nameCn, '周六番剧');
+    expect(response.data!.single.name, 'Saturday Title');
+  });
+
+  testWidgets('switches to calendar page fallback after api timeout',
+      (tester) async {
+    // 跳过真实缓存初始化，避免测试依赖磁盘与插件环境。
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarApiTimeoutForTest = const Duration(milliseconds: 10);
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      return http.Response(json.encode(_calendarPayload()), HttpStatus.ok);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      return _calendarHtmlPayload();
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await tester.runAsync(
+      () => BangumiService.getCalendarByWeekday(
+        tester.element(find.byType(Placeholder)),
+        5,
+      ),
+    );
+
+    expect(response!.success, isTrue);
+    expect(response.data, hasLength(2));
+    expect(response.data!.first.id, 900001);
+    expect(response.data!.first.nameCn, '测试中文标题');
+  });
 }
 
 List<Map<String, dynamic>> _calendarPayload() {
@@ -67,4 +160,57 @@ List<Map<String, dynamic>> _calendarPayload() {
       ],
     },
   ];
+}
+
+String _calendarHtmlPayload() {
+  return '''
+<div class="columns clearit">
+  <div id="" class="BgmCalendar clearit">
+    <ul class="large">
+      <li class="week ">
+        <dl>
+          <dt class="Fri"><div><h3>星期五</h3></div></dt>
+          <dd class="Fri">
+            <ul class="coverList">
+              <li style="background: center no-repeat url('//lain.bgm.tv/r/400/pic/cover/l/aa/bb/900001_test.jpg'); background-size: cover">
+                <div class="info_bg">
+                  <div class="info">
+                    <p><a href="/subject/900001" class="nav">测试中文标题</a></p>
+                    <p><a href="/subject/900001" class="nav"><small><em>テスト原題</em></small></a></p>
+                  </div>
+                </div>
+              </li>
+              <li style="background: center no-repeat url('//lain.bgm.tv/r/400/pic/cover/l/cc/dd/900002_only.jpg'); background-size: cover">
+                <div class="info_bg">
+                  <div class="info">
+                    <p><a href="/subject/900002" class="nav"></a></p>
+                    <p><a href="/subject/900002" class="nav"><small><em>只有原题</em></small></a></p>
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </dd>
+        </dl>
+      </li>
+      <li class="week ">
+        <dl>
+          <dt class="Sat"><div><h3>星期六</h3></div></dt>
+          <dd class="Sat">
+            <ul class="coverList">
+              <li style="background: center no-repeat url('//lain.bgm.tv/r/400/pic/cover/l/ee/ff/900003_sat.jpg'); background-size: cover">
+                <div class="info_bg">
+                  <div class="info">
+                    <p><a href="/subject/900003" class="nav">周六番剧</a></p>
+                    <p><a href="/subject/900003" class="nav"><small><em>Saturday Title</em></small></a></p>
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </dd>
+        </dl>
+      </li>
+    </ul>
+  </div>
+</div>
+''';
 }

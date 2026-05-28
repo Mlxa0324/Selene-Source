@@ -57,13 +57,15 @@ void main() {
     );
     expect(
       tester
-          .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
+          .getTopLeft(
+              find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
           .dx,
       tester.getTopLeft(find.text('影片推荐')).dx,
     );
     expect(
       tester
-          .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
+          .getTopLeft(
+              find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
           .dx,
       tester.getTopLeft(find.text('搜索历史')).dx,
     );
@@ -536,6 +538,42 @@ void main() {
     expect(leftFocusNode.hasFocus, isTrue);
   });
 
+  testWidgets('top row suggestion moves focus up to remembered left control',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['世界的主人', '时间的证人', '时间的旅人'],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('S'));
+    await tester.pumpAndSettle();
+
+    final leftFocusNode = _focusNodeForText(tester, '删除');
+    leftFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(leftFocusNode.hasFocus, isTrue);
+
+    final topRowSuggestionNode = _focusNodeForText(tester, '时间的证人');
+    topRowSuggestionNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(topRowSuggestionNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(leftFocusNode.hasFocus, isTrue);
+  });
+
   testWidgets('recommendation focus up returns to remembered suggestion tile',
       (tester) async {
     await tester.pumpWidget(
@@ -881,7 +919,8 @@ void main() {
 
     final searchHomeSectionLeft = tester.getTopLeft(find.text('搜索历史')).dx;
     final searchHomeRecommendCardLeft = tester
-        .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
+        .getTopLeft(
+            find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
         .dx;
 
     await tester.tap(find.text('J'));
@@ -937,8 +976,9 @@ void main() {
         .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
     await tester.pumpAndSettle();
 
-    final headerBottom =
-        tester.getBottomLeft(find.byKey(const ValueKey('tv-search-result-header'))).dy;
+    final headerBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('tv-search-result-header')))
+        .dy;
     final firstCardTop = tester
         .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-video_0')))
         .dy;
@@ -983,6 +1023,50 @@ void main() {
     final headerSize =
         tester.getSize(find.byKey(const ValueKey('tv-search-result-header')));
     expect(headerSize.height, greaterThan(40));
+  });
+
+  testWidgets('search result panel keeps a 10 pixel bottom inset',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResults: (_) async => <SearchResult>[
+            SearchResult(
+              id: 'video_1',
+              title: '剑来',
+              poster: '',
+              episodes: const ['episode-1'],
+              episodesTitles: const ['第1集'],
+              source: 'source_a',
+              sourceName: '源A',
+              year: '2025',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await tester.pumpAndSettle();
+
+    final screenBottom =
+        tester.getBottomLeft(find.byKey(const ValueKey('tv-search-screen'))).dy;
+    final resultPanelBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('tv-search-result-panel')))
+        .dy;
+
+    expect(screenBottom - resultPanelBottom, moreOrLessEquals(10));
   });
 
   testWidgets('shows wipe skeletons before first search results arrive',
@@ -1373,7 +1457,8 @@ void main() {
     expect(lastHotWordFocusNode.hasFocus, isFalse);
   });
 
-  testWidgets('last history item moves focus down to remembered recommendation card',
+  testWidgets(
+      'last history item moves focus down to remembered recommendation card',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -1633,8 +1718,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final clearButtonFocusNode =
-        _focusNodeForKey(tester, const ValueKey('tv-search-history-clear-button'));
+    final clearButtonFocusNode = _focusNodeForKey(
+        tester, const ValueKey('tv-search-history-clear-button'));
     clearButtonFocusNode.requestFocus();
     await tester.pumpAndSettle();
     expect(clearButtonFocusNode.hasFocus, isTrue);
@@ -1671,8 +1756,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(rememberedRecommendNode.hasFocus, isTrue);
 
-    final clearButtonFocusNode =
-        _focusNodeForKey(tester, const ValueKey('tv-search-history-clear-button'));
+    final clearButtonFocusNode = _focusNodeForKey(
+        tester, const ValueKey('tv-search-history-clear-button'));
     clearButtonFocusNode.requestFocus();
     await tester.pumpAndSettle();
     expect(clearButtonFocusNode.hasFocus, isTrue);
@@ -1861,6 +1946,61 @@ void main() {
     expect(focusedRect.center.dy, lessThan(viewportHeight * 0.64));
   });
 
+  testWidgets('suggestion focus keeps right panel still before recommendations',
+      (tester) async {
+    final binding = TestWidgetsFlutterBinding.instance;
+    binding.window.physicalSizeTestValue = const Size(1280, 720);
+    addTearDown(() {
+      binding.window.physicalSizeTestValue = const Size(1920, 1080);
+    });
+
+    final longSuggestions = List<String>.generate(
+      12,
+      (index) => '联想结果超长标题$index联想结果超长标题',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const [],
+            recommends: List<VideoInfo>.generate(
+              6,
+              (index) => _videoInfo('recommend_$index', '推荐$index'),
+            ),
+          ),
+          loadSuggestions: (_) async => longSuggestions,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('L'));
+    await tester.pumpAndSettle();
+
+    final scrollViewFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is SingleChildScrollView &&
+          widget.controller != null &&
+          widget.controller!.hasClients,
+    );
+    final scrollViewBefore =
+        tester.widget<SingleChildScrollView>(scrollViewFinder.last);
+    final beforeOffset = scrollViewBefore.controller!.offset;
+
+    final lowerSuggestionNode =
+        _focusNodeForText(tester, longSuggestions.last);
+    lowerSuggestionNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final scrollViewAfter =
+        tester.widget<SingleChildScrollView>(scrollViewFinder.last);
+    final afterOffset = scrollViewAfter.controller!.offset;
+
+    expect(afterOffset, beforeOffset);
+  });
+
   testWidgets('right panel scrolls down when recommendation card gains focus',
       (tester) async {
     await tester.pumpWidget(
@@ -1901,6 +2041,72 @@ void main() {
     expect(afterOffset, greaterThan(beforeOffset));
   });
 
+  testWidgets('moving up from recommendations reveals suggestion header again',
+      (tester) async {
+    final binding = TestWidgetsFlutterBinding.instance;
+    binding.window.physicalSizeTestValue = const Size(1280, 720);
+    addTearDown(() {
+      binding.window.physicalSizeTestValue = const Size(1920, 1080);
+    });
+
+    final longSuggestions = List<String>.generate(
+      8,
+      (index) => '联想结果超长标题$index联想结果超长标题',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const [],
+            hotWords: const [],
+            recommends: List<VideoInfo>.generate(
+              6,
+              (index) => _videoInfo('recommend_$index', '推荐$index'),
+            ),
+          ),
+          loadSuggestions: (_) async => longSuggestions,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('L'));
+    await tester.pumpAndSettle();
+
+    final lastSuggestionNode = _focusNodeForText(tester, longSuggestions.last);
+    lastSuggestionNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(lastSuggestionNode.hasFocus, isTrue);
+
+    final recommendNode = _focusNodeForText(tester, '推荐0');
+    recommendNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(recommendNode.hasFocus, isTrue);
+
+    final scrollViewFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is SingleChildScrollView &&
+          widget.controller != null &&
+          widget.controller!.hasClients,
+    );
+    final scrollViewBeforeUp =
+        tester.widget<SingleChildScrollView>(scrollViewFinder.last);
+    final beforeUpOffset = scrollViewBeforeUp.controller!.offset;
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    final scrollViewAfterUp =
+        tester.widget<SingleChildScrollView>(scrollViewFinder.last);
+    final afterUpOffset = scrollViewAfterUp.controller!.offset;
+    final suggestionTitleTop = tester.getTopLeft(find.text('联想结果')).dy;
+
+    expect(lastSuggestionNode.hasFocus, isTrue);
+    expect(afterUpOffset, lessThan(beforeUpOffset));
+    expect(suggestionTitleTop, greaterThanOrEqualTo(0));
+  });
+
   testWidgets(
       'first recommendation card realigns with section title after moving back from right',
       (tester) async {
@@ -1923,8 +2129,7 @@ void main() {
 
     final recommendListFinder =
         find.byKey(const ValueKey('tv-search-recommend-list'));
-    final recommendListBefore =
-        tester.widget<ListView>(recommendListFinder);
+    final recommendListBefore = tester.widget<ListView>(recommendListFinder);
 
     recommendListBefore.controller!.jumpTo(
       recommendListBefore.controller!.position.maxScrollExtent,
@@ -1935,11 +2140,11 @@ void main() {
     firstRecommendFocusNode.requestFocus();
     await tester.pumpAndSettle();
 
-    final recommendListAfter =
-        tester.widget<ListView>(recommendListFinder);
+    final recommendListAfter = tester.widget<ListView>(recommendListFinder);
     final titleLeft = tester.getTopLeft(find.text('影片推荐')).dx;
     final firstCardLeft = tester
-        .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-recommend_0')))
+        .getTopLeft(
+            find.byKey(const ValueKey('tv-video-card-focus-recommend_0')))
         .dx;
 
     expect(recommendListAfter.controller!.offset, 0);
@@ -2137,10 +2342,12 @@ void main() {
     final safeArea = tester.widget<SafeArea>(find.byType(SafeArea).first);
     final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
     final rootColoredBox = tester.widget<ColoredBox>(
-      find.descendant(
-        of: find.byKey(const ValueKey('tv-search-screen')),
-        matching: find.byType(ColoredBox),
-      ).first,
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('tv-search-screen')),
+            matching: find.byType(ColoredBox),
+          )
+          .first,
     );
 
     expect(safeArea.top, isFalse);

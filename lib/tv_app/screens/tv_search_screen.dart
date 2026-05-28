@@ -278,7 +278,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   static const double _searchResultHeaderTopCoverHeight = 34;
 
   /// 搜索结果头部与列表之间的垂直间距。
-  static const double _searchResultHeaderBottomSpacing = 16;
+  static const double _searchResultHeaderBottomSpacing = 6;
 
   /// 推荐横向列表卡片间距。
   ///
@@ -430,6 +430,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 推荐区首张卡片焦点节点。
   final FocusNode _recommendFirstFocusNode = FocusNode();
+
+  /// 联想结果标题定位键。
+  ///
+  /// 推荐区回到联想区时，需要把标题重新推回可视区顶部，避免被上边缘裁掉。
+  final GlobalKey _suggestionTitleKey = GlobalKey();
 
   /// 字母键盘首行焦点节点。
   final List<FocusNode> _keyboardTopRowFocusNodes =
@@ -990,6 +995,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
+            key: _suggestionTitleKey,
             padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
             child: Text(
               '联想结果',
@@ -1069,26 +1075,28 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                       itemIndex++) ...[
                     SizedBox(
                       width: rows[rowIndex].items[itemIndex].width,
-                      child: Builder(
-                        builder: (tileContext) => _buildSuggestionTile(
-                          rows[rowIndex].items[itemIndex].word,
-                          focusNode: rows[rowIndex].items[itemIndex].index == 0
-                              ? _suggestionFirstFocusNode
-                              : null,
-                          autofocus: rows[rowIndex].items[itemIndex].index == 0,
-                          onArrowLeft: itemIndex == 0
-                              ? _moveSuggestionFocusToLeftPanel
-                              : null,
-                          onArrowRight:
-                              itemIndex == rows[rowIndex].items.length - 1
-                                  ? _keepFocusAtRightEdge
-                                  : null,
-                          onArrowDown: rowIndex == rows.length - 1
-                              ? onLastRowArrowDown
-                              : null,
-                          onFocus: () =>
-                              _ensureRightPanelFocusCentered(tileContext),
-                        ),
+                      child: _buildSuggestionTile(
+                        rows[rowIndex].items[itemIndex].word,
+                        focusNode: rows[rowIndex].items[itemIndex].index == 0
+                            ? _suggestionFirstFocusNode
+                            : null,
+                        autofocus: rows[rowIndex].items[itemIndex].index == 0,
+                        onArrowLeft: itemIndex == 0
+                            ? _moveSuggestionFocusToLeftPanel
+                            : null,
+                        onArrowRight:
+                            itemIndex == rows[rowIndex].items.length - 1
+                                ? _keepFocusAtRightEdge
+                                : null,
+                        onArrowUp: rowIndex == 0
+                            ? _moveSuggestionTopRowFocusToLeftPanel
+                            : null,
+                        onArrowDown: rowIndex == rows.length - 1
+                            ? onLastRowArrowDown
+                            : null,
+                        // 联想区仍处于“筛词”阶段，保持页面静止，
+                        // 避免还没进入推荐区就提前触发右侧纵向跟焦。
+                        onFocus: null,
                       ),
                     ),
                     if (itemIndex != rows[rowIndex].items.length - 1)
@@ -1184,16 +1192,21 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     required bool autofocus,
     VoidCallback? onArrowLeft,
     VoidCallback? onArrowRight,
+    VoidCallback? onArrowUp,
     VoidCallback? onArrowDown,
     VoidCallback? onFocus,
   }) {
     return TvFocusable(
       focusNode: focusNode,
       autofocus: autofocus,
+      // 联想词获焦只保留高亮，不触发 Scrollable.ensureVisible。
+      // 真正进入影片推荐区后，再恢复右侧纵向跟焦。
+      autoScrollOnFocus: false,
       directionalRepeatThrottleGroupKey: _wordTileDirectionalThrottleGroupKey,
       focusMemoryGroupKey: _suggestionFocusMemoryGroupKey,
       onArrowLeft: onArrowLeft,
       onArrowRight: onArrowRight,
+      onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
       onFocusChanged: (hasFocus) {
         if (hasFocus) {
@@ -1575,6 +1588,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _suggestionFocusMemoryGroupKey,
     );
     if (movedToSuggestions) {
+      _revealSuggestionHeaderAfterRecommendReturn();
       return;
     }
 
@@ -1587,6 +1601,49 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     TvFocusable.requestRememberedFocusForGroup(
       _historyWordFocusMemoryGroupKey,
     );
+  }
+
+  /// 推荐区返回联想区后，把联想标题重新推回右侧可视区顶部。
+  ///
+  /// 联想词本身仍保持“获焦不自动跟滚”的静止浏览体验，
+  /// 这里只在推荐区回退时补一次标题露出，避免联想区被顶部裁掉。
+  void _revealSuggestionHeaderAfterRecommendReturn() {
+    if (!_rightPanelScrollController.hasClients) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_rightPanelScrollController.hasClients) {
+        return;
+      }
+      final titleContext = _suggestionTitleKey.currentContext;
+      final viewportContext =
+          _rightPanelScrollController.position.context.notificationContext;
+      if (titleContext == null ||
+          !titleContext.mounted ||
+          viewportContext == null ||
+          !viewportContext.mounted) {
+        return;
+      }
+
+      final titleRect = _globalRectForContext(titleContext);
+      final viewportRect = _globalRectForContext(viewportContext);
+      if (titleRect == null || viewportRect == null) {
+        return;
+      }
+
+      final position = _rightPanelScrollController.position;
+      final desiredTop = viewportRect.top;
+      final targetOffset = (position.pixels + (titleRect.top - desiredTop))
+          .clamp(position.minScrollExtent, position.maxScrollExtent);
+      if ((position.pixels - targetOffset).abs() < 1) {
+        return;
+      }
+      position.animateTo(
+        targetOffset.toDouble(),
+        duration: TvFocusScroll.duration,
+        curve: TvFocusScroll.curve,
+      );
+    });
   }
 
   /// 吞掉词条区末行下方向键，避免焦点串到左侧字母区。
@@ -2178,6 +2235,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     TvFocusable.requestRememberedFocusForGroup(
       _leftPanelFocusMemoryGroupKey,
     );
+  }
+
+  /// 把联想区顶行焦点回退到左侧最近一次停留的输入控件。
+  ///
+  /// 顶行上方没有其它可聚焦词条时，按上直接回左侧更符合遥控器浏览路径，
+  /// 避免联想区首行中部词条卡在页面顶部出不去。
+  void _moveSuggestionTopRowFocusToLeftPanel() {
+    final moved = TvFocusable.requestRememberedFocusForGroup(
+      _leftPanelFocusMemoryGroupKey,
+    );
+    if (moved) {
+      return;
+    }
+    _keyboardTopRowFocusNodes.first.requestFocus();
   }
 
   /// 吞掉搜索结果区顶部卡片的上方向键。

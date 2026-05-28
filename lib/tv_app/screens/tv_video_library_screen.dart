@@ -68,10 +68,28 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 列表数据加载任务。
   Future<List<VideoInfo>>? _videosFuture;
 
+  /// Grid 第一张卡片焦点节点。
+  ///
+  /// 页面首次进入后，会把首焦点显式交给它，
+  /// 避免根级返回键焦点把默认下移目标算到中间卡片上。
+  final FocusNode _firstVideoFocusNode = FocusNode();
+
+  /// 是否已经派发过首屏内容焦点。
+  ///
+  /// 同一个页面实例只在首屏数据准备完成后派发一次，
+  /// 避免删除、刷新或从详情页返回时强行打断用户当前停留位置。
+  bool _didDispatchInitialGridFocus = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _videosFuture ??= widget.loadVideos(context);
+  }
+
+  @override
+  void dispose() {
+    _firstVideoFocusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -89,10 +107,15 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
               final videos = snapshot.data ?? const <VideoInfo>[];
               final isLoading =
                   snapshot.connectionState != ConnectionState.done;
+              _dispatchInitialGridFocusIfNeeded(
+                videos: videos,
+                isLoading: isLoading,
+              );
               return TvVideoGrid(
                 title: widget.title,
                 videos: videos,
                 isLoading: isLoading,
+                firstItemFocusNode: _firstVideoFocusNode,
                 onClearPressed: widget.onClearVideos == null
                     ? null
                     : () => _clearVideos(context),
@@ -106,6 +129,28 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
         ),
       ),
     );
+  }
+
+  /// 在首屏数据准备完成后，把焦点显式交给第一张卡片。
+  ///
+  /// 独立视频库页进入时，页面根节点会先拿到返回键焦点。
+  /// 如果不主动把焦点下发到第一张卡片，首次按下方向键时，
+  /// Flutter 默认的几何寻焦可能会直接跳到中间某一张卡片。
+  void _dispatchInitialGridFocusIfNeeded({
+    required List<VideoInfo> videos,
+    required bool isLoading,
+  }) {
+    if (_didDispatchInitialGridFocus || isLoading || videos.isEmpty) {
+      return;
+    }
+
+    _didDispatchInitialGridFocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _firstVideoFocusNode.requestFocus();
+    });
   }
 
   /// 打开当前卡片对应的 TV 详情页。

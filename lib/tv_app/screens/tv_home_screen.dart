@@ -67,6 +67,9 @@ typedef TvSearchPageBuilder = Widget Function();
 /// 用于测试替换快捷入口打开的新页面。
 typedef TvStandalonePageBuilder = Widget Function();
 
+/// TV 首页数据链路日志前缀。
+const String _tvHomeLogTag = 'TvHomeScreen[home]';
+
 /// TV 首页继续观看删除函数。
 ///
 /// 用于测试替换真实播放记录删除逻辑。
@@ -702,10 +705,25 @@ class TvHomeScreen extends StatefulWidget {
   static Future<List<VideoInfo>> _loadBangumiCalendar(
     BuildContext context,
   ) async {
+    final stopwatch = Stopwatch()..start();
+    debugPrint('$_tvHomeLogTag section=新番放送 service request start.');
     try {
       final response = await BangumiService.getTodayCalendar(context);
-      return (response.data ?? []).map((item) => item.toVideoInfo()).toList();
-    } catch (_) {
+      final videos =
+          (response.data ?? []).map((item) => item.toVideoInfo()).toList();
+      final previewTitles = videos
+          .take(5)
+          .map((video) => video.title.trim())
+          .where((title) => title.isNotEmpty)
+          .join(' | ');
+      debugPrint(
+        '$_tvHomeLogTag section=新番放送 service request done, success=${response.success}, items=${videos.length}, statusCode=${response.statusCode}, message=${response.message}, preview=[$previewTitles], elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
+      return videos;
+    } catch (error) {
+      debugPrint(
+        '$_tvHomeLogTag section=新番放送 service request exception, type=${error.runtimeType}, message=$error, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       return <VideoInfo>[];
     }
   }
@@ -728,6 +746,35 @@ class TvHomeScreen extends StatefulWidget {
 
 class _TvHomeScreenState extends State<TvHomeScreen>
     with SingleTickerProviderStateMixin {
+  /// 输出首页分区加载调试日志。
+  ///
+  /// 用于把“新番放送 5 秒兜底”在首页这一层的开始、结束和空结果串起来看。
+  void _logHomeDebug(String message) {
+    debugPrint('$_tvHomeLogTag $message');
+  }
+
+  /// 读取首页分区中文名称。
+  ///
+  /// 控制台统一输出可读分区名，避免只看枚举值时难以对照页面。
+  String _homeSectionLabel(_TvHomeSectionKey section) {
+    switch (section) {
+      case _TvHomeSectionKey.continueWatching:
+        return '继续观看';
+      case _TvHomeSectionKey.hotMovies:
+        return '热门电影';
+      case _TvHomeSectionKey.hotTvShows:
+        return '热门剧集';
+      case _TvHomeSectionKey.bangumiCalendar:
+        return '新番放送';
+      case _TvHomeSectionKey.hotShows:
+        return '热门综艺';
+      case _TvHomeSectionKey.history:
+        return '播放历史';
+      case _TvHomeSectionKey.favorites:
+        return '收藏夹';
+    }
+  }
+
   /// 根页退出确认弹框显示态。
   ///
   /// 避免长按返回键或 `Esc` 时重复弹出多层退出确认。
@@ -984,11 +1031,14 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 才保留一次性回填全部首页数据的兼容路径。
   void _loadHomeData() {
     final loadVersion = ++_homeDataLoadVersion;
+    _logHomeDebug('start load version=$loadVersion.');
     if (widget.loadHomeData != null) {
+      _logHomeDebug('version=$loadVersion using legacy aggregate loader.');
       _loadLegacyHomeData(loadVersion);
       return;
     }
 
+    _logHomeDebug('version=$loadVersion using split section loaders.');
     _loadHomeRecordSections(loadVersion);
     _loadHomeVideoSection(
       loadVersion,
@@ -1023,6 +1073,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   ///
   /// 该分支主要用于兼容测试注入的 `loadHomeData`，避免一次改动打散现有用例。
   Future<void> _loadLegacyHomeData(int loadVersion) async {
+    final stopwatch = Stopwatch()..start();
     try {
       final data =
           await (widget.loadHomeData ?? TvHomeScreen.defaultLoadHomeData)(
@@ -1031,12 +1082,18 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
         return;
       }
+      _logHomeDebug(
+        'version=$loadVersion legacy aggregate loader success, continueWatching=${data.continueWatching.length}, hotMovies=${data.hotMovies.length}, hotTvShows=${data.hotTvShows.length}, bangumiCalendar=${data.bangumiCalendar.length}, hotShows=${data.hotShows.length}, favorites=${data.favorites.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       setState(() => _applyResolvedHomeData(data));
-    } catch (_) {
+    } catch (error) {
       if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
         return;
       }
       // 聚合 loader 失败时整页回退为空态，但必须结束骨架，避免首页永久停留在 loading。
+      _logHomeDebug(
+        'version=$loadVersion legacy aggregate loader failed, type=${error.runtimeType}, message=$error, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       setState(() => _applyResolvedHomeData(TvHomeData.empty()));
     }
   }
@@ -1049,6 +1106,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     final loader = widget.loadHomePlayRecords ??
         widget.loadContinueWatching ??
         TvHomeScreen.defaultLoadHomePlayRecords;
+    final stopwatch = Stopwatch()..start();
+    _logHomeDebug(
+      'version=$loadVersion sectionGroup=播放记录 start, refreshVersion=$requestVersion.',
+    );
 
     try {
       final playRecordVideos = await loader(context);
@@ -1057,6 +1118,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           requestVersion != _continueWatchingRefreshVersion) {
         return;
       }
+      _logHomeDebug(
+        'version=$loadVersion sectionGroup=播放记录 success, continueWatching=${TvHomeScreen._buildContinueWatchingVideos(playRecordVideos).length}, history=${TvHomeScreen._buildHistoryVideos(playRecordVideos).length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       setState(() {
         _setHomeSectionSnapshot(
           _TvHomeSectionKey.continueWatching,
@@ -1070,13 +1134,16 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         );
         _syncLastResolvedHomeData();
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted ||
           !_isCurrentHomeLoadVersion(loadVersion) ||
           requestVersion != _continueWatchingRefreshVersion) {
         return;
       }
       // 记录请求失败时只让对应分区回退为空列表，不能拖累其它热门分区继续显示。
+      _logHomeDebug(
+        'version=$loadVersion sectionGroup=播放记录 failed, type=${error.runtimeType}, message=$error, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       setState(() {
         _setHomeSectionSnapshot(
           _TvHomeSectionKey.continueWatching,
@@ -1099,20 +1166,29 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     required _TvHomeSectionKey section,
     required TvHomeVideoListLoader loader,
   }) async {
+    final sectionLabel = _homeSectionLabel(section);
+    final stopwatch = Stopwatch()..start();
+    _logHomeDebug('version=$loadVersion section=$sectionLabel start.');
     try {
       final videos = await loader(context);
       if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
         return;
       }
+      _logHomeDebug(
+        'version=$loadVersion section=$sectionLabel success, items=${videos.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       setState(() {
         _setHomeSectionSnapshot(section, videos, isLoading: false);
         _syncLastResolvedHomeData();
       });
-    } catch (_) {
+    } catch (error) {
       if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
         return;
       }
       // 单分区失败时只结束自己的骨架，避免首页被单个慢源或坏源拖死。
+      _logHomeDebug(
+        'version=$loadVersion section=$sectionLabel failed, type=${error.runtimeType}, message=$error, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       setState(() {
         _setHomeSectionSnapshot(section, const <VideoInfo>[], isLoading: false);
         _syncLastResolvedHomeData();
@@ -1353,9 +1429,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               autofocusFirstItem: true,
               firstItemFocusNode: _continueWatchingFirstFocusNode,
               onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
-              onArrowDownToNextSection: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotMoviesSectionFocusGroup,
-                fallbackFocusNode: _hotMoviesFirstFocusNode,
+              onArrowDownToNextSection: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.continueWatching,
+                moveForward: true,
               ),
               // “继续观看”的“查看更多”进入独立播放历史页。
               onMorePressed: _openHistory,
@@ -1367,13 +1443,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotMoviesScrollController,
               onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
               firstItemFocusNode: _hotMoviesFirstFocusNode,
-              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
-                focusGroupKey: _continueWatchingSectionFocusGroup,
-                fallbackFocusNode: _continueWatchingFirstFocusNode,
+              onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotMovies,
+                moveForward: false,
               ),
-              onArrowDownToNextSection: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotSeriesSectionFocusGroup,
-                fallbackFocusNode: _hotSeriesFirstFocusNode,
+              onArrowDownToNextSection: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotMovies,
+                moveForward: true,
               ),
               onMorePressed: () => _selectTab(1),
             ),
@@ -1384,13 +1460,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotSeriesScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotSeriesFirstFocusNode,
-              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotMoviesSectionFocusGroup,
-                fallbackFocusNode: _hotMoviesFirstFocusNode,
+              onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotTvShows,
+                moveForward: false,
               ),
-              onArrowDownToNextSection: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotAnimeSectionFocusGroup,
-                fallbackFocusNode: _hotAnimeFirstFocusNode,
+              onArrowDownToNextSection: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotTvShows,
+                moveForward: true,
               ),
               onMorePressed: () => _selectTab(2),
             ),
@@ -1403,13 +1479,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotAnimeScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotAnimeFirstFocusNode,
-              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotSeriesSectionFocusGroup,
-                fallbackFocusNode: _hotSeriesFirstFocusNode,
+              onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.bangumiCalendar,
+                moveForward: false,
               ),
-              onArrowDownToNextSection: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotVarietySectionFocusGroup,
-                fallbackFocusNode: _hotVarietyFirstFocusNode,
+              onArrowDownToNextSection: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.bangumiCalendar,
+                moveForward: true,
               ),
               onMorePressed: () => _selectTab(3),
             ),
@@ -1420,9 +1496,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotVarietyScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotVarietyFirstFocusNode,
-              onArrowUpFromFirstItem: () => _requestHomeSectionFocus(
-                focusGroupKey: _hotAnimeSectionFocusGroup,
-                fallbackFocusNode: _hotAnimeFirstFocusNode,
+              onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotShows,
+                moveForward: false,
               ),
               onMorePressed: () => _selectTab(4),
             ),
@@ -1891,30 +1967,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 首页首次进入时，如果“继续观看”为空，需要显式回退到下一个有内容的分区，
   /// 避免焦点系统按几何距离默认跳到中间列卡片。
   bool _requestFirstAvailableHomeSectionFocus() {
-    final focusTargets = <({Object groupKey, FocusNode firstNode})>[
-      (
-        groupKey: _continueWatchingSectionFocusGroup,
-        firstNode: _continueWatchingFirstFocusNode,
-      ),
-      (
-        groupKey: _hotMoviesSectionFocusGroup,
-        firstNode: _hotMoviesFirstFocusNode,
-      ),
-      (
-        groupKey: _hotSeriesSectionFocusGroup,
-        firstNode: _hotSeriesFirstFocusNode,
-      ),
-      (
-        groupKey: _hotAnimeSectionFocusGroup,
-        firstNode: _hotAnimeFirstFocusNode,
-      ),
-      (
-        groupKey: _hotVarietySectionFocusGroup,
-        firstNode: _hotVarietyFirstFocusNode,
-      ),
-    ];
-
-    for (final target in focusTargets) {
+    for (final target in _homeSectionFocusTargets()) {
       if (!_isAttachedFocusableNode(target.firstNode)) {
         continue;
       }
@@ -1927,6 +1980,73 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return true;
     }
     return false;
+  }
+
+  /// 构建首页横向分区的焦点跳转顺序。
+  ///
+  /// 首页上下分区切换、顶部导航下探和焦点记忆恢复都统一复用这份顺序，
+  /// 避免某个中间分区为空时还写死跳到它，导致焦点停在原地。
+  List<({Object groupKey, FocusNode firstNode, _TvHomeSectionKey section})>
+      _homeSectionFocusTargets() {
+    return <({Object groupKey, FocusNode firstNode, _TvHomeSectionKey section})>[
+      (
+        groupKey: _continueWatchingSectionFocusGroup,
+        firstNode: _continueWatchingFirstFocusNode,
+        section: _TvHomeSectionKey.continueWatching,
+      ),
+      (
+        groupKey: _hotMoviesSectionFocusGroup,
+        firstNode: _hotMoviesFirstFocusNode,
+        section: _TvHomeSectionKey.hotMovies,
+      ),
+      (
+        groupKey: _hotSeriesSectionFocusGroup,
+        firstNode: _hotSeriesFirstFocusNode,
+        section: _TvHomeSectionKey.hotTvShows,
+      ),
+      (
+        groupKey: _hotAnimeSectionFocusGroup,
+        firstNode: _hotAnimeFirstFocusNode,
+        section: _TvHomeSectionKey.bangumiCalendar,
+      ),
+      (
+        groupKey: _hotVarietySectionFocusGroup,
+        firstNode: _hotVarietyFirstFocusNode,
+        section: _TvHomeSectionKey.hotShows,
+      ),
+    ];
+  }
+
+  /// 沿首页分区顺序跳到相邻的下一个可聚焦分区。
+  ///
+  /// 当前分区上下方如果存在空列表，需要直接越过空分区，回到最近一次停留卡片，
+  /// 没有焦点记忆时再落到目标分区第一张卡片。
+  void _requestAdjacentHomeSectionFocus({
+    required _TvHomeSectionKey currentSection,
+    required bool moveForward,
+  }) {
+    final focusTargets = _homeSectionFocusTargets();
+    final currentIndex = focusTargets.indexWhere(
+      (target) => target.section == currentSection,
+    );
+    if (currentIndex < 0) {
+      return;
+    }
+
+    final step = moveForward ? 1 : -1;
+    for (var index = currentIndex + step;
+        index >= 0 && index < focusTargets.length;
+        index += step) {
+      final target = focusTargets[index];
+      if (!_isAttachedFocusableNode(target.firstNode)) {
+        continue;
+      }
+      _requestHomeSectionFocus(
+        focusGroupKey: target.groupKey,
+        fallbackFocusNode: target.firstNode,
+      );
+      return;
+    }
   }
 
   /// 请求首页横向分区最近一次焦点。

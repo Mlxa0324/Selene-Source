@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:http/http.dart' as http;
 import '../models/bangumi.dart';
 import 'api_service.dart';
@@ -9,9 +12,16 @@ import 'douban_cache_service.dart';
 class BangumiService {
   static final DoubanCacheService _cache = DoubanCacheService();
   static bool _initialized = false;
+  static const String _calendarLogTag = 'BangumiService[calendar]';
   static const String _calendarCacheKey = 'bangumi_calendar_raw_v1';
   static const String _calendarFallbackCacheKey =
       'bangumi_calendar_raw_fallback_v1';
+  static const Duration _calendarApiTimeout = Duration(seconds: 5);
+  static const List<String> _calendarPageUrls = <String>[
+    'https://bangumi.tv/calendar',
+    'https://bgm.tv/calendar',
+    'https://chii.in/calendar',
+  ];
   static Future<http.Response> Function(
     Uri uri,
     Map<String, String> headers,
@@ -20,6 +30,8 @@ class BangumiService {
     String cacheKey,
     bool allowExpired,
   )? _calendarCacheReaderForTest;
+  static Future<String?> Function()? _calendarPageHtmlLoaderForTest;
+  static Duration? _calendarApiTimeoutForTest;
   static bool _skipCacheInitForTest = false;
 
   /// 测试专用日历请求函数。
@@ -41,12 +53,28 @@ class BangumiService {
     _calendarCacheReaderForTest = reader;
   }
 
+  /// 测试专用日历页面 HTML 读取函数。
+  @visibleForTesting
+  static set calendarPageHtmlLoaderForTest(
+    Future<String?> Function()? loader,
+  ) {
+    _calendarPageHtmlLoaderForTest = loader;
+  }
+
+  /// 测试专用主接口超时时间。
+  @visibleForTesting
+  static set calendarApiTimeoutForTest(Duration? duration) {
+    _calendarApiTimeoutForTest = duration;
+  }
+
   /// 重置测试注入状态。
   @visibleForTesting
   static void resetForTest() {
     _initialized = false;
     _calendarHttpGetForTest = null;
     _calendarCacheReaderForTest = null;
+    _calendarPageHtmlLoaderForTest = null;
+    _calendarApiTimeoutForTest = null;
     _skipCacheInitForTest = false;
   }
 
@@ -67,11 +95,22 @@ class BangumiService {
     }
   }
 
+  /// 输出 Bangumi 日历链路调试日志。
+  ///
+  /// 这里统一带上固定前缀，方便在控制台里直接按关键字过滤 5 秒兜底链路。
+  static void _logCalendarDebug(String message) {
+    debugPrint('$_calendarLogTag $message');
+  }
+
   /// 获取当天的新番放送（根据当前星期几）
   static Future<ApiResponse<List<BangumiItem>>> getTodayCalendar(
     BuildContext context,
   ) async {
     final weekday = DateTime.now().weekday; // 1..7
+    final now = DateTime.now();
+    _logCalendarDebug(
+      'device now=${now.toIso8601String()}, weekday=${now.weekday}, timezoneOffset=${now.timeZoneOffset.inHours}h.',
+    );
     return getCalendarByWeekday(context, weekday);
   }
 
@@ -81,6 +120,11 @@ class BangumiService {
     int weekday, // 1..7 (Monday..Sunday)
   ) async {
     await _initCache();
+    final stopwatch = Stopwatch()..start();
+    final apiTimeout = _calendarApiTimeoutForTest ?? _calendarApiTimeout;
+    _logCalendarDebug(
+      'weekday=$weekday start, timeout=${apiTimeout.inMilliseconds}ms.',
+    );
 
     // 先尝试读取原始数组缓存
     final cachedItems = await _getCachedCalendarItems(
@@ -88,6 +132,9 @@ class BangumiService {
       allowExpired: false,
     );
     if (cachedItems != null) {
+      _logCalendarDebug(
+        'weekday=$weekday served by fresh cache, items=${cachedItems.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       return ApiResponse.success(cachedItems);
     }
 
@@ -101,28 +148,24 @@ class BangumiService {
       };
 
       final uri = Uri.parse(apiUrl);
+      _logCalendarDebug(
+        'weekday=$weekday fresh cache miss, requesting api=$apiUrl.',
+      );
       final response = await (_calendarHttpGetForTest?.call(uri, headers) ??
               http.get(uri, headers: headers))
-          .timeout(const Duration(seconds: 30));
+          .timeout(apiTimeout);
+      _logCalendarDebug(
+        'weekday=$weekday api completed, status=${response.statusCode}, bodyBytes=${response.body.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
 
       if (response.statusCode == 200) {
         final List<dynamic> responseData = json.decode(response.body);
-
-        // 解析所有星期数据
-        final List<BangumiCalendarResponse> calendarData = responseData
-            .map((item) =>
-                BangumiCalendarResponse.fromJson(item as Map<String, dynamic>))
-            .toList();
-
-        BangumiCalendarResponse? targetDay;
-        for (final day in calendarData) {
-          if (day.weekday.id == weekday) {
-            targetDay = day;
-            break;
-          }
-        }
-
-        final items = targetDay?.items ?? <BangumiItem>[];
+        final items = _extractCalendarItemsFromPayload(responseData, weekday);
+        final weekdaySummary = _buildWeekdayCountSummary(responseData);
+        final titlePreview = _buildBangumiTitlePreview(items);
+        _logCalendarDebug(
+          'weekday=$weekday api success, items=${items.length}, weekdaySummary=$weekdaySummary, preview=$titlePreview, writing fresh and fallback cache.',
+        );
 
         // 写入接口级缓存：原始数组
         try {
@@ -136,31 +179,75 @@ class BangumiService {
             responseData,
             const Duration(days: 14),
           );
-        } catch (_) {}
+          _logCalendarDebug(
+            'weekday=$weekday api cache write success, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+          );
+        } catch (cacheError) {
+          _logCalendarDebug(
+            'weekday=$weekday api cache write failed, type=${cacheError.runtimeType}, message=$cacheError.',
+          );
+        }
 
         return ApiResponse.success(items, statusCode: response.statusCode);
       } else {
+        _logCalendarDebug(
+          'weekday=$weekday api returned non-200 status=${response.statusCode}, switching to page fallback.',
+        );
+        final htmlFallbackItems = await _getCalendarItemsFromPageFallback(
+          weekday,
+        );
+        if (htmlFallbackItems != null) {
+          _logCalendarDebug(
+            'weekday=$weekday page fallback success after non-200, items=${htmlFallbackItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+          );
+          return ApiResponse.success(htmlFallbackItems);
+        }
         final staleItems = await _getFallbackCalendarItems(weekday);
         if (staleItems != null) {
+          _logCalendarDebug(
+            'weekday=$weekday stale cache fallback success after non-200, items=${staleItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+          );
           return ApiResponse.success(staleItems);
         }
+        _logCalendarDebug(
+          'weekday=$weekday all fallbacks failed after non-200 status=${response.statusCode}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+        );
         return ApiResponse.error(
           '获取 Bangumi 日历失败: ${response.statusCode}',
           statusCode: response.statusCode,
         );
       }
     } catch (e) {
+      _logCalendarDebug(
+        'weekday=$weekday api exception, type=${e.runtimeType}, message=$e, elapsed=${stopwatch.elapsedMilliseconds}ms, switching to page fallback.',
+      );
+      final htmlFallbackItems = await _getCalendarItemsFromPageFallback(
+        weekday,
+      );
+      if (htmlFallbackItems != null) {
+        _logCalendarDebug(
+          'weekday=$weekday page fallback success after exception, items=${htmlFallbackItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+        );
+        return ApiResponse.success(htmlFallbackItems);
+      }
       final staleItems = await _getFallbackCalendarItems(weekday);
       if (staleItems != null) {
+        _logCalendarDebug(
+          'weekday=$weekday stale cache fallback success after exception, items=${staleItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+        );
         return ApiResponse.success(staleItems);
       }
+      _logCalendarDebug(
+        'weekday=$weekday all fallbacks failed after exception, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
       return ApiResponse.error('Bangumi 数据请求异常: ${e.toString()}');
     }
   }
 
   /// 读取网络失败时的最后可用日历。
   static Future<List<BangumiItem>?> _getFallbackCalendarItems(
-      int weekday) async {
+    int weekday,
+  ) async {
     final fallbackItems = await _getCachedCalendarItems(
       weekday,
       allowExpired: true,
@@ -197,27 +284,508 @@ class BangumiService {
                   (raw) => raw as List<dynamic>,
                 );
       if (cachedRaw == null || cachedRaw.isEmpty) {
+        _logCalendarDebug(
+          'weekday=$weekday cache miss, key=$cacheKey, allowExpired=$allowExpired.',
+        );
+        return null;
+      }
+      final items = _extractCalendarItemsFromPayload(cachedRaw, weekday);
+      final weekdaySummary = _buildWeekdayCountSummary(cachedRaw);
+      _logCalendarDebug(
+        'weekday=$weekday cache hit, key=$cacheKey, allowExpired=$allowExpired, rawDays=${cachedRaw.length}, items=${items.length}, weekdaySummary=$weekdaySummary.',
+      );
+      return items;
+    } catch (error) {
+      _logCalendarDebug(
+        'weekday=$weekday cache read failed, key=$cacheKey, allowExpired=$allowExpired, type=${error.runtimeType}, message=$error.',
+      );
+      return null;
+    }
+  }
+
+  /// 从页面兜底链路中读取指定星期的新番数据。
+  static Future<List<BangumiItem>?> _getCalendarItemsFromPageFallback(
+    int weekday,
+  ) async {
+    try {
+      _logCalendarDebug('weekday=$weekday starting page fallback.');
+      final pagePayload = await _loadCalendarPayloadFromPage();
+      if (pagePayload == null || pagePayload.isEmpty) {
+        _logCalendarDebug(
+          'weekday=$weekday page fallback produced empty payload.',
+        );
         return null;
       }
 
-      final calendar = cachedRaw
+      // 页面兜底成功后仍回写整周缓存，后续所有端都继续复用同一份缓存。
+      try {
+        await _cache.set(
+          _calendarCacheKey,
+          pagePayload,
+          const Duration(days: 1),
+        );
+        await _cache.set(
+          _calendarFallbackCacheKey,
+          pagePayload,
+          const Duration(days: 14),
+        );
+        _logCalendarDebug(
+          'weekday=$weekday page fallback cache write success.',
+        );
+      } catch (cacheError) {
+        _logCalendarDebug(
+          'weekday=$weekday page fallback cache write failed, type=${cacheError.runtimeType}, message=$cacheError.',
+        );
+      }
+
+      final totalCount = pagePayload.fold<int>(
+        0,
+        (sum, day) =>
+            sum + ((day as Map<String, dynamic>)['items'] as List).length,
+      );
+      final weekdayItems = _extractCalendarItemsFromPayload(pagePayload, weekday);
+      final weekdaySummary = _buildWeekdayCountSummary(pagePayload);
+      final titlePreview = _buildBangumiTitlePreview(weekdayItems);
+      debugPrint(
+        '$_calendarLogTag weekday=$weekday page fallback parsed ${pagePayload.length} weekdays, total $totalCount items, currentWeekdayItems=${weekdayItems.length}, weekdaySummary=$weekdaySummary, preview=$titlePreview.',
+      );
+      return weekdayItems;
+    } catch (error) {
+      _logCalendarDebug(
+        'weekday=$weekday page fallback failed, type=${error.runtimeType}, message=$error.',
+      );
+      return null;
+    }
+  }
+
+  /// 通过整周原始 payload 提取指定星期的数据。
+  static List<BangumiItem> _extractCalendarItemsFromPayload(
+    List<dynamic> rawPayload,
+    int weekday,
+  ) {
+    final calendar = rawPayload
+        .map(
+          (item) => BangumiCalendarResponse.fromJson(
+            item as Map<String, dynamic>,
+          ),
+        )
+        .toList();
+
+    for (final day in calendar) {
+      if (day.weekday.id == weekday) {
+        return day.items;
+      }
+    }
+    return <BangumiItem>[];
+  }
+
+  /// 构建整周条目数量摘要。
+  ///
+  /// 用于快速判断是“整个页面没解析到数据”，还是“只有今天这一列为空”。
+  static String _buildWeekdayCountSummary(List<dynamic> rawPayload) {
+    try {
+      final calendar = rawPayload
           .map(
             (item) => BangumiCalendarResponse.fromJson(
               item as Map<String, dynamic>,
             ),
           )
           .toList();
-      BangumiCalendarResponse? targetDay;
+      final weekdayCounts = <String>[];
       for (final day in calendar) {
-        if (day.weekday.id == weekday) {
-          targetDay = day;
-          break;
-        }
+        weekdayCounts.add('${day.weekday.id}:${day.items.length}');
       }
-      return targetDay?.items ?? <BangumiItem>[];
+      return '[${weekdayCounts.join(', ')}]';
     } catch (_) {
+      return '[parse-failed]';
+    }
+  }
+
+  /// 构建当天命中标题预览。
+  ///
+  /// 只取前几个标题，避免控制台被整批番剧名称刷满。
+  static String _buildBangumiTitlePreview(
+    List<BangumiItem> items, {
+    int limit = 5,
+  }) {
+    if (items.isEmpty) {
+      return '[]';
+    }
+    final previewTitles = items
+        .take(limit)
+        .map((item) {
+          final chineseTitle = item.nameCn?.trim() ?? '';
+          final originalTitle = item.name.trim();
+          return chineseTitle.isNotEmpty ? chineseTitle : originalTitle;
+        })
+        .where((title) => title.isNotEmpty)
+        .toList();
+    return '[${previewTitles.join(' | ')}]';
+  }
+
+  /// 读取 Bangumi 日历页面并解析成整周 payload。
+  static Future<List<dynamic>?> _loadCalendarPayloadFromPage() async {
+    final html = await _loadCalendarPageHtml();
+    if (html == null || html.trim().isEmpty) {
+      _logCalendarDebug('page fallback html empty.');
       return null;
     }
+    _logCalendarDebug(
+      'page fallback html loaded, length=${html.length}.',
+    );
+
+    final payload = _parseCalendarPayloadFromHtml(html);
+    final totalCount = payload.fold<int>(
+      0,
+      (sum, day) => sum + ((day['items'] as List<dynamic>?)?.length ?? 0),
+    );
+    _logCalendarDebug(
+      'page fallback html parsed, weekdays=${payload.length}, totalItems=$totalCount.',
+    );
+    if (totalCount <= 0) {
+      return null;
+    }
+    return payload;
+  }
+
+  /// 读取 Bangumi 日历页面 HTML。
+  static Future<String?> _loadCalendarPageHtml() async {
+    final injectedLoader = _calendarPageHtmlLoaderForTest;
+    if (injectedLoader != null) {
+      _logCalendarDebug('loading calendar html from injected test loader.');
+      return injectedLoader();
+    }
+
+    // 测试环境未注入页面数据时直接返回，避免误起真实 WebView。
+    if (_skipCacheInitForTest) {
+      _logCalendarDebug('skipCacheInitForTest=true, skip real WebView html loading.');
+      return null;
+    }
+
+    for (final pageUrl in _calendarPageUrls) {
+      _logCalendarDebug('trying page fallback mirror: $pageUrl');
+      final html = await _loadCalendarPageHtmlByWebView(pageUrl);
+      if (_looksLikeBangumiCalendarHtml(html)) {
+        _logCalendarDebug(
+          'page fallback mirror succeeded: $pageUrl, htmlLength=${html?.length ?? 0}.',
+        );
+        return html;
+      }
+      _logCalendarDebug('page fallback mirror did not return valid calendar html: $pageUrl');
+    }
+
+    _logCalendarDebug('all page fallback mirrors failed.');
+    return null;
+  }
+
+  /// 通过内嵌浏览器内核加载页面，绕过接口链路不可达时的 TLS 限制。
+  static Future<String?> _loadCalendarPageHtmlByWebView(String pageUrl) async {
+    final completer = Completer<String?>();
+    HeadlessInAppWebView? headlessWebView;
+    final stopwatch = Stopwatch()..start();
+
+    void completeOnce(String? html) {
+      if (!completer.isCompleted) {
+        completer.complete(html);
+      }
+    }
+
+    try {
+      _logCalendarDebug('webview loading start: $pageUrl');
+      headlessWebView = HeadlessInAppWebView(
+        initialUrlRequest: URLRequest(url: WebUri(pageUrl)),
+        initialSettings: InAppWebViewSettings(
+          isInspectable: kDebugMode,
+          javaScriptEnabled: true,
+          transparentBackground: true,
+        ),
+        onLoadStop: (controller, url) async {
+          try {
+            final html = await controller.getHtml();
+            _logCalendarDebug(
+              'webview load stop: $pageUrl, elapsed=${stopwatch.elapsedMilliseconds}ms, htmlLength=${html?.length ?? 0}.',
+            );
+            completeOnce(html);
+          } catch (error) {
+            _logCalendarDebug(
+              'webview getHtml failed: $pageUrl, type=${error.runtimeType}, message=$error.',
+            );
+            completeOnce(null);
+          }
+        },
+        onReceivedError: (controller, request, error) {
+          // 只处理主文档失败，子资源异常不应提前打断整页 HTML 抓取。
+          if (request.isForMainFrame ?? true) {
+            _logCalendarDebug(
+              'webview main frame error: $pageUrl, code=${error.type}, description=${error.description}.',
+            );
+            completeOnce(null);
+          }
+        },
+        onReceivedHttpError: (controller, request, errorResponse) {
+          // 主文档返回 HTTP 错误时直接判定本次镜像不可用。
+          if (request.isForMainFrame ?? true) {
+            _logCalendarDebug(
+              'webview main frame http error: $pageUrl, status=${errorResponse.statusCode}, reason=${errorResponse.reasonPhrase}.',
+            );
+            completeOnce(null);
+          }
+        },
+      );
+
+      await headlessWebView.run();
+      final html = await completer.future.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          _logCalendarDebug(
+            'webview load timeout: $pageUrl, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+          );
+          return null;
+        },
+      );
+      _logCalendarDebug(
+        'webview loading end: $pageUrl, elapsed=${stopwatch.elapsedMilliseconds}ms, success=${html != null && html.isNotEmpty}.',
+      );
+      return html;
+    } catch (error) {
+      _logCalendarDebug(
+        'webview loading crashed: $pageUrl, type=${error.runtimeType}, message=$error.',
+      );
+      return null;
+    } finally {
+      try {
+        await headlessWebView?.dispose();
+      } catch (_) {}
+    }
+  }
+
+  /// 判断当前 HTML 是否已经拿到 Bangumi 每日放送页面主体。
+  static bool _looksLikeBangumiCalendarHtml(String? html) {
+    if (html == null || html.isEmpty) {
+      return false;
+    }
+    return html.contains('BgmCalendar') && html.contains('每日放送');
+  }
+
+  /// 把日历页面解析成与官方接口结构兼容的整周 payload。
+  static List<Map<String, dynamic>> _parseCalendarPayloadFromHtml(String html) {
+    final Map<int, List<Map<String, dynamic>>> weekdayItems =
+        <int, List<Map<String, dynamic>>>{
+      for (var weekday = 1; weekday <= 7; weekday++)
+        weekday: <Map<String, dynamic>>[],
+    };
+
+    final sectionRegex = RegExp(
+      r'<dt[^>]*>\s*<div[^>]*>\s*<h3[^>]*>\s*(星期[一二三四五六日天])\s*</h3>\s*</div>\s*</dt>\s*<dd[^>]*>([\s\S]*?)</dd>',
+      caseSensitive: false,
+    );
+
+    for (final match in sectionRegex.allMatches(html)) {
+      final weekdayLabel = _stripCalendarHtmlText(match.group(1) ?? '');
+      final weekdayId = _weekdayTextToId(weekdayLabel);
+      if (weekdayId == null) {
+        continue;
+      }
+
+      final weekdayHtml = match.group(2) ?? '';
+      weekdayItems[weekdayId] = _parseWeekdayItemsFromHtml(
+        weekdayHtml,
+        weekdayId,
+      );
+    }
+
+    return List<Map<String, dynamic>>.generate(
+      7,
+      (index) {
+        final weekdayId = index + 1;
+        return <String, dynamic>{
+          'weekday': _buildWeekdayPayload(weekdayId),
+          'items': weekdayItems[weekdayId] ?? <Map<String, dynamic>>[],
+        };
+      },
+    );
+  }
+
+  /// 解析某个星期分组内的全部番剧条目。
+  static List<Map<String, dynamic>> _parseWeekdayItemsFromHtml(
+    String weekdayHtml,
+    int weekdayId,
+  ) {
+    final List<Map<String, dynamic>> items = <Map<String, dynamic>>[];
+    final itemRegex = RegExp(
+      r'<li\b[^>]*>([\s\S]*?)</li>',
+      caseSensitive: false,
+    );
+    final paragraphRegex = RegExp(
+      r'<p[^>]*>([\s\S]*?)</p>',
+      caseSensitive: false,
+    );
+    final subjectIdRegex = RegExp(
+      r'''href=['"][^'"]*/subject/(\d+)['"]''',
+      caseSensitive: false,
+    );
+    final coverRegex = RegExp(
+      r'''url\((['"]?)([^)'"]+)\1\)''',
+      caseSensitive: false,
+    );
+
+    for (final match in itemRegex.allMatches(weekdayHtml)) {
+      final itemHtml = match.group(0) ?? '';
+      final idMatch = subjectIdRegex.firstMatch(itemHtml);
+      if (idMatch == null) {
+        continue;
+      }
+
+      final subjectId = int.tryParse(idMatch.group(1) ?? '');
+      if (subjectId == null) {
+        continue;
+      }
+
+      final paragraphMatches = paragraphRegex.allMatches(itemHtml).toList();
+      final primaryTitle = paragraphMatches.isNotEmpty
+          ? _stripCalendarHtmlText(paragraphMatches.first.group(1) ?? '')
+          : '';
+      final secondaryTitle = paragraphMatches.length > 1
+          ? _stripCalendarHtmlText(paragraphMatches[1].group(1) ?? '')
+          : '';
+      final displayTitle =
+          secondaryTitle.isNotEmpty ? secondaryTitle : primaryTitle;
+      if (displayTitle.isEmpty) {
+        continue;
+      }
+
+      final coverMatch = coverRegex.firstMatch(itemHtml);
+      final coverUrl = _normalizeBangumiCoverUrl(coverMatch?.group(2));
+
+      items.add(<String, dynamic>{
+        'id': subjectId,
+        'url': 'https://bangumi.tv/subject/$subjectId',
+        'type': 2,
+        'name': displayTitle,
+        'name_cn': primaryTitle.isNotEmpty ? primaryTitle : null,
+        'summary': '',
+        'air_date': '',
+        'air_weekday': weekdayId,
+        'rating': <String, dynamic>{
+          'total': 0,
+          'count': <String, int>{},
+          'score': 0,
+        },
+        'rank': 0,
+        'images': <String, dynamic>{
+          'large': coverUrl,
+          'common': coverUrl,
+          'medium': coverUrl,
+          'small': coverUrl,
+          'grid': coverUrl,
+        },
+        'collection': <String, dynamic>{
+          'doing': 0,
+          'on_hold': 0,
+          'dropped': 0,
+          'wish': 0,
+          'collect': 0,
+        },
+      });
+    }
+
+    return items;
+  }
+
+  /// 构造与 Bangumi 官方接口一致的星期字段。
+  static Map<String, dynamic> _buildWeekdayPayload(int weekdayId) {
+    const weekdayEn = <int, String>{
+      1: 'Mon',
+      2: 'Tue',
+      3: 'Wed',
+      4: 'Thu',
+      5: 'Fri',
+      6: 'Sat',
+      7: 'Sun',
+    };
+    const weekdayCn = <int, String>{
+      1: '星期一',
+      2: '星期二',
+      3: '星期三',
+      4: '星期四',
+      5: '星期五',
+      6: '星期六',
+      7: '星期日',
+    };
+    const weekdayJa = <int, String>{
+      1: '月曜日',
+      2: '火曜日',
+      3: '水曜日',
+      4: '木曜日',
+      5: '金曜日',
+      6: '土曜日',
+      7: '日曜日',
+    };
+
+    return <String, dynamic>{
+      'en': weekdayEn[weekdayId] ?? '',
+      'cn': weekdayCn[weekdayId] ?? '',
+      'ja': weekdayJa[weekdayId] ?? '',
+      'id': weekdayId,
+    };
+  }
+
+  /// 把页面里的中文星期文案转换成接口所用 weekday id。
+  static int? _weekdayTextToId(String weekdayText) {
+    switch (weekdayText) {
+      case '星期一':
+        return 1;
+      case '星期二':
+        return 2;
+      case '星期三':
+        return 3;
+      case '星期四':
+        return 4;
+      case '星期五':
+        return 5;
+      case '星期六':
+        return 6;
+      case '星期日':
+      case '星期天':
+        return 7;
+      default:
+        return null;
+    }
+  }
+
+  /// 清理页面片段中的标签与多余空白，保留纯文本标题。
+  static String _stripCalendarHtmlText(String htmlText) {
+    const htmlEntities = <String, String>{
+      '&nbsp;': ' ',
+      '&amp;': '&',
+      '&lt;': '<',
+      '&gt;': '>',
+      '&quot;': '"',
+      '&#39;': '\'',
+      '&apos;': '\'',
+    };
+
+    var text = htmlText.replaceAll(RegExp(r'<[^>]+>'), ' ');
+    htmlEntities.forEach((entity, replacement) {
+      text = text.replaceAll(entity, replacement);
+    });
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  /// 归一化页面中的封面地址，统一补齐协议和主域。
+  static String _normalizeBangumiCoverUrl(String? rawUrl) {
+    if (rawUrl == null || rawUrl.trim().isEmpty) {
+      return '';
+    }
+
+    final normalized = rawUrl.trim();
+    if (normalized.startsWith('//')) {
+      return 'https:$normalized';
+    }
+    if (normalized.startsWith('/')) {
+      return 'https://bangumi.tv$normalized';
+    }
+    return normalized;
   }
 
   /// 获取 Bangumi 详情数据

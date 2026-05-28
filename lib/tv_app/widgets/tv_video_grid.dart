@@ -543,9 +543,14 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
       widget.index % widget.crossAxisCount == widget.crossAxisCount - 1 ||
       widget.index == widget.itemCount - 1;
 
-  /// 当前卡片是否处于下边界。
-  bool get _isBottomEdge =>
-      widget.index + widget.crossAxisCount >= widget.itemCount;
+  /// 当前卡片是否位于最后一行。
+  ///
+  /// 只有真正处于最后一行时，按下方向键才应该触发边界反馈。
+  /// 如果只是“当前列正下方没有卡片”，但下方仍然存在其它卡片，
+  /// 则需要把焦点导航交回给默认系统，落到下一行最近的卡片上。
+  bool get _isLastRowItem =>
+      widget.index ~/ widget.crossAxisCount ==
+      (widget.itemCount - 1) ~/ widget.crossAxisCount;
 
   /// 当前卡片是否处于上边界。
   bool get _isTopEdge => widget.index < widget.crossAxisCount;
@@ -582,7 +587,7 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
             : _isTopEdge
                 ? widget.onArrowUp
                 : null,
-        onArrowDown: _isBottomEdge ? () => _shake(AxisDirection.down) : null,
+        onArrowDown: _isLastRowItem ? () => _shake(AxisDirection.down) : null,
       ),
     );
   }
