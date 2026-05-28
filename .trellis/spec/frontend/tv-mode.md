@@ -102,17 +102,26 @@ class TvHomeData {
 ### 3.4 TV 设计视口
 
 ```dart
+enum TvDesignPreset {
+  auto,
+  hd720,
+  fullHd1080,
+  qhd1440,
+}
+
 class TvDesignCanvas extends StatelessWidget {
-  static const double designWidth = 1920;
-  static const double designHeight = 1080;
+  final TvDesignPreset preset;
 }
 ```
 
 约定：
 
-- TV 端统一以 `1920x1080` 作为设计稿逻辑尺寸。
+- TV 设计稿预设统一收敛为 `TvDesignPreset.auto / hd720 / fullHd1080 / qhd1440`。
+- 固定预设分别对应 `1280x720 / 1920x1080 / 2560x1440` 三套逻辑设计稿尺寸。
+- `auto` 需要根据当前视口动态解析：`>= 2560x1440` 使用 `qhd1440`，`>= 1920x1080` 使用 `fullHd1080`，更低分辨率回退 `hd720`。
 - 当前设备分辨率低于设计稿时，TV 页面整体按较短边等比缩小，避免较低分辨率设备把设计稿视觉占比放大一圈。
-- 当前设备分辨率高于或等于设计稿时，不额外放大，保持设计稿原始比例。
+- 当前设备分辨率高于或等于当前设计稿时，不额外放大，保持设计稿原始比例。
+- `TvDesignMetrics` 需要同时保留“配置预设”和“当前生效预设”，便于路由、新弹窗和调试面板继续继承同一套策略。
 - TV 独立路由和 TV 风格弹窗都必须继承同一套设计视口，避免首页、详情页、搜索页、设置页和弹窗比例不一致。
 
 ### 3.3 TV 详情页数据加载

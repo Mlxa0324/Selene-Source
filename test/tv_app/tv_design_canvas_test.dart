@@ -4,13 +4,33 @@ import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_design_canvas.dart';
 
 void main() {
-  testWidgets('keeps 1080p viewport at TV design canvas size',
-      (tester) async {
+  test('resolves fixed TV design presets', () {
+    expect(TvDesignPreset.hd720.designSize, const Size(1280, 720));
+    expect(TvDesignPreset.fullHd1080.designSize, const Size(1920, 1080));
+    expect(TvDesignPreset.qhd1440.designSize, const Size(2560, 1440));
+  });
+
+  test('auto preset resolves 1080p viewport to full HD preset', () {
+    expect(
+      TvDesignPreset.auto.resolve(const Size(1920, 1080)),
+      TvDesignPreset.fullHd1080,
+    );
+  });
+
+  test('auto preset resolves 720p viewport to HD preset', () {
+    expect(
+      TvDesignPreset.auto.resolve(const Size(1280, 720)),
+      TvDesignPreset.hd720,
+    );
+  });
+
+  testWidgets('keeps 1080p viewport at TV design canvas size', (tester) async {
     _setTvViewport(tester);
 
     await tester.pumpWidget(
       const MaterialApp(
         home: TvDesignCanvas(
+          preset: TvDesignPreset.fullHd1080,
           child: _TvDesignProbe(
             scaleKey: ValueKey('tv-design-scale'),
             sizeKey: ValueKey('tv-design-size'),
@@ -32,6 +52,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TvDesignCanvas(
+          preset: TvDesignPreset.fullHd1080,
           child: TvTheme(
             service: themeService,
             child: Builder(
@@ -64,6 +85,76 @@ void main() {
 
     expect(find.text('1.00'), findsOneWidget);
     expect(find.text('1920x1080'), findsOneWidget);
+  });
+
+  testWidgets('keeps auto preset when pushing TV themed routes',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final themeService = TvThemeService();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvDesignCanvas(
+          preset: TvDesignPreset.auto,
+          child: TvTheme(
+            service: themeService,
+            child: Builder(
+              builder: (context) {
+                return TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => TvTheme.wrapScope(
+                          context: context,
+                          child: const _TvDesignProbe(
+                            scaleKey: ValueKey('tv-auto-route-scale'),
+                            sizeKey: ValueKey('tv-auto-route-size'),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('打开自动路由'),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开自动路由'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1.00'), findsOneWidget);
+    expect(find.text('1280x720'), findsOneWidget);
+  });
+
+  testWidgets('auto preset keeps 720p viewport at HD canvas size',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: TvDesignCanvas(
+          preset: TvDesignPreset.auto,
+          child: _TvDesignProbe(
+            scaleKey: ValueKey('tv-auto-scale'),
+            sizeKey: ValueKey('tv-auto-size'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('1.00'), findsOneWidget);
+    expect(find.text('1280x720'), findsOneWidget);
   });
 }
 

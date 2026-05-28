@@ -36,6 +36,7 @@ class _TvAppShellState extends State<TvAppShell> {
     return TvBackHandler(
       autofocus: true,
       child: TvDesignCanvas(
+        preset: TvDesignPreset.auto,
         child: TvTheme(
           service: _themeService,
           child: const TvHomeScreen(),

@@ -165,6 +165,7 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
     required Widget child,
   }) {
     final service = maybeServiceOf(context);
+    final designMetrics = TvDesignCanvas.maybeOf(context);
     final wrappedChild = service == null
         ? child
         : TvTheme(
@@ -172,11 +173,12 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
             child: child,
           );
 
-    if (TvDesignCanvas.maybeOf(context) == null) {
+    if (designMetrics == null) {
       return wrappedChild;
     }
 
     return TvDesignCanvas(
+      preset: designMetrics.preset,
       child: wrappedChild,
     );
   }
