@@ -259,6 +259,62 @@ void main() {
     expect(lastHotWordFocusNode.hasFocus, isFalse);
   });
 
+  testWidgets('last history item moves focus down to hot words',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['历史1', '历史2', '历史3', '历史4'],
+            hotWords: ['热词1', '热词2'],
+            recommends: [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final historyFocusNode = _focusNodeForText(tester, '历史4');
+    historyFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(historyFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, '热词1').hasFocus, isTrue);
+    expect(_focusNodeForText(tester, 'A').hasFocus, isFalse);
+  });
+
+  testWidgets('last hot word keeps focus on arrow down when recommendations are empty',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['历史1'],
+            hotWords: ['热词1', '热词2', '热词3', '热词4'],
+            recommends: [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final hotWordFocusNode = _focusNodeForText(tester, '热词4');
+    hotWordFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(hotWordFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(hotWordFocusNode.hasFocus, isTrue);
+    expect(_focusNodeForText(tester, 'A').hasFocus, isFalse);
+  });
+
   testWidgets('leftmost recommendation card moves focus left to search panel',
       (tester) async {
     await tester.pumpWidget(

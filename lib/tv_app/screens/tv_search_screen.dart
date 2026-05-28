@@ -511,6 +511,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                 initialFocusTarget == _TvSearchInitialFocusTarget.history,
             focusMemoryGroupKey: _historyWordFocusMemoryGroupKey,
             onItemFocus: _ensureRightPanelFocusCentered,
+            onLastRowArrowDown: data.hotWords.isNotEmpty
+                ? _moveHistoryFocusToHotWordSection
+                : data.recommends.isNotEmpty
+                ? () => _recommendFirstFocusNode.requestFocus()
+                : _keepWordFocusOnArrowDown,
             onClearPressed:
                 data.searchHistory.isEmpty ? null : () => _clearSearchHistory(),
           ),
@@ -525,7 +530,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             focusMemoryGroupKey: _hotWordFocusMemoryGroupKey,
             onItemFocus: _ensureRightPanelFocusCentered,
             onLastRowArrowDown: data.recommends.isEmpty
-                ? null
+                ? _keepWordFocusOnArrowDown
                 : () => _recommendFirstFocusNode.requestFocus(),
           ),
           const SizedBox(height: 16),
@@ -777,6 +782,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _historyWordFocusMemoryGroupKey,
     );
   }
+
+  /// 让搜索历史区向下优先进入热词区。
+  ///
+  /// 热词区会先恢复上一次停留的位置，没有记忆时回到首个热词项。
+  void _moveHistoryFocusToHotWordSection() {
+    TvFocusable.requestRememberedFocusForGroup(
+      _hotWordFocusMemoryGroupKey,
+    );
+  }
+
+  /// 吞掉词条区末行下方向键，避免焦点串到左侧字母区。
+  ///
+  /// 当下方已经没有推荐区或其它合法目标时，继续按下应保持当前词条焦点不变。
+  void _keepWordFocusOnArrowDown() {}
 
   /// 吞掉推荐区下方向键，避免焦点掉出影片推荐列表。
   ///
