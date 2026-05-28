@@ -5,6 +5,63 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_video_library_screen.dart';
 
 void main() {
+  testWidgets('video library page keeps title away from top edge',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '播放历史',
+          loadVideos: (_) async => [
+            _videoInfo('history_1', '历史影片 1'),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final titleTopLeft = tester.getTopLeft(find.text('播放历史'));
+    expect(titleTopLeft.dy, greaterThanOrEqualTo(18));
+  });
+
+  testWidgets('video library page keeps header pinned while grid scrolls',
+      (tester) async {
+    final videos = List<VideoInfo>.generate(
+      28,
+      (index) => _videoInfo('history_$index', '历史影片 $index'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '播放历史',
+          loadVideos: (_) async => videos,
+          onClearVideos: (_) async => true,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final titleFinder = find.text('播放历史');
+    final clearButtonFinder =
+        find.byKey(const ValueKey('tv-video-library-clear-button'));
+    final initialTitleTopLeft = tester.getTopLeft(titleFinder);
+    final initialClearButtonTopLeft = tester.getTopLeft(clearButtonFinder);
+
+    await tester.drag(
+      find.byKey(const ValueKey('tv-video-grid-scroll')),
+      const Offset(0, -420),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(titleFinder).dy, initialTitleTopLeft.dy);
+    expect(
+      tester.getTopLeft(clearButtonFinder).dy,
+      initialClearButtonTopLeft.dy,
+    );
+  });
+
   testWidgets('video library page moves initial focus to first card after load',
       (tester) async {
     await tester.pumpWidget(

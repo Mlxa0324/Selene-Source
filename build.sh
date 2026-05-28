@@ -1,7 +1,40 @@
 #!/bin/bash
 
 # Selene 构建脚本
-# 用于构建安卓和 iOS 无签名版本，并将构建产物复制到根目录下
+# 用于构建安卓发布版本和 iOS 无签名版本，并将构建产物复制到根目录下
+#
+# Android 发布签名首次配置命令：
+# keytool -genkeypair -v \
+#   -keystore android/app/upload-keystore.jks \
+#   -storetype PKCS12 \
+#   -keyalg RSA \
+#   -keysize 2048 \
+#   -validity 10000 \
+#   -alias selene_release \
+#   -dname "CN=Selene, OU=TV, O=MoonTechLab, L=Shanghai, ST=Shanghai, C=CN"
+#
+# Android 本地签名配置文件 android/key.properties 示例：
+# storeFile=upload-keystore.jks
+# storePassword=<YOUR_PASSWORD>
+# keyAlias=selene_release
+# keyPassword=<YOUR_PASSWORD>
+#
+# Android 分架构 Release APK 构建命令：
+# flutter build apk --release \
+#   --target-platform android-arm64,android-arm \
+#   --split-per-abi \
+#   --obfuscate \
+#   --split-debug-info=build/app/outputs/symbols
+#
+# Android 通用 Release APK 构建命令：
+# flutter build apk --release \
+#   --target-platform android-arm64,android-arm \
+#   --obfuscate \
+#   --split-debug-info=build/app/outputs/symbols/universal
+#
+# Android APK 验签命令：
+# /Users/lx/Library/Android/sdk/build-tools/35.0.0/apksigner verify --verbose \
+#   build/app/outputs/flutter-apk/app-release.apk
 
 # 构建armv8 + ios
 # ./build.sh --armv8-ios
@@ -19,6 +52,7 @@ NC='\033[0m' # No Color
 APP_VERSION=""
 ANDROID_TARGET_PLATFORMS="android-arm64,android-arm"
 COPY_ANDROID_ARMV7=true
+ANDROID_SIGNING_MODE="debug"
 
 # 读取版本号
 read_version() {
@@ -58,6 +92,18 @@ log_warning() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# 检查 Android 发布签名状态
+check_android_signing() {
+    # 检查是否存在正式签名配置
+    if [ -f "android/key.properties" ]; then
+        ANDROID_SIGNING_MODE="release"
+        log_info "检测到 Android 发布签名配置，本次将生成正式签名 APK"
+    else
+        ANDROID_SIGNING_MODE="debug"
+        log_warning "未检测到 android/key.properties，本次 Android release 将回退为 debug 签名，仅适合本地调试安装"
+    fi
 }
 
 # 检查 Flutter 环境
@@ -100,6 +146,9 @@ build_android() {
     else
         log_info "开始构建安卓 armv8 版本..."
     fi
+
+    # 构建前先输出当前签名模式，避免误拿调试签名包发布
+    check_android_signing()
     
     # 确保安卓构建目录存在
     mkdir -p build/android

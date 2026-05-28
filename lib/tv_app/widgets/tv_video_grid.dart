@@ -210,7 +210,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
             ),
             if (widget.onClearPressed != null) ...[
               const SizedBox(width: 16),
-              _TvVideoGridActionButton(
+              TvVideoGridActionButton(
                 key: const ValueKey('tv-video-library-clear-button'),
                 label: '删除全部',
                 onPressed: widget.onClearPressed,
@@ -420,9 +420,9 @@ class _TvVideoGridState extends State<TvVideoGrid> {
 }
 
 /// TV 视频库标题操作按钮。
-class _TvVideoGridActionButton extends StatelessWidget {
+class TvVideoGridActionButton extends StatelessWidget {
   /// 创建视频库标题操作按钮。
-  const _TvVideoGridActionButton({
+  const TvVideoGridActionButton({
     super.key,
     required this.label,
     required this.onPressed,

@@ -69,7 +69,9 @@ class _TvBackHandlerState extends State<TvBackHandler> {
 
   /// 处理返回类按键。
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    // 返回键只响应首次按下，长按重复事件统一忽略，
+    // 避免子页刚返回时，同一次物理按压的 repeat 又落到上一页。
+    if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
 
@@ -91,17 +93,21 @@ class _TvBackHandlerState extends State<TvBackHandler> {
     _backDispatchScheduled = true;
 
     Future<void>.microtask(() async {
-      _backDispatchScheduled = false;
-      if (!mounted) {
-        return;
-      }
+      try {
+        if (!mounted) {
+          return;
+        }
 
-      final handled = await widget.onBackPressed?.call() ?? false;
-      if (handled || !mounted) {
-        return;
-      }
+        final handled = await widget.onBackPressed?.call() ?? false;
+        if (handled || !mounted) {
+          return;
+        }
 
-      await Navigator.of(context).maybePop();
+        await Navigator.of(context).maybePop();
+      } finally {
+        // 返回链路彻底结束后再放开防重入锁，避免一次长按在同页内触发多次返回。
+        _backDispatchScheduled = false;
+      }
     });
   }
 

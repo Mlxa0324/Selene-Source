@@ -63,7 +63,7 @@ void main() async {
   // 进入 App 前整理非配置类缓存，保留账号、服务器、主题等设置。
   await AppCacheService().prepareBeforeAppEnter();
 
-  runApp(const SeleneApp());
+  runApp(const IvyTvApp());
 
   // 初始化 Windows 窗口配置
   if (Platform.isWindows) {
@@ -74,14 +74,14 @@ void main() async {
       win.minSize = minSize;
       win.size = initialSize;
       win.alignment = Alignment.center;
-      win.title = "Selene";
+      win.title = "IvyTV";
       win.show();
     });
   }
 }
 
-class SeleneApp extends StatelessWidget {
-  const SeleneApp({super.key});
+class IvyTvApp extends StatelessWidget {
+  const IvyTvApp({super.key});
 
   /// 根导航器 Key，用于全局 Esc 返回键统一触发路由返回。
   static final GlobalKey<NavigatorState> _navigatorKey =
@@ -97,7 +97,7 @@ class SeleneApp extends StatelessWidget {
       child: Consumer<ThemeService>(
         builder: (context, themeService, child) {
           return MaterialApp(
-            title: 'Selene',
+            title: 'IvyTV',
             debugShowCheckedModeBanner: false,
             navigatorKey: _navigatorKey,
             theme: themeService.lightTheme,

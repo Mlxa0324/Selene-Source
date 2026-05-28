@@ -530,6 +530,11 @@ class _UserMenuState extends State<UserMenu> {
   }
 
   Future<void> _handleCheckUpdate() async {
+    // 更新功能关闭后，手动入口兜底直接返回，避免旧入口被外部误触发。
+    if (!VersionService.isUpdateCheckEnabled) {
+      return;
+    }
+
     try {
       // 显示加载提示
       if (mounted) {
@@ -1570,39 +1575,42 @@ class _UserMenuState extends State<UserMenu> {
               ? const Color(0xFF374151)
               : const Color(0xFFe5e7eb),
         ),
-        // 检查更新
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: _handleCheckUpdate,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  const Icon(LucideIcons.download,
-                      size: 20, color: Color(0xFF3b82f6)),
-                  const SizedBox(width: 12),
-                  Text(
-                    '检查更新',
-                    style: FontUtils.poppins(
-                      fontSize: 16,
-                      color: widget.isDarkMode
-                          ? const Color(0xFFffffff)
-                          : const Color(0xFF1f2937),
-                      fontWeight: FontWeight.w500,
+        if (VersionService.isUpdateCheckEnabled) ...[
+          // 更新功能恢复前，不再展示手动检查入口。
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _handleCheckUpdate,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    const Icon(LucideIcons.download,
+                        size: 20, color: Color(0xFF3b82f6)),
+                    const SizedBox(width: 12),
+                    Text(
+                      '检查更新',
+                      style: FontUtils.poppins(
+                        fontSize: 16,
+                        color: widget.isDarkMode
+                            ? const Color(0xFFffffff)
+                            : const Color(0xFF1f2937),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-        Container(
-          height: 1,
-          color: widget.isDarkMode
-              ? const Color(0xFF374151)
-              : const Color(0xFFe5e7eb),
-        ),
+          Container(
+            height: 1,
+            color: widget.isDarkMode
+                ? const Color(0xFF374151)
+                : const Color(0xFFe5e7eb),
+          ),
+        ],
         // 登出按钮
         Material(
           color: Colors.transparent,
@@ -1644,7 +1652,7 @@ class _UserMenuState extends State<UserMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Center(
                 child: Text(
-                  _version.isEmpty ? 'v1.4.3' : 'v$_version',
+                  _version.isEmpty ? 'v2.1.8' : 'v$_version',
                   style: FontUtils.poppins(
                     fontSize: 14,
                     color: widget.isDarkMode

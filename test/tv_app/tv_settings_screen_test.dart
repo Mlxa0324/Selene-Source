@@ -5,6 +5,7 @@ import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/tv_app/screens/tv_home_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
 import 'package:selene/tv_app/services/tv_account_config_service.dart';
+import 'package:selene/tv_app/services/tv_mobile_settings_bridge.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 
 void main() {
@@ -86,11 +87,6 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final firstTextField =
-        tester.widget<TextField>(find.byType(TextField).at(0));
-    firstTextField.focusNode?.requestFocus();
-    await tester.pump();
-
     expect(tester.widget<TextField>(find.byType(TextField).at(0)).readOnly,
         isTrue);
 
@@ -99,6 +95,159 @@ void main() {
 
     expect(tester.widget<TextField>(find.byType(TextField).at(0)).readOnly,
         isFalse);
+  });
+
+  testWidgets('dispatches initial remote focus to the first settings field',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-server-url-browse',
+    );
+  });
+
+  testWidgets('moves focus to the next TV text field on remote down key',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-username-browse',
+    );
+  });
+
+  testWidgets('moves through danmaku rows in stable remote order',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await _sendArrowDownTimes(tester, 7);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-ad-filter-row',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-danmaku-base-api-browse',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-danmaku-enabled-row',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-opacity-row',
+    );
+  });
+
+  testWidgets('shows mobile scan config section in TV settings',
+      (tester) async {
+    final fakeBridge = _FakeMobileConfigBridge();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            startMobileConfigBridge: fakeBridge.start,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('手机扫码配置'), findsOneWidget);
+    expect(find.text('使用手机扫码打开配置页'), findsOneWidget);
+    expect(find.text('192.168.1.8:18321'), findsOneWidget);
+  });
+
+  testWidgets('applies mobile scan draft back into TV settings form',
+      (tester) async {
+    final fakeBridge = _FakeMobileConfigBridge();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            startMobileConfigBridge: fakeBridge.start,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    fakeBridge.submit(
+      const TvMobileSettingsDraft(
+        serverUrl: 'https://tv.example.com',
+        username: 'tv_user',
+        password: 'tv_password',
+        doubanImageSource: '豆瓣官方精品 CDN',
+        adFilterEnabled: false,
+        danmakuBaseApi: 'https://danmaku.tv.example.com/',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已同步手机配置，请在电视上确认保存'), findsOneWidget);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
+      'https://tv.example.com',
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(1)).controller?.text,
+      'tv_user',
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(2)).controller?.text,
+      'tv_password',
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField).at(3)).controller?.text,
+      'https://danmaku.tv.example.com/',
+    );
+    expect(find.text('豆瓣官方精品 CDN'), findsWidgets);
   });
 
   testWidgets('saves TV image proxy option', (tester) async {
@@ -118,6 +267,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('豆瓣 CDN By CMLiussss（腾讯云）'));
     await tester.tap(find.text('豆瓣 CDN By CMLiussss（腾讯云）'));
     await tester.pumpAndSettle();
 
@@ -150,8 +300,11 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('tv-settings-ad-filter-switch')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('tv-settings-ad-filter-switch')),
+    );
+    await tester
+        .tap(find.byKey(const ValueKey('tv-settings-ad-filter-switch')));
     await tester.pumpAndSettle();
 
     expect(savedAdFilterEnabled, isFalse);
@@ -175,6 +328,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('奈飞红'));
     await tester.tap(find.text('奈飞红'));
     await tester.pumpAndSettle();
 
@@ -207,8 +361,12 @@ void main() {
     Switch initialAdFilterSwitch = tester.widget<Switch>(
       find.byKey(const ValueKey('tv-settings-ad-filter-switch')),
     );
-    expect(initialAdFilterSwitch.activeThumbColor, TvThemePalette.ivyGreen.accent);
+    expect(
+      initialAdFilterSwitch.activeThumbColor,
+      TvThemePalette.ivyGreen.accent,
+    );
 
+    await tester.ensureVisible(find.text('奈飞红'));
     await tester.tap(find.text('奈飞红'));
     await tester.pumpAndSettle();
 
@@ -285,9 +443,13 @@ void main() {
       find.byType(TextField).at(3),
       'https://danmaku.example.com',
     );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('tv-settings-danmaku-enabled-switch')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('tv-settings-danmaku-enabled-switch')),
     );
+    await tester.ensureVisible(find.byType(Slider).at(0));
     await tester.drag(find.byType(Slider).at(0), const Offset(-120, 0));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('保存弹幕配置'));
@@ -373,9 +535,51 @@ void main() {
 }
 
 Future<void> _activateTextField(WidgetTester tester, int index) async {
-  final textField = tester.widget<TextField>(find.byType(TextField).at(index));
-  textField.focusNode?.requestFocus();
-  await tester.pump();
-  await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+  final key = switch (index) {
+    0 => const ValueKey('tv-settings-field-server-url'),
+    1 => const ValueKey('tv-settings-field-username'),
+    2 => const ValueKey('tv-settings-field-password'),
+    3 => const ValueKey('tv-settings-field-danmaku-base-api'),
+    _ => throw ArgumentError('未知的设置输入框索引: $index'),
+  };
+  await tester.ensureVisible(find.byKey(key));
+  await tester.tap(find.byKey(key));
   await tester.pumpAndSettle();
+}
+
+class _FakeMobileConfigBridge {
+  final ValueNotifier<String> _statusNotifier = ValueNotifier<String>(
+    '请使用手机扫码填写配置',
+  );
+
+  final Uri shareUri = Uri.parse('http://192.168.1.8:18321');
+
+  late ValueChanged<TvMobileSettingsDraft> _onDraftSubmitted;
+
+  Future<TvMobileSettingsBridgeSession> start(
+    TvMobileSettingsDraft initialDraft,
+    ValueChanged<TvMobileSettingsDraft> onDraftSubmitted,
+  ) async {
+    _onDraftSubmitted = onDraftSubmitted;
+    return TvMobileSettingsBridgeSession(
+      shareUri: shareUri,
+      statusNotifier: _statusNotifier,
+      updateDraft: (_) {},
+      dispose: () async {
+        _statusNotifier.dispose();
+      },
+    );
+  }
+
+  void submit(TvMobileSettingsDraft draft) {
+    _statusNotifier.value = '已接收手机端提交';
+    _onDraftSubmitted(draft);
+  }
+}
+
+Future<void> _sendArrowDownTimes(WidgetTester tester, int count) async {
+  for (var index = 0; index < count; index++) {
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+  }
 }

@@ -125,6 +125,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// 检查应用更新
   void _checkForUpdates() async {
+    // 更新功能关闭后，首页启动阶段不再发起任何远程版本请求。
+    if (!VersionService.isUpdateCheckEnabled) return;
+
     // 💡 优化：如果完全断网（如在飞机上），则不检查更新，避免不必要的请求
     final isConnected = await ApiService.checkConnection();
     if (!isConnected) return;
@@ -146,7 +149,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       // 静默失败，不影响用户体验
-      print('检查更新失败: $e');
+      debugPrint('检查更新失败: $e');
     }
   }
 
@@ -577,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
         PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) =>
-          const SearchScreen(),
+              const SearchScreen(),
           transitionDuration: Duration.zero, // 无打开动画
           reverseTransitionDuration: Duration.zero, // 无关闭动画
         ),
@@ -588,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// 处理点击 Selene 标题跳转到首页
+  /// 处理点击 IvyTV 标题跳转到首页
   void _onHomeTap() {
     setState(() {
       // 切换到首页
@@ -680,19 +683,19 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         break;
       case VideoMenuAction.favorite:
-      // 收藏
+        // 收藏
         _handleFavorite(playRecord);
         break;
       case VideoMenuAction.unfavorite:
-      // 取消收藏
+        // 取消收藏
         _handleUnfavorite(playRecord);
         break;
       case VideoMenuAction.deleteRecord:
-      // 删除记录
+        // 删除记录
         _deletePlayRecord(playRecord);
         break;
       case VideoMenuAction.doubanDetail:
-      // 豆瓣详情 - 已在组件内部处理URL跳转
+        // 豆瓣详情 - 已在组件内部处理URL跳转
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -709,7 +712,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         break;
       case VideoMenuAction.bangumiDetail:
-      // Bangumi详情 - 已在组件内部处理URL跳转
+        // Bangumi详情 - 已在组件内部处理URL跳转
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(

@@ -493,6 +493,42 @@ void main() {
   });
 
   testWidgets(
+      'first card of first non empty home section moves up to selected top nav',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final firstMovieFocusNode = _focusNodeForVideoCard(tester, 'movie_0');
+    firstMovieFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(firstMovieFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(firstMovieFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets(
       'home top nav down restores remembered focus after first manual browse',
       (tester) async {
     await tester.pumpWidget(
@@ -567,6 +603,61 @@ void main() {
     expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
     expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isFalse);
     expect(_focusNodeForVideoCard(tester, 'movie_3').hasFocus, isFalse);
+  });
+
+  testWidgets(
+      'root back from first non empty home section focuses top nav before exit',
+      (tester) async {
+    final platformCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      platformCalls.add(call);
+      return true;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvBackHandler(
+          autofocus: true,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: const [],
+              hotMovies: List.generate(
+                6,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: const [],
+              favorites: const [],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final firstMovieFocusNode = _focusNodeForVideoCard(tester, 'movie_0');
+    firstMovieFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(firstMovieFocusNode.hasFocus, isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(firstMovieFocusNode.hasFocus, isFalse);
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+    expect(
+      platformCalls.where((call) => call.method == 'SystemNavigator.pop'),
+      isEmpty,
+    );
   });
 
   testWidgets('quick action down returns to selected tab before home cards',
@@ -692,6 +783,113 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TV 播放历史页已打开'), findsOneWidget);
+  });
+
+  testWidgets(
+      'back repeat after history page pop does not immediately open exit dialog',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvBackHandler(
+          autofocus: true,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: [_videoInfo('continue_0', '继续 0')],
+              hotMovies: List.generate(
+                6,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: [
+                _videoInfo('history_0', '历史 0'),
+              ],
+              favorites: const [],
+            ),
+            buildHistoryPage: () => TvHistoryScreen(
+              loadVideos: (_) async => [
+                _videoInfo('history_0', '历史 0'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-history')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('tv-video-library-screen-播放历史')),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('tv-video-library-screen-播放历史')),
+      findsNothing,
+    );
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+  });
+
+  testWidgets(
+      'system back from history page does not fall through to home exit dialog',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvBackHandler(
+          autofocus: true,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: [_videoInfo('continue_0', '继续 0')],
+              hotMovies: List.generate(
+                6,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: [
+                _videoInfo('history_0', '历史 0'),
+              ],
+              favorites: const [],
+            ),
+            buildHistoryPage: () => TvHistoryScreen(
+              loadVideos: (_) async => [
+                _videoInfo('history_0', '历史 0'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-history')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('tv-video-library-screen-播放历史')),
+      findsOneWidget,
+    );
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('tv-video-library-screen-播放历史')),
+      findsNothing,
+    );
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
   });
 
   testWidgets(
@@ -1128,6 +1326,28 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('tv-edge-shake')), findsOneWidget);
+  });
+
+  testWidgets('vertical grid does not overflow with enlarged card text',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvVideoGrid(
+            title: '电影',
+            videos: List.generate(
+              7,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('vertical grid loads more when focus reaches second last row',

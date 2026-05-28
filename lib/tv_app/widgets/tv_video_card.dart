@@ -114,13 +114,19 @@ class TvVideoCard extends StatelessWidget {
   static const double width = 158.0;
 
   /// TV 卡片固定高度。
-  static const double height = 296.0;
+  static const double height = 298.0;
 
   /// TV 卡片封面固定高度。
   static const double coverHeight = 237.0;
 
   /// TV 卡片获取焦点后的整体放大比例。
   static const double focusedScale = 1.08;
+
+  /// TV 卡片标题字号。
+  static const double titleFontSize = 16.0;
+
+  /// TV 卡片副标题字号。
+  static const double subtitleFontSize = 13.0;
 
   /// TV 雨刷光带起点，横向为主并轻微向下倾斜。
   static const Alignment shimmerBegin = Alignment(-1.2, -0.34);
@@ -173,7 +179,7 @@ class TvVideoCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: FontUtils.poppins(
-                      fontSize: 15,
+                      fontSize: titleFontSize,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     ),
@@ -187,7 +193,7 @@ class TvVideoCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: FontUtils.poppins(
-                      fontSize: 12,
+                      fontSize: subtitleFontSize,
                       color: const Color(0xFF98A2A8),
                     ),
                   ),
@@ -218,7 +224,7 @@ class TvVideoCard extends StatelessWidget {
     } else if (videoInfo.sourceName.isNotEmpty) {
       parts.add(videoInfo.sourceName);
     }
-    return parts.isEmpty ? 'Selene' : parts.join(' · ');
+    return parts.isEmpty ? 'IvyTV' : parts.join(' · ');
   }
 
   /// 构建封面区域。
@@ -689,10 +695,31 @@ class _TvCoverImageState extends State<_TvCoverImage> {
 
 /// TV 卡片封面加载骨架。
 ///
-/// 用轻微倾斜的横向雨刷光带提示图片正在首次加载，也可复用到搜索结果首屏骨架。
+/// 用从左到右的柔和横向雨刷光带提示图片正在首次加载，也可复用到搜索结果首屏骨架。
 class TvCoverLoadingSkeleton extends StatefulWidget {
   /// 创建 TV 卡片封面加载骨架。
   const TvCoverLoadingSkeleton({super.key});
+
+  /// 骨架雨刷起点，保持纯横向移动，不再带纵向斜切角度。
+  static const Alignment shimmerBegin = Alignment(-1.2, 0);
+
+  /// 骨架雨刷终点，保持纯横向移动，不再带纵向斜切角度。
+  static const Alignment shimmerEnd = Alignment(1.2, 0);
+
+  /// 骨架雨刷纵向位移系数。
+  ///
+  /// 当前骨架明确要求只做左右平移，因此固定为 0。
+  static const double shimmerVerticalTravelFactor = 0;
+
+  /// 骨架雨刷边缘高光色。
+  ///
+  /// 使用偏灰白的低透明度高光，避免在深色海报占位上显得过亮突兀。
+  static const Color shimmerSoftEdgeColor = Color(0x0FE4EAED);
+
+  /// 骨架雨刷中心高光色。
+  ///
+  /// 中心亮度仍高于边缘，但相比纯白高光更柔和，减少“白条”割裂感。
+  static const Color shimmerCenterColor = Color(0x1CE4EAED);
 
   @override
   State<TvCoverLoadingSkeleton> createState() => _TvCoverLoadingSkeletonState();
@@ -739,24 +766,24 @@ class _TvCoverLoadingSkeletonState extends State<TvCoverLoadingSkeleton>
                 progress * TvVideoCard.width,
                 progress *
                     TvVideoCard.coverHeight *
-                    TvVideoCard.shimmerVerticalTravelFactor,
+                    TvCoverLoadingSkeleton.shimmerVerticalTravelFactor,
               ),
               child: child,
             );
           },
-          child: DecoratedBox(
+          child: const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: TvVideoCard.shimmerBegin,
-                end: TvVideoCard.shimmerEnd,
-                colors: [
+                begin: TvCoverLoadingSkeleton.shimmerBegin,
+                end: TvCoverLoadingSkeleton.shimmerEnd,
+                colors: <Color>[
                   Colors.transparent,
-                  Colors.white.withValues(alpha: 0.08),
-                  Colors.white.withValues(alpha: 0.18),
-                  Colors.white.withValues(alpha: 0.08),
+                  TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
+                  TvCoverLoadingSkeleton.shimmerCenterColor,
+                  TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
                   Colors.transparent,
                 ],
-                stops: const [0.28, 0.42, 0.50, 0.58, 0.72],
+                stops: [0.28, 0.42, 0.50, 0.58, 0.72],
               ),
             ),
           ),

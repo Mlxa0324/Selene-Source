@@ -5,28 +5,23 @@ import 'package:selene/widgets/user_menu.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('long pressing the version keeps the current page',
+  testWidgets('user menu hides update entry after update feature shutdown',
       (tester) async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
     PackageInfo.setMockInitialValues(
       appName: 'IvyTV',
-      packageName: 'com.example.selene',
+      packageName: 'com.example.ivytv',
       version: '2.1.8',
       buildNumber: '1',
       buildSignature: 'sig',
     );
 
-    var versionTapCount = 0;
-
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: UserMenu(
             isDarkMode: false,
-            onVersionTap: () {
-              versionTapCount++;
-            },
           ),
         ),
       ),
@@ -34,19 +29,6 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final versionText = find.text('v2.1.8');
-    expect(versionText, findsOneWidget);
-    final gestureDetectorFinder = find.ancestor(
-      of: versionText,
-      matching: find.byType(GestureDetector),
-    );
-    final gestureDetector =
-        tester.widget<GestureDetector>(gestureDetectorFinder.first);
-
-    expect(gestureDetector.onLongPress, isNull);
-
-    await tester.tap(versionText);
-    await tester.pumpAndSettle();
-    expect(versionTapCount, 1);
+    expect(find.text('检查更新'), findsNothing);
   });
 }

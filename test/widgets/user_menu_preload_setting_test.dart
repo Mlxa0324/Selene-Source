@@ -20,9 +20,9 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     PackageInfo.setMockInitialValues(
-      appName: 'Selene',
+      appName: 'IvyTV',
       packageName: 'com.example.selene',
-      version: '1.6.7',
+      version: '2.1.8',
       buildNumber: '1',
       buildSignature: 'sig',
     );
@@ -65,9 +65,9 @@ void main() {
 
     SharedPreferences.setMockInitialValues({});
     PackageInfo.setMockInitialValues(
-      appName: 'Selene',
+      appName: 'IvyTV',
       packageName: 'com.example.selene',
-      version: '1.6.7',
+      version: '2.1.8',
       buildNumber: '1',
       buildSignature: 'sig',
     );
@@ -100,9 +100,9 @@ void main() {
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     PackageInfo.setMockInitialValues(
-      appName: 'Selene',
+      appName: 'IvyTV',
       packageName: 'com.example.selene',
-      version: '1.6.7',
+      version: '2.1.8',
       buildNumber: '1',
       buildSignature: 'sig',
     );
@@ -155,9 +155,9 @@ void main() {
 
     SharedPreferences.setMockInitialValues({});
     PackageInfo.setMockInitialValues(
-      appName: 'Selene',
+      appName: 'IvyTV',
       packageName: 'com.example.selene',
-      version: '1.6.7',
+      version: '2.1.8',
       buildNumber: '1',
       buildSignature: 'sig',
     );

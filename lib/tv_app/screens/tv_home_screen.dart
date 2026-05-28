@@ -2047,6 +2047,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       );
       return;
     }
+
+    // 已经来到首页内容区最顶部的非空分区时，上键应当回到当前顶部导航入口。
+    // 例如“继续观看”为空、焦点停在“热门电影”首卡时，不能再因为没有上一个分区而停在原地。
+    if (!moveForward) {
+      _topNavController.requestSelectedFocus();
+    }
   }
 
   /// 请求首页横向分区最近一次焦点。

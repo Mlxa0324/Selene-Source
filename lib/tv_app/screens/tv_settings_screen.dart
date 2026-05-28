@@ -1,14 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/services/app_cache_service.dart';
 import 'package:selene/services/danmaku_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/services/tv_account_config_service.dart';
+import 'package:selene/tv_app/services/tv_mobile_settings_bridge.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
-import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
 
@@ -43,6 +46,13 @@ typedef TvCacheSizeLoader = Future<int> Function();
 
 /// TV 缓存清理函数。
 typedef TvCacheCleaner = Future<void> Function();
+
+/// TV 手机扫码配置桥接启动函数。
+typedef TvMobileConfigBridgeStarter = Future<TvMobileSettingsBridgeSession>
+    Function(
+  TvMobileSettingsDraft initialDraft,
+  ValueChanged<TvMobileSettingsDraft> onDraftSubmitted,
+);
 
 /// TV 设置页聚合数据。
 class TvSettingsData {
@@ -113,6 +123,7 @@ class TvSettingsScreen extends StatefulWidget {
     this.saveDanmaku,
     this.loadCacheSize,
     this.clearAllCaches,
+    this.startMobileConfigBridge,
   });
 
   /// 设置加载函数。
@@ -141,6 +152,9 @@ class TvSettingsScreen extends StatefulWidget {
 
   /// 清理全部缓存函数。
   final TvCacheCleaner? clearAllCaches;
+
+  /// 手机扫码配置桥接启动函数。
+  final TvMobileConfigBridgeStarter? startMobileConfigBridge;
 
   @override
   State<TvSettingsScreen> createState() => _TvSettingsScreenState();
@@ -207,6 +221,12 @@ class TvSettingsScreen extends StatefulWidget {
 }
 
 class _TvSettingsScreenState extends State<TvSettingsScreen> {
+  /// 页面内容最大宽度。
+  static const double _contentMaxWidth = 1360;
+
+  /// 分组面板之间的垂直间距。
+  static const double _panelSpacing = 24;
+
   /// 服务器地址输入控制器。
   final TextEditingController _serverUrlController = TextEditingController();
 
@@ -219,6 +239,73 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 弹幕服务器输入控制器。
   final TextEditingController _danmakuBaseApiController =
       TextEditingController();
+
+  /// 首个服务器地址输入框的浏览态焦点。
+  ///
+  /// 设置页进入后会先把首焦点下发到这里，避免停留在页面根焦点上。
+  final FocusNode _serverUrlBrowseFocusNode = FocusNode(
+    debugLabel: 'tv-settings-server-url-browse',
+  );
+
+  /// 账号输入框的浏览态焦点。
+  final FocusNode _usernameBrowseFocusNode = FocusNode(
+    debugLabel: 'tv-settings-username-browse',
+  );
+
+  /// 密码输入框的浏览态焦点。
+  final FocusNode _passwordBrowseFocusNode = FocusNode(
+    debugLabel: 'tv-settings-password-browse',
+  );
+
+  /// 弹幕服务器地址输入框的浏览态焦点。
+  final FocusNode _danmakuBaseApiBrowseFocusNode = FocusNode(
+    debugLabel: 'tv-settings-danmaku-base-api-browse',
+  );
+
+  /// 自动去广告开关行焦点。
+  final FocusNode _adFilterFocusNode = FocusNode(
+    debugLabel: 'tv-settings-ad-filter-row',
+  );
+
+  /// 弹幕开关行焦点。
+  final FocusNode _danmakuEnabledFocusNode = FocusNode(
+    debugLabel: 'tv-settings-danmaku-enabled-row',
+  );
+
+  /// 弹幕不透明度焦点。
+  final FocusNode _danmakuOpacityFocusNode = FocusNode(
+    debugLabel: 'tv-settings-opacity-row',
+  );
+
+  /// 弹幕字体缩放焦点。
+  final FocusNode _danmakuScaleFocusNode = FocusNode(
+    debugLabel: 'tv-settings-scale-row',
+  );
+
+  /// 弹幕显示区域焦点。
+  final FocusNode _danmakuDisplayAreaFocusNode = FocusNode(
+    debugLabel: 'tv-settings-display-area-row',
+  );
+
+  /// 弹幕防止重叠焦点。
+  final FocusNode _danmakuPreventOverlapFocusNode = FocusNode(
+    debugLabel: 'tv-settings-prevent-overlap-row',
+  );
+
+  /// 弹幕同步视频速度焦点。
+  final FocusNode _danmakuSyncVideoSpeedFocusNode = FocusNode(
+    debugLabel: 'tv-settings-sync-video-speed-row',
+  );
+
+  /// 保存弹幕配置按钮焦点。
+  final FocusNode _saveDanmakuFocusNode = FocusNode(
+    debugLabel: 'tv-settings-save-danmaku-button',
+  );
+
+  /// 清除缓存按钮焦点。
+  final FocusNode _clearCachesFocusNode = FocusNode(
+    debugLabel: 'tv-settings-clear-caches-button',
+  );
 
   /// 设置加载任务。
   late Future<TvSettingsData> _settingsFuture;
@@ -241,6 +328,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 是否已把加载数据同步到输入框。
   bool _appliedLoadedData = false;
 
+  /// 是否已派发过首个设置项焦点。
+  bool _didDispatchInitialFieldFocus = false;
+
   /// 是否正在保存账号。
   bool _savingAccount = false;
 
@@ -250,6 +340,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 是否正在清理缓存。
   bool _clearingCaches = false;
 
+  /// 当前手机扫码配置桥接会话。
+  TvMobileSettingsBridgeSession? _mobileConfigBridgeSession;
+
   @override
   void initState() {
     super.initState();
@@ -257,15 +350,120 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         (widget.loadSettings ?? TvSettingsScreen.defaultLoadSettings)();
     _cacheSizeFuture =
         (widget.loadCacheSize ?? TvSettingsScreen.defaultLoadCacheSize)();
+    _serverUrlController.addListener(_syncMobileConfigDraft);
+    _usernameController.addListener(_syncMobileConfigDraft);
+    _passwordController.addListener(_syncMobileConfigDraft);
+    _danmakuBaseApiController.addListener(_syncMobileConfigDraft);
+    _startMobileConfigBridge();
   }
 
   @override
   void dispose() {
+    unawaited(_mobileConfigBridgeSession?.dispose() ?? Future<void>.value());
     _serverUrlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     _danmakuBaseApiController.dispose();
+    _serverUrlBrowseFocusNode.dispose();
+    _usernameBrowseFocusNode.dispose();
+    _passwordBrowseFocusNode.dispose();
+    _danmakuBaseApiBrowseFocusNode.dispose();
+    _adFilterFocusNode.dispose();
+    _danmakuEnabledFocusNode.dispose();
+    _danmakuOpacityFocusNode.dispose();
+    _danmakuScaleFocusNode.dispose();
+    _danmakuDisplayAreaFocusNode.dispose();
+    _danmakuPreventOverlapFocusNode.dispose();
+    _danmakuSyncVideoSpeedFocusNode.dispose();
+    _saveDanmakuFocusNode.dispose();
+    _clearCachesFocusNode.dispose();
     super.dispose();
+  }
+
+  /// 启动手机扫码配置桥接。
+  ///
+  /// TV 端页面会在进入设置页后立即生成一个局域网页面，
+  /// 让手机扫码后直接填写服务器、图片代理和弹幕地址。
+  Future<void> _startMobileConfigBridge() async {
+    final starter =
+        widget.startMobileConfigBridge ?? TvMobileSettingsBridge.startSession;
+    final session = await starter(
+      _buildMobileSettingsDraft(),
+      _applyMobileSettingsDraft,
+    );
+    if (!mounted) {
+      await session.dispose();
+      return;
+    }
+    setState(() {
+      _mobileConfigBridgeSession = session;
+    });
+  }
+
+  /// 重新生成手机扫码配置会话。
+  Future<void> _restartMobileConfigBridge() async {
+    final previousSession = _mobileConfigBridgeSession;
+    setState(() {
+      _mobileConfigBridgeSession = null;
+    });
+    await previousSession?.dispose();
+    if (!mounted) {
+      return;
+    }
+    await _startMobileConfigBridge();
+  }
+
+  /// 根据当前页面状态构建手机端草稿。
+  TvMobileSettingsDraft _buildMobileSettingsDraft() {
+    return TvMobileSettingsDraft(
+      serverUrl: _serverUrlController.text,
+      username: _usernameController.text,
+      password: _passwordController.text,
+      doubanImageSource: _doubanImageSource,
+      adFilterEnabled: _adFilterEnabled,
+      danmakuBaseApi: _danmakuBaseApiController.text,
+    );
+  }
+
+  /// 把当前页面草稿同步到手机配置网页。
+  void _syncMobileConfigDraft() {
+    _mobileConfigBridgeSession?.updateDraft(_buildMobileSettingsDraft());
+  }
+
+  /// 应用手机端提交回来的配置草稿。
+  void _applyMobileSettingsDraft(TvMobileSettingsDraft draft) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      // 先更新输入型字段，避免手机提交后还要在电视上重新逐字录入。
+      _serverUrlController.text = draft.serverUrl;
+      _usernameController.text = draft.username;
+      _passwordController.text = draft.password;
+      _doubanImageSource = draft.doubanImageSource;
+      _adFilterEnabled = draft.adFilterEnabled;
+      _danmakuBaseApiController.text = draft.danmakuBaseApi;
+    });
+    _syncMobileConfigDraft();
+    _showToast('已同步手机配置，请在电视上确认保存', TvTheme.of(context).accent);
+  }
+
+  /// 在数据加载完成后派发首个设置项焦点。
+  void _dispatchInitialFieldFocusIfNeeded({
+    required bool isLoading,
+  }) {
+    if (_didDispatchInitialFieldFocus || isLoading) {
+      return;
+    }
+
+    _didDispatchInitialFieldFocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _serverUrlBrowseFocusNode.requestFocus();
+    });
   }
 
   /// 将加载到的数据写入输入框。
@@ -282,6 +480,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _danmakuBaseApiController.text = data.danmakuBaseApi;
     _danmakuSettings = data.danmakuSettings;
     _appliedLoadedData = true;
+    _syncMobileConfigDraft();
   }
 
   /// 保存服务器账号配置。
@@ -355,13 +554,14 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     setState(() {
       _doubanImageSource = imageSource;
     });
+    _syncMobileConfigDraft();
     _showToast('图片代理已保存', TvTheme.of(context).accent);
   }
 
   /// 保存自动去广告开关。
   Future<void> _saveAdFilterEnabled(bool enabled) async {
-    final saver =
-        widget.saveAdFilterEnabled ?? TvSettingsScreen.defaultSaveAdFilterEnabled;
+    final saver = widget.saveAdFilterEnabled ??
+        TvSettingsScreen.defaultSaveAdFilterEnabled;
     await saver(enabled);
     if (!mounted) {
       return;
@@ -369,6 +569,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     setState(() {
       _adFilterEnabled = enabled;
     });
+    _syncMobileConfigDraft();
     _showToast(
       enabled ? '自动去广告已开启' : '自动去广告已关闭',
       TvTheme.of(context).accent,
@@ -435,6 +636,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
             }
 
             _applyLoadedData(snapshot.data ?? TvSettingsData.empty());
+            _dispatchInitialFieldFocusIfNeeded(
+              isLoading: snapshot.connectionState != ConnectionState.done,
+            );
 
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
@@ -443,35 +647,40 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
                 TvLayout.pageHorizontalPadding,
                 64,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '设置',
-                    style: FontUtils.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(child: _buildAccountSection()),
-                      const SizedBox(width: 28),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            _buildDanmakuSection(),
-                            const SizedBox(height: 28),
-                            _buildCacheSection(),
-                          ],
+                      Text(
+                        '设置',
+                        style: FontUtils.poppins(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '首焦点会自动进入服务器地址；输入框按确认编辑，开关和滑杆可直接用左右键调节。',
+                        style: FontUtils.poppins(
+                          fontSize: 15,
+                          color: const Color(0xFF98A2A8),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _buildAccountSection(),
+                      const SizedBox(height: _panelSpacing),
+                      _buildMobileConfigSection(),
+                      const SizedBox(height: _panelSpacing),
+                      _buildDanmakuSection(),
+                      const SizedBox(height: _panelSpacing),
+                      _buildCacheSection(),
                     ],
                   ),
-                ],
+                ),
               ),
             );
           },
@@ -484,24 +693,31 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   Widget _buildAccountSection() {
     return _TvSettingsPanel(
       title: '服务器配置',
+      description: '账号类字段默认停留在浏览态，按一次确认后才真正进入编辑。',
       children: [
         _TvTextField(
+          fieldKey: const ValueKey('tv-settings-field-server-url'),
           label: '服务器地址',
           hintText: 'https://example.com',
           controller: _serverUrlController,
+          browseFocusNode: _serverUrlBrowseFocusNode,
         ),
         const SizedBox(height: 14),
         _TvTextField(
+          fieldKey: const ValueKey('tv-settings-field-username'),
           label: '账号',
           hintText: '请输入账号',
           controller: _usernameController,
+          browseFocusNode: _usernameBrowseFocusNode,
         ),
         const SizedBox(height: 14),
         _TvTextField(
+          fieldKey: const ValueKey('tv-settings-field-password'),
           label: '密码',
           hintText: '请输入密码',
           controller: _passwordController,
           obscureText: true,
+          browseFocusNode: _passwordBrowseFocusNode,
         ),
         const SizedBox(height: 24),
         _TvActionButton(
@@ -516,6 +732,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   Widget _buildDanmakuSection() {
     return _TvSettingsPanel(
       title: '图片与弹幕',
+      description: '选项按钮可直接确认切换，开关与滑杆在获焦后可直接用左右键调整。',
       children: [
         _TvThemeOptionRow(
           label: '主题色',
@@ -527,29 +744,35 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         _TvOptionRow(
           label: '图片代理',
           value: _doubanImageSource,
-          options: const [
-            '直连',
-            '豆瓣官方精品 CDN',
-            '豆瓣 CDN By CMLiussss（腾讯云）',
-            '豆瓣 CDN By CMLiussss（阿里云）',
-          ],
+          options: TvMobileSettingsDraft.availableDoubanImageSources,
           onChanged: _saveDoubanImageSource,
+          onArrowDown: () => _adFilterFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
         _TvSwitchRow(
+          focusNode: _adFilterFocusNode,
           switchKey: const ValueKey('tv-settings-ad-filter-switch'),
           label: '自动去广告',
           value: _adFilterEnabled,
           onChanged: _saveAdFilterEnabled,
+          onArrowUp: () => TvFocusable.requestRememberedFocusForGroup(
+            'tv-setting-option-图片代理',
+          ),
+          onArrowDown: () => _danmakuBaseApiBrowseFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
         _TvTextField(
+          fieldKey: const ValueKey('tv-settings-field-danmaku-base-api'),
           label: '弹幕服务器地址',
           hintText: 'https://danmaku.example.com/',
           controller: _danmakuBaseApiController,
+          browseFocusNode: _danmakuBaseApiBrowseFocusNode,
+          onArrowUp: () => _adFilterFocusNode.requestFocus(),
+          onArrowDown: () => _danmakuEnabledFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
         _TvSwitchRow(
+          focusNode: _danmakuEnabledFocusNode,
           switchKey: const ValueKey('tv-settings-danmaku-enabled-switch'),
           label: '弹幕开关',
           value: _danmakuSettings.enabled,
@@ -558,44 +781,59 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
               _danmakuSettings = _danmakuSettings.copyWith(enabled: value);
             });
           },
+          onArrowUp: () => _danmakuBaseApiBrowseFocusNode.requestFocus(),
+          onArrowDown: () => _danmakuOpacityFocusNode.requestFocus(),
         ),
         _TvSliderRow(
+          focusNode: _danmakuOpacityFocusNode,
           label: '不透明度',
           value: _danmakuSettings.opacity,
           min: 0.1,
           max: 1,
+          step: 0.05,
           valueLabel: '${(_danmakuSettings.opacity * 100).round()}%',
           onChanged: (value) {
             setState(() {
               _danmakuSettings = _danmakuSettings.copyWith(opacity: value);
             });
           },
+          onArrowUp: () => _danmakuEnabledFocusNode.requestFocus(),
+          onArrowDown: () => _danmakuScaleFocusNode.requestFocus(),
         ),
         _TvSliderRow(
+          focusNode: _danmakuScaleFocusNode,
           label: '字体缩放',
           value: _danmakuSettings.scale,
           min: 0.5,
           max: 2,
+          step: 0.1,
           valueLabel: '${_danmakuSettings.scale.toStringAsFixed(1)}x',
           onChanged: (value) {
             setState(() {
               _danmakuSettings = _danmakuSettings.copyWith(scale: value);
             });
           },
+          onArrowUp: () => _danmakuOpacityFocusNode.requestFocus(),
+          onArrowDown: () => _danmakuDisplayAreaFocusNode.requestFocus(),
         ),
         _TvSliderRow(
+          focusNode: _danmakuDisplayAreaFocusNode,
           label: '显示区域',
           value: _danmakuSettings.displayArea,
           min: 0.25,
           max: 1,
+          step: 0.05,
           valueLabel: '${(_danmakuSettings.displayArea * 100).round()}%',
           onChanged: (value) {
             setState(() {
               _danmakuSettings = _danmakuSettings.copyWith(displayArea: value);
             });
           },
+          onArrowUp: () => _danmakuScaleFocusNode.requestFocus(),
+          onArrowDown: () => _danmakuPreventOverlapFocusNode.requestFocus(),
         ),
         _TvSwitchRow(
+          focusNode: _danmakuPreventOverlapFocusNode,
           label: '防止重叠',
           value: _danmakuSettings.preventOverlap,
           onChanged: (value) {
@@ -604,8 +842,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
                   _danmakuSettings.copyWith(preventOverlap: value);
             });
           },
+          onArrowUp: () => _danmakuDisplayAreaFocusNode.requestFocus(),
+          onArrowDown: () => _danmakuSyncVideoSpeedFocusNode.requestFocus(),
         ),
         _TvSwitchRow(
+          focusNode: _danmakuSyncVideoSpeedFocusNode,
           label: '同步视频速度',
           value: _danmakuSettings.syncVideoSpeed,
           onChanged: (value) {
@@ -614,11 +855,16 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
                   _danmakuSettings.copyWith(syncVideoSpeed: value);
             });
           },
+          onArrowUp: () => _danmakuPreventOverlapFocusNode.requestFocus(),
+          onArrowDown: () => _saveDanmakuFocusNode.requestFocus(),
         ),
         const SizedBox(height: 22),
         _TvActionButton(
+          focusNode: _saveDanmakuFocusNode,
           label: _savingDanmaku ? '保存中...' : '保存弹幕配置',
           onPressed: _savingDanmaku ? null : _saveDanmaku,
+          onArrowUp: () => _danmakuSyncVideoSpeedFocusNode.requestFocus(),
+          onArrowDown: () => _clearCachesFocusNode.requestFocus(),
         ),
       ],
     );
@@ -628,6 +874,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   Widget _buildCacheSection() {
     return _TvSettingsPanel(
       title: '缓存管理',
+      description: '清缓存不会影响账号、图片代理和弹幕配置，只会处理运行期缓存文件。',
       children: [
         FutureBuilder<int>(
           future: _cacheSizeFuture,
@@ -651,11 +898,221 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         ),
         const SizedBox(height: 18),
         _TvActionButton(
+          focusNode: _clearCachesFocusNode,
           label: _clearingCaches ? '清理中...' : '清除所有缓存',
           onPressed: _clearingCaches ? null : _clearAllCaches,
+          onArrowUp: () => _saveDanmakuFocusNode.requestFocus(),
         ),
       ],
     );
+  }
+
+  /// 构建手机扫码配置区。
+  Widget _buildMobileConfigSection() {
+    final session = _mobileConfigBridgeSession;
+    final shareUri = session?.shareUri;
+    return _TvSettingsPanel(
+      title: '手机扫码配置',
+      description: '手机和电视连接同一局域网后，扫码可在手机上填写服务器、图片代理和弹幕地址，提交后会回填到电视表单里。',
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final useVerticalLayout = constraints.maxWidth < 980;
+            final qrCard = _buildMobileConfigQrCard(shareUri);
+            final detailCard = _buildMobileConfigDetailCard(
+              session: session,
+              shareUri: shareUri,
+            );
+            if (useVerticalLayout) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  qrCard,
+                  const SizedBox(height: 18),
+                  detailCard,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                qrCard,
+                const SizedBox(width: 22),
+                Expanded(child: detailCard),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  /// 构建手机扫码区左侧二维码卡片。
+  Widget _buildMobileConfigQrCard(Uri? shareUri) {
+    final palette = TvTheme.of(context);
+    return Container(
+      width: 252,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0E1112),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF293136)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 220,
+            height: 220,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: shareUri == null
+                ? Icon(
+                    Icons.wifi_off_rounded,
+                    size: 48,
+                    color: palette.disabledFill,
+                  )
+                : QrImageView(
+                    data: shareUri.toString(),
+                    size: 204,
+                    backgroundColor: Colors.white,
+                    eyeStyle: const QrEyeStyle(
+                      eyeShape: QrEyeShape.square,
+                      color: Color(0xFF111111),
+                    ),
+                    dataModuleStyle: const QrDataModuleStyle(
+                      dataModuleShape: QrDataModuleShape.square,
+                      color: Color(0xFF111111),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            shareUri == null ? '等待局域网地址' : '使用手机扫码打开配置页',
+            textAlign: TextAlign.center,
+            style: FontUtils.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建手机扫码区右侧说明卡片。
+  Widget _buildMobileConfigDetailCard({
+    required TvMobileSettingsBridgeSession? session,
+    required Uri? shareUri,
+  }) {
+    final palette = TvTheme.of(context);
+    final shareAddress = _formatShareAddress(shareUri);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '手机端可编辑字段',
+          style: FontUtils.poppins(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          '服务器地址、账号、密码、图片代理、自动去广告、弹幕服务器地址。',
+          style: FontUtils.poppins(
+            fontSize: 14,
+            color: const Color(0xFFB6C1C6),
+          ),
+        ),
+        const SizedBox(height: 18),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E1112),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFF293136)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '扫码地址',
+                style: FontUtils.poppins(
+                  fontSize: 13,
+                  color: const Color(0xFF98A2A8),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SelectableText(
+                shareAddress ?? '当前未生成可供手机访问的局域网地址',
+                style: FontUtils.poppins(
+                  fontSize: 15,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '会话状态',
+                style: FontUtils.poppins(
+                  fontSize: 13,
+                  color: const Color(0xFF98A2A8),
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (session == null)
+                Text(
+                  '手机配置服务启动中...',
+                  style: FontUtils.poppins(
+                    fontSize: 15,
+                    color: const Color(0xFFE6A35C),
+                  ),
+                )
+              else
+                ValueListenableBuilder<String>(
+                  valueListenable: session.statusNotifier,
+                  builder: (context, status, child) {
+                    return Text(
+                      status,
+                      style: FontUtils.poppins(
+                        fontSize: 15,
+                        color: shareUri == null
+                            ? const Color(0xFFE6A35C)
+                            : palette.accent,
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: 260,
+          child: _TvActionButton(
+            label: '重新生成二维码',
+            onPressed: _restartMobileConfigBridge,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 将扫码地址格式化为更短的 `ip:端口` 形式，方便人工核对。
+  String? _formatShareAddress(Uri? shareUri) {
+    if (shareUri == null) {
+      return null;
+    }
+    final host = shareUri.host.trim();
+    if (host.isEmpty) {
+      return null;
+    }
+    return '$host:${shareUri.port}';
   }
 }
 
@@ -704,11 +1161,15 @@ class _TvSettingsPanel extends StatelessWidget {
   /// 创建 TV 设置分组面板。
   const _TvSettingsPanel({
     required this.title,
+    this.description,
     required this.children,
   });
 
   /// 分组标题。
   final String title;
+
+  /// 分组说明。
+  final String? description;
 
   /// 分组内容。
   final List<Widget> children;
@@ -733,6 +1194,16 @@ class _TvSettingsPanel extends StatelessWidget {
               color: Colors.white,
             ),
           ),
+          if (description != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              description!,
+              style: FontUtils.poppins(
+                fontSize: 14,
+                color: const Color(0xFF98A2A8),
+              ),
+            ),
+          ],
           const SizedBox(height: 22),
           ...children,
         ],
@@ -745,11 +1216,18 @@ class _TvSettingsPanel extends StatelessWidget {
 class _TvTextField extends StatefulWidget {
   /// 创建 TV 设置输入框。
   const _TvTextField({
+    this.fieldKey,
     required this.label,
     required this.hintText,
     required this.controller,
     this.obscureText = false,
+    this.browseFocusNode,
+    this.onArrowUp,
+    this.onArrowDown,
   });
+
+  /// 焦点容器 Key。
+  final Key? fieldKey;
 
   /// 输入框标签。
   final String label;
@@ -763,58 +1241,47 @@ class _TvTextField extends StatefulWidget {
   /// 是否隐藏输入内容。
   final bool obscureText;
 
+  /// 浏览态焦点节点。
+  ///
+  /// 浏览态负责承接 TV 遥控器焦点，真正编辑时再切换到内部文本焦点。
+  final FocusNode? browseFocusNode;
+
+  /// 浏览态上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 浏览态下方向键回调。
+  final VoidCallback? onArrowDown;
+
   @override
   State<_TvTextField> createState() => _TvTextFieldState();
 }
 
 class _TvTextFieldState extends State<_TvTextField> {
-  /// 输入框焦点节点。
-  final FocusNode _focusNode = FocusNode();
+  /// 内部创建的浏览态焦点节点。
+  final FocusNode _ownedBrowseFocusNode = FocusNode();
+
+  /// 编辑态输入焦点节点。
+  final FocusNode _editFocusNode = FocusNode();
 
   /// 当前是否进入编辑态。
   bool _isEditing = false;
 
+  /// 当前实际使用的浏览态焦点节点。
+  FocusNode get _effectiveBrowseFocusNode =>
+      widget.browseFocusNode ?? _ownedBrowseFocusNode;
+
   @override
   void initState() {
     super.initState();
-    _focusNode.addListener(_handleFocusChange);
+    _editFocusNode.addListener(_handleEditingFocusChange);
   }
 
   @override
   void dispose() {
-    _focusNode.removeListener(_handleFocusChange);
-    _focusNode.dispose();
+    _editFocusNode.removeListener(_handleEditingFocusChange);
+    _ownedBrowseFocusNode.dispose();
+    _editFocusNode.dispose();
     super.dispose();
-  }
-
-  /// 焦点离开输入框后退出编辑态，避免下次移入时直接弹键盘。
-  void _handleFocusChange() {
-    if (_focusNode.hasFocus) {
-      TvFocusScroll.ensureVisible(context);
-      return;
-    }
-    if (!_isEditing) {
-      return;
-    }
-    setState(() {
-      _isEditing = false;
-    });
-  }
-
-  /// 处理遥控器确认键，只有确认后才进入编辑态。
-  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) {
-      return KeyEventResult.ignored;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.space) {
-      if (!_isEditing) {
-        _startEditing();
-        return KeyEventResult.handled;
-      }
-    }
-    return KeyEventResult.ignored;
   }
 
   /// 进入编辑态并主动唤起系统键盘。
@@ -826,13 +1293,40 @@ class _TvTextFieldState extends State<_TvTextField> {
       if (!mounted) {
         return;
       }
-      _focusNode.requestFocus();
+      _editFocusNode.requestFocus();
       SystemChannels.textInput.invokeMethod<void>('TextInput.show');
     });
   }
 
-  /// 完成编辑后保留焦点但关闭键盘。
-  void _finishEditing() {
+  /// 编辑态失焦后回退到浏览态。
+  void _handleEditingFocusChange() {
+    if (_editFocusNode.hasFocus || !_isEditing) {
+      return;
+    }
+    _finishEditing(restoreBrowseFocus: false);
+  }
+
+  /// 处理编辑态按键。
+  ///
+  /// 遥控器在编辑态下按确认或返回时，都会先结束输入并回到浏览态。
+  KeyEventResult _handleEditingKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (TvBackIntent.isBackKey(event.logicalKey) ||
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.select ||
+        event.logicalKey == LogicalKeyboardKey.space) {
+      _finishEditing();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 完成编辑后保留浏览态焦点并关闭键盘。
+  void _finishEditing({
+    bool restoreBrowseFocus = true,
+  }) {
     if (!_isEditing) {
       return;
     }
@@ -840,6 +1334,15 @@ class _TvTextFieldState extends State<_TvTextField> {
       _isEditing = false;
     });
     SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    if (!restoreBrowseFocus) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _effectiveBrowseFocusNode.requestFocus();
+    });
   }
 
   @override
@@ -856,40 +1359,89 @@ class _TvTextFieldState extends State<_TvTextField> {
           ),
         ),
         const SizedBox(height: 8),
-        Focus(
-          onKeyEvent: _handleKeyEvent,
-          child: TextField(
-            focusNode: _focusNode,
-            controller: widget.controller,
-            obscureText: widget.obscureText,
-            readOnly: !_isEditing,
-            showCursor: _isEditing,
-            textInputAction: TextInputAction.done,
-            onTap: _startEditing,
-            onEditingComplete: _finishEditing,
-            style: FontUtils.poppins(fontSize: 18, color: Colors.white),
-            decoration: InputDecoration(
-              hintText: widget.hintText,
-              hintStyle: FontUtils.poppins(
-                fontSize: 16,
-                color: const Color(0xFF59656C),
-              ),
-              filled: true,
-              fillColor: const Color(0xFF0E1112),
-              border: OutlineInputBorder(
+        TvFocusable(
+          key: widget.fieldKey,
+          focusNode: _effectiveBrowseFocusNode,
+          onPressed: _startEditing,
+          onArrowUp: widget.onArrowUp,
+          onArrowDown: widget.onArrowDown,
+          builder: (context, hasFocus) {
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E1112),
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF293136)),
+                border: Border.all(
+                  color: hasFocus ? palette.focus : const Color(0xFF293136),
+                  width: hasFocus ? 2 : 1,
+                ),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: Color(0xFF293136)),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: IgnorePointer(
+                      ignoring: !_isEditing,
+                      child: ExcludeFocus(
+                        excluding: !_isEditing,
+                        child: Focus(
+                          onKeyEvent: _handleEditingKeyEvent,
+                          child: TextField(
+                            focusNode: _editFocusNode,
+                            controller: widget.controller,
+                            obscureText: widget.obscureText,
+                            readOnly: !_isEditing,
+                            showCursor: _isEditing,
+                            textInputAction: TextInputAction.done,
+                            onEditingComplete: () => _finishEditing(),
+                            onSubmitted: (_) => _finishEditing(),
+                            style: FontUtils.poppins(
+                              fontSize: 18,
+                              color: Colors.white,
+                            ),
+                            decoration: InputDecoration(
+                              isCollapsed: true,
+                              hintText: widget.hintText,
+                              hintStyle: FontUtils.poppins(
+                                fontSize: 16,
+                                color: const Color(0xFF59656C),
+                              ),
+                              border: InputBorder.none,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!_isEditing) ...[
+                    const SizedBox(width: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: hasFocus
+                            ? palette.focus.withValues(alpha: 0.18)
+                            : const Color(0xFF151C1F),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '按确认编辑',
+                        style: FontUtils.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: hasFocus
+                              ? palette.focus
+                              : const Color(0xFF98A2A8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: palette.focus, width: 2),
-              ),
-            ),
-          ),
+            );
+          },
         ),
       ],
     );
@@ -1004,6 +1556,7 @@ class _TvOptionRow extends StatelessWidget {
     required this.value,
     required this.options,
     required this.onChanged,
+    this.onArrowDown,
   });
 
   /// 设置项标签。
@@ -1017,6 +1570,9 @@ class _TvOptionRow extends StatelessWidget {
 
   /// 选项变更回调。
   final ValueChanged<String> onChanged;
+
+  /// 所有选项统一的下方向键回调。
+  final VoidCallback? onArrowDown;
 
   @override
   Widget build(BuildContext context) {
@@ -1041,6 +1597,7 @@ class _TvOptionRow extends StatelessWidget {
               directionalRepeatThrottleGroupKey: 'tv-setting-option-$label',
               focusMemoryGroupKey: 'tv-setting-option-$label',
               onPressed: () => onChanged(option),
+              onArrowDown: onArrowDown,
               builder: (context, hasFocus) {
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 140),
@@ -1085,9 +1642,15 @@ class _TvOptionRow extends StatelessWidget {
 class _TvActionButton extends StatelessWidget {
   /// 创建 TV 设置操作按钮。
   const _TvActionButton({
+    this.focusNode,
     required this.label,
     required this.onPressed,
+    this.onArrowUp,
+    this.onArrowDown,
   });
+
+  /// 按钮焦点节点。
+  final FocusNode? focusNode;
 
   /// 按钮文案。
   final String label;
@@ -1095,11 +1658,20 @@ class _TvActionButton extends StatelessWidget {
   /// 点击回调。
   final VoidCallback? onPressed;
 
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
     return TvFocusable(
+      focusNode: focusNode,
       onPressed: onPressed,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
@@ -1131,11 +1703,17 @@ class _TvActionButton extends StatelessWidget {
 class _TvSwitchRow extends StatelessWidget {
   /// 创建 TV 设置开关行。
   const _TvSwitchRow({
+    this.focusNode,
     this.switchKey,
     required this.label,
     required this.value,
     required this.onChanged,
+    this.onArrowUp,
+    this.onArrowDown,
   });
+
+  /// 行级焦点节点。
+  final FocusNode? focusNode;
 
   /// 开关键。
   final Key? switchKey;
@@ -1149,31 +1727,72 @@ class _TvSwitchRow extends StatelessWidget {
   /// 开关变更回调。
   final ValueChanged<bool> onChanged;
 
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: FontUtils.poppins(
-                fontSize: 17,
-                color: const Color(0xFFD9E2E0),
-              ),
+    return TvFocusable(
+      focusNode: focusNode,
+      onPressed: () => onChanged(!value),
+      onArrowLeft: value ? () => onChanged(false) : null,
+      onArrowRight: !value ? () => onChanged(true) : null,
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
+      builder: (context, hasFocus) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E1112),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: hasFocus ? palette.focus : const Color(0xFF293136),
+              width: hasFocus ? 2 : 1,
             ),
           ),
-          Switch(
-            key: switchKey,
-            value: value,
-            activeThumbColor: palette.accent,
-            activeTrackColor: palette.accent.withValues(alpha: 0.32),
-            onChanged: onChanged,
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: FontUtils.poppins(
+                        fontSize: 17,
+                        color: const Color(0xFFD9E2E0),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      value ? '当前已开启，可按左键关闭' : '当前已关闭，可按右键开启',
+                      style: FontUtils.poppins(
+                        fontSize: 13,
+                        color: const Color(0xFF98A2A8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ExcludeFocus(
+                child: Switch(
+                  key: switchKey,
+                  value: value,
+                  activeThumbColor: palette.accent,
+                  activeTrackColor: palette.accent.withValues(alpha: 0.32),
+                  onChanged: onChanged,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -1182,13 +1801,20 @@ class _TvSwitchRow extends StatelessWidget {
 class _TvSliderRow extends StatelessWidget {
   /// 创建 TV 设置滑杆行。
   const _TvSliderRow({
+    this.focusNode,
     required this.label,
     required this.value,
     required this.min,
     required this.max,
+    required this.step,
     required this.valueLabel,
     required this.onChanged,
+    this.onArrowUp,
+    this.onArrowDown,
   });
+
+  /// 行级焦点节点。
+  final FocusNode? focusNode;
 
   /// 设置项文案。
   final String label;
@@ -1202,50 +1828,101 @@ class _TvSliderRow extends StatelessWidget {
   /// 最大值。
   final double max;
 
+  /// 遥控器每次左右键调整的步进。
+  final double step;
+
   /// 当前值文案。
   final String valueLabel;
 
   /// 值变更回调。
   final ValueChanged<double> onChanged;
 
+  /// 上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 下方向键回调。
+  final VoidCallback? onArrowDown;
+
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final safeValue = value.clamp(min, max).toDouble();
+    return TvFocusable(
+      focusNode: focusNode,
+      onArrowLeft: () {
+        final nextValue = (safeValue - step).clamp(min, max).toDouble();
+        if (nextValue == safeValue) {
+          return;
+        }
+        onChanged(nextValue);
+      },
+      onArrowRight: () {
+        final nextValue = (safeValue + step).clamp(min, max).toDouble();
+        if (nextValue == safeValue) {
+          return;
+        }
+        onChanged(nextValue);
+      },
+      onArrowUp: onArrowUp,
+      onArrowDown: onArrowDown,
+      builder: (context, hasFocus) {
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E1112),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: hasFocus ? palette.focus : const Color(0xFF293136),
+              width: hasFocus ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: FontUtils.poppins(
-                    fontSize: 17,
-                    color: const Color(0xFFD9E2E0),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: FontUtils.poppins(
+                        fontSize: 17,
+                        color: const Color(0xFFD9E2E0),
+                      ),
+                    ),
                   ),
+                  Text(
+                    valueLabel,
+                    style: FontUtils.poppins(
+                      fontSize: 15,
+                      color: const Color(0xFF98A2A8),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '左右键调节数值',
+                style: FontUtils.poppins(
+                  fontSize: 13,
+                  color: const Color(0xFF98A2A8),
                 ),
               ),
-              Text(
-                valueLabel,
-                style: FontUtils.poppins(
-                  fontSize: 15,
-                  color: const Color(0xFF98A2A8),
+              ExcludeFocus(
+                child: Slider(
+                  value: safeValue,
+                  min: min,
+                  max: max,
+                  activeColor: palette.accent,
+                  inactiveColor: palette.disabledFill,
+                  onChanged: onChanged,
                 ),
               ),
             ],
           ),
-          Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            activeColor: palette.accent,
-            inactiveColor: palette.disabledFill,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

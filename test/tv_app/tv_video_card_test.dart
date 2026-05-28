@@ -6,7 +6,7 @@ import 'package:selene/tv_app/widgets/tv_video_card.dart';
 void main() {
   test('TV video card keeps compact poster proportions', () {
     expect(TvVideoCard.width, 158);
-    expect(TvVideoCard.height, 296);
+    expect(TvVideoCard.height, 297);
     expect(TvVideoCard.coverHeight, 237);
     expect(TvVideoCard.focusedScale, 1.08);
     expect(TvVideoCard.shimmerBegin, const Alignment(-1.2, -0.34));
@@ -15,6 +15,20 @@ void main() {
     expect(TvVideoCard.shimmerDuration, const Duration(milliseconds: 1800));
     expect(TvVideoCard.focusSweepDelay, const Duration(milliseconds: 300));
     expect(TvVideoCard.coverHeight / TvVideoCard.width, closeTo(1.5, 0.01));
+  });
+
+  test('TV cover loading skeleton uses softer horizontal shimmer', () {
+    expect(TvCoverLoadingSkeleton.shimmerBegin, const Alignment(-1.2, 0));
+    expect(TvCoverLoadingSkeleton.shimmerEnd, const Alignment(1.2, 0));
+    expect(TvCoverLoadingSkeleton.shimmerVerticalTravelFactor, 0);
+    expect(
+      TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
+      const Color(0x0FE4EAED),
+    );
+    expect(
+      TvCoverLoadingSkeleton.shimmerCenterColor,
+      const Color(0x1CE4EAED),
+    );
   });
 
   testWidgets('TV video card scales whole card but keeps focus frame on cover',
@@ -51,6 +65,25 @@ void main() {
 
     final title = tester.widget<Text>(find.text('测试影片'));
     expect(title.maxLines, 1);
+  });
+
+  testWidgets('TV video card uses larger title and subtitle font sizes',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(),
+          ),
+        ),
+      ),
+    );
+
+    final title = tester.widget<Text>(find.text('测试影片'));
+    final subtitle = tester.widget<Text>(find.text('2026 · 8.8 分'));
+
+    expect(title.style?.fontSize, 16);
+    expect(subtitle.style?.fontSize, 13);
   });
 
   testWidgets('TV video card shows cover skeleton while image is loading',

@@ -67,7 +67,7 @@ class DownloadForegroundService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Selene 后台下载")
+            .setContentTitle("IvyTV 后台下载")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setOngoing(true)
@@ -95,4 +95,3 @@ class DownloadForegroundService : Service() {
         manager.createNotificationChannel(newChannel)
     }
 }
-

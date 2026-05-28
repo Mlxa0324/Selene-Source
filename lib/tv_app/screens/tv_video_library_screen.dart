@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
+import 'package:selene/tv_app/widgets/tv_section_title.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
 /// TV 视频库列表数据加载函数。
@@ -65,6 +67,17 @@ class TvVideoLibraryScreen extends StatefulWidget {
 }
 
 class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
+  /// 页面内容顶部留白。
+  ///
+  /// 独立播放历史页和收藏夹页没有首页那样的顶部导航，
+  /// 需要额外留出一点呼吸空间，避免标题区紧贴安全区上边缘。
+  static const double _contentTopPadding = 24.0;
+
+  /// 固定头部与下方 Grid 的间距。
+  ///
+  /// 让标题区常驻顶部后，仍保留原来标题与首行卡片之间的呼吸感。
+  static const double _headerBottomSpacing = 24.0;
+
   /// 列表数据加载任务。
   Future<List<VideoInfo>>? _videosFuture;
 
@@ -111,18 +124,28 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
                 videos: videos,
                 isLoading: isLoading,
               );
-              return TvVideoGrid(
-                title: widget.title,
-                videos: videos,
-                isLoading: isLoading,
-                firstItemFocusNode: _firstVideoFocusNode,
-                onClearPressed: widget.onClearVideos == null
-                    ? null
-                    : () => _clearVideos(context),
-                onVideoPressed: _openVideo,
-                onVideoLongPressed: widget.onDeleteVideo == null
-                    ? null
-                    : (videoInfo) => _deleteVideo(context, videoInfo),
+              return Padding(
+                padding: const EdgeInsets.only(top: _contentTopPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildPinnedHeader(),
+                    const SizedBox(height: _headerBottomSpacing),
+                    Expanded(
+                      child: TvVideoGrid(
+                        title: widget.title,
+                        showTitle: false,
+                        videos: videos,
+                        isLoading: isLoading,
+                        firstItemFocusNode: _firstVideoFocusNode,
+                        onVideoPressed: _openVideo,
+                        onVideoLongPressed: widget.onDeleteVideo == null
+                            ? null
+                            : (videoInfo) => _deleteVideo(context, videoInfo),
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
           ),
@@ -151,6 +174,36 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
       }
       _firstVideoFocusNode.requestFocus();
     });
+  }
+
+  /// 构建固定在页面顶部的标题区。
+  ///
+  /// 播放历史和收藏夹按最新交互要求把标题与“删除全部”按钮固定在顶部，
+  /// 这样长列表滚动时也能随时看到当前页面名称，并快速执行清空操作。
+  Widget _buildPinnedHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
+        0,
+        TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
+        0,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TvSectionTitle(title: widget.title),
+          ),
+          if (widget.onClearVideos != null) ...[
+            const SizedBox(width: 16),
+            TvVideoGridActionButton(
+              key: const ValueKey('tv-video-library-clear-button'),
+              label: '删除全部',
+              onPressed: () => _clearVideos(context),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   /// 打开当前卡片对应的 TV 详情页。

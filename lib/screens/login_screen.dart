@@ -389,9 +389,10 @@ class _LoginScreenState extends State<LoginScreen> {
         final content =
             await SubscriptionService.parseSubscriptionContent(response.body);
 
-        if (content == null || 
-            (content.searchResources == null || content.searchResources!.isEmpty) &&
-            (content.liveSources == null || content.liveSources!.isEmpty)) {
+        if (content == null ||
+            (content.searchResources == null ||
+                    content.searchResources!.isEmpty) &&
+                (content.liveSources == null || content.liveSources!.isEmpty)) {
           setState(() {
             _isLoading = false;
           });
@@ -470,8 +471,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
         // 保存订阅链接和内容
         await LocalModeStorageService.saveSubscriptionUrl(newUrl);
-        if (content.searchResources != null && content.searchResources!.isNotEmpty) {
-          await LocalModeStorageService.saveSearchSources(content.searchResources!);
+        if (content.searchResources != null &&
+            content.searchResources!.isNotEmpty) {
+          await LocalModeStorageService.saveSearchSources(
+              content.searchResources!);
         }
         if (content.liveSources != null && content.liveSources!.isNotEmpty) {
           await LocalModeStorageService.saveLiveSources(content.liveSources!);
@@ -553,11 +556,11 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Selene 标题 - 可点击
+        // IvyTV 标题 - 可点击
         GestureDetector(
           onTap: _handleLogoTap,
           child: Text(
-            'Selene',
+            'IvyTV',
             style: FontUtils.sourceCodePro(
               fontSize: 42,
               fontWeight: FontWeight.w400,
@@ -759,7 +762,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           (_isLoading || !_isFormValid) ? null : _handleLogin,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _isFormValid && !_isLoading
-                            ? const Color(0xFF2c3e50) // 与Selene logo相同的颜色
+                            ? const Color(0xFF2c3e50) // 与 IvyTV logo 相同的颜色
                             : const Color(0xFFbdc3c7), // 禁用时的浅灰色
                         foregroundColor: _isFormValid && !_isLoading
                             ? Colors.white
@@ -820,11 +823,11 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Selene 标题 - 可点击
+          // IvyTV 标题 - 可点击
           GestureDetector(
             onTap: _handleLogoTap,
             child: Text(
-              'Selene',
+              'IvyTV',
               style: FontUtils.sourceCodePro(
                 fontSize: 42,
                 fontWeight: FontWeight.w400,
