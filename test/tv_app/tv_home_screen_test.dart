@@ -1,5 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1722,7 +1724,7 @@ void main() {
         find.byKey(const ValueKey('tv-video-grid-title-hint')), findsOneWidget);
   });
 
-  testWidgets('category grid uses zero right padding for edge aligned cards',
+  testWidgets('category grid keeps page right padding for video list',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -1748,7 +1750,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final categoryGrid = tester.widget<TvVideoGrid>(find.byType(TvVideoGrid));
-    expect(categoryGrid.rightPadding, 0);
+    expect(categoryGrid.rightPadding, TvLayout.pageHorizontalPadding);
   });
 
   testWidgets('opens TV detail screen when video card is selected',
@@ -1908,6 +1910,80 @@ void main() {
     expect(find.text('继续观看影片 1'), findsNothing);
     expect(find.text('继续观看影片 2'), findsOneWidget);
     expect(_focusNodeForVideoCard(tester, 'continue_2').hasFocus, isTrue);
+  });
+
+  testWidgets(
+      'deleting continue watching keeps existing hot sections visible while local record refreshes',
+      (tester) async {
+    var records = <VideoInfo>[
+      _videoInfo('continue_1', '继续观看影片 1'),
+      _videoInfo('continue_2', '继续观看影片 2'),
+    ];
+    var loadCount = 0;
+    final delayedHotMoviesCompleter = Completer<void>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async {
+            loadCount++;
+            if (loadCount == 1) {
+              return TvHomeData(
+                continueWatching: records,
+                hotMovies: [_videoInfo('movie_1', '热门电影 1')],
+                hotTvShows: const [],
+                bangumiCalendar: const [],
+                hotShows: const [],
+                history: records,
+                favorites: const [],
+              );
+            }
+
+            await delayedHotMoviesCompleter.future;
+            return TvHomeData(
+              continueWatching: records,
+              hotMovies: [_videoInfo('movie_1', '热门电影 1')],
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: records,
+              favorites: const [],
+            );
+          },
+          deleteContinueWatchingItem: (_, videoInfo) async {
+            records = records
+                .where(
+                  (item) =>
+                      item.source != videoInfo.source || item.id != videoInfo.id,
+                )
+                .toList();
+            return true;
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('热门电影 1'), findsOneWidget);
+
+    final focusNode = _focusNodeForVideoCard(tester, 'continue_1');
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-confirm-confirm-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('热门电影 1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-home-loading-card')), findsNothing);
+
+    delayedHotMoviesCompleter.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续观看影片 1'), findsNothing);
+    expect(find.text('继续观看影片 2'), findsOneWidget);
   });
 
   testWidgets('home section more card jumps to matching top category',

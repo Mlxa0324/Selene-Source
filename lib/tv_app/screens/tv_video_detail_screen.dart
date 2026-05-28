@@ -17,6 +17,7 @@ import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_play_record_service.dart';
+import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
@@ -435,6 +436,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 相关推荐。
   List<VideoInfo> _recommends = const [];
+
+  /// 当前是否存在可展示的相关推荐。
+  ///
+  /// 详情页没有相关推荐时，不再渲染相关推荐区和底部回到顶部按钮，
+  /// 这样页面尾部不会留下无意义的空白占位。
+  bool get _hasVisibleRecommends => _recommends.isNotEmpty;
 
   /// 当前选集下标。
   int _episodeIndex = 0;
@@ -1066,6 +1073,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         return;
       }
       setState(() => _recommends = recommends);
+
+      // 搜索页推荐改为被动复用最近打开过的详情页相关推荐，不额外主动查询。
+      TvSearchRecommendService.recordDetailRecommends(
+        videoInfo: widget.videoInfo,
+        recommends: recommends,
+      );
     } catch (error) {
       debugPrint('TV 详情页推荐加载失败: $error');
     }
@@ -2604,10 +2617,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                         _buildSourcesSection(),
                                         const SizedBox(height: 28),
                                         _buildEpisodesSection(),
-                                        const SizedBox(height: 34),
-                                        _buildRecommendsSection(),
-                                        const SizedBox(height: 38),
-                                        _buildBottomActions(),
+                                        if (_hasVisibleRecommends) ...[
+                                          const SizedBox(height: 34),
+                                          _buildRecommendsSection(),
+                                          const SizedBox(height: 38),
+                                          _buildBottomActions(),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -3369,69 +3384,67 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   Widget _buildRecommendsSection() {
     return _TvDetailSection(
       title: '相关推荐',
-      child: _recommends.isEmpty
-          ? _buildEmptyText('暂无推荐')
-          : SizedBox(
-              height: TvVideoCard.height + 28,
-              child: ListView.separated(
-                key: const ValueKey('tv-detail-recommend-list'),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: _detailHorizontalFocusSafePadding,
-                ),
-                scrollDirection: Axis.horizontal,
-                clipBehavior: Clip.none,
-                itemCount: _recommends.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 18),
-                itemBuilder: (context, index) {
-                  final videoInfo = _recommends[index];
-                  final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
-                  final isFirstItem = index == 0;
-                  final isLastItem = index == _recommends.length - 1;
-                  return TvEdgeShake(
-                    key: edgeShakeKey,
-                    child: KeyedSubtree(
-                      key: _recommendTargetKeyFor(videoInfo),
-                      child: TvVideoCard(
-                        videoInfo: videoInfo,
-                        focusNode: _recommendFocusNodeFor(videoInfo),
-                        focusMemoryGroupKey: 'tv-detail-recommend-list',
-                        onArrowLeft: isFirstItem
-                            ? () => edgeShakeKey.currentState
-                                ?.shake(AxisDirection.left)
-                            : null,
-                        onArrowRight: isLastItem
-                            ? () => edgeShakeKey.currentState
-                                ?.shake(AxisDirection.right)
-                            : null,
-                        onArrowUp: _focusRecommendationUpTarget,
-                        onArrowDown: _focusBottomAction,
-                        onFocusChanged: (hasFocus) {
-                          if (hasFocus) {
-                            _rememberFocusedRecommend(videoInfo);
-                          }
-                        },
-                        onPressed: () {
-                          Navigator.of(context).pushReplacement(
-                            PageRouteBuilder(
-                              pageBuilder: (routeContext, animation,
-                                      secondaryAnimation) =>
-                                  TvTheme.wrapScope(
-                                context: context,
-                                child: TvVideoDetailScreen(
-                                  videoInfo: videoInfo,
-                                ),
-                              ),
-                              transitionDuration: Duration.zero,
-                              reverseTransitionDuration: Duration.zero,
-                            ),
-                          );
-                        },
+      child: SizedBox(
+        height: TvVideoCard.height + 28,
+        child: ListView.separated(
+          key: const ValueKey('tv-detail-recommend-list'),
+          padding: const EdgeInsets.symmetric(
+            horizontal: _detailHorizontalFocusSafePadding,
+          ),
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          itemCount: _recommends.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 18),
+          itemBuilder: (context, index) {
+            final videoInfo = _recommends[index];
+            final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+            final isFirstItem = index == 0;
+            final isLastItem = index == _recommends.length - 1;
+            return TvEdgeShake(
+              key: edgeShakeKey,
+              child: KeyedSubtree(
+                key: _recommendTargetKeyFor(videoInfo),
+                child: TvVideoCard(
+                  videoInfo: videoInfo,
+                  focusNode: _recommendFocusNodeFor(videoInfo),
+                  focusMemoryGroupKey: 'tv-detail-recommend-list',
+                  onArrowLeft: isFirstItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.right)
+                      : null,
+                  onArrowUp: _focusRecommendationUpTarget,
+                  onArrowDown: _focusBottomAction,
+                  onFocusChanged: (hasFocus) {
+                    if (hasFocus) {
+                      _rememberFocusedRecommend(videoInfo);
+                    }
+                  },
+                  onPressed: () {
+                    Navigator.of(context).pushReplacement(
+                      PageRouteBuilder(
+                        pageBuilder:
+                            (routeContext, animation, secondaryAnimation) =>
+                                TvTheme.wrapScope(
+                          context: context,
+                          child: TvVideoDetailScreen(
+                            videoInfo: videoInfo,
+                          ),
+                        ),
+                        transitionDuration: Duration.zero,
+                        reverseTransitionDuration: Duration.zero,
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
+            );
+          },
+        ),
+      ),
     );
   }
 

@@ -697,6 +697,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// “继续观看”删除后优先恢复的焦点卡片 ID。
   String? _pendingContinueWatchingFocusVideoId;
 
+  /// 首页最近一次成功加载的数据快照。
+  ///
+  /// 删除继续观看等本地操作优先在这份快照上做局部更新，避免整页重新挂骨架。
+  TvHomeData? _lastResolvedHomeData;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -761,6 +766,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
                       final data = snapshot.data ?? TvHomeData.empty();
                       final isLoading =
                           snapshot.connectionState != ConnectionState.done;
+                      if (snapshot.connectionState == ConnectionState.done) {
+                        _lastResolvedHomeData = data;
+                      }
 
                       return _buildAnimatedSelectedTab(data, isLoading);
                     },
@@ -1100,7 +1108,6 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         title: title,
         titleHint: !_categoryFilterVisible ? '按确认键打开分类筛选' : null,
         videos: currentVideos,
-        rightPadding: 0,
         isLoading: isLoading,
         isLoadingMore: _categoryLoadingMore[kind] ?? false,
         hasMore: _categoryHasMore[kind] ?? true,
@@ -1128,7 +1135,6 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           title: title,
           titleHint: !_categoryFilterVisible ? '按确认键打开分类筛选' : null,
           videos: currentVideos,
-          rightPadding: 0,
           isLoading: filterLoading,
           isLoadingMore: _categoryLoadingMore[kind] ?? false,
           hasMore: _categoryHasMore[kind] ?? false,
@@ -1689,7 +1695,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 删除首页“继续观看”里的单条播放记录。
   Future<void> _deleteContinueWatchingItem(VideoInfo videoInfo) async {
-    final currentData = await _homeDataFuture;
+    final currentData = _lastResolvedHomeData ?? await _homeDataFuture;
     final continueWatching = currentData?.continueWatching ?? const <VideoInfo>[];
     final deletedIndex = continueWatching.indexWhere(
       (item) => item.source == videoInfo.source && item.id == videoInfo.id,
@@ -1727,8 +1733,26 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return;
     }
 
+    final baseData = _lastResolvedHomeData ?? currentData ?? TvHomeData.empty();
+    final refreshedContinueWatching = baseData.continueWatching
+        .where(
+          (item) =>
+              item.source != videoInfo.source || item.id != videoInfo.id,
+        )
+        .toList();
+    final refreshedHomeData = TvHomeData(
+      continueWatching: refreshedContinueWatching,
+      hotMovies: baseData.hotMovies,
+      hotTvShows: baseData.hotTvShows,
+      bangumiCalendar: baseData.bangumiCalendar,
+      hotShows: baseData.hotShows,
+      history: refreshedContinueWatching.take(60).toList(),
+      favorites: baseData.favorites,
+    );
+
     setState(() {
-      _homeDataFuture = _createHomeDataFuture();
+      _lastResolvedHomeData = refreshedHomeData;
+      _homeDataFuture = Future<TvHomeData>.value(refreshedHomeData);
     });
   }
 

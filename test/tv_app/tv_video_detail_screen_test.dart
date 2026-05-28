@@ -11,6 +11,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/local_mode_storage_service.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/user_data_service.dart';
+import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
@@ -20,6 +21,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    TvSearchRecommendService.clearDebugCache();
+  });
+
+  tearDown(() {
+    TvSearchRecommendService.clearDebugCache();
   });
 
   testWidgets('renders TV detail layout sections in requested order',
@@ -138,6 +144,40 @@ void main() {
     expect(stormLeft, lessThan(shortLeft));
   });
 
+  testWidgets('hides recommends section and bottom action when no recommends',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '无推荐影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('相关推荐'), findsNothing);
+    expect(find.byKey(const ValueKey('tv-detail-recommend-list')), findsNothing);
+    expect(find.text('回到顶部'), findsNothing);
+  });
+
   testWidgets('waits for ad filter preference before building default player',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -183,6 +223,51 @@ void main() {
     expect(find.byKey(const ValueKey('tv-detail-player-placeholder')),
         findsOneWidget);
     expect(resolvedAdFilterEnabled, isTrue);
+  });
+
+  testWidgets('detail recommends are recorded for TV search page cache',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+            ],
+            recommends: const [],
+          ),
+          loadRecommends: (_, __, ___) async => [
+            _videoInfo('recommend_1', '缓存推荐 1'),
+            _videoInfo('recommend_2', '缓存推荐 2'),
+          ],
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
+
+    final cachedRecommends = await TvSearchRecommendService.loadSearchRecommends(
+      fallbackLoader: () async => const <VideoInfo>[],
+    );
+
+    expect(
+      cachedRecommends.map((video) => video.title).toList(),
+      ['缓存推荐 1', '缓存推荐 2'],
+    );
   });
 
   testWidgets('detail episode card height stays at least source card height',

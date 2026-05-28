@@ -18,13 +18,21 @@ class SearchPageResult {
   });
 }
 
+/// 单资源站分页增量结果回调。
+///
+/// 每当某一页搜索完成后，都会把该资源站当前已累计的结果回传给上层。
+typedef DownstreamSearchPartialResultsCallback = void Function(
+  List<SearchResult> results,
+);
+
 /// 下游搜索服务
 class DownstreamService {
   /// 从指定的搜索资源API搜索
   static Future<List<SearchResult>> searchFromApi(
     SearchResource resource,
-    String query,
-  ) async {
+    String query, {
+    DownstreamSearchPartialResultsCallback? onPartialResults,
+  }) async {
     try {
       final apiBaseUrl = resource.api;
       final apiUrl =
@@ -39,6 +47,9 @@ class DownstreamService {
 
       final results = firstPageResult.results;
       final pageCountFromFirst = firstPageResult.pageCount;
+
+      // 第一页命中后立即把当前站点结果回推给上层，避免用户白等后续分页。
+      onPartialResults?.call(List<SearchResult>.from(results));
 
       const maxSearchPages = 5;
 
@@ -70,6 +81,8 @@ class DownstreamService {
         for (final pageResults in additionalResults) {
           if (pageResults.isNotEmpty) {
             results.addAll(pageResults);
+            // 后续页补齐后继续把当前站点累计结果推给上层。
+            onPartialResults?.call(List<SearchResult>.from(results));
           }
         }
       }

@@ -21,15 +21,21 @@ class TvVideoGrid extends StatefulWidget {
     super.key,
     required this.title,
     required this.videos,
+    this.showTitle = true,
     this.titleHint,
     this.onClearPressed,
     this.onVideoPressed,
     this.onVideoLongPressed,
     this.onVideoFocusChanged,
     this.onArrowUp,
+    this.onLeadingEdgeArrowLeft,
+    this.onTopEdgeArrowUp,
+    this.topEdgeArrowLockCount = 0,
     this.focusMemoryGroupKey,
     this.firstItemFocusNode,
     this.rightPadding = TvLayout.pageHorizontalPadding,
+    this.crossAxisCount = TvLayout.gridCrossAxisCount,
+    this.crossAxisSpacing = TvVideoGrid.defaultCrossAxisSpacing,
     this.isLoading = false,
     this.isLoadingMore = false,
     this.hasMore = false,
@@ -38,6 +44,11 @@ class TvVideoGrid extends StatefulWidget {
 
   /// 页面标题。
   final String title;
+
+  /// 是否展示随列表滚动的标题区域。
+  ///
+  /// 搜索页会把标题固定在 Grid 外层，因此这里允许关闭内置标题。
+  final bool showTitle;
 
   /// 页面标题右侧提示文案。
   ///
@@ -66,6 +77,21 @@ class TvVideoGrid extends StatefulWidget {
   /// 分类页用于呼出筛选面板；为空时保持默认焦点导航。
   final VoidCallback? onArrowUp;
 
+  /// 最左列卡片左方向键回调。
+  ///
+  /// 搜索页可借此把结果区最左列焦点退回左侧输入区。
+  final VoidCallback? onLeadingEdgeArrowLeft;
+
+  /// 顶部边缘卡片上方向键回调。
+  ///
+  /// 搜索页可借此吞掉顶部若干卡片的上方向键，避免焦点误回到标题区。
+  final VoidCallback? onTopEdgeArrowUp;
+
+  /// 顶部禁上卡片数量。
+  ///
+  /// 大于 0 时，仅前 N 个卡片会拦截上方向键；其余顶部卡片仍走默认规则。
+  final int topEdgeArrowLockCount;
+
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
 
@@ -78,6 +104,16 @@ class TvVideoGrid extends StatefulWidget {
   ///
   /// 分类页可传 `0`，让末列卡片直接贴到内容区域右边界。
   final double rightPadding;
+
+  /// 当前页面使用的纵向 Grid 列数。
+  ///
+  /// 默认沿用 TV 全局列数，搜索页等特殊场景可按页面单独收窄。
+  final int crossAxisCount;
+
+  /// 当前页面使用的纵向 Grid 横向间距。
+  ///
+  /// 默认沿用全局卡片间距；搜索页结果区可单独收窄，避免大屏上卡片看起来被拉得过瘦。
+  final double crossAxisSpacing;
 
   /// 是否处于加载状态。
   final bool isLoading;
@@ -92,7 +128,7 @@ class TvVideoGrid extends StatefulWidget {
   final VoidCallback? onLoadMore;
 
   /// Grid 横向间距。
-  static const double crossAxisSpacing = 26.0;
+  static const double defaultCrossAxisSpacing = 26.0;
 
   /// Grid 纵向间距。
   static const double mainAxisSpacing = 34.0;
@@ -130,12 +166,12 @@ class _TvVideoGridState extends State<TvVideoGrid> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          const crossAxisCount = TvLayout.gridCrossAxisCount;
+          final crossAxisCount = widget.crossAxisCount;
           return CustomScrollView(
             key: const ValueKey('tv-video-grid-scroll'),
             clipBehavior: Clip.none,
             slivers: [
-              _buildTitleSliver(),
+              if (widget.showTitle) _buildTitleSliver(),
               if (widget.isLoading)
                 _buildLoadingGrid(crossAxisCount)
               else if (widget.videos.isEmpty)
@@ -199,7 +235,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
         key: const ValueKey('tv-video-loading-grid'),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          crossAxisSpacing: TvVideoGrid.crossAxisSpacing,
+          crossAxisSpacing: widget.crossAxisSpacing,
           mainAxisSpacing: TvVideoGrid.mainAxisSpacing,
           mainAxisExtent: TvVideoCard.height,
         ),
@@ -267,7 +303,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
         key: const ValueKey('tv-video-grid'),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: crossAxisCount,
-          crossAxisSpacing: TvVideoGrid.crossAxisSpacing,
+          crossAxisSpacing: widget.crossAxisSpacing,
           mainAxisSpacing: TvVideoGrid.mainAxisSpacing,
           mainAxisExtent: TvVideoCard.height,
         ),
@@ -293,6 +329,9 @@ class _TvVideoGridState extends State<TvVideoGrid> {
                 widget.onVideoFocusChanged?.call(hasFocus);
               },
               onArrowUp: widget.onArrowUp,
+              onLeadingEdgeArrowLeft: widget.onLeadingEdgeArrowLeft,
+              onTopEdgeArrowUp: widget.onTopEdgeArrowUp,
+              topEdgeArrowLockCount: widget.topEdgeArrowLockCount,
               focusMemoryGroupKey:
                   widget.focusMemoryGroupKey ?? 'tv-grid-${widget.title}',
             );
@@ -322,12 +361,12 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   Widget _buildLoadMoreIndicator() {
     return SliverToBoxAdapter(
       child: Padding(
-      padding: EdgeInsets.fromLTRB(
-        TvVideoGrid.focusSafePadding,
-        0,
-        widget.rightPadding == 0 ? 0 : TvVideoGrid.focusSafePadding,
-        46,
-      ),
+        padding: EdgeInsets.fromLTRB(
+          TvVideoGrid.focusSafePadding,
+          0,
+          widget.rightPadding == 0 ? 0 : TvVideoGrid.focusSafePadding,
+          46,
+        ),
         child: Row(
           children: [
             const SizedBox(
@@ -438,6 +477,9 @@ class _TvGridEdgeItem extends StatefulWidget {
     this.onLongPressed,
     this.onFocusChanged,
     this.onArrowUp,
+    this.onLeadingEdgeArrowLeft,
+    this.onTopEdgeArrowUp,
+    this.topEdgeArrowLockCount = 0,
     this.scaleAlignment = Alignment.center,
     this.focusMemoryGroupKey,
   });
@@ -469,6 +511,15 @@ class _TvGridEdgeItem extends StatefulWidget {
   /// 上方向键回调。
   final VoidCallback? onArrowUp;
 
+  /// 最左列左方向键回调。
+  final VoidCallback? onLeadingEdgeArrowLeft;
+
+  /// 顶部边缘上方向键回调。
+  final VoidCallback? onTopEdgeArrowUp;
+
+  /// 顶部禁上卡片数量。
+  final int topEdgeArrowLockCount;
+
   /// 卡片放大对齐方向。
   final Alignment scaleAlignment;
 
@@ -499,6 +550,11 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
   /// 当前卡片是否处于上边界。
   bool get _isTopEdge => widget.index < widget.crossAxisCount;
 
+  /// 当前卡片是否命中顶部禁上范围。
+  bool get _isTopArrowLocked =>
+      widget.topEdgeArrowLockCount > 0 &&
+      widget.index < widget.topEdgeArrowLockCount;
+
   /// 播放指定方向的边界抖动。
   void _shake(AxisDirection direction) {
     _edgeShakeKey.currentState?.shake(direction);
@@ -516,9 +572,16 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
         onPressed: widget.onPressed,
         onLongPressed: widget.onLongPressed,
         onFocusChanged: widget.onFocusChanged,
-        onArrowLeft: _isLeftEdge ? () => _shake(AxisDirection.left) : null,
+        onArrowLeft: _isLeftEdge
+            ? (widget.onLeadingEdgeArrowLeft ??
+                () => _shake(AxisDirection.left))
+            : null,
         onArrowRight: _isRightEdge ? () => _shake(AxisDirection.right) : null,
-        onArrowUp: _isTopEdge ? widget.onArrowUp : null,
+        onArrowUp: _isTopArrowLocked
+            ? (widget.onTopEdgeArrowUp ?? widget.onArrowUp)
+            : _isTopEdge
+                ? widget.onArrowUp
+                : null,
         onArrowDown: _isBottomEdge ? () => _shake(AxisDirection.down) : null,
       ),
     );

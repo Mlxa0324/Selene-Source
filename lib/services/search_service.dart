@@ -4,14 +4,60 @@ import '../models/search_result.dart';
 import '../models/search_resource.dart';
 import 'api_service.dart';
 import 'downstream_service.dart';
+import 'external_search_suggestion_service.dart';
 import '../services/user_data_service.dart';
 import '../services/local_mode_storage_service.dart';
+
+/// 搜索进度快照。
+///
+/// 用于把当前搜索资源完成数同步给 TV 搜索页等需要展示实时进度的场景。
+class SearchProgressSnapshot {
+  /// 创建搜索进度快照。
+  const SearchProgressSnapshot({
+    required this.totalResources,
+    required this.completedResources,
+    required this.currentResourceName,
+    required this.isComplete,
+  });
+
+  /// 本次搜索使用的总站源数量。
+  final int totalResources;
+
+  /// 当前已经完成的资源站数量。
+  final int completedResources;
+
+  /// 刚刚完成搜索的资源站名称。
+  ///
+  /// 为空时表示当前只是初始化或结束态，没有具体资源站文案。
+  final String? currentResourceName;
+
+  /// 当前搜索是否已经全部完成。
+  final bool isComplete;
+}
+
+/// 搜索进度回调。
+typedef SearchProgressCallback = void Function(
+  SearchProgressSnapshot progress,
+);
+
+/// 搜索结果增量回调。
+///
+/// 每当有资源站完成后，都会按资源站顺序返回当前已经拿到的合并结果。
+typedef SearchPartialResultsCallback = void Function(
+  List<SearchResult> results,
+);
 
 /// 搜索服务
 class SearchService {
   // 内存缓存
   static List<SearchResource>? _cachedResources;
   static bool _isRefreshing = false;
+
+  /// 外部联想服务实例。
+  ///
+  /// 默认聚合腾讯、爱奇艺和芒果的首字母联想接口。
+  static ExternalSearchSuggestionService externalSuggestionService =
+      ExternalSearchSuggestionService();
 
   /// 获取搜索资源列表（带缓存）
   /// 本地模式直接返回，服务器模式先返回缓存数据然后异步刷新
@@ -68,6 +114,13 @@ class SearchService {
   /// 用于快速获取搜索建议
   static Future<List<String>> searchRecommand(String query) async {
     try {
+      // 首字母查询优先走外部联想接口，结果为空时再回退现有资源站搜索。
+      final externalSuggestions =
+          await externalSuggestionService.fetchSuggestions(query);
+      if (externalSuggestions.isNotEmpty) {
+        return externalSuggestions;
+      }
+
       // 获取搜索资源列表（使用缓存）
       final allResources = await _getSearchResourcesWithCache();
 
@@ -99,7 +152,11 @@ class SearchService {
 
   /// 同步搜索（本地搜索）
   /// 并发调用所有资源的搜索，返回所有结果
-  static Future<List<SearchResult>> searchSync(String query) async {
+  static Future<List<SearchResult>> searchSync(
+    String query, {
+    SearchProgressCallback? onProgress,
+    SearchPartialResultsCallback? onPartialResults,
+  }) async {
     try {
       // 获取搜索资源列表（使用缓存）
       final allResources = await _getSearchResourcesWithCache();
@@ -112,18 +169,68 @@ class SearchService {
         return [];
       }
 
-      // 并发调用所有资源的搜索，每个调用增加 20 秒超时
-      final searchFutures = resources.map((resource) {
-        return DownstreamService.searchFromApi(resource, query)
-            .timeout(const Duration(seconds: 20))
-            .catchError((error) {
-          // 捕获错误，返回空列表
-          return <SearchResult>[];
-        });
+      final totalResources = resources.length;
+      var completedResources = 0;
+      final allResults = List<List<SearchResult>>.filled(
+        totalResources,
+        const <SearchResult>[],
+        growable: false,
+      );
+
+      // 搜索开始前先同步一次总站数，方便上层立即渲染 0/N 的进度。
+      onProgress?.call(
+        SearchProgressSnapshot(
+          totalResources: totalResources,
+          completedResources: 0,
+          currentResourceName: null,
+          isComplete: false,
+        ),
+      );
+
+      // 并发调用所有资源的搜索，每个调用增加 20 秒超时。
+      final searchFutures = resources.asMap().entries.map((entry) async {
+        final index = entry.key;
+        final resource = entry.value;
+
+        try {
+          final results = await DownstreamService.searchFromApi(
+            resource,
+            query,
+            onPartialResults: (partialResults) {
+              allResults[index] = List<SearchResult>.from(partialResults);
+              onPartialResults?.call(
+                allResults
+                    .expand((resourceResults) => resourceResults)
+                    .toList(growable: false),
+              );
+            },
+          ).timeout(const Duration(seconds: 20));
+          allResults[index] = results;
+        } catch (_) {
+          // 单个资源站异常时返回空列表，继续汇总其它资源站结果。
+          allResults[index] = <SearchResult>[];
+        } finally {
+          completedResources += 1;
+          onPartialResults?.call(
+            allResults
+                .expand((resourceResults) => resourceResults)
+                .toList(growable: false),
+          );
+          onProgress?.call(
+            SearchProgressSnapshot(
+              totalResources: totalResources,
+              completedResources: completedResources,
+              currentResourceName: resource.name.trim().isEmpty
+                  ? resource.key
+                  : resource.name.trim(),
+              isComplete: completedResources >= totalResources,
+            ),
+          );
+        }
       }).toList();
 
-      // 等待所有搜索完成
-      final allResults = await Future.wait(searchFutures);
+      // 等待所有搜索完成。
+      await Future.wait(searchFutures);
 
       // 按照 resources 的顺序合并结果（allResults 的顺序与 resources 一致）
       final results = <SearchResult>[];

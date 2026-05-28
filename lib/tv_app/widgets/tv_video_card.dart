@@ -10,6 +10,12 @@ import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
 import 'package:selene/utils/image_url.dart';
 
+/// TV 封面延迟加载判断函数。
+typedef TvDeferredLoadingDecider = bool Function(BuildContext context);
+
+/// TV 封面真实图片请求开始回调。
+typedef TvCoverImageRequestStarted = void Function(String coverUrl);
+
 /// TV 视频卡片组件。
 ///
 /// 用于 TV 首页横向内容区，突出封面、标题和遥控器焦点态。
@@ -34,6 +40,10 @@ class TvVideoCard extends StatelessWidget {
     this.focusScrollAlignment = TvFocusScroll.defaultAlignment,
     this.scaleAlignment = Alignment.center,
     this.focusMemoryGroupKey,
+    this.deferredLoadingDecider,
+    this.deferredLoadingRetryDelay =
+        _TvCoverImage.defaultDeferredLoadingRetryDelay,
+    this.onCoverImageRequestStarted,
   });
 
   /// 视频展示数据。
@@ -81,6 +91,21 @@ class TvVideoCard extends StatelessWidget {
 
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
+
+  /// 图片延迟加载判断函数。
+  ///
+  /// 默认复用 Flutter 提供的滚动期延迟加载建议，测试场景可注入稳定判断。
+  final TvDeferredLoadingDecider? deferredLoadingDecider;
+
+  /// 图片延迟加载重试间隔。
+  ///
+  /// 滚动期间会按该节流间隔重新判断是否可以开始请求图片。
+  final Duration deferredLoadingRetryDelay;
+
+  /// 封面真实图片请求开始回调。
+  ///
+  /// 仅在首次允许开始构建网络图片时触发一次，主要用于测试滚动期延迟加载行为。
+  final TvCoverImageRequestStarted? onCoverImageRequestStarted;
 
   /// 当前视频数据 ID，用于 TV 测试和焦点定位。
   String get focusKey => 'tv-video-card-focus-${videoInfo.id}';
@@ -227,7 +252,12 @@ class TvVideoCard extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _TvCoverImage(videoInfo: videoInfo),
+          _TvCoverImage(
+            videoInfo: videoInfo,
+            deferredLoadingDecider: deferredLoadingDecider,
+            deferredLoadingRetryDelay: deferredLoadingRetryDelay,
+            onCoverImageRequestStarted: onCoverImageRequestStarted,
+          ),
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -463,10 +493,26 @@ class _TvCoverImage extends StatefulWidget {
   /// 创建 TV 卡片封面图片。
   const _TvCoverImage({
     required this.videoInfo,
+    this.deferredLoadingDecider,
+    this.deferredLoadingRetryDelay = defaultDeferredLoadingRetryDelay,
+    this.onCoverImageRequestStarted,
   });
+
+  /// 默认延迟加载重试间隔。
+  static const Duration defaultDeferredLoadingRetryDelay =
+      Duration(milliseconds: 120);
 
   /// 视频展示数据。
   final VideoInfo videoInfo;
+
+  /// 图片延迟加载判断函数。
+  final TvDeferredLoadingDecider? deferredLoadingDecider;
+
+  /// 图片延迟加载重试间隔。
+  final Duration deferredLoadingRetryDelay;
+
+  /// 封面真实图片请求开始回调。
+  final TvCoverImageRequestStarted? onCoverImageRequestStarted;
 
   @override
   State<_TvCoverImage> createState() => _TvCoverImageState();
@@ -478,6 +524,15 @@ class _TvCoverImageState extends State<_TvCoverImage> {
 
   /// 图片磁盘缓存策略任务。
   late Future<bool> _useImageDiskCacheFuture;
+
+  /// 延迟加载重试定时器。
+  Timer? _deferredLoadingRetryTimer;
+
+  /// 当前卡片是否已经允许发起真实图片请求。
+  bool _canStartImageRequest = false;
+
+  /// 是否已经通知过“开始构建真实图片请求”。
+  bool _didNotifyImageRequestStarted = false;
 
   @override
   void initState() {
@@ -491,6 +546,9 @@ class _TvCoverImageState extends State<_TvCoverImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoInfo.cover != widget.videoInfo.cover ||
         oldWidget.videoInfo.source != widget.videoInfo.source) {
+      _cancelDeferredLoadingRetry();
+      _canStartImageRequest = false;
+      _didNotifyImageRequestStarted = false;
       _coverFuture = _resolveCoverUrl();
       _useImageDiskCacheFuture = AppCacheService().shouldUseImageDiskCache();
     }
@@ -501,6 +559,67 @@ class _TvCoverImageState extends State<_TvCoverImage> {
     return getImageUrl(widget.videoInfo.cover, widget.videoInfo.source);
   }
 
+  /// 是否建议在当前滚动状态下延迟图片请求。
+  bool _shouldDeferLoading(BuildContext context) {
+    final decider = widget.deferredLoadingDecider;
+    return decider?.call(context) ??
+        Scrollable.recommendDeferredLoadingForContext(context);
+  }
+
+  /// 为滚动中的卡片安排下一次可加载判断。
+  void _scheduleDeferredLoadingRetry() {
+    if (_deferredLoadingRetryTimer != null) {
+      return;
+    }
+    _deferredLoadingRetryTimer = Timer(widget.deferredLoadingRetryDelay, () {
+      _deferredLoadingRetryTimer = null;
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        // 仅触发重建，是否放行由 build 阶段重新判断。
+      });
+    });
+  }
+
+  /// 取消滚动期间的延迟加载重试。
+  void _cancelDeferredLoadingRetry() {
+    _deferredLoadingRetryTimer?.cancel();
+    _deferredLoadingRetryTimer = null;
+  }
+
+  /// 通知封面已经允许开始构建真实图片请求。
+  void _notifyImageRequestStarted(String coverUrl) {
+    if (_didNotifyImageRequestStarted) {
+      return;
+    }
+    _didNotifyImageRequestStarted = true;
+    widget.onCoverImageRequestStarted?.call(coverUrl);
+  }
+
+  /// 根据当前滚动状态决定是否可以开始发起真实图片请求。
+  bool _resolveCanStartImageRequest(BuildContext context) {
+    if (_canStartImageRequest) {
+      _cancelDeferredLoadingRetry();
+      return true;
+    }
+
+    if (_shouldDeferLoading(context)) {
+      _scheduleDeferredLoadingRetry();
+      return false;
+    }
+
+    _cancelDeferredLoadingRetry();
+    _canStartImageRequest = true;
+    return true;
+  }
+
+  @override
+  void dispose() {
+    _cancelDeferredLoadingRetry();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String>(
@@ -508,7 +627,7 @@ class _TvCoverImageState extends State<_TvCoverImage> {
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done &&
             widget.videoInfo.cover.isNotEmpty) {
-          return const _TvCoverLoadingSkeleton();
+          return const TvCoverLoadingSkeleton();
         }
 
         final coverUrl = snapshot.data ?? widget.videoInfo.cover;
@@ -516,22 +635,32 @@ class _TvCoverImageState extends State<_TvCoverImage> {
           return const _TvCoverFallback();
         }
 
+        if (!_resolveCanStartImageRequest(context)) {
+          // 列表快速滚动时先展示骨架，等滚动趋稳后再真正发起网络图片请求。
+          return const TvCoverLoadingSkeleton(
+            key: ValueKey('tv-cover-deferred-loading-skeleton'),
+          );
+        }
+
+        _notifyImageRequestStarted(coverUrl);
+
         return FutureBuilder<bool>(
           future: _useImageDiskCacheFuture,
           builder: (context, cacheSnapshot) {
             if (cacheSnapshot.connectionState != ConnectionState.done) {
-              return const _TvCoverLoadingSkeleton();
+              return const TvCoverLoadingSkeleton();
             }
 
             final headers =
                 getImageRequestHeaders(coverUrl, widget.videoInfo.source);
             if (cacheSnapshot.data != false) {
               return CachedNetworkImage(
+                key: const ValueKey('tv-cover-network-image'),
                 imageUrl: coverUrl,
                 fit: BoxFit.cover,
                 cacheKey: coverUrl,
                 httpHeaders: headers,
-                placeholder: (_, __) => const _TvCoverLoadingSkeleton(),
+                placeholder: (_, __) => const TvCoverLoadingSkeleton(),
                 errorWidget: (_, __, ___) => const _TvCoverFallback(),
                 fadeInDuration: const Duration(milliseconds: 160),
                 fadeOutDuration: const Duration(milliseconds: 80),
@@ -540,13 +669,14 @@ class _TvCoverImageState extends State<_TvCoverImage> {
 
             return Image.network(
               coverUrl,
+              key: const ValueKey('tv-cover-network-image'),
               fit: BoxFit.cover,
               headers: headers,
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) {
                   return child;
                 }
-                return const _TvCoverLoadingSkeleton();
+                return const TvCoverLoadingSkeleton();
               },
               errorBuilder: (_, __, ___) => const _TvCoverFallback(),
             );
@@ -559,17 +689,16 @@ class _TvCoverImageState extends State<_TvCoverImage> {
 
 /// TV 卡片封面加载骨架。
 ///
-/// 用轻微倾斜的横向雨刷光带提示图片正在首次加载。
-class _TvCoverLoadingSkeleton extends StatefulWidget {
+/// 用轻微倾斜的横向雨刷光带提示图片正在首次加载，也可复用到搜索结果首屏骨架。
+class TvCoverLoadingSkeleton extends StatefulWidget {
   /// 创建 TV 卡片封面加载骨架。
-  const _TvCoverLoadingSkeleton();
+  const TvCoverLoadingSkeleton({super.key});
 
   @override
-  State<_TvCoverLoadingSkeleton> createState() =>
-      _TvCoverLoadingSkeletonState();
+  State<TvCoverLoadingSkeleton> createState() => _TvCoverLoadingSkeletonState();
 }
 
-class _TvCoverLoadingSkeletonState extends State<_TvCoverLoadingSkeleton>
+class _TvCoverLoadingSkeletonState extends State<TvCoverLoadingSkeleton>
     with SingleTickerProviderStateMixin {
   /// 雨刷光带动画控制器。
   late final AnimationController _controller = AnimationController(

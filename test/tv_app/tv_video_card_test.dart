@@ -69,6 +69,77 @@ void main() {
         findsOneWidget);
   });
 
+  testWidgets('TV video card defers image requests while scrolling',
+      (tester) async {
+    var shouldDeferLoading = true;
+    final startedRequests = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            videoInfo: _videoInfo(cover: 'https://example.com/poster.jpg'),
+            deferredLoadingDecider: (_) => shouldDeferLoading,
+            deferredLoadingRetryDelay: const Duration(milliseconds: 10),
+            onCoverImageRequestStarted: startedRequests.add,
+          ),
+        ),
+      ),
+    );
+
+    expect(startedRequests, isEmpty);
+    await _pumpFrames(tester, count: 6);
+
+    expect(find.byKey(const ValueKey('tv-cover-deferred-loading-skeleton')),
+        findsOneWidget);
+    expect(startedRequests, isEmpty);
+
+    // 模拟滚动停止后，组件通过内部重试自行发起图片加载。
+    shouldDeferLoading = false;
+    await tester.pump(const Duration(milliseconds: 12));
+    await _pumpFrames(tester, count: 6);
+
+    expect(startedRequests, const ['https://example.com/poster.jpg']);
+  });
+
+  testWidgets(
+      'TV video card keeps existing image widget after loading has started',
+      (tester) async {
+    var shouldDeferLoading = false;
+    final startedRequests = <String>[];
+    late StateSetter hostSetState;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              hostSetState = setState;
+              return TvVideoCard(
+                videoInfo: _videoInfo(cover: 'https://example.com/poster.jpg'),
+                deferredLoadingDecider: (_) => shouldDeferLoading,
+                deferredLoadingRetryDelay: const Duration(milliseconds: 10),
+                onCoverImageRequestStarted: startedRequests.add,
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await _pumpFrames(tester, count: 6);
+    expect(startedRequests, const ['https://example.com/poster.jpg']);
+
+    // 模拟已开始加载后继续滚动，卡片不应闪回到纯延迟骨架态。
+    shouldDeferLoading = true;
+    hostSetState(() {});
+    await tester.pump();
+
+    expect(startedRequests, const ['https://example.com/poster.jpg']);
+    expect(find.byKey(const ValueKey('tv-cover-deferred-loading-skeleton')),
+        findsNothing);
+  });
+
   testWidgets('TV video card shows episode badge for multi episode progress',
       (tester) async {
     await tester.pumpWidget(
@@ -164,6 +235,12 @@ void main() {
 
     focusNode.dispose();
   });
+}
+
+Future<void> _pumpFrames(WidgetTester tester, {int count = 1}) async {
+  for (var index = 0; index < count; index++) {
+    await tester.pump(const Duration(milliseconds: 1));
+  }
 }
 
 VideoInfo _videoInfo({
