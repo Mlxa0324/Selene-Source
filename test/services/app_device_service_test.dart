@@ -6,6 +6,10 @@ import 'package:selene/services/app_device_service.dart';
 
 void main() {
   group('AppDeviceService', () {
+    test('local debug force TV mode config defaults to disabled', () {
+      expect(DeviceModeConfig.localDebugForceTvMode, isFalse);
+    });
+
     test('force TV mode config defaults to auto detect', () {
       expect(DeviceModeConfig.forceTvMode, isFalse);
     });
@@ -35,8 +39,7 @@ void main() {
       expect(await service.resolveDeviceType(), AppDeviceType.tv);
     });
 
-    test('resolves Android phone when native checker returns false',
-        () async {
+    test('resolves Android phone when native checker returns false', () async {
       final service = AppDeviceService(
         targetPlatform: TargetPlatform.android,
         forceTvMode: false,
@@ -90,8 +93,7 @@ void main() {
       );
     });
 
-    test('ignores force TV mode when resolving physical device type',
-        () async {
+    test('ignores force TV mode when resolving physical device type', () async {
       var called = false;
       final service = AppDeviceService(
         targetPlatform: TargetPlatform.android,

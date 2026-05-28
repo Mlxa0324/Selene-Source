@@ -63,19 +63,23 @@ lib/tv_app/
 
 ```dart
 class DeviceModeConfig {
-  static const bool forceTvMode = bool.fromEnvironment(
+  static const bool localDebugForceTvMode = false;
+  static const bool dartDefineForceTvMode = bool.fromEnvironment(
     'SELENE_FORCE_TV_MODE',
     defaultValue: false,
   );
+  static const bool forceTvMode =
+      localDebugForceTvMode || dartDefineForceTvMode;
 }
 ```
 
 约定：
 
 - 默认自动识别设备类型，避免手机开发包误进 TV 壳。
-- 调试 BlueStacks 或平板 TV 壳时，可显式传入 `SELENE_FORCE_TV_MODE=true`。
+- 调试 BlueStacks 或平板 TV 壳时，可直接修改 `DeviceModeConfig.localDebugForceTvMode`，这是本机最直观的手动入口。
+- 也可显式传入 `SELENE_FORCE_TV_MODE=true`。
 - Release 默认不强制 TV。
-- 命令行可通过 `--dart-define=SELENE_FORCE_TV_MODE=true` 覆盖。
+- `forceTvMode` 统一汇总本地变量和 `dart-define` 两种强制来源，业务层只读取这一处结果。
 
 ### 3.2 TV 首页数据加载
 
