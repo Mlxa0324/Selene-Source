@@ -13,10 +13,16 @@ class BangumiService {
   static final DoubanCacheService _cache = DoubanCacheService();
   static bool _initialized = false;
   static const String _calendarLogTag = 'BangumiService[calendar]';
+  static const String _calendarPrimaryApiUrl = 'https://api.bgm.tv/calendar';
   static const String _calendarCacheKey = 'bangumi_calendar_raw_v1';
   static const String _calendarFallbackCacheKey =
       'bangumi_calendar_raw_fallback_v1';
-  static const Duration _calendarApiTimeout = Duration(seconds: 5);
+  static const Duration _calendarApiTimeout = Duration(seconds: 3);
+  static const Duration _calendarPageTimeout = Duration(seconds: 3);
+  static const List<String> _calendarProxyApiPrefixes = <String>[
+    // Bangumi 日历接口代理前缀列表，后续新增代理时继续往这里追加即可。
+    'https://pz.v88.qzz.io/?url=',
+  ];
   static const List<String> _calendarPageUrls = <String>[
     'https://bangumi.tv/calendar',
     'https://bgm.tv/calendar',
@@ -139,109 +145,171 @@ class BangumiService {
     }
 
     // 未命中缓存，请求接口
-    try {
-      const apiUrl = 'https://api.bgm.tv/calendar';
-      final headers = {
-        'User-Agent':
-            'senshinya/selene/1.0.0 (Android) (http://github.com/senshinya/selene)',
-        'Accept': 'application/json',
-      };
+    final headers = {
+      'User-Agent':
+          'senshinya/selene/1.0.0 (Android) (http://github.com/senshinya/selene)',
+      'Accept': 'application/json',
+    };
 
-      final uri = Uri.parse(apiUrl);
+    // 第一层优先命中官方日历接口。
+    final primaryApiPayload = await _requestCalendarPayloadFromApi(
+      weekday: weekday,
+      requestLabel: 'primary-api',
+      requestUrl: _calendarPrimaryApiUrl,
+      headers: headers,
+      timeout: apiTimeout,
+      stopwatch: stopwatch,
+    );
+    if (primaryApiPayload != null) {
+      return _buildCalendarSuccessResponse(
+        weekday: weekday,
+        sourceLabel: 'primary-api',
+        rawPayload: primaryApiPayload,
+        stopwatch: stopwatch,
+        statusCode: 200,
+      );
+    }
+
+    // 第二层按列表顺序尝试代理接口，方便后续继续追加新的中转源。
+    final proxyApiUrls = _buildCalendarProxyApiUrls();
+    for (var index = 0; index < proxyApiUrls.length; index++) {
+      final requestLabel = 'proxy-api-${index + 1}';
+      final proxyApiPayload = await _requestCalendarPayloadFromApi(
+        weekday: weekday,
+        requestLabel: requestLabel,
+        requestUrl: proxyApiUrls[index],
+        headers: headers,
+        timeout: apiTimeout,
+        stopwatch: stopwatch,
+      );
+      if (proxyApiPayload != null) {
+        return _buildCalendarSuccessResponse(
+          weekday: weekday,
+          sourceLabel: requestLabel,
+          rawPayload: proxyApiPayload,
+          stopwatch: stopwatch,
+          statusCode: 200,
+        );
+      }
+    }
+
+    _logCalendarDebug(
+      'weekday=$weekday api layers unavailable, switching to page fallback.',
+    );
+    final htmlFallbackItems = await _getCalendarItemsFromPageFallback(weekday);
+    if (htmlFallbackItems != null) {
       _logCalendarDebug(
-        'weekday=$weekday fresh cache miss, requesting api=$apiUrl.',
+        'weekday=$weekday page fallback success, items=${htmlFallbackItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
+      return ApiResponse.success(htmlFallbackItems);
+    }
+
+    final staleItems = await _getFallbackCalendarItems(weekday);
+    if (staleItems != null) {
+      _logCalendarDebug(
+        'weekday=$weekday stale cache fallback success, items=${staleItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
+      return ApiResponse.success(staleItems);
+    }
+
+    _logCalendarDebug(
+      'weekday=$weekday all fallbacks failed, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
+    );
+    return ApiResponse.error('Bangumi 数据请求异常: 官方接口、代理接口与页面兜底均失败');
+  }
+
+  /// 构建代理接口 URL 列表。
+  ///
+  /// 当前约定代理前缀直接以 `?url=` 结尾，统一在这里补上编码后的官方接口地址。
+  static List<String> _buildCalendarProxyApiUrls() {
+    final encodedTargetUrl = Uri.encodeComponent(_calendarPrimaryApiUrl);
+    return _calendarProxyApiPrefixes
+        .map((prefix) => '$prefix$encodedTargetUrl')
+        .toList();
+  }
+
+  /// 请求 Bangumi 日历 JSON。
+  ///
+  /// 官方接口和代理接口共用这条链路，只在日志里区分当前属于哪一层。
+  static Future<List<dynamic>?> _requestCalendarPayloadFromApi({
+    required int weekday,
+    required String requestLabel,
+    required String requestUrl,
+    required Map<String, String> headers,
+    required Duration timeout,
+    required Stopwatch stopwatch,
+  }) async {
+    try {
+      final uri = Uri.parse(requestUrl);
+      _logCalendarDebug(
+        'weekday=$weekday $requestLabel request start, url=$requestUrl, timeout=${timeout.inMilliseconds}ms.',
       );
       final response = await (_calendarHttpGetForTest?.call(uri, headers) ??
               http.get(uri, headers: headers))
-          .timeout(apiTimeout);
+          .timeout(timeout);
       _logCalendarDebug(
-        'weekday=$weekday api completed, status=${response.statusCode}, bodyBytes=${response.body.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+        'weekday=$weekday $requestLabel completed, status=${response.statusCode}, bodyBytes=${response.body.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
       );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> responseData = json.decode(response.body);
-        final items = _extractCalendarItemsFromPayload(responseData, weekday);
-        final weekdaySummary = _buildWeekdayCountSummary(responseData);
-        final titlePreview = _buildBangumiTitlePreview(items);
+      if (response.statusCode != 200) {
         _logCalendarDebug(
-          'weekday=$weekday api success, items=${items.length}, weekdaySummary=$weekdaySummary, preview=$titlePreview, writing fresh and fallback cache.',
+          'weekday=$weekday $requestLabel returned non-200 status=${response.statusCode}.',
         );
-
-        // 写入接口级缓存：原始数组
-        try {
-          await _cache.set(
-            _calendarCacheKey,
-            responseData,
-            const Duration(days: 1),
-          );
-          await _cache.set(
-            _calendarFallbackCacheKey,
-            responseData,
-            const Duration(days: 14),
-          );
-          _logCalendarDebug(
-            'weekday=$weekday api cache write success, elapsed=${stopwatch.elapsedMilliseconds}ms.',
-          );
-        } catch (cacheError) {
-          _logCalendarDebug(
-            'weekday=$weekday api cache write failed, type=${cacheError.runtimeType}, message=$cacheError.',
-          );
-        }
-
-        return ApiResponse.success(items, statusCode: response.statusCode);
-      } else {
-        _logCalendarDebug(
-          'weekday=$weekday api returned non-200 status=${response.statusCode}, switching to page fallback.',
-        );
-        final htmlFallbackItems = await _getCalendarItemsFromPageFallback(
-          weekday,
-        );
-        if (htmlFallbackItems != null) {
-          _logCalendarDebug(
-            'weekday=$weekday page fallback success after non-200, items=${htmlFallbackItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
-          );
-          return ApiResponse.success(htmlFallbackItems);
-        }
-        final staleItems = await _getFallbackCalendarItems(weekday);
-        if (staleItems != null) {
-          _logCalendarDebug(
-            'weekday=$weekday stale cache fallback success after non-200, items=${staleItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
-          );
-          return ApiResponse.success(staleItems);
-        }
-        _logCalendarDebug(
-          'weekday=$weekday all fallbacks failed after non-200 status=${response.statusCode}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
-        );
-        return ApiResponse.error(
-          '获取 Bangumi 日历失败: ${response.statusCode}',
-          statusCode: response.statusCode,
-        );
+        return null;
       }
-    } catch (e) {
+
+      final decoded = json.decode(response.body);
+      if (decoded is! List<dynamic>) {
+        _logCalendarDebug(
+          'weekday=$weekday $requestLabel response is not List payload, actualType=${decoded.runtimeType}.',
+        );
+        return null;
+      }
+      return decoded;
+    } catch (error) {
       _logCalendarDebug(
-        'weekday=$weekday api exception, type=${e.runtimeType}, message=$e, elapsed=${stopwatch.elapsedMilliseconds}ms, switching to page fallback.',
+        'weekday=$weekday $requestLabel exception, type=${error.runtimeType}, message=$error, elapsed=${stopwatch.elapsedMilliseconds}ms.',
       );
-      final htmlFallbackItems = await _getCalendarItemsFromPageFallback(
-        weekday,
-      );
-      if (htmlFallbackItems != null) {
-        _logCalendarDebug(
-          'weekday=$weekday page fallback success after exception, items=${htmlFallbackItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
-        );
-        return ApiResponse.success(htmlFallbackItems);
-      }
-      final staleItems = await _getFallbackCalendarItems(weekday);
-      if (staleItems != null) {
-        _logCalendarDebug(
-          'weekday=$weekday stale cache fallback success after exception, items=${staleItems.length}, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
-        );
-        return ApiResponse.success(staleItems);
-      }
-      _logCalendarDebug(
-        'weekday=$weekday all fallbacks failed after exception, totalElapsed=${stopwatch.elapsedMilliseconds}ms.',
-      );
-      return ApiResponse.error('Bangumi 数据请求异常: ${e.toString()}');
+      return null;
     }
+  }
+
+  /// 把成功拿到的整周 payload 转成首页需要的当天结果，并统一写缓存。
+  static Future<ApiResponse<List<BangumiItem>>> _buildCalendarSuccessResponse({
+    required int weekday,
+    required String sourceLabel,
+    required List<dynamic> rawPayload,
+    required Stopwatch stopwatch,
+    int? statusCode,
+  }) async {
+    final items = _extractCalendarItemsFromPayload(rawPayload, weekday);
+    final weekdaySummary = _buildWeekdayCountSummary(rawPayload);
+    final titlePreview = _buildBangumiTitlePreview(items);
+    _logCalendarDebug(
+      'weekday=$weekday $sourceLabel success, items=${items.length}, weekdaySummary=$weekdaySummary, preview=$titlePreview, writing fresh and fallback cache.',
+    );
+
+    // 成功拿到整周 JSON 后统一回写缓存，后续首页可以直接走本地缓存秒回。
+    try {
+      await _cache.set(
+        _calendarCacheKey,
+        rawPayload,
+        const Duration(days: 1),
+      );
+      await _cache.set(
+        _calendarFallbackCacheKey,
+        rawPayload,
+        const Duration(days: 14),
+      );
+      _logCalendarDebug(
+        'weekday=$weekday $sourceLabel cache write success, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+      );
+    } catch (cacheError) {
+      _logCalendarDebug(
+        'weekday=$weekday $sourceLabel cache write failed, type=${cacheError.runtimeType}, message=$cacheError.',
+      );
+    }
+
+    return ApiResponse.success(items, statusCode: statusCode);
   }
 
   /// 读取网络失败时的最后可用日历。
@@ -535,7 +603,7 @@ class BangumiService {
 
       await headlessWebView.run();
       final html = await completer.future.timeout(
-        const Duration(seconds: 20),
+        _calendarPageTimeout,
         onTimeout: () {
           _logCalendarDebug(
             'webview load timeout: $pageUrl, elapsed=${stopwatch.elapsedMilliseconds}ms.',

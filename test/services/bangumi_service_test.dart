@@ -37,7 +37,48 @@ void main() {
     expect(response.data!.single.nameCn, '周三番剧');
   });
 
-  testWidgets('falls back to calendar page html when api and cache both fail',
+  testWidgets('falls back to proxy api before calendar page html',
+      (tester) async {
+    // 跳过真实缓存初始化，避免测试依赖磁盘与插件环境。
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      if (uri.host == 'api.bgm.tv') {
+        return http.Response('', HttpStatus.serviceUnavailable);
+      }
+      if (uri.host == 'pz.v88.qzz.io') {
+        return http.Response.bytes(
+          utf8.encode(json.encode(_proxyCalendarPayload())),
+          HttpStatus.ok,
+          headers: <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      }
+      return http.Response('', HttpStatus.serviceUnavailable);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      fail('代理接口命中成功后不应该再进入页面兜底。');
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await BangumiService.getCalendarByWeekday(
+      tester.element(find.byType(Placeholder)),
+      5,
+    );
+
+    expect(response.success, isTrue);
+    expect(response.data, hasLength(2));
+    expect(response.data!.first.id, 910001);
+    expect(response.data!.first.nameCn, '代理周五番剧');
+    expect(response.data!.last.name, 'Proxy Friday Original 2');
+  });
+
+  testWidgets(
+      'falls back to calendar page html when primary api, proxy api and cache all fail',
       (tester) async {
     // 跳过真实缓存初始化，避免测试依赖磁盘与插件环境。
     BangumiService.skipCacheInitForTest();
@@ -105,8 +146,11 @@ void main() {
     BangumiService.skipCacheInitForTest();
     BangumiService.calendarApiTimeoutForTest = const Duration(milliseconds: 10);
     BangumiService.calendarHttpGetForTest = (uri, headers) async {
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      return http.Response(json.encode(_calendarPayload()), HttpStatus.ok);
+      if (uri.host == 'api.bgm.tv') {
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        return http.Response(json.encode(_calendarPayload()), HttpStatus.ok);
+      }
+      return http.Response('', HttpStatus.serviceUnavailable);
     };
     BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
       return null;
@@ -154,6 +198,53 @@ List<Map<String, dynamic>> _calendarPayload() {
           'rank': 1,
           'images': {
             'common': 'https://example.com/common.jpg',
+          },
+          'collection': {},
+        },
+      ],
+    },
+  ];
+}
+
+List<Map<String, dynamic>> _proxyCalendarPayload() {
+  return [
+    {
+      'weekday': {
+        'en': 'Fri',
+        'cn': '星期五',
+        'ja': '金曜日',
+        'id': 5,
+      },
+      'items': [
+        {
+          'id': 910001,
+          'url': 'https://bgm.tv/subject/910001',
+          'type': 2,
+          'name': 'Proxy Friday Original 1',
+          'name_cn': '代理周五番剧',
+          'summary': '测试代理接口兜底',
+          'air_date': '2026-05-29',
+          'air_weekday': 5,
+          'rating': {'score': 8.6},
+          'rank': 2,
+          'images': {
+            'common': 'https://example.com/proxy-1.jpg',
+          },
+          'collection': {},
+        },
+        {
+          'id': 910002,
+          'url': 'https://bgm.tv/subject/910002',
+          'type': 2,
+          'name': 'Proxy Friday Original 2',
+          'name_cn': null,
+          'summary': '测试代理接口第二条',
+          'air_date': '2026-05-29',
+          'air_weekday': 5,
+          'rating': {'score': 7.9},
+          'rank': 3,
+          'images': {
+            'common': 'https://example.com/proxy-2.jpg',
           },
           'collection': {},
         },
