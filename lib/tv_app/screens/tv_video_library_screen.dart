@@ -6,6 +6,7 @@ import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
+import 'package:selene/tv_app/widgets/tv_route.dart';
 import 'package:selene/tv_app/widgets/tv_section_title.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
@@ -127,9 +128,7 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pageBackgroundColor =
-        TvTheme.maybeServiceOf(context)?.background.color ??
-            TvThemeBackground.deepBlue.color;
+    final pageBackgroundColor = TvTheme.backgroundOf(context).color;
     return TvBackHandler(
       autofocus: true,
       onBackPressed: _handleBackPressed,
@@ -168,7 +167,6 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
                             isLoading: isLoading,
                             focusMemoryGroupKey: _gridFocusMemoryGroupKey,
                             firstItemFocusNode: _firstVideoFocusNode,
-                            onVideoFocusChanged: _handleVideoGridFocusChanged,
                             onVideoItemFocused: _rememberLastFocusedGridItem,
                             onVideoPressed: _openVideo,
                             onVideoLongPressed: widget.onDeleteVideo == null
@@ -212,16 +210,6 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
     });
   }
 
-  /// 记录视频列表最近一次获焦卡片。
-  ///
-  /// 只在当前页面聚焦链真正落到视频卡片时更新，
-  /// 这样顶部“删除全部”按钮再按下回列表时就能回到离开前的位置。
-  void _handleVideoGridFocusChanged(bool hasFocus) {
-    if (!hasFocus) {
-      return;
-    }
-  }
-
   /// 记录视频列表最近一次真正获焦的卡片节点。
   ///
   /// 顶部“删除全部”按钮返回列表时会优先恢复到这里。
@@ -235,8 +223,7 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 这样长列表滚动时也能随时看到当前页面名称，并快速执行清空操作。
   Widget _buildPinnedHeader() {
     return ColoredBox(
-      color: TvTheme.maybeServiceOf(context)?.background.color ??
-          TvThemeBackground.deepBlue.color,
+      color: TvTheme.backgroundOf(context).color,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
@@ -268,17 +255,7 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   Future<void> _openVideo(VideoInfo videoInfo) async {
     final detailPage = widget.buildDetailPage?.call(videoInfo) ??
         TvVideoDetailScreen(videoInfo: videoInfo);
-    final shouldRefresh = await Navigator.of(context).push<bool>(
-      PageRouteBuilder(
-        pageBuilder: (routeContext, animation, secondaryAnimation) =>
-            TvTheme.wrapScope(
-          context: context,
-          child: detailPage,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
+    final shouldRefresh = await TvRoute.push<bool>(context, detailPage);
     if (!mounted || shouldRefresh != true) {
       return;
     }

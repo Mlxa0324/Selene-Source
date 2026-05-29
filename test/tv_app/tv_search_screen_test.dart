@@ -1,5 +1,7 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1462,10 +1464,12 @@ void main() {
       find.byKey(const ValueKey('tv-search-result-grid-panel')),
     );
 
-    expect(identical(rebuiltResultGrid.videos, initialResultGrid.videos), isTrue);
+    expect(
+        identical(rebuiltResultGrid.videos, initialResultGrid.videos), isTrue);
   });
 
-  testWidgets('leftmost search result first moves focus to nearest keyboard edge',
+  testWidgets(
+      'leftmost search result first moves focus to nearest keyboard edge',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -2407,8 +2411,7 @@ void main() {
         tester.widget<SingleChildScrollView>(scrollViewFinder.last);
     final beforeOffset = scrollViewBefore.controller!.offset;
 
-    final lowerSuggestionNode =
-        _focusNodeForText(tester, longSuggestions.last);
+    final lowerSuggestionNode = _focusNodeForText(tester, longSuggestions.last);
     lowerSuggestionNode.requestFocus();
     await tester.pumpAndSettle();
 
@@ -3092,6 +3095,116 @@ void main() {
     );
   });
 
+  testWidgets(
+      'escape clears in-flight search progress and stale aggregated results before returning home',
+      (tester) async {
+    final progressCompleter = Completer<List<SearchResult>>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['庆余年'],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSearchResultsWithProgress: (
+            query, {
+            required onPartialResults,
+            required onProgress,
+          }) {
+            onProgress(
+              const SearchProgressSnapshot(
+                totalResources: 9,
+                completedResources: 4,
+                currentResourceName: '测试源 A',
+                isComplete: false,
+              ),
+            );
+            onPartialResults(
+              <SearchResult>[
+                SearchResult(
+                  id: 'result_partial_a',
+                  title: '旧结果 A',
+                  poster: '',
+                  url: 'https://example.com/partial-a',
+                  episodesTitles: const [],
+                  source: 'source_a',
+                  sourceName: '源 A',
+                  year: '2024',
+                  doubanId: 1,
+                  episodes: const [],
+                ),
+                SearchResult(
+                  id: 'result_partial_b',
+                  title: '旧结果 B',
+                  poster: '',
+                  url: 'https://example.com/partial-b',
+                  episodesTitles: const [],
+                  source: 'source_b',
+                  sourceName: '源 B',
+                  year: '2024',
+                  doubanId: 2,
+                  episodes: const [],
+                ),
+              ],
+            );
+            return progressCompleter.future;
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('庆余年'));
+    await tester.pump();
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('tv-search-result-progress')),
+    );
+    await tester.pump();
+
+    expect(find.text('搜索结果'), findsOneWidget);
+    expect(find.text('2个影片'), findsOneWidget);
+    expect(find.text('已搜索 4/9 个资源站'), findsOneWidget);
+    expect(find.text('旧结果 A'), findsOneWidget);
+    expect(find.text('旧结果 B'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('搜索历史'), findsOneWidget);
+    expect(find.text('搜索结果'), findsNothing);
+    expect(find.text('2个影片'), findsNothing);
+    expect(find.text('已搜索 4/9 个资源站'), findsNothing);
+    expect(find.text('旧结果 A'), findsNothing);
+    expect(find.text('旧结果 B'), findsNothing);
+
+    progressCompleter.complete(
+      <SearchResult>[
+        SearchResult(
+          id: 'result_final',
+          title: '过期结果',
+          poster: '',
+          url: 'https://example.com/final',
+          episodesTitles: const [],
+          source: 'source_final',
+          sourceName: '源 Final',
+          year: '2025',
+          doubanId: 3,
+          episodes: const [],
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('搜索历史'), findsOneWidget);
+    expect(find.text('搜索结果'), findsNothing);
+    expect(find.text('过期结果'), findsNothing);
+    expect(find.text('已搜索 4/9 个资源站'), findsNothing);
+  });
+
   testWidgets('escape pops TV search page without waiting for extra frame',
       (tester) async {
     await tester.pumpWidget(
@@ -3194,8 +3307,10 @@ String _nearestLabelByCenterY(
   required String sourceLabel,
   required List<String> candidateLabels,
 }) {
-  final sourceCenterY =
-      tester.getRect(find.byKey(ValueKey('tv-video-card-focus-video_0'))).center.dy;
+  final sourceCenterY = tester
+      .getRect(find.byKey(ValueKey('tv-video-card-focus-video_0')))
+      .center
+      .dy;
   String? nearestLabel;
   double? minDistance;
   for (final label in candidateLabels) {

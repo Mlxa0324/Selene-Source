@@ -245,6 +245,11 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
         TvThemePalette.ivyGreen;
   }
 
+  /// 获取当前 TV 页面背景配置；没有作用域时回退默认深蓝灰。
+  static TvThemeBackground backgroundOf(BuildContext context) {
+    return maybeServiceOf(context)?.background ?? TvThemeBackground.deepBlue;
+  }
+
   /// 获取当前 TV 主题服务；测试或独立页面可能没有作用域。
   static TvThemeService? maybeServiceOf(BuildContext context) {
     return context.dependOnInheritedWidgetOfExactType<TvTheme>()?.notifier;

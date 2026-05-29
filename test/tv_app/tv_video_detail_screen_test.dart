@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 import 'package:selene/widgets/video_player_widget.dart';
@@ -27,6 +29,7 @@ void main() {
 
   tearDown(() {
     TvSearchRecommendService.clearDebugCache();
+    TvBackIntent.debugResetBackKeyTracking();
   });
 
   testWidgets('renders TV detail layout sections in requested order',
@@ -195,6 +198,127 @@ void main() {
     expect(movieLeft, lessThan(shortLeft));
   });
 
+  testWidgets('detail source order cache skips rereading sources on parent rebuild',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final countedSources = _CountedSearchResultList([
+      _searchResult('source_a', '最大资源', episodeCount: 99),
+      _searchResult('source_b', '电影天堂', episodeCount: 63),
+      _searchResult('source_c', '暴风资源', episodeCount: 45),
+      _searchResult('source_d', '短资源', episodeCount: 12),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            return Column(
+              children: [
+                TextButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('触发重建'),
+                ),
+                Expanded(
+                  child: TvVideoDetailScreen(
+                    videoInfo: _videoInfo(
+                      'main',
+                      '多源影片',
+                      source: 'source_c',
+                    ),
+                    loadDetail: (_, __) async => TvVideoDetailData(
+                      currentDetail: _searchResult(
+                        'source_c',
+                        '暴风资源',
+                        episodeCount: 45,
+                      ),
+                      sources: countedSources,
+                      recommends: const [],
+                    ),
+                    playerBuilder: (_, __) => Container(
+                      key: const ValueKey('tv-detail-player-placeholder'),
+                      color: Colors.black,
+                    ),
+                    fullscreenPlayerBuilder: (_, __) => Container(
+                      key: const ValueKey('tv-fullscreen-player-placeholder'),
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    countedSources.resetReadCount();
+
+    await tester.tap(find.text('触发重建'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(countedSources.readCount, 0);
+    expect(find.text('暴风资源'), findsOneWidget);
+  });
+
+  testWidgets(
+      'detail source order cache switches selected source without rereading sources',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final countedSources = _CountedSearchResultList([
+      _searchResult('source_a', '最大资源', episodeCount: 99),
+      _searchResult('source_b', '电影天堂', episodeCount: 63),
+      _searchResult('source_c', '暴风资源', episodeCount: 45),
+      _searchResult('source_d', '短资源', episodeCount: 12),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'main',
+            '多源影片',
+            source: 'source_c',
+          ),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_c',
+              '暴风资源',
+              episodeCount: 45,
+            ),
+            sources: countedSources,
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    countedSources.resetReadCount();
+
+    await tester.tap(find.text('电影天堂'));
+    await tester.pumpAndSettle();
+
+    final movieLeft = tester.getTopLeft(find.text('电影天堂')).dx;
+    final maxLeft = tester.getTopLeft(find.text('最大资源')).dx;
+    final stormLeft = tester.getTopLeft(find.text('暴风资源')).dx;
+    final shortLeft = tester.getTopLeft(find.text('短资源')).dx;
+
+    expect(countedSources.readCount, 0);
+    expect(movieLeft, lessThan(maxLeft));
+    expect(maxLeft, lessThan(stormLeft));
+    expect(stormLeft, lessThan(shortLeft));
+  });
+
   testWidgets('hides recommends section and bottom action when no recommends',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -230,7 +354,7 @@ void main() {
     expect(find.text('回到顶部'), findsNothing);
   });
 
-  testWidgets('waits for ad filter preference before building default player',
+  testWidgets('renders detail player before ad filter preference resolves',
       (tester) async {
     await _setTvSurfaceSize(tester);
     final adFilterCompleter = Completer<bool>();
@@ -264,17 +388,68 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
-    expect(find.byKey(const ValueKey('tv-detail-player-placeholder')),
-        findsNothing);
-    expect(resolvedAdFilterEnabled, isNull);
+    expect(
+      find.byKey(const ValueKey('tv-detail-player-placeholder')),
+      findsOneWidget,
+    );
+    expect(resolvedAdFilterEnabled, isTrue);
 
-    adFilterCompleter.complete(true);
+    adFilterCompleter.complete(false);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
-    expect(find.byKey(const ValueKey('tv-detail-player-placeholder')),
-        findsOneWidget);
-    expect(resolvedAdFilterEnabled, isTrue);
+    expect(
+      find.byKey(const ValueKey('tv-detail-player-placeholder')),
+      findsOneWidget,
+    );
+    expect(resolvedAdFilterEnabled, isFalse);
+  });
+
+  testWidgets('detail keeps first playable source independent from slow recommends',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final recommendsCompleter = Completer<List<VideoInfo>>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadInitialSources: (_, __) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadMoreSources: (_, __, ___) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadRecommends: (_, __, ___) => recommendsCompleter.future,
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(
+      find.byKey(const ValueKey('tv-detail-player-placeholder')),
+      findsOneWidget,
+    );
+    expect(find.text('主源'), findsOneWidget);
+    expect(find.text('相关推荐'), findsNothing);
+
+    recommendsCompleter.complete([
+      _videoInfo('recommend_1', '推荐影片'),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('相关推荐'), findsOneWidget);
+    expect(find.text('推荐影片'), findsOneWidget);
   });
 
   testWidgets('detail recommends are recorded for TV search page cache',
@@ -3966,6 +4141,7 @@ void main() {
 
     expect(find.text('打开详情页'), findsOneWidget);
     expect(find.byKey(const ValueKey('tv-detail-player-entry')), findsNothing);
+    TvBackIntent.debugResetBackKeyTracking();
   });
 
   testWidgets('global escape pops TV detail page when focus is outside detail',
@@ -4042,6 +4218,7 @@ void main() {
 
     expect(find.text('打开详情页'), findsOneWidget);
     expect(find.byKey(const ValueKey('tv-detail-player-entry')), findsNothing);
+    TvBackIntent.debugResetBackKeyTracking();
   });
 }
 
@@ -4296,6 +4473,46 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   double? get volume => 1.0;
+}
+
+/// 统计 TV 详情页对源列表元素读取次数的测试桩。
+///
+/// 用于验证换源列表排序结果是否已经缓存，避免无关 rebuild 或仅切换当前源时
+/// 再次遍历原始 `_sources`。
+class _CountedSearchResultList extends ListBase<SearchResult> {
+  /// 创建带读取计数的播放源列表。
+  _CountedSearchResultList(List<SearchResult> sources)
+      : _sources = List<SearchResult>.from(sources);
+
+  /// 原始播放源列表。
+  final List<SearchResult> _sources;
+
+  /// 当前累计的元素读取次数。
+  int readCount = 0;
+
+  @override
+  int get length => _sources.length;
+
+  @override
+  set length(int newLength) {
+    _sources.length = newLength;
+  }
+
+  @override
+  SearchResult operator [](int index) {
+    readCount += 1;
+    return _sources[index];
+  }
+
+  @override
+  void operator []=(int index, SearchResult value) {
+    _sources[index] = value;
+  }
+
+  /// 清空当前累计读取次数，方便分阶段断言。
+  void resetReadCount() {
+    readCount = 0;
+  }
 }
 
 VideoInfo _videoInfo(

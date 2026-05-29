@@ -210,8 +210,21 @@ class _TvHomeSectionBody extends StatefulWidget {
 }
 
 class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
+  /// 当前分区是否已有任一卡片获得焦点。
+  ///
+  /// 用于识别“首次进入该分区”和“同分区内左右移动”这两种场景，
+  /// 仅在真正进入分区时才驱动整块分区做纵向滚动。
+  bool _sectionHasFocusedDescendant = false;
+
   /// 当前区块根节点，用于卡片获焦时驱动首页纵向滚动。
   final GlobalKey _sectionKey = GlobalKey();
+
+  /// 当前分区自己的焦点域。
+  ///
+  /// 用于判断用户是否已经离开该横向分区，离开后再把横向列表复位到开头。
+  final FocusScopeNode _sectionFocusScopeNode = FocusScopeNode(
+    debugLabel: 'tv-home-section-scope',
+  );
 
   /// 横向列表卡片边界抖动控制键。
   final Map<int, GlobalKey<TvEdgeShakeState>> _edgeShakeKeys = {};
@@ -256,6 +269,7 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
     for (final node in _videoFocusNodes.values) {
       node.dispose();
     }
+    _sectionFocusScopeNode.dispose();
     if (widget.scrollController == null) {
       _scrollController.dispose();
     }
@@ -265,10 +279,22 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
   /// 卡片获得焦点时，把当前区块平滑滚动到大屏适合浏览的位置。
   void _handleItemFocusChange(bool hasFocus, int index) {
     if (!hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _sectionFocusScopeNode.hasFocus) {
+          return;
+        }
+        _sectionHasFocusedDescendant = false;
+        _resetHorizontalScrollToLeadingEdge();
+      });
       return;
     }
 
+    final enteringFromOutside = !_sectionHasFocusedDescendant;
+    _sectionHasFocusedDescendant = true;
     _revealFocusedItem(index);
+    if (!enteringFromOutside) {
+      return;
+    }
 
     final sectionContext = _sectionKey.currentContext;
     if (sectionContext == null) {
@@ -279,6 +305,18 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
       sectionContext,
       alignment: TvFocusScroll.sectionAlignment,
     );
+  }
+
+  /// 当焦点离开整个分区后，把横向列表复位到最左侧。
+  void _resetHorizontalScrollToLeadingEdge() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final position = _scrollController.position;
+    if ((position.pixels - position.minScrollExtent).abs() <= 1) {
+      return;
+    }
+    _scrollController.jumpTo(position.minScrollExtent);
   }
 
   /// 当焦点抵达约定卡位后，按卡片步长推动横向列表。
@@ -346,27 +384,32 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      key: _sectionKey,
-      padding: const EdgeInsets.only(bottom: 42),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: TvLayout.pageHorizontalPadding,
-            ),
-            child: TvSectionTitle(
-              title: widget.title,
-              titleHint: widget.titleHint,
-            ),
+    return FocusScope(
+      node: _sectionFocusScopeNode,
+      child: RepaintBoundary(
+        child: Padding(
+          key: _sectionKey,
+          padding: const EdgeInsets.only(bottom: 42),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: TvLayout.pageHorizontalPadding,
+                ),
+                child: TvSectionTitle(
+                  title: widget.title,
+                  titleHint: widget.titleHint,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: TvVideoCard.height + 42,
+                child: widget.isLoading ? _buildLoadingList() : _buildVideoList(),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: TvVideoCard.height + 42,
-            child: widget.isLoading ? _buildLoadingList() : _buildVideoList(),
-          ),
-        ],
+        ),
       ),
     );
   }

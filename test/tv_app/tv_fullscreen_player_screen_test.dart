@@ -118,7 +118,7 @@ void main() {
   });
 
   testWidgets(
-      'waits for ad filter preference before building default fullscreen player',
+      'renders fullscreen player before ad filter preference resolves',
       (tester) async {
     final adFilterCompleter = Completer<bool>();
     bool? resolvedAdFilterEnabled;
@@ -148,17 +148,21 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
-    expect(find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
-        findsNothing);
-    expect(resolvedAdFilterEnabled, isNull);
+    expect(
+      find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
+      findsOneWidget,
+    );
+    expect(resolvedAdFilterEnabled, isTrue);
 
-    adFilterCompleter.complete(true);
+    adFilterCompleter.complete(false);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
-    expect(find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
-        findsOneWidget);
-    expect(resolvedAdFilterEnabled, isTrue);
+    expect(
+      find.byKey(const ValueKey('tv-fullscreen-player-placeholder')),
+      findsOneWidget,
+    );
+    expect(resolvedAdFilterEnabled, isFalse);
   });
 
   testWidgets(

@@ -205,7 +205,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
     if (widget.videos.isEmpty) {
       return 0;
     }
-    return _visibleItemCount.clamp(0, widget.videos.length) as int;
+    return _visibleItemCount.clamp(0, widget.videos.length);
   }
 
   /// 计算首批应该开放的卡片数量。
@@ -249,7 +249,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
     _visibleItemCount = _visibleItemCount.clamp(
       initialVisibleItemCount,
       totalItemCount,
-    ) as int;
+    );
   }
 
   /// 焦点逼近当前批次尾部时，提前开放下一批卡片。
@@ -267,7 +267,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
 
     setState(() {
       _visibleItemCount = (_renderedItemCount + widget.renderBatchSize)
-          .clamp(0, widget.videos.length) as int;
+          .clamp(0, widget.videos.length);
     });
   }
 

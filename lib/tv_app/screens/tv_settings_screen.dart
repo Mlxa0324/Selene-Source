@@ -387,6 +387,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 是否正在清理缓存。
   bool _clearingCaches = false;
 
+  /// 是否正在处理手机扫码推送的自动保存。
+  bool _savingMobileSubmittedDraft = false;
+
   /// 当前手机扫码配置桥接会话。
   TvMobileSettingsBridgeSession? _mobileConfigBridgeSession;
 
@@ -539,7 +542,70 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       _danmakuBaseApiController.text = draft.danmakuBaseApi;
     });
     _syncMobileConfigDraft();
-    _showToast('已同步手机配置，请在电视上确认保存', TvTheme.of(context).accent);
+    // 手机端确认提交后，TV 端直接沿用当前设置页已有保存链路落库，
+    // 避免用户还要再用遥控器逐项确认一遍。
+    unawaited(_autoSaveMobileSettingsDraft(draft));
+  }
+
+  /// 自动保存手机扫码推送回来的配置。
+  Future<void> _autoSaveMobileSettingsDraft(TvMobileSettingsDraft draft) async {
+    if (_savingMobileSubmittedDraft) {
+      return;
+    }
+
+    _savingMobileSubmittedDraft = true;
+    final accountSaver =
+        widget.saveAccount ?? TvSettingsScreen.defaultSaveAccount;
+    final imageSourceSaver = widget.saveDoubanImageSource ??
+        TvSettingsScreen.defaultSaveDoubanImageSource;
+    final adFilterSaver = widget.saveAdFilterEnabled ??
+        TvSettingsScreen.defaultSaveAdFilterEnabled;
+    final danmakuSaver =
+        widget.saveDanmaku ?? TvSettingsScreen.defaultSaveDanmaku;
+
+    try {
+      final accountResult = await accountSaver(
+        TvServerCredentials(
+          serverUrl: draft.serverUrl,
+          username: draft.username,
+          password: draft.password,
+        ),
+      );
+      if (!accountResult.success) {
+        throw _TvSettingsAutoSaveException(accountResult.message);
+      }
+
+      // 账号配置成功后，再顺序保存同一份扫码草稿里的图片代理、去广告和弹幕配置。
+      await imageSourceSaver(draft.doubanImageSource);
+      await adFilterSaver(draft.adFilterEnabled);
+      await danmakuSaver(draft.danmakuBaseApi, _danmakuSettings);
+
+      if (!mounted) {
+        return;
+      }
+      _showActionNotice(
+        '手机配置已自动保存',
+        type: _TvSettingsActionNoticeType.success,
+      );
+    } on _TvSettingsAutoSaveException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showActionNotice(
+        error.message,
+        type: _TvSettingsActionNoticeType.error,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      _showActionNotice(
+        '手机配置自动保存失败',
+        type: _TvSettingsActionNoticeType.error,
+      );
+    } finally {
+      _savingMobileSubmittedDraft = false;
+    }
   }
 
   /// 在数据加载完成后派发首个设置项焦点。
@@ -667,7 +733,8 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     if (scopedService != null) {
       await scopedService.setBackgroundKey(nextBackgroundKey);
     } else {
-      final saver = widget.saveBackground ?? TvSettingsScreen.defaultSaveBackground;
+      final saver =
+          widget.saveBackground ?? TvSettingsScreen.defaultSaveBackground;
       await saver(nextBackgroundKey);
     }
     if (!mounted) {
@@ -959,17 +1026,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     final message = _actionNoticeMessage;
     final noticeType = _actionNoticeType;
     final bool hasNotice = message != null && noticeType != null;
-    final theme = TvTheme.of(context);
     final bool isSuccess = noticeType == _TvSettingsActionNoticeType.success;
-    final Color backgroundColor =
-        isSuccess ? const Color(0xF1163E2A) : const Color(0xF131171B);
-    final Color borderColor =
-        isSuccess
-            ? theme.accent.withValues(alpha: 0.78)
-            : const Color(0xFFFF858F);
+    const Color backgroundColor = Color(0xD9000000);
     final Color iconBackgroundColor =
-        isSuccess ? theme.accent : const Color(0xFFE05A5A);
-    final double maxNoticeWidth = isSuccess ? 520 : 400;
+        isSuccess ? TvTheme.of(context).accent : const Color(0xFFE05A5A);
+    final double maxNoticeWidth = isSuccess ? 460 : 400;
 
     return Positioned.fill(
       child: IgnorePointer(
@@ -1010,15 +1071,13 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
                         constraints: BoxConstraints(maxWidth: maxNoticeWidth),
                         child: _TvSettingsActionNotice(
                           key: const ValueKey('tv-settings-action-notice'),
-                          title: isSuccess ? '保存成功' : null,
                           message: message,
                           backgroundColor: backgroundColor,
-                          borderColor: borderColor,
                           iconBackgroundColor: iconBackgroundColor,
                           icon: isSuccess
                               ? Icons.check_rounded
                               : Icons.error_outline_rounded,
-                          compact: !isSuccess,
+                          compact: true,
                         ),
                       ),
               ),
@@ -1076,31 +1135,46 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       title: '图片与弹幕',
       description: '选项按钮可直接确认切换，开关与滑杆在获焦后可直接用左右键调整。',
       children: [
-        _TvThemeOptionRow(
+        _TvChipOptionRow<TvThemePalette>(
           label: '主题色',
           value: _themeKey,
           options: TvThemePalette.values,
-          onChanged: _saveTheme,
+          optionKeyBuilder: (option) => option.key,
+          focusGroupKey: 'tv-setting-theme-主题色',
+          onChanged: (option) => _saveTheme(option.key),
           onArrowUp: () => _saveAccountFocusNode.requestFocus(),
           onArrowDown: _requestBackgroundOptionFocus,
+          chipStyleBuilder: _buildThemeOptionChip,
         ),
         const SizedBox(height: 18),
-        _TvBackgroundOptionRow(
+        _TvChipOptionRow<TvThemeBackground>(
           label: '背景色',
           value: _backgroundKey,
           options: TvThemeBackground.values,
-          onChanged: _saveBackground,
+          optionKeyBuilder: (option) => option.key,
+          focusGroupKey: 'tv-setting-background-背景色',
+          wrapSpacing: 14,
+          chipPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
+          chipBorderRadius: BorderRadius.circular(999),
+          chipStyleBuilder: _buildBackgroundOptionChip,
+          onChanged: (option) => _saveBackground(option.key),
           onArrowUp: _requestThemeOptionFocus,
           onArrowDown: _requestImageSourceOptionFocus,
         ),
         const SizedBox(height: 18),
-        _TvOptionRow(
+        _TvChipOptionRow<String>(
           label: '图片代理',
           value: _doubanImageSource,
           options: TvMobileSettingsDraft.availableDoubanImageSources,
+          optionKeyBuilder: (option) => option,
+          focusGroupKey: 'tv-setting-option-图片代理',
           onChanged: _saveDoubanImageSource,
           onArrowUp: _requestBackgroundOptionFocus,
           onArrowDown: () => _adFilterFocusNode.requestFocus(),
+          chipStyleBuilder: _buildPlainOptionChip,
         ),
         const SizedBox(height: 18),
         _TvSwitchRow(
@@ -1470,6 +1544,138 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     }
     return '$host:${shareUri.port}';
   }
+
+  /// 构建主题色选项芯片。
+  ///
+  /// 主题色使用主色块作为选中背景，并在左侧保留圆点预览，
+  /// 让用户无需离开设置页也能快速区分两个主题方案。
+  _TvChipOptionStyle _buildThemeOptionChip(
+    BuildContext context,
+    TvThemePalette option,
+    bool selected,
+    bool hasFocus,
+  ) {
+    return _TvChipOptionStyle(
+      backgroundColor: selected ? option.accent : const Color(0xFF0E1112),
+      borderColor: hasFocus
+          ? Colors.white
+          : selected
+              ? option.accent
+              : const Color(0xFF293136),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              color: option.accent,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white24),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            option.label,
+            style: FontUtils.poppins(
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: selected ? option.selectedText : const Color(0xFFD9E2E0),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建背景色选项芯片。
+  ///
+  /// 背景色使用胶囊型边框和圆点预览，确保和主题色按钮维持
+  /// 不同语义的视觉分层，但仍复用同一套焦点与 Wrap 逻辑。
+  _TvChipOptionStyle _buildBackgroundOptionChip(
+    BuildContext context,
+    TvThemeBackground option,
+    bool selected,
+    bool hasFocus,
+  ) {
+    final palette = TvTheme.of(context);
+    return _TvChipOptionStyle(
+      backgroundColor: const Color(0xFF0E1112),
+      borderColor: hasFocus
+          ? Colors.white
+          : selected
+              ? palette.accent
+              : const Color(0xFF293136),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: option.color,
+              border: Border.all(
+                color: selected ? palette.accent : Colors.white24,
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: selected
+                ? Center(
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: palette.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 10),
+          Text(
+            option.label,
+            style: FontUtils.poppins(
+              fontSize: 14,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: const Color(0xFFD9E2E0),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建普通文案选项芯片。
+  ///
+  /// 图片代理等纯文本场景沿用主题色按钮的主色选中态，
+  /// 保持设置页的视觉统一与焦点反馈一致。
+  _TvChipOptionStyle _buildPlainOptionChip(
+    BuildContext context,
+    String option,
+    bool selected,
+    bool hasFocus,
+  ) {
+    final palette = TvTheme.of(context);
+    return _TvChipOptionStyle(
+      backgroundColor: selected ? palette.accent : const Color(0xFF0E1112),
+      borderColor: hasFocus
+          ? Colors.white
+          : selected
+              ? palette.accent
+              : const Color(0xFF293136),
+      child: Text(
+        option,
+        style: FontUtils.poppins(
+          fontSize: 14,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: selected ? palette.selectedText : const Color(0xFFD9E2E0),
+        ),
+      ),
+    );
+  }
 }
 
 /// TV 设置页主操作提示卡。
@@ -1477,28 +1683,18 @@ class _TvSettingsActionNotice extends StatelessWidget {
   /// 创建 TV 设置页主操作提示卡。
   const _TvSettingsActionNotice({
     super.key,
-    this.title,
     required this.message,
     required this.backgroundColor,
-    required this.borderColor,
     required this.iconBackgroundColor,
     required this.icon,
     this.compact = false,
   });
-
-  /// 标题文案。
-  ///
-  /// 失败提示会收敛成纯消息卡，因此标题允许为空。
-  final String? title;
 
   /// 提示正文。
   final String message;
 
   /// 卡片背景色。
   final Color backgroundColor;
-
-  /// 卡片描边色。
-  final Color borderColor;
 
   /// 图标底色。
   final Color iconBackgroundColor;
@@ -1511,19 +1707,18 @@ class _TvSettingsActionNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool hasTitle = title != null && title!.trim().isNotEmpty;
-    final double iconBoxSize = compact ? 40 : 48;
-    final double iconSize = compact ? 24 : 28;
+    final double iconBoxSize = compact ? 34 : 48;
+    final double iconSize = compact ? 20 : 28;
     final EdgeInsets contentPadding = compact
-        ? const EdgeInsets.symmetric(horizontal: 18, vertical: 14)
+        ? const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
         : const EdgeInsets.symmetric(horizontal: 22, vertical: 16);
     return Container(
-      constraints: BoxConstraints(minHeight: compact ? 68 : 86),
+      key: const ValueKey('tv-settings-action-notice-surface'),
+      constraints: BoxConstraints(minHeight: compact ? 54 : 86),
       padding: contentPadding,
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(compact ? 22 : 24),
-        border: Border.all(color: borderColor, width: compact ? 1.2 : 1.5),
+        borderRadius: BorderRadius.circular(compact ? 18 : 24),
         boxShadow: const [
           BoxShadow(
             color: Color(0x52000000),
@@ -1550,40 +1745,30 @@ class _TvSettingsActionNotice extends StatelessWidget {
           ),
           SizedBox(width: compact ? 14 : 16),
           Flexible(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (hasTitle) ...[
-                  Text(
-                    title!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: FontUtils.poppins(
-                      fontSize: compact ? 18 : 20,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                Text(
-                  message,
-                  maxLines: compact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: FontUtils.poppins(
-                    fontSize: compact ? 15 : 16,
-                    fontWeight: compact ? FontWeight.w600 : FontWeight.w500,
-                    color: const Color(0xFFE7F0EC),
-                  ),
-                ),
-              ],
+            child: Text(
+              message,
+              maxLines: compact ? 1 : 2,
+              overflow: TextOverflow.ellipsis,
+              style: FontUtils.poppins(
+                fontSize: compact ? 15 : 16,
+                fontWeight: compact ? FontWeight.w600 : FontWeight.w500,
+                color: const Color(0xFFE7F0EC),
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+/// 手机扫码自动保存失败异常。
+class _TvSettingsAutoSaveException implements Exception {
+  /// 创建手机扫码自动保存失败异常。
+  const _TvSettingsAutoSaveException(this.message);
+
+  /// 失败提示文案。
+  final String message;
 }
 
 /// TV 设置值展示行。
@@ -1919,266 +2104,57 @@ class _TvTextFieldState extends State<_TvTextField> {
   }
 }
 
-/// TV 设置主题色选项行。
-class _TvThemeOptionRow extends StatelessWidget {
-  /// 创建 TV 设置主题色选项行。
-  const _TvThemeOptionRow({
+/// TV 设置通用芯片选项行。
+///
+/// 统一承载主题色、背景色和图片代理这类 Wrap 结构的设置项，
+/// 把焦点记忆、方向链和滚动对齐收口到同一处，避免后续分叉维护。
+class _TvChipOptionRow<T> extends StatelessWidget {
+  /// 创建 TV 设置通用芯片选项行。
+  const _TvChipOptionRow({
     required this.label,
     required this.value,
     required this.options,
+    required this.optionKeyBuilder,
+    required this.focusGroupKey,
     required this.onChanged,
+    required this.chipStyleBuilder,
     this.onArrowUp,
     this.onArrowDown,
+    this.wrapSpacing = 10,
+    this.wrapRunSpacing = 10,
+    this.chipPadding = const EdgeInsets.symmetric(
+      horizontal: 14,
+      vertical: 10,
+    ),
+    this.chipConstraints = const BoxConstraints(minHeight: 42),
+    this.chipBorderRadius = const BorderRadius.all(Radius.circular(8)),
   });
 
   /// 设置项标签。
   final String label;
 
-  /// 当前主题色标识。
-  final String value;
-
-  /// 可选主题色列表。
-  final List<TvThemePalette> options;
-
-  /// 主题色变更回调。
-  final ValueChanged<String> onChanged;
-
-  /// 所有选项统一的上方向键回调。
-  final VoidCallback? onArrowUp;
-
-  /// 所有选项统一的下方向键回调。
-  final VoidCallback? onArrowDown;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: FontUtils.poppins(
-            fontSize: 15,
-            color: const Color(0xFF98A2A8),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: options.map((option) {
-            final selected = option.key == value;
-            return TvFocusable(
-              directionalRepeatThrottleGroupKey: 'tv-setting-theme-$label',
-              focusMemoryGroupKey: 'tv-setting-theme-$label',
-              onPressed: () => onChanged(option.key),
-              onArrowUp: onArrowUp,
-              onArrowDown: onArrowDown,
-              focusScrollAlignment: _tvSettingsFocusScrollAlignment,
-              builder: (context, hasFocus) {
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
-                  constraints: const BoxConstraints(minHeight: 42),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: selected ? option.accent : const Color(0xFF0E1112),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: hasFocus
-                          ? Colors.white
-                          : selected
-                              ? option.accent
-                              : const Color(0xFF293136),
-                      width: hasFocus ? 2 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 14,
-                        height: 14,
-                        decoration: BoxDecoration(
-                          color: option.accent,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white24),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        option.label,
-                        style: FontUtils.poppins(
-                          fontSize: 14,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected
-                              ? option.selectedText
-                              : const Color(0xFFD9E2E0),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-/// TV 设置背景色选项行。
-class _TvBackgroundOptionRow extends StatelessWidget {
-  /// 创建 TV 设置背景色选项行。
-  const _TvBackgroundOptionRow({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-    this.onArrowUp,
-    this.onArrowDown,
-  });
-
-  /// 设置项标签。
-  final String label;
-
-  /// 当前背景色标识。
-  final String value;
-
-  /// 可选背景色列表。
-  final List<TvThemeBackground> options;
-
-  /// 背景色变更回调。
-  final ValueChanged<String> onChanged;
-
-  /// 所有选项统一的上方向键回调。
-  final VoidCallback? onArrowUp;
-
-  /// 所有选项统一的下方向键回调。
-  final VoidCallback? onArrowDown;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = TvTheme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: FontUtils.poppins(
-            fontSize: 15,
-            color: const Color(0xFF98A2A8),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 14,
-          runSpacing: 10,
-          children: options.map((option) {
-            final selected = option.key == value;
-            return TvFocusable(
-              directionalRepeatThrottleGroupKey: 'tv-setting-background-$label',
-              focusMemoryGroupKey: 'tv-setting-background-$label',
-              onPressed: () => onChanged(option.key),
-              onArrowUp: onArrowUp,
-              onArrowDown: onArrowDown,
-              focusScrollAlignment: _tvSettingsFocusScrollAlignment,
-              builder: (context, hasFocus) {
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
-                  constraints: const BoxConstraints(minHeight: 42),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0E1112),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: hasFocus
-                          ? Colors.white
-                          : selected
-                              ? palette.accent
-                              : const Color(0xFF293136),
-                      width: hasFocus ? 2 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 140),
-                        width: 18,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: option.color,
-                          border: Border.all(
-                            color: selected ? palette.accent : Colors.white24,
-                            width: selected ? 2 : 1,
-                          ),
-                        ),
-                        child: selected
-                            ? Center(
-                                child: Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: palette.accent,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        option.label,
-                        style: FontUtils.poppins(
-                          fontSize: 14,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
-                          color: const Color(0xFFD9E2E0),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-/// TV 设置选项行。
-class _TvOptionRow extends StatelessWidget {
-  /// 创建 TV 设置选项行。
-  const _TvOptionRow({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-    this.onArrowUp,
-    this.onArrowDown,
-  });
-
-  /// 设置项标签。
-  final String label;
-
-  /// 当前选中值。
+  /// 当前选中值标识。
   final String value;
 
   /// 可选值列表。
-  final List<String> options;
+  final List<T> options;
+
+  /// 选项唯一标识构建器。
+  final String Function(T option) optionKeyBuilder;
+
+  /// 焦点记忆与重复节流分组标识。
+  final String focusGroupKey;
 
   /// 选项变更回调。
-  final ValueChanged<String> onChanged;
+  final ValueChanged<T> onChanged;
+
+  /// 单个芯片样式构建器。
+  final _TvChipOptionStyle Function(
+    BuildContext context,
+    T option,
+    bool selected,
+    bool hasFocus,
+  ) chipStyleBuilder;
 
   /// 所有选项统一的上方向键回调。
   final VoidCallback? onArrowUp;
@@ -2186,9 +2162,23 @@ class _TvOptionRow extends StatelessWidget {
   /// 所有选项统一的下方向键回调。
   final VoidCallback? onArrowDown;
 
+  /// Wrap 横向间距。
+  final double wrapSpacing;
+
+  /// Wrap 纵向间距。
+  final double wrapRunSpacing;
+
+  /// 芯片内边距。
+  final EdgeInsetsGeometry chipPadding;
+
+  /// 芯片尺寸约束。
+  final BoxConstraints chipConstraints;
+
+  /// 芯片圆角配置。
+  final BorderRadiusGeometry chipBorderRadius;
+
   @override
   Widget build(BuildContext context) {
-    final palette = TvTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2201,47 +2191,37 @@ class _TvOptionRow extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: wrapSpacing,
+          runSpacing: wrapRunSpacing,
           children: options.map((option) {
-            final selected = option == value;
+            final selected = optionKeyBuilder(option) == value;
             return TvFocusable(
-              directionalRepeatThrottleGroupKey: 'tv-setting-option-$label',
-              focusMemoryGroupKey: 'tv-setting-option-$label',
+              directionalRepeatThrottleGroupKey: focusGroupKey,
+              focusMemoryGroupKey: focusGroupKey,
               onPressed: () => onChanged(option),
               onArrowUp: onArrowUp,
               onArrowDown: onArrowDown,
               focusScrollAlignment: _tvSettingsFocusScrollAlignment,
               builder: (context, hasFocus) {
+                final style = chipStyleBuilder(
+                  context,
+                  option,
+                  selected,
+                  hasFocus,
+                );
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 140),
-                  constraints: const BoxConstraints(minHeight: 42),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
+                  constraints: chipConstraints,
+                  padding: chipPadding,
                   decoration: BoxDecoration(
-                    color: selected ? palette.accent : const Color(0xFF0E1112),
-                    borderRadius: BorderRadius.circular(8),
+                    color: style.backgroundColor,
+                    borderRadius: chipBorderRadius,
                     border: Border.all(
-                      color: hasFocus
-                          ? Colors.white
-                          : selected
-                              ? palette.accent
-                              : const Color(0xFF293136),
+                      color: style.borderColor,
                       width: hasFocus ? 2 : 1,
                     ),
                   ),
-                  child: Text(
-                    option,
-                    style: FontUtils.poppins(
-                      fontSize: 14,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: selected
-                          ? palette.selectedText
-                          : const Color(0xFFD9E2E0),
-                    ),
-                  ),
+                  child: style.child,
                 );
               },
             );
@@ -2250,6 +2230,28 @@ class _TvOptionRow extends StatelessWidget {
       ],
     );
   }
+}
+
+/// TV 设置通用芯片样式。
+///
+/// 把背景色、描边色与内容本体拆成轻量样式对象，
+/// 让通用行统一绘制外壳，不同业务芯片只关心自身内容差异。
+class _TvChipOptionStyle {
+  /// 创建 TV 设置通用芯片样式。
+  const _TvChipOptionStyle({
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.child,
+  });
+
+  /// 芯片背景色。
+  final Color backgroundColor;
+
+  /// 芯片描边色。
+  final Color borderColor;
+
+  /// 芯片主体内容。
+  final Widget child;
 }
 
 /// TV 设置操作按钮。

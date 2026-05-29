@@ -28,6 +28,7 @@ void main() {
     expect(TvCoverLoadingSkeleton.shimmerBegin, const Alignment(-1.2, 0));
     expect(TvCoverLoadingSkeleton.shimmerEnd, const Alignment(1.2, 0));
     expect(TvCoverLoadingSkeleton.shimmerVerticalTravelFactor, 0);
+    expect(TvCoverLoadingSkeleton.maxSweepCount, 2);
     expect(
       TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
       const Color(0x12E4EAED),
@@ -115,6 +116,39 @@ void main() {
 
     expect(find.byKey(const ValueKey('tv-cover-loading-skeleton')),
         findsOneWidget);
+  });
+
+  testWidgets('TV cover loading skeleton stops after two shimmer sweeps',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: TvVideoCard.width,
+            height: TvVideoCard.coverHeight,
+            child: TvCoverLoadingSkeleton(),
+          ),
+        ),
+      ),
+    );
+
+    final initialOffset = _skeletonSweepOffset(tester);
+
+    await tester.pump(TvVideoCard.shimmerDuration);
+    final firstCompletedOffset = _skeletonSweepOffset(tester);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    final secondSweepStartedOffset = _skeletonSweepOffset(tester);
+
+    await tester.pump(TvVideoCard.shimmerDuration - const Duration(milliseconds: 1));
+    final secondCompletedOffset = _skeletonSweepOffset(tester);
+
+    await tester.pump(TvVideoCard.shimmerDuration);
+    final thirdCompletedOffset = _skeletonSweepOffset(tester);
+
+    expect(initialOffset.dx, lessThan(firstCompletedOffset.dx));
+    expect(secondSweepStartedOffset.dx, lessThan(firstCompletedOffset.dx));
+    expect(thirdCompletedOffset.dx, closeTo(secondCompletedOffset.dx, 0.5));
   });
 
   testWidgets('TV video card defers image requests while scrolling',
@@ -322,6 +356,17 @@ Future<void> _pumpFrames(WidgetTester tester, {int count = 1}) async {
   for (var index = 0; index < count; index++) {
     await tester.pump(const Duration(milliseconds: 1));
   }
+}
+
+Offset _skeletonSweepOffset(WidgetTester tester) {
+  final transform = tester.widget<Transform>(
+    find.descendant(
+      of: find.byKey(const ValueKey('tv-cover-loading-skeleton')),
+      matching: find.byType(Transform),
+    ),
+  );
+  final translation = transform.transform.getTranslation();
+  return Offset(translation.x, translation.y);
 }
 
 VideoInfo _videoInfo({

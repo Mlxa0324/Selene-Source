@@ -18,6 +18,7 @@ import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
+import 'package:selene/tv_app/widgets/tv_route.dart';
 import 'package:selene/tv_app/widgets/tv_top_nav.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
@@ -1021,9 +1022,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final pageBackgroundColor =
-        TvTheme.maybeServiceOf(context)?.background.color ??
-            TvThemeBackground.deepBlue.color;
+    final pageBackgroundColor = TvTheme.backgroundOf(context).color;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) =>
@@ -2455,14 +2454,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           videoInfo: videoInfo,
           stype: stype,
         );
-    final refreshHome = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (routeContext) => TvTheme.wrapScope(
-          context: context,
-          child: detailPage,
-        ),
-      ),
-    );
+    final refreshHome = await TvRoute.push<bool>(context, detailPage);
     if (!mounted || refreshHome != true) {
       return;
     }
@@ -2506,17 +2498,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 统一打开顶部快捷入口对应的独立页面。
   Future<T?> _pushQuickPage<T extends Object?>(Widget page) {
-    return Navigator.of(context).push<T>(
-      PageRouteBuilder(
-        pageBuilder: (routeContext, animation, secondaryAnimation) =>
-            TvTheme.wrapScope(
-          context: context,
-          child: page,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
+    return TvRoute.push<T>(context, page);
   }
 
   /// 打开右上角快捷页，并在返回首页后刷新继续观看。

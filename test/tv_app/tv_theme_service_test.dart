@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,5 +29,48 @@ void main() {
       await TvThemeService.loadSavedBackgroundKey(),
       TvThemeBackground.deepBlack.key,
     );
+  });
+
+  testWidgets('TV theme background falls back to deep blue without scope',
+      (tester) async {
+    Color? resolvedColor;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            resolvedColor = TvTheme.backgroundOf(context).color;
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+
+    expect(resolvedColor, TvThemeBackground.deepBlue.color);
+  });
+
+  testWidgets('TV theme background reads current scope background',
+      (tester) async {
+    Color? resolvedColor;
+    final service = TvThemeService();
+
+    SharedPreferences.setMockInitialValues({});
+    await service.setBackgroundKey(TvThemeBackground.deepBlack.key);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: service,
+          child: Builder(
+            builder: (context) {
+              resolvedColor = TvTheme.backgroundOf(context).color;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(resolvedColor, TvThemeBackground.deepBlack.color);
   });
 }

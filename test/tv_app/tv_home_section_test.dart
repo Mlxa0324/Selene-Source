@@ -104,6 +104,24 @@ void main() {
     );
   });
 
+  testWidgets('wraps home section in repaint boundary', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF0B0D0E),
+          body: TvHomeSection(
+            title: '继续观看',
+            videos: <VideoInfo>[],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RepaintBoundary), findsWidgets);
+  });
+
   testWidgets('shows first fifteen videos and then more card', (tester) async {
     var morePressed = false;
 

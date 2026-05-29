@@ -9,8 +9,8 @@
 3. 确认是否会影响普通端启动、登录、首页或播放器。
 4. 新增交互必须补充对应 widget test 或 service test。
 5. 结束前至少运行相关 `flutter test`、针对性 `flutter analyze` 和 `git diff --check`。
+6. 遇到首帧慢、首播慢、滚动掉帧、焦点卡顿或骨架/图片加载拖累时，优先阅读 `.agents/skills/flutter-performance-optimization/` 下的 skill 和 playbook。
 
 ## Specs
 
 - [TV 模式前端实现规格](tv-mode.md)
-

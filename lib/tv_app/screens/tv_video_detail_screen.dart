@@ -23,6 +23,7 @@ import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
+import 'package:selene/tv_app/widgets/tv_route.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
 import 'package:selene/widgets/video_player_surface.dart';
@@ -65,6 +66,9 @@ typedef TvDetailPlayerBuilder = Widget Function(
 
 /// TV 详情页自动去广告开关读取函数。
 typedef TvDetailAdFilterLoader = Future<bool> Function();
+
+/// TV 详情页 M3U8 代理地址读取函数。
+typedef TvDetailProxyUrlLoader = Future<String> Function();
 
 /// TV 详情页测试钩子。
 ///
@@ -112,6 +116,7 @@ class TvVideoDetailScreen extends StatefulWidget {
     this.playerBuilder,
     this.fullscreenPlayerBuilder,
     this.loadAdFilterEnabled,
+    this.loadM3u8ProxyUrl,
     this.testHooks,
   });
 
@@ -141,6 +146,9 @@ class TvVideoDetailScreen extends StatefulWidget {
 
   /// 自动去广告开关读取函数，测试时可注入。
   final TvDetailAdFilterLoader? loadAdFilterEnabled;
+
+  /// M3U8 代理地址读取函数，测试时可注入。
+  final TvDetailProxyUrlLoader? loadM3u8ProxyUrl;
 
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvVideoDetailScreenTestHooks? testHooks;
@@ -434,6 +442,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 所有可用播放源。
   List<SearchResult> _sources = const [];
 
+  /// 按集数倒序缓存后的线路列表。
+  ///
+  /// 详情页会频繁因为焦点变化和顶部时间刷新触发 rebuild，这里把排序结果缓存起来，
+  /// 避免每次访问都重新遍历 `_sources`。
+  List<SearchResult> _cachedSourcesByEpisodeCountDesc = const [];
+
+  /// 当前详情页展示用的线路缓存。
+  ///
+  /// 当前线路要固定展示在第一位，其余线路沿用“集数倒序 + 原始顺序稳定”规则，
+  /// 仅在 `_sources` 或 `_currentDetail` 变化时重算一次。
+  List<SearchResult> _cachedDisplaySources = const [];
+
   /// 相关推荐。
   List<VideoInfo> _recommends = const [];
 
@@ -464,11 +484,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 详情页小播放器是否正在加载当前视频。
   bool _previewPlayerLoading = false;
 
-  /// 是否已完成自动去广告偏好加载。
-  bool _adFilterPreferenceLoaded = false;
-
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
+
+  /// 当前已预热完成的 M3U8 代理地址。
+  ///
+  /// 代理配置属于播放增强能力，不应该反向阻塞详情页首播。
+  /// 因此这里仅在后台更新缓存，真正起播时直接优先使用当前已拿到的结果。
+  String _m3u8ProxyUrl = '';
+
+  /// M3U8 代理地址是否已经完成过一次读取。
+  bool _hasResolvedM3u8ProxyUrl = false;
 
   /// 当前是否收藏。
   bool _isFavorite = false;
@@ -584,8 +610,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       }
       setState(() => _currentTime = _formatCurrentTime(DateTime.now()));
     });
-    // 提前预热代理配置，尽量把配置读取和详情数据加载并行掉。
-    unawaited(UserDataService.getM3u8ProxyUrl());
+    // 提前预热代理配置，但不让它阻塞详情页首播链路。
+    unawaited(_loadM3u8ProxyUrl());
     _startDetailLoading();
     _loadFavoriteState();
     _loadAdFilterPreference();
@@ -666,13 +692,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         widget.loadRecommends == null;
   }
 
-  /// 获取按集数倒序展示的线路列表。
+  /// 计算按集数倒序展示的线路列表。
   ///
   /// 集数相同时保留原始返回顺序，避免同集数线路在刷新后位置抖动。
-  List<SearchResult> get _sourcesByEpisodeCountDesc {
+  List<SearchResult> _buildSourcesByEpisodeCountDesc(List<SearchResult> sources) {
     final indexedSources = List<({int index, SearchResult source})>.generate(
-      _sources.length,
-      (index) => (index: index, source: _sources[index]),
+      sources.length,
+      (index) => (index: index, source: sources[index]),
     );
     indexedSources.sort((a, b) {
       final countCompare =
@@ -685,14 +711,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return indexedSources.map((entry) => entry.source).toList();
   }
 
-  /// 获取详情页当前用于展示的线路列表。
+  /// 计算详情页当前用于展示的线路列表。
   ///
   /// 首次进入详情页时，当前播放线路要固定落在第一位，
   /// 其余线路再按“集数倒序 + 原始顺序稳定”的规则继续追加到右侧，
   /// 避免补源完成后在当前线路前后同时插入其它线路，导致顺序看起来混乱。
-  List<SearchResult> get _displaySources {
-    final sortedSources = _sourcesByEpisodeCountDesc;
-    final detail = _currentDetail;
+  List<SearchResult> _buildDisplaySources({
+    required List<SearchResult> sortedSources,
+    required SearchResult? detail,
+  }) {
     if (detail == null || sortedSources.isEmpty) {
       return sortedSources;
     }
@@ -707,6 +734,39 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       ...sortedSources.take(selectedSourceIndex),
       ...sortedSources.skip(selectedSourceIndex + 1),
     ];
+  }
+
+  /// 刷新按集数倒序的线路排序缓存。
+  ///
+  /// 仅在 `_sources` 变化时调用，避免单纯切换当前线路时再次遍历原始源列表。
+  void _refreshSortedSourceCache() {
+    final sortedSources = _buildSourcesByEpisodeCountDesc(_sources);
+    _cachedSourcesByEpisodeCountDesc = List<SearchResult>.unmodifiable(
+      sortedSources,
+    );
+  }
+
+  /// 刷新详情页展示用的线路缓存。
+  ///
+  /// 当前线路变化时只需要基于已排好序的结果重组展示顺序，不必重复读取 `_sources`。
+  void _refreshDisplaySourceCache() {
+    _cachedDisplaySources = List<SearchResult>.unmodifiable(
+      _buildDisplaySources(
+        sortedSources: _cachedSourcesByEpisodeCountDesc,
+        detail: _currentDetail,
+      ),
+    );
+  }
+
+  /// 按变化类型刷新详情页线路缓存。
+  ///
+  /// `_sources` 变化时同时刷新排序缓存和展示缓存；
+  /// 仅 `_currentDetail` 变化时只重排展示顺序。
+  void _refreshSourceDisplayCaches({required bool sourcesChanged}) {
+    if (sourcesChanged) {
+      _refreshSortedSourceCache();
+    }
+    _refreshDisplaySourceCache();
   }
 
   /// 加载收藏状态。
@@ -730,8 +790,20 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
     setState(() {
       _adFilterEnabled = adFilterEnabled;
-      _adFilterPreferenceLoaded = true;
     });
+  }
+
+  /// 后台预热 M3U8 代理地址。
+  Future<void> _loadM3u8ProxyUrl() async {
+    final loader = widget.loadM3u8ProxyUrl ?? UserDataService.getM3u8ProxyUrl;
+    final proxyUrl = await loader();
+    if (!mounted) {
+      return;
+    }
+
+    // 代理地址只给后续播放动作复用，不触发额外 rebuild，避免影响当前画面。
+    _m3u8ProxyUrl = proxyUrl;
+    _hasResolvedM3u8ProxyUrl = true;
   }
 
   /// 使用旧聚合加载函数加载详情。
@@ -746,6 +818,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         _currentDetail = data.currentDetail;
         _sources = data.sources;
         _recommends = data.recommends;
+        _refreshSourceDisplayCaches(sourcesChanged: true);
         if (_currentDetail != null) {
           _applyInitialResumeState(_currentDetail!);
         }
@@ -887,6 +960,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           _applyInitialResumeState(_currentDetail!);
           shouldPlay = true;
         }
+      }
+
+      if (changed || shouldPlay) {
+        _refreshSourceDisplayCaches(sourcesChanged: changed);
       }
 
       _refreshInitialLoadingState();
@@ -1248,11 +1325,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     final index = _episodeIndex.clamp(0, detail.episodes.length - 1);
-    var url = detail.episodes[index];
-    final proxy = await UserDataService.getM3u8ProxyUrl();
-    if (proxy.isNotEmpty && url.startsWith('http')) {
-      url = '$proxy${Uri.encodeComponent(url)}';
-    }
+    final url = _resolvePlaybackUrl(detail.episodes[index]);
     final startAt = _takeInitialPlaybackPosition();
     if (_lastRequestedPlaybackUrl == url && startAt == null) {
       return;
@@ -1269,6 +1342,19 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         _finishPreviewPlayerLoading();
       }
     });
+  }
+
+  /// 解析当前可直接下发给播放器的播放地址。
+  ///
+  /// 详情页首播优先保证“先播起来”，代理配置如果还在后台读取，就先用原地址起播，
+  /// 待缓存就绪后再给后续换集、换源和进全屏动作复用。
+  String _resolvePlaybackUrl(String url) {
+    if (!_hasResolvedM3u8ProxyUrl ||
+        _m3u8ProxyUrl.isEmpty ||
+        !url.startsWith('http')) {
+      return url;
+    }
+    return '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
   }
 
   /// 切换播放源。
@@ -1298,6 +1384,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _hasAppliedInitialPlaybackPosition =
           _pendingInitialPlaybackPosition == null;
       _lastRequestedPlaybackUrl = null;
+      _refreshSourceDisplayCaches(sourcesChanged: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureCurrentSelectionsVisible();
@@ -1350,6 +1437,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _hasAppliedInitialPlaybackPosition =
           _pendingInitialPlaybackPosition == null;
       _lastRequestedPlaybackUrl = null;
+      _refreshSourceDisplayCaches(sourcesChanged: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ensureCurrentSelectionsVisible();
@@ -1989,7 +2077,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         return;
       }
 
-      final displaySources = _displaySources;
+      final displaySources = _cachedDisplaySources;
       final selectedSourceIndex = displaySources.indexWhere(
         (source) => source.source == detail.source && source.id == detail.id,
       );
@@ -2233,7 +2321,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 获取第一个已构建的播放源焦点节点，避免焦点落到未渲染项后看起来消失。
   FocusNode? _firstVisibleSourceFocusNode() {
-    for (final source in _displaySources) {
+    for (final source in _cachedDisplaySources) {
       final node = _visibleSourceFocusNodeFor(source);
       if (node != null) {
         return node;
@@ -2249,7 +2337,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   SearchResult? _preferredSourceForSourceRow() {
     final rememberedFocusKey = _lastFocusedSourceKey;
     if (rememberedFocusKey != null) {
-      for (final source in _sourcesByEpisodeCountDesc) {
+      for (final source in _cachedSourcesByEpisodeCountDesc) {
         if (_sourceFocusKey(source) == rememberedFocusKey) {
           return source;
         }
@@ -2262,7 +2350,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   FocusNode? _preferredVisibleSourceFocusNode() {
     final rememberedFocusKey = _lastFocusedSourceKey;
     if (rememberedFocusKey != null) {
-      for (final source in _sourcesByEpisodeCountDesc) {
+      for (final source in _cachedSourcesByEpisodeCountDesc) {
         if (_sourceFocusKey(source) != rememberedFocusKey) {
           continue;
         }
@@ -2551,17 +2639,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 打开 TV 搜索页。
   void _openSearch() {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (routeContext, animation, secondaryAnimation) =>
-            TvTheme.wrapScope(
-          context: context,
-          child: const TvSearchScreen(),
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
+    TvRoute.push<void>(context, const TvSearchScreen());
   }
 
   /// 将详情页操作区焦点送回顶部搜索入口。
@@ -2603,9 +2681,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pageBackgroundColor =
-        TvTheme.maybeServiceOf(context)?.background.color ??
-            TvThemeBackground.deepBlue.color;
+    final pageBackgroundColor = TvTheme.backgroundOf(context).color;
     return TvBackHandler(
       onBackPressed: _handleDetailBackPressed,
       child: Scaffold(
@@ -3063,10 +3139,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     void Function(VideoPlayerWidgetController controller)?
         onControllerCreatedOverride,
   }) {
-    if (!_adFilterPreferenceLoaded) {
-      return const ColoredBox(color: Colors.black);
-    }
-
     widget.testHooks?.onAdFilterResolved?.call(_adFilterEnabled);
 
     void controllerCreated(VideoPlayerWidgetController controller) {
@@ -3214,7 +3286,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 构建换源区。
   Widget _buildSourcesSection() {
-    final sources = _displaySources;
+    final sources = _cachedDisplaySources;
     return _TvDetailSection(
       title: '切换线路',
       subtitle: '遇播放卡顿，音画不同步或无法播放时，请切换播放线路',
@@ -3453,18 +3525,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                     }
                   },
                   onPressed: () {
-                    Navigator.of(context).pushReplacement(
-                      PageRouteBuilder(
-                        pageBuilder:
-                            (routeContext, animation, secondaryAnimation) =>
-                                TvTheme.wrapScope(
-                          context: context,
-                          child: TvVideoDetailScreen(
-                            videoInfo: videoInfo,
-                          ),
-                        ),
-                        transitionDuration: Duration.zero,
-                        reverseTransitionDuration: Duration.zero,
+                    TvRoute.pushReplacement<void, void>(
+                      context,
+                      TvVideoDetailScreen(
+                        videoInfo: videoInfo,
                       ),
                     );
                   },

@@ -11,6 +11,31 @@ import 'package:selene/tv_app/services/tv_mobile_settings_bridge.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 
 void main() {
+  testWidgets(
+      'reuses one generic chip option row for theme background and image source',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // 三组芯片选项行应统一收敛到一个通用泛型实现，避免继续分叉维护。
+    expect(
+      _countWidgetsByRuntimeTypePrefix('_TvChipOptionRow<'),
+      3,
+    );
+    expect(_countWidgetsByRuntimeTypeName('_TvThemeOptionRow'), 0);
+    expect(_countWidgetsByRuntimeTypeName('_TvBackgroundOptionRow'), 0);
+    expect(_countWidgetsByRuntimeTypeName('_TvOptionRow'), 0);
+  });
+
   testWidgets('renders TV server account and danmaku settings', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -103,6 +128,9 @@ void main() {
     expect(tester.widget<TextField>(find.byType(TextField).at(0)).readOnly,
         isTrue);
 
+    // 首焦点先落在扫码按钮，按下方向键进入服务器地址浏览态后再确认进入编辑。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
@@ -110,7 +138,7 @@ void main() {
         isFalse);
   });
 
-  testWidgets('dispatches initial remote focus to the first settings field',
+  testWidgets('dispatches initial remote focus to regenerate qr button',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -149,7 +177,7 @@ void main() {
 
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
-      'tv-settings-username-browse',
+      'tv-settings-server-url-browse',
     );
   });
 
@@ -167,8 +195,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 扫码区调整到顶部后，首焦点仍从服务器配置开始，向下计数减少一步。
-    await _sendArrowDownTimes(tester, 6);
+    // 首焦点从扫码按钮开始，向下依次穿过服务器配置与三组芯片选项后进入弹幕开关。
+    await _sendArrowDownTimes(tester, 8);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -196,7 +224,8 @@ void main() {
     );
   });
 
-  testWidgets('moving up from danmaku options keeps focus inside settings chain',
+  testWidgets(
+      'moving up from danmaku options keeps focus inside settings chain',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -210,7 +239,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await _sendArrowDownTimes(tester, 6);
+    await _sendArrowDownTimes(tester, 8);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -253,7 +282,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await _sendArrowDownTimes(tester, 3);
+    await _sendArrowDownTimes(tester, 4);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-save-account-button',
@@ -275,7 +304,15 @@ void main() {
 
     await tester.tap(find.text('Ivy 绿'));
     await tester.pumpAndSettle();
-    expect(FocusManager.instance.primaryFocus?.debugLabel, isNot('tv-back-handler'));
+    expect(FocusManager.instance.primaryFocus?.debugLabel,
+        isNot('tv-back-handler'));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -311,14 +348,16 @@ void main() {
     final lowerHalfTargetDy =
         scrollViewRect.top + (scrollViewRect.height * 0.72);
 
-    await _sendArrowDownTimes(tester, 6);
-    final adFilterCenterDy =
-        tester.getCenter(find.byKey(const ValueKey('tv-settings-ad-filter-switch'))).dy;
+    await _sendArrowDownTimes(tester, 8);
+    final adFilterCenterDy = tester
+        .getCenter(find.byKey(const ValueKey('tv-settings-ad-filter-switch')))
+        .dy;
     expect(adFilterCenterDy, greaterThan(viewportMidpointDy));
     expect((adFilterCenterDy - lowerHalfTargetDy).abs(), lessThan(90));
 
     await _sendArrowDownTimes(tester, 3);
-    final opacitySliderCenterDy = tester.getCenter(find.byType(Slider).first).dy;
+    final opacitySliderCenterDy =
+        tester.getCenter(find.byType(Slider).first).dy;
     expect(opacitySliderCenterDy, greaterThan(viewportMidpointDy));
     expect((opacitySliderCenterDy - lowerHalfTargetDy).abs(), lessThan(90));
 
@@ -373,8 +412,7 @@ void main() {
     expect(find.text('192.168.1.8:18321'), findsOneWidget);
   });
 
-  testWidgets('regenerate qr button requests a new share port',
-      (tester) async {
+  testWidgets('regenerate qr button requests a new share port', (tester) async {
     final fakeBridge = _FakeMobileConfigBridge();
     await tester.pumpWidget(
       MaterialApp(
@@ -440,30 +478,56 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.textContaining('127.0.0.1:'), findsOneWidget);
-    final firstAddress = tester.widget<SelectableText>(
-      find.byType(SelectableText).first,
-    ).data;
+    final firstAddress = tester
+        .widget<SelectableText>(
+          find.byType(SelectableText).first,
+        )
+        .data;
 
     await tester.tap(find.byIcon(Icons.close));
     await tester.pumpAndSettle();
     await tester.tap(find.text('重新打开设置'));
     await tester.pumpAndSettle();
 
-    final secondAddress = tester.widget<SelectableText>(
-      find.byType(SelectableText).first,
-    ).data;
+    final secondAddress = tester
+        .widget<SelectableText>(
+          find.byType(SelectableText).first,
+        )
+        .data;
     expect(secondAddress, firstAddress);
   });
 
   testWidgets('applies mobile scan draft back into TV settings form',
       (tester) async {
     final fakeBridge = _FakeMobileConfigBridge();
+    TvServerCredentials? savedCredentials;
+    String? savedImageSource;
+    bool? savedAdFilterEnabled;
+    String? savedDanmakuBaseApi;
+    DanmakuSettings? savedDanmakuSettings;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: TvSettingsScreen(
             loadSettings: () async => TvSettingsData.empty(),
             startMobileConfigBridge: fakeBridge.start,
+            saveAccount: (credentials) async {
+              savedCredentials = credentials;
+              return const TvAccountSaveResult(
+                success: true,
+                message: '服务器配置已保存',
+              );
+            },
+            saveDoubanImageSource: (imageSource) async {
+              savedImageSource = imageSource;
+            },
+            saveAdFilterEnabled: (enabled) async {
+              savedAdFilterEnabled = enabled;
+            },
+            saveDanmaku: (baseApi, settings) async {
+              savedDanmakuBaseApi = baseApi;
+              savedDanmakuSettings = settings;
+            },
           ),
         ),
       ),
@@ -482,7 +546,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('已同步手机配置，请在电视上确认保存'), findsOneWidget);
+    expect(find.text('手机配置已自动保存'), findsOneWidget);
     expect(
       tester.widget<TextField>(find.byType(TextField).at(0)).controller?.text,
       'https://tv.example.com',
@@ -500,6 +564,14 @@ void main() {
       'https://danmaku.tv.example.com/',
     );
     expect(find.text('豆瓣官方精品 CDN'), findsWidgets);
+    expect(savedCredentials?.serverUrl, 'https://tv.example.com');
+    expect(savedCredentials?.username, 'tv_user');
+    expect(savedCredentials?.password, 'tv_password');
+    expect(savedImageSource, '豆瓣官方精品 CDN');
+    expect(savedAdFilterEnabled, isFalse);
+    expect(savedDanmakuBaseApi, 'https://danmaku.tv.example.com/');
+    expect(savedDanmakuSettings, isNotNull);
+    expect(find.text('手机配置已自动保存'), findsOneWidget);
   });
 
   testWidgets('saves TV image proxy option', (tester) async {
@@ -783,7 +855,7 @@ void main() {
     // 报错提示要明显收小，避免遮住设置页主体内容。
     expect(noticeFinder, findsOneWidget);
     expect(noticeSize.width, lessThanOrEqualTo(420));
-    expect(noticeSize.height, lessThanOrEqualTo(92));
+    expect(noticeSize.height, lessThanOrEqualTo(80));
     expect(find.text('保存失败，请检查服务器地址'), findsOneWidget);
   });
 
@@ -814,8 +886,43 @@ void main() {
 
     expect(noticeFinder, findsOneWidget);
     expect(noticeSize.width, lessThanOrEqualTo(420));
-    expect(noticeSize.height, lessThanOrEqualTo(92));
+    expect(noticeSize.height, lessThanOrEqualTo(80));
     expect(find.text('保存弹幕配置失败'), findsOneWidget);
+  });
+
+  testWidgets('renders action notice as shorter translucent black surface',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            saveAccount: (credentials) async {
+              return const TvAccountSaveResult(
+                success: true,
+                message: '服务器配置已保存',
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('保存配置'));
+    await tester.tap(find.text('保存配置'));
+    await tester.pumpAndSettle();
+
+    final surfaceFinder =
+        find.byKey(const ValueKey('tv-settings-action-notice-surface'));
+    final surface = tester.widget<Container>(surfaceFinder);
+    final decoration = surface.decoration! as BoxDecoration;
+    final noticeSize = tester.getSize(surfaceFinder);
+
+    expect(surfaceFinder, findsOneWidget);
+    expect(decoration.color, const Color(0xD9000000));
+    expect(decoration.border, isNull);
+    expect(noticeSize.height, lessThanOrEqualTo(80));
   });
 
   testWidgets('saves TV danmaku endpoint and switch settings', (tester) async {
@@ -971,8 +1078,8 @@ class _FakeMobileConfigBridge {
     _onDraftSubmitted = onDraftSubmitted;
     final shareUri = Uri.parse('http://192.168.1.8:$_port');
     _port++;
-    final statusNotifier = _statusNotifier ??=
-        ValueNotifier<String>('请使用手机扫码填写配置');
+    final statusNotifier =
+        _statusNotifier ??= ValueNotifier<String>('请使用手机扫码填写配置');
     return TvMobileSettingsBridgeSession(
       shareUri: shareUri,
       statusNotifier: statusNotifier,
@@ -995,4 +1102,24 @@ Future<void> _sendArrowDownTimes(WidgetTester tester, int count) async {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
   }
+}
+
+/// 统计指定运行时类型前缀的控件数量。
+int _countWidgetsByRuntimeTypePrefix(String prefix) {
+  return find
+      .byWidgetPredicate(
+        (widget) => widget.runtimeType.toString().startsWith(prefix),
+      )
+      .evaluate()
+      .length;
+}
+
+/// 统计指定运行时类型名称的控件数量。
+int _countWidgetsByRuntimeTypeName(String typeName) {
+  return find
+      .byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == typeName,
+      )
+      .evaluate()
+      .length;
 }

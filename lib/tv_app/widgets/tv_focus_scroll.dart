@@ -5,6 +5,12 @@ import 'package:flutter/rendering.dart';
 ///
 /// 统一处理遥控器焦点进入纵向滚动列表时的自动平滑滚动。
 class TvFocusScroll {
+  /// 目标滚动位置抖动容差。
+  ///
+  /// 焦点切换时同一控件可能连续触发多次 ensureVisible，位置差异极小时
+  /// 没必要再发一轮动画，否则会在 TV 长列表里制造额外掉帧。
+  static const double offsetEpsilon = 1.0;
+
   /// 焦点进入横向列表后，超过视口这个比例时开始提前滚动。
   ///
   /// 该值略小于屏幕中心，确保用户浏览到第 5 个左右就开始平滑推进，
@@ -56,6 +62,9 @@ class TvFocusScroll {
         horizontalTriggerFraction: horizontalTriggerFraction,
         axisDirection: scrollable.axisDirection,
       );
+      if ((position.pixels - targetOffset).abs() <= offsetEpsilon) {
+        return;
+      }
       scrollable.position.animateTo(
         targetOffset,
         duration: duration,

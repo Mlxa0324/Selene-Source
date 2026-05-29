@@ -34,6 +34,9 @@ typedef TvFullscreenPlayerBuilder = Widget Function(
 /// TV 全屏播放器自动去广告开关读取函数。
 typedef TvFullscreenAdFilterLoader = Future<bool> Function();
 
+/// TV 全屏播放器 M3U8 代理地址读取函数。
+typedef TvFullscreenProxyUrlLoader = Future<String> Function();
+
 /// TV 全屏播放器测试钩子。
 ///
 /// 仅测试场景使用，用于在占位播放器下模拟“视频播放完成”这类播放器事件。
@@ -133,6 +136,7 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     this.danmakuService,
     this.reuseExistingPlayer = false,
     this.loadAdFilterEnabled,
+    this.loadM3u8ProxyUrl,
     this.testHooks,
   });
 
@@ -188,6 +192,9 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
 
   /// 自动去广告开关读取函数，测试时可注入。
   final TvFullscreenAdFilterLoader? loadAdFilterEnabled;
+
+  /// M3U8 代理地址读取函数，测试时可注入。
+  final TvFullscreenProxyUrlLoader? loadM3u8ProxyUrl;
 
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvFullscreenPlayerScreenTestHooks? testHooks;
@@ -265,11 +272,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前播放源详情。
   late SearchResult? _currentDetail = widget.currentDetail;
 
-  /// 是否已完成自动去广告偏好加载。
-  bool _adFilterPreferenceLoaded = false;
-
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
+
+  /// 当前已预热完成的 M3U8 代理地址。
+  ///
+  /// 全屏壳切集、换源和首帧恢复时都直接复用当前缓存，不再为等待配置读取卡住播放。
+  String _m3u8ProxyUrl = '';
+
+  /// M3U8 代理地址是否已经完成过一次读取。
+  bool _hasResolvedM3u8ProxyUrl = false;
 
   /// 当前选集下标。
   late int _episodeIndex = _safeInitialEpisodeIndex();
@@ -495,8 +507,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       }
       setState(() => _clockText = _formatClock(DateTime.now()));
     });
-    // 提前预热代理配置，尽量把配置读取和全屏壳初始化并行掉。
-    unawaited(UserDataService.getM3u8ProxyUrl());
+    // 提前预热代理配置，但不让它阻塞全屏播放器首帧或换集动作。
+    unawaited(_loadM3u8ProxyUrl());
     unawaited(_loadSkipDurations());
     unawaited(_loadDanmakuSettings());
     _loadAdFilterPreference();
@@ -555,8 +567,19 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
     setState(() {
       _adFilterEnabled = adFilterEnabled;
-      _adFilterPreferenceLoaded = true;
     });
+  }
+
+  /// 后台预热 M3U8 代理地址。
+  Future<void> _loadM3u8ProxyUrl() async {
+    final loader = widget.loadM3u8ProxyUrl ?? UserDataService.getM3u8ProxyUrl;
+    final proxyUrl = await loader();
+    if (!mounted) {
+      return;
+    }
+
+    _m3u8ProxyUrl = proxyUrl;
+    _hasResolvedM3u8ProxyUrl = true;
   }
 
   /// 过滤非法初始续播位置。
@@ -739,11 +762,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     final index = _episodeIndex.clamp(0, _episodes.length - 1).toInt();
-    var url = _episodes[index];
-    final proxy = await UserDataService.getM3u8ProxyUrl();
-    if (proxy.isNotEmpty && url.startsWith('http')) {
-      url = '$proxy${Uri.encodeComponent(url)}';
-    }
+    final url = _resolvePlaybackUrl(_episodes[index]);
 
     if (!mounted || token != _loadToken) {
       return;
@@ -771,6 +790,18 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (_danmakuEnabled) {
       unawaited(_loadDanmakuForCurrentEpisode(force: false));
     }
+  }
+
+  /// 解析当前可直接下发给播放器的播放地址。
+  ///
+  /// 代理配置属于增强能力，不反向阻塞全屏首播和换集响应。
+  String _resolvePlaybackUrl(String url) {
+    if (!_hasResolvedM3u8ProxyUrl ||
+        _m3u8ProxyUrl.isEmpty ||
+        !url.startsWith('http')) {
+      return url;
+    }
+    return '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
   }
 
   /// 标记全屏播放器开始加载。
@@ -2367,18 +2398,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建播放器画面。
   Widget _buildPlayer() {
-    final shouldRenderReusedPlayerImmediately =
-        widget.reuseExistingPlayer && widget.playerBuilder != null;
-    // 详情页同页全屏会把同一个播放器子树直接挪到覆盖层。
-    // 这里如果还等自动去广告配置加载，旧子树会先从详情页移除一帧，
-    // 导致平台播放器黑屏重建并从 0 秒重新起播。
-    if (!shouldRenderReusedPlayerImmediately && !_adFilterPreferenceLoaded) {
-      return const ColoredBox(color: Colors.black);
-    }
-
-    if (_adFilterPreferenceLoaded) {
-      widget.testHooks?.onAdFilterResolved?.call(_adFilterEnabled);
-    }
+    widget.testHooks?.onAdFilterResolved?.call(_adFilterEnabled);
 
     return widget.playerBuilder?.call(
           context,

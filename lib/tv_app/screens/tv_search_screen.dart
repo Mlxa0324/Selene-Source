@@ -15,6 +15,7 @@ import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
+import 'package:selene/tv_app/widgets/tv_route.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
@@ -173,8 +174,7 @@ class TvSearchScreen extends StatefulWidget {
 class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索页当前全局背景色。
   Color get _pageBackgroundColor =>
-      TvTheme.maybeServiceOf(context)?.background.color ??
-      TvThemeBackground.deepBlue.color;
+      TvTheme.backgroundOf(context).color;
 
   /// 搜索页首屏顶部留白。
   ///
@@ -437,13 +437,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 搜索结果区首次回左时可承接焦点的键盘边缘列节点。
   List<FocusNode> get _searchResultKeyboardBridgeNodes => <FocusNode>[
-    _keyboardTopRowFocusNodes.last,
-    _keyboardBridgeLFocusNode,
-    _keyboardBridgeRFocusNode,
-    _keyboardBridgeXFocusNode,
-    _keyboardBridge4FocusNode,
-    _keyboardBottomRowFocusNodes.last,
-  ];
+        _keyboardTopRowFocusNodes.last,
+        _keyboardBridgeLFocusNode,
+        _keyboardBridgeRFocusNode,
+        _keyboardBridgeXFocusNode,
+        _keyboardBridge4FocusNode,
+        _keyboardBottomRowFocusNodes.last,
+      ];
 
   /// 返回指定键盘索引真正使用的焦点节点。
   ///
@@ -456,7 +456,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       17 => _keyboardBridgeRFocusNode,
       23 => _keyboardBridgeXFocusNode,
       29 => _keyboardBridge4FocusNode,
-      30 || 31 || 32 || 33 || 34 || 35 =>
+      30 ||
+      31 ||
+      32 ||
+      33 ||
+      34 ||
+      35 =>
         _keyboardBottomRowFocusNodes[index - (_keyboardKeys.length - 6)],
       _ => null,
     };
@@ -469,6 +474,20 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _didDispatchSearchResultInitialFocus = false;
     _searchResultRememberedLeftPanelFocusNode = null;
     TvFocusable.clearLastFocusedForGroup(_searchResultFocusMemoryGroupKey);
+  }
+
+  /// 重置当前搜索结果态缓存。
+  ///
+  /// 搜索主页、联想页和新搜索启动前，都要把旧结果卡片、聚合缓存和资源站进度一起清空，
+  /// 避免后续维护时漏掉其中某个字段。
+  void _resetSearchResultState({
+    required bool isSearchResultLoading,
+  }) {
+    _searchResults = <SearchResult>[];
+    _aggregatedSearchVideos = <VideoInfo>[];
+    _searchTotalResourceCount = 0;
+    _searchCompletedResourceCount = 0;
+    _isSearchResultLoading = isSearchResultLoading;
   }
 
   /// 同步搜索结果聚合缓存。
@@ -718,12 +737,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     setState(() {
       _query = '';
       _suggestions = <String>[];
-      _searchResults = <SearchResult>[];
-      _aggregatedSearchVideos = <VideoInfo>[];
-      _searchTotalResourceCount = 0;
-      _searchCompletedResourceCount = 0;
       _isSuggestionLoading = false;
-      _isSearchResultLoading = false;
+      _resetSearchResultState(isSearchResultLoading: false);
     });
     _clearSuggestionSearchContext();
   }
@@ -756,12 +771,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     setState(() {
       _query = suggestionQuery;
       _suggestions = suggestionSnapshot;
-      _searchResults = <SearchResult>[];
-      _aggregatedSearchVideos = <VideoInfo>[];
-      _searchTotalResourceCount = 0;
-      _searchCompletedResourceCount = 0;
       _isSuggestionLoading = false;
-      _isSearchResultLoading = false;
+      _resetSearchResultState(isSearchResultLoading: false);
     });
     _clearSuggestionSearchContext();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -964,7 +975,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       focusNode: focusNode,
       focusMemoryGroupKey: _leftPanelFocusMemoryGroupKey,
       onPressed: onPressed,
-      onArrowRight: enableRightPanelArrow ? _moveLeftPanelFocusToRightPanel : null,
+      onArrowRight:
+          enableRightPanelArrow ? _moveLeftPanelFocusToRightPanel : null,
       onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
       onFocusedNodeChanged: _rememberLeftPanelFocusNodeForSearchResult,
@@ -1497,8 +1509,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           ),
         );
       },
-      separatorBuilder: (_, __) =>
-          const SizedBox(width: _recommendCardSpacing),
+      separatorBuilder: (_, __) => const SizedBox(width: _recommendCardSpacing),
       itemCount: 6,
     );
   }
@@ -1578,8 +1589,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           ),
         );
       },
-      separatorBuilder: (_, __) =>
-          const SizedBox(width: _recommendCardSpacing),
+      separatorBuilder: (_, __) => const SizedBox(width: _recommendCardSpacing),
       itemCount: recommends.length,
     );
   }
@@ -1837,7 +1847,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             ],
           ),
         ),
-        words.isEmpty ? const SizedBox(height: _wordSectionTitleBottomSpacing): const SizedBox(),
+        words.isEmpty
+            ? const SizedBox(height: _wordSectionTitleBottomSpacing)
+            : const SizedBox(),
         Padding(
           padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
           child: words.isEmpty
@@ -1854,7 +1866,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                   ),
                   itemCount: words.length,
                   itemBuilder: (context, index) {
-                    final isRightEdge = _isWordGridRightEdge(index, words.length);
+                    final isRightEdge =
+                        _isWordGridRightEdge(index, words.length);
                     final isLastRow = _isWordGridLastRow(index, words.length);
                     return Builder(
                       builder: (tileContext) => _buildWordTile(
@@ -1863,7 +1876,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                         focusNode: index == 0 ? firstItemFocusNode : null,
                         autofocus: autofocusFirstItem && index == 0,
                         focusMemoryGroupKey: focusMemoryGroupKey,
-                        onArrowRight: isRightEdge ? _keepFocusAtRightEdge : null,
+                        onArrowRight:
+                            isRightEdge ? _keepFocusAtRightEdge : null,
                         onArrowDown: isLastRow ? onLastRowArrowDown : null,
                         onFocus: () => onItemFocus(tileContext),
                       ),
@@ -1972,7 +1986,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       child: SizedBox(
         height: _searchResultHeaderTopCoverHeight + _searchResultHeaderHeight,
         child: Padding(
-          padding: const EdgeInsets.only(top: _searchResultHeaderTopCoverHeight),
+          padding:
+              const EdgeInsets.only(top: _searchResultHeaderTopCoverHeight),
           child: Container(
             height: _searchResultHeaderHeight,
             alignment: Alignment.centerLeft,
@@ -2534,11 +2549,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _resetSearchResultFocusState();
     setState(() {
       _query = normalizedQuery;
-      _searchResults = <SearchResult>[];
-      _aggregatedSearchVideos = <VideoInfo>[];
-      _searchTotalResourceCount = 0;
-      _searchCompletedResourceCount = 0;
-      _isSearchResultLoading = false;
+      _resetSearchResultState(isSearchResultLoading: false);
       _clearSuggestionSearchContext();
       if (!_shouldShowSuggestionPanel) {
         _suggestions = <String>[];
@@ -2611,11 +2622,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _query = normalizedQuery;
       _suggestions = <String>[];
       _isSuggestionLoading = false;
-      _searchResults = <SearchResult>[];
-      _aggregatedSearchVideos = <VideoInfo>[];
-      _searchTotalResourceCount = 0;
-      _searchCompletedResourceCount = 0;
-      _isSearchResultLoading = true;
+      _resetSearchResultState(isSearchResultLoading: true);
     });
 
     await Future<void>.delayed(Duration.zero);
@@ -2833,17 +2840,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 打开 TV 详情页。
   void _openVideo(VideoInfo videoInfo) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (routeContext, animation, secondaryAnimation) =>
-            TvTheme.wrapScope(
-          context: context,
-          child: TvVideoDetailScreen(videoInfo: videoInfo),
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
+    TvRoute.push<void>(context, TvVideoDetailScreen(videoInfo: videoInfo));
   }
 }
 

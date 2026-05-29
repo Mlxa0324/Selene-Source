@@ -743,6 +743,11 @@ class TvCoverLoadingSkeleton extends StatefulWidget {
   /// 创建 TV 卡片封面加载骨架。
   const TvCoverLoadingSkeleton({super.key});
 
+  /// 骨架雨刷最大播放次数。
+  ///
+  /// 骨架只在首屏加载初期做有限次提示，避免图片慢加载时持续无限刷动分散注意力。
+  static const int maxSweepCount = 2;
+
   /// 骨架雨刷起点，保持纯横向移动，不再带纵向斜切角度。
   static const Alignment shimmerBegin = Alignment(-1.2, 0);
 
@@ -788,14 +793,45 @@ class TvCoverLoadingSkeleton extends StatefulWidget {
 
 class _TvCoverLoadingSkeletonState extends State<TvCoverLoadingSkeleton>
     with SingleTickerProviderStateMixin {
+  /// 已完成的雨刷轮次。
+  int _completedSweepCount = 0;
+
   /// 雨刷光带动画控制器。
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: TvVideoCard.shimmerDuration,
-  )..repeat();
+  )..addStatusListener(_handleSweepStatus);
+
+  @override
+  void initState() {
+    super.initState();
+    // 骨架雨刷只播放有限次数，避免图片迟迟未返回时一直循环干扰浏览。
+    _controller.forward();
+  }
+
+  /// 处理骨架雨刷轮次收口。
+  void _handleSweepStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) {
+      return;
+    }
+
+    _completedSweepCount += 1;
+    if (_completedSweepCount >= TvCoverLoadingSkeleton.maxSweepCount) {
+      // 收在最后一帧，保持光带停在右侧淡出位置，不再继续无限重播。
+      _controller.stop(canceled: false);
+      _controller.value = 1;
+      return;
+    }
+
+    // 仍有剩余轮次时，从头开始下一次雨刷。
+    _controller
+      ..value = 0
+      ..forward();
+  }
 
   @override
   void dispose() {
+    _controller.removeStatusListener(_handleSweepStatus);
     _controller.dispose();
     super.dispose();
   }
