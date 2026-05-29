@@ -235,6 +235,52 @@ void main() {
     );
   });
 
+  testWidgets('moves focus across theme and image options without dropping out',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await _sendArrowDownTimes(tester, 3);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-save-account-button',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+
+    await tester.tap(find.text('Ivy 绿'));
+    await tester.pumpAndSettle();
+    expect(FocusManager.instance.primaryFocus?.debugLabel, isNot('tv-back-handler'));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-ad-filter-row',
+    );
+  });
+
   testWidgets('keeps focused settings control in lower half of viewport',
       (tester) async {
     await tester.pumpWidget(
@@ -589,6 +635,11 @@ void main() {
     expect(savedCredentials?.serverUrl, 'https://server.example.com');
     expect(savedCredentials?.username, 'demo_user');
     expect(savedCredentials?.password, 'demo_password');
+    expect(
+      find.byKey(const ValueKey('tv-settings-action-notice')),
+      findsOneWidget,
+    );
+    expect(find.text('服务器配置已保存'), findsOneWidget);
   });
 
   testWidgets('saves TV danmaku endpoint and switch settings', (tester) async {
@@ -631,6 +682,11 @@ void main() {
     expect(savedBaseApi, 'https://danmaku.example.com');
     expect(savedSettings?.enabled, isFalse);
     expect(savedSettings?.opacity, lessThan(1.0));
+    expect(
+      find.byKey(const ValueKey('tv-settings-action-notice')),
+      findsOneWidget,
+    );
+    expect(find.text('弹幕配置已保存'), findsOneWidget);
   });
 
   testWidgets('clears all TV caches from settings', (tester) async {
@@ -660,6 +716,10 @@ void main() {
 
     expect(cleared, isTrue);
     expect(find.text('0 B'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tv-settings-action-notice')),
+      findsOneWidget,
+    );
     expect(find.text('缓存已清除'), findsOneWidget);
   });
 

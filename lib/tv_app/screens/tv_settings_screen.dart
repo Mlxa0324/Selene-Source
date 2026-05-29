@@ -60,6 +60,15 @@ typedef TvMobileConfigBridgeStarter = Future<TvMobileSettingsBridgeSession>
   ValueChanged<TvMobileSettingsDraft> onDraftSubmitted,
 );
 
+/// TV 设置页主操作提示类型。
+enum _TvSettingsActionNoticeType {
+  /// 保存或清理成功提示。
+  success,
+
+  /// 保存或清理失败提示。
+  error,
+}
+
 /// TV 设置页聚合数据。
 class TvSettingsData {
   /// 创建 TV 设置页聚合数据。
@@ -501,6 +510,22 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _syncMobileConfigDraft();
   }
 
+  /// 请求焦点进入主题色选项组。
+  ///
+  /// 进入“图片与弹幕”区时优先回到上次停留的主题色选项，
+  /// 避免默认遍历在 Wrap 布局里偶发把焦点丢回页面根节点。
+  void _requestThemeOptionFocus() {
+    TvFocusable.requestRememberedFocusForGroup('tv-setting-theme-主题色');
+  }
+
+  /// 请求焦点进入图片代理选项组。
+  ///
+  /// 主题色和图片代理都使用 Wrap 布局，显式补齐向下链路后，
+  /// 可以避免上下切换时依赖默认几何遍历导致的焦点漂移。
+  void _requestImageSourceOptionFocus() {
+    TvFocusable.requestRememberedFocusForGroup('tv-setting-option-图片代理');
+  }
+
   /// 保存服务器账号配置。
   Future<void> _saveAccount() async {
     setState(() {
@@ -520,9 +545,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     setState(() {
       _savingAccount = false;
     });
-    _showToast(
+    _showActionNotice(
       result.message,
-      result.success ? TvTheme.of(context).accent : const Color(0xFFE05A5A),
+      type: result.success
+          ? _TvSettingsActionNoticeType.success
+          : _TvSettingsActionNoticeType.error,
     );
   }
 
@@ -558,7 +585,10 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     setState(() {
       _savingDanmaku = false;
     });
-    _showToast('弹幕配置已保存', TvTheme.of(context).accent);
+    _showActionNotice(
+      '弹幕配置已保存',
+      type: _TvSettingsActionNoticeType.success,
+    );
   }
 
   /// 保存图片代理配置。
@@ -612,7 +642,10 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
             (widget.loadCacheSize ?? TvSettingsScreen.defaultLoadCacheSize)();
         _clearingCaches = false;
       });
-      _showToast('缓存已清除', TvTheme.of(context).accent);
+      _showActionNotice(
+        '缓存已清除',
+        type: _TvSettingsActionNoticeType.success,
+      );
     } catch (_) {
       if (!mounted) {
         return;
@@ -620,12 +653,17 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       setState(() {
         _clearingCaches = false;
       });
-      _showToast('清除缓存失败', const Color(0xFFE05A5A));
+      _showActionNotice(
+        '清除缓存失败',
+        type: _TvSettingsActionNoticeType.error,
+      );
     }
   }
 
   /// 展示操作反馈。
   void _showToast(String message, Color color) {
+    // 轻量提示继续沿用普通 SnackBar，避免小开关和选项改成过重反馈。
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -634,6 +672,50 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  /// 展示三颗主操作按钮专用的大圆角提示。
+  ///
+  /// 电视端保存成功后，需要比普通开关更醒目的反馈，
+  /// 这里统一用底部上浮的大卡片提示结果。
+  void _showActionNotice(
+    String message, {
+    required _TvSettingsActionNoticeType type,
+  }) {
+    final theme = TvTheme.of(context);
+    final bool isSuccess = type == _TvSettingsActionNoticeType.success;
+    final Color backgroundColor =
+        isSuccess ? const Color(0xFF163E2A) : const Color(0xFF4A1E24);
+    final Color borderColor =
+        isSuccess
+            ? theme.accent.withValues(alpha: 0.82)
+            : const Color(0xFFFF919A);
+    final Color iconBackgroundColor =
+        isSuccess ? theme.accent : const Color(0xFFE05A5A);
+
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          margin: const EdgeInsets.fromLTRB(120, 0, 120, 42),
+          padding: EdgeInsets.zero,
+          content: _TvSettingsActionNotice(
+            key: const ValueKey('tv-settings-action-notice'),
+            title: isSuccess ? '保存成功' : '操作失败',
+            message: message,
+            backgroundColor: backgroundColor,
+            borderColor: borderColor,
+            iconBackgroundColor: iconBackgroundColor,
+            icon: isSuccess
+                ? Icons.check_rounded
+                : Icons.error_outline_rounded,
+          ),
+        ),
+      );
   }
 
   @override
@@ -791,6 +873,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           focusNode: _saveAccountFocusNode,
           label: _savingAccount ? '保存中...' : '保存配置',
           onPressed: _savingAccount ? null : _saveAccount,
+          onArrowDown: _requestThemeOptionFocus,
         ),
       ],
     );
@@ -808,6 +891,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           options: TvThemePalette.values,
           onChanged: _saveTheme,
           onArrowUp: () => _saveAccountFocusNode.requestFocus(),
+          onArrowDown: _requestImageSourceOptionFocus,
         ),
         const SizedBox(height: 18),
         _TvOptionRow(
@@ -815,9 +899,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           value: _doubanImageSource,
           options: TvMobileSettingsDraft.availableDoubanImageSources,
           onChanged: _saveDoubanImageSource,
-          onArrowUp: () => TvFocusable.requestRememberedFocusForGroup(
-            'tv-setting-theme-主题色',
-          ),
+          onArrowUp: _requestThemeOptionFocus,
           onArrowDown: () => _adFilterFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
@@ -1188,6 +1270,104 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   }
 }
 
+/// TV 设置页主操作提示卡。
+class _TvSettingsActionNotice extends StatelessWidget {
+  /// 创建 TV 设置页主操作提示卡。
+  const _TvSettingsActionNotice({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.iconBackgroundColor,
+    required this.icon,
+  });
+
+  /// 标题文案。
+  final String title;
+
+  /// 提示正文。
+  final String message;
+
+  /// 卡片背景色。
+  final Color backgroundColor;
+
+  /// 卡片描边色。
+  final Color borderColor;
+
+  /// 图标底色。
+  final Color iconBackgroundColor;
+
+  /// 状态图标。
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 108),
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: borderColor, width: 1.6),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 24,
+            offset: Offset(0, 14),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: iconBackgroundColor,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(
+              icon,
+              size: 34,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: FontUtils.poppins(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  message,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: FontUtils.poppins(
+                    fontSize: 16,
+                    color: const Color(0xFFE7F0EC),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// TV 设置值展示行。
 class _TvValueRow extends StatelessWidget {
   /// 创建 TV 设置值展示行。
@@ -1530,6 +1710,7 @@ class _TvThemeOptionRow extends StatelessWidget {
     required this.options,
     required this.onChanged,
     this.onArrowUp,
+    this.onArrowDown,
   });
 
   /// 设置项标签。
@@ -1546,6 +1727,9 @@ class _TvThemeOptionRow extends StatelessWidget {
 
   /// 所有选项统一的上方向键回调。
   final VoidCallback? onArrowUp;
+
+  /// 所有选项统一的下方向键回调。
+  final VoidCallback? onArrowDown;
 
   @override
   Widget build(BuildContext context) {
@@ -1570,6 +1754,7 @@ class _TvThemeOptionRow extends StatelessWidget {
               focusMemoryGroupKey: 'tv-setting-theme-$label',
               onPressed: () => onChanged(option.key),
               onArrowUp: onArrowUp,
+              onArrowDown: onArrowDown,
               focusScrollAlignment: _tvSettingsFocusScrollAlignment,
               builder: (context, hasFocus) {
                 return AnimatedContainer(
