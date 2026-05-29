@@ -27,6 +27,7 @@ class TvVideoGrid extends StatefulWidget {
     this.onVideoPressed,
     this.onVideoLongPressed,
     this.onVideoFocusChanged,
+    this.onVideoItemFocused,
     this.onArrowUp,
     this.onLeadingEdgeArrowLeft,
     this.onTopEdgeArrowUp,
@@ -71,6 +72,11 @@ class TvVideoGrid extends StatefulWidget {
   ///
   /// 分类页用它感知内容区获焦，切换顶部筛选栏为摘要态。
   final ValueChanged<bool>? onVideoFocusChanged;
+
+  /// 当前获焦卡片节点回调。
+  ///
+  /// 独立视频库页用它记住列表里最后停留的卡片，便于从顶部固定头返回原位置。
+  final ValueChanged<FocusNode>? onVideoItemFocused;
 
   /// 卡片上方向键回调。
   ///
@@ -328,6 +334,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
                 }
                 widget.onVideoFocusChanged?.call(hasFocus);
               },
+              onFocusedNodeChanged: widget.onVideoItemFocused,
               onArrowUp: widget.onArrowUp,
               onLeadingEdgeArrowLeft: widget.onLeadingEdgeArrowLeft,
               onTopEdgeArrowUp: widget.onTopEdgeArrowUp,
@@ -426,6 +433,7 @@ class TvVideoGridActionButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
+    this.onArrowDown,
   });
 
   /// 按钮文案。
@@ -434,10 +442,16 @@ class TvVideoGridActionButton extends StatelessWidget {
   /// 点击回调。
   final VoidCallback? onPressed;
 
+  /// 下方向键回调。
+  ///
+  /// 供独立视频库页把焦点从固定头部恢复到用户刚离开的内容卡片。
+  final VoidCallback? onArrowDown;
+
   @override
   Widget build(BuildContext context) {
     return TvFocusable(
       onPressed: onPressed,
+      onArrowDown: onArrowDown,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
@@ -476,6 +490,7 @@ class _TvGridEdgeItem extends StatefulWidget {
     this.onPressed,
     this.onLongPressed,
     this.onFocusChanged,
+    this.onFocusedNodeChanged,
     this.onArrowUp,
     this.onLeadingEdgeArrowLeft,
     this.onTopEdgeArrowUp,
@@ -507,6 +522,9 @@ class _TvGridEdgeItem extends StatefulWidget {
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
+
+  /// 当前卡片真正获焦时的焦点节点回调。
+  final ValueChanged<FocusNode>? onFocusedNodeChanged;
 
   /// 上方向键回调。
   final VoidCallback? onArrowUp;
@@ -577,6 +595,7 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
         onPressed: widget.onPressed,
         onLongPressed: widget.onLongPressed,
         onFocusChanged: widget.onFocusChanged,
+        onFocusedNodeChanged: widget.onFocusedNodeChanged,
         onArrowLeft: _isLeftEdge
             ? (widget.onLeadingEdgeArrowLeft ??
                 () => _shake(AxisDirection.left))

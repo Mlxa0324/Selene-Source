@@ -5,7 +5,9 @@ import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_confirm_dialog.dart';
+import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_section_title.dart';
+import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
 /// TV 视频库列表数据加载函数。
@@ -67,6 +69,16 @@ class TvVideoLibraryScreen extends StatefulWidget {
 }
 
 class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
+  /// 视频库 Grid 焦点记忆分组。
+  ///
+  /// 让顶部“删除全部”按钮回到内容区时，优先恢复到用户离开前停留的那张卡片。
+  Object get _gridFocusMemoryGroupKey => 'tv-video-library-grid-${widget.title}';
+
+  /// 页面主背景色。
+  ///
+  /// 独立页标题区和内容区共用同一层底色，避免顶部固定头出现色块断层。
+  static const Color _pageBackgroundColor = Color(0xFF10131D);
+
   /// 页面内容顶部留白。
   ///
   /// 独立播放历史页和收藏夹页没有首页那样的顶部导航，
@@ -78,6 +90,14 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 让标题区常驻顶部后，仍保留原来标题与首行卡片之间的呼吸感。
   static const double _headerBottomSpacing = 24.0;
 
+  /// Grid 顶部焦点安全留白。
+  ///
+  /// 播放历史和收藏夹改成“固定头 + 裁剪内容区”后，
+  /// 首排卡片获焦时会整体放大并带有向上的描边和阴影。
+  /// 这里额外补一段顶部安全空间，避免第一排获焦时被内容区上边缘裁掉。
+  static const double _gridTopFocusSafePadding =
+      (TvVideoCard.height * (TvVideoCard.focusedScale - 1) / 2) + 8;
+
   /// 列表数据加载任务。
   Future<List<VideoInfo>>? _videosFuture;
 
@@ -86,6 +106,11 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 页面首次进入后，会把首焦点显式交给它，
   /// 避免根级返回键焦点把默认下移目标算到中间卡片上。
   final FocusNode _firstVideoFocusNode = FocusNode();
+
+  /// 最近一次在视频列表内获焦的卡片节点。
+  ///
+  /// 顶部“删除全部”按钮向下返回时，优先回到它，保持用户离开列表前的停留位置。
+  FocusNode? _lastFocusedGridItemNode;
 
   /// 是否已经派发过首屏内容焦点。
   ///
@@ -112,7 +137,7 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
       onBackPressed: _handleBackPressed,
       child: Scaffold(
         key: ValueKey('tv-video-library-screen-${widget.title}'),
-        backgroundColor: const Color(0xFF10131D),
+        backgroundColor: _pageBackgroundColor,
         body: SafeArea(
           child: FutureBuilder<List<VideoInfo>>(
             future: _videosFuture,
@@ -132,16 +157,28 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
                     _buildPinnedHeader(),
                     const SizedBox(height: _headerBottomSpacing),
                     Expanded(
-                      child: TvVideoGrid(
-                        title: widget.title,
-                        showTitle: false,
-                        videos: videos,
-                        isLoading: isLoading,
-                        firstItemFocusNode: _firstVideoFocusNode,
-                        onVideoPressed: _openVideo,
-                        onVideoLongPressed: widget.onDeleteVideo == null
-                            ? null
-                            : (videoInfo) => _deleteVideo(context, videoInfo),
+                      child: ClipRect(
+                        key: const ValueKey('tv-video-library-grid-clip'),
+                        child: Padding(
+                          padding: const EdgeInsets.only(
+                            top: _gridTopFocusSafePadding,
+                          ),
+                          child: TvVideoGrid(
+                            title: widget.title,
+                            showTitle: false,
+                            videos: videos,
+                            isLoading: isLoading,
+                            focusMemoryGroupKey: _gridFocusMemoryGroupKey,
+                            firstItemFocusNode: _firstVideoFocusNode,
+                            onVideoFocusChanged: _handleVideoGridFocusChanged,
+                            onVideoItemFocused: _rememberLastFocusedGridItem,
+                            onVideoPressed: _openVideo,
+                            onVideoLongPressed: widget.onDeleteVideo == null
+                                ? null
+                                : (videoInfo) =>
+                                    _deleteVideo(context, videoInfo),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -173,7 +210,25 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
         return;
       }
       _firstVideoFocusNode.requestFocus();
+      _lastFocusedGridItemNode = _firstVideoFocusNode;
     });
+  }
+
+  /// 记录视频列表最近一次获焦卡片。
+  ///
+  /// 只在当前页面聚焦链真正落到视频卡片时更新，
+  /// 这样顶部“删除全部”按钮再按下回列表时就能回到离开前的位置。
+  void _handleVideoGridFocusChanged(bool hasFocus) {
+    if (!hasFocus) {
+      return;
+    }
+  }
+
+  /// 记录视频列表最近一次真正获焦的卡片节点。
+  ///
+  /// 顶部“删除全部”按钮返回列表时会优先恢复到这里。
+  void _rememberLastFocusedGridItem(FocusNode focusNode) {
+    _lastFocusedGridItemNode = focusNode;
   }
 
   /// 构建固定在页面顶部的标题区。
@@ -181,27 +236,31 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 播放历史和收藏夹按最新交互要求把标题与“删除全部”按钮固定在顶部，
   /// 这样长列表滚动时也能随时看到当前页面名称，并快速执行清空操作。
   Widget _buildPinnedHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
-        0,
-        TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
-        0,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TvSectionTitle(title: widget.title),
-          ),
-          if (widget.onClearVideos != null) ...[
-            const SizedBox(width: 16),
-            TvVideoGridActionButton(
-              key: const ValueKey('tv-video-library-clear-button'),
-              label: '删除全部',
-              onPressed: () => _clearVideos(context),
+    return ColoredBox(
+      color: _pageBackgroundColor,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
+          0,
+          TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
+          0,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: TvSectionTitle(title: widget.title),
             ),
+            if (widget.onClearVideos != null) ...[
+              const SizedBox(width: 16),
+              TvVideoGridActionButton(
+                key: const ValueKey('tv-video-library-clear-button'),
+                label: '删除全部',
+                onPressed: () => _clearVideos(context),
+                onArrowDown: _restoreGridFocusFromHeader,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -274,6 +333,30 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
 
     setState(() {
       _videosFuture = widget.loadVideos(context);
+    });
+  }
+
+  /// 从固定头部回到视频列表。
+  ///
+  /// 先回到用户离开列表前的最近焦点卡片；若当前还没有焦点记忆，
+  /// 再兜底回到第一张卡片，保证“删除全部”向下总能回到内容区。
+  void _restoreGridFocusFromHeader() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final lastFocusedGridItemNode = _lastFocusedGridItemNode;
+      if (lastFocusedGridItemNode != null &&
+          lastFocusedGridItemNode.canRequestFocus) {
+        lastFocusedGridItemNode.requestFocus();
+        return;
+      }
+      final restored =
+          TvFocusable.requestRememberedFocusForGroup(_gridFocusMemoryGroupKey);
+      if (restored) {
+        return;
+      }
+      _firstVideoFocusNode.requestFocus();
     });
   }
 

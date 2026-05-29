@@ -138,10 +138,16 @@ class BangumiService {
       allowExpired: false,
     );
     if (cachedItems != null) {
-      _logCalendarDebug(
-        'weekday=$weekday served by fresh cache, items=${cachedItems.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
-      );
-      return ApiResponse.success(cachedItems);
+      if (cachedItems.isEmpty) {
+        _logCalendarDebug(
+          'weekday=$weekday fresh cache hit but current weekday items empty, continue fallback chain.',
+        );
+      } else {
+        _logCalendarDebug(
+          'weekday=$weekday served by fresh cache, items=${cachedItems.length}, elapsed=${stopwatch.elapsedMilliseconds}ms.',
+        );
+        return ApiResponse.success(cachedItems);
+      }
     }
 
     // 未命中缓存，请求接口
@@ -161,12 +167,18 @@ class BangumiService {
       stopwatch: stopwatch,
     );
     if (primaryApiPayload != null) {
-      return _buildCalendarSuccessResponse(
+      final primaryResponse = await _buildCalendarSuccessResponse(
         weekday: weekday,
         sourceLabel: 'primary-api',
         rawPayload: primaryApiPayload,
         stopwatch: stopwatch,
         statusCode: 200,
+      );
+      if ((primaryResponse.data ?? const <BangumiItem>[]).isNotEmpty) {
+        return primaryResponse;
+      }
+      _logCalendarDebug(
+        'weekday=$weekday primary-api returned empty current weekday items, continue fallback chain.',
       );
     }
 
@@ -183,12 +195,18 @@ class BangumiService {
         stopwatch: stopwatch,
       );
       if (proxyApiPayload != null) {
-        return _buildCalendarSuccessResponse(
+        final proxyResponse = await _buildCalendarSuccessResponse(
           weekday: weekday,
           sourceLabel: requestLabel,
           rawPayload: proxyApiPayload,
           stopwatch: stopwatch,
           statusCode: 200,
+        );
+        if ((proxyResponse.data ?? const <BangumiItem>[]).isNotEmpty) {
+          return proxyResponse;
+        }
+        _logCalendarDebug(
+          'weekday=$weekday $requestLabel returned empty current weekday items, continue fallback chain.',
         );
       }
     }

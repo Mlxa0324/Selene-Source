@@ -140,6 +140,97 @@ void main() {
     expect(response.data!.single.name, 'Saturday Title');
   });
 
+  testWidgets(
+      'accepts calendar html fallback without legacy BgmCalendar marker',
+      (tester) async {
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      return http.Response('', HttpStatus.serviceUnavailable);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      return _calendarHtmlPayloadWithoutLegacyMarker();
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await BangumiService.getCalendarByWeekday(
+      tester.element(find.byType(Placeholder)),
+      5,
+    );
+
+    expect(response.success, isTrue);
+    expect(response.data, hasLength(2));
+    expect(response.data!.first.id, 900001);
+  });
+
+  testWidgets(
+      'falls back to calendar page html when primary api returns empty selected weekday',
+      (tester) async {
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      if (uri.host == 'api.bgm.tv') {
+        return http.Response.bytes(
+          utf8.encode(json.encode(_calendarPayloadWithEmptyFriday())),
+          HttpStatus.ok,
+          headers: <String, String>{
+            'content-type': 'application/json; charset=utf-8',
+          },
+        );
+      }
+      return http.Response('', HttpStatus.serviceUnavailable);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      return _calendarHtmlPayload();
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await BangumiService.getCalendarByWeekday(
+      tester.element(find.byType(Placeholder)),
+      5,
+    );
+
+    expect(response.success, isTrue);
+    expect(response.data, hasLength(2));
+    expect(response.data!.first.id, 900001);
+  });
+
+  testWidgets('ignores empty fresh calendar cache and continues to page fallback',
+      (tester) async {
+    BangumiService.skipCacheInitForTest();
+    BangumiService.calendarHttpGetForTest = (uri, headers) async {
+      return http.Response('', HttpStatus.serviceUnavailable);
+    };
+    BangumiService.calendarCacheReaderForTest = (cacheKey, allowExpired) async {
+      if (!allowExpired && cacheKey == 'bangumi_calendar_raw_v1') {
+        return json.decode(
+          json.encode(_calendarPayloadWithEmptyFriday()),
+        ) as List<dynamic>;
+      }
+      return null;
+    };
+    BangumiService.calendarPageHtmlLoaderForTest = () async {
+      return _calendarHtmlPayload();
+    };
+
+    await tester.pumpWidget(const MaterialApp(home: Placeholder()));
+
+    final response = await BangumiService.getCalendarByWeekday(
+      tester.element(find.byType(Placeholder)),
+      5,
+    );
+
+    expect(response.success, isTrue);
+    expect(response.data, hasLength(2));
+    expect(response.data!.first.id, 900001);
+  });
+
   testWidgets('switches to calendar page fallback after api timeout',
       (tester) async {
     // 跳过真实缓存初始化，避免测试依赖磁盘与插件环境。
@@ -253,6 +344,46 @@ List<Map<String, dynamic>> _proxyCalendarPayload() {
   ];
 }
 
+List<Map<String, dynamic>> _calendarPayloadWithEmptyFriday() {
+  return [
+    {
+      'weekday': {
+        'en': 'Fri',
+        'cn': '星期五',
+        'ja': '金曜日',
+        'id': 5,
+      },
+      'items': <Map<String, dynamic>>[],
+    },
+    {
+      'weekday': {
+        'en': 'Sat',
+        'cn': '星期六',
+        'ja': '土曜日',
+        'id': 6,
+      },
+      'items': [
+        {
+          'id': 990001,
+          'url': 'https://bgm.tv/subject/990001',
+          'type': 2,
+          'name': 'Saturday Placeholder',
+          'name_cn': '周六占位番剧',
+          'summary': '模拟接口成功但当天为空',
+          'air_date': '2026-05-30',
+          'air_weekday': 6,
+          'rating': {'score': 7.2},
+          'rank': 5,
+          'images': {
+            'common': 'https://example.com/saturday.jpg',
+          },
+          'collection': {},
+        },
+      ],
+    },
+  ];
+}
+
 String _calendarHtmlPayload() {
   return '''
 <div class="columns clearit">
@@ -302,6 +433,43 @@ String _calendarHtmlPayload() {
       </li>
     </ul>
   </div>
+</div>
+''';
+}
+
+String _calendarHtmlPayloadWithoutLegacyMarker() {
+  return '''
+<div class="columns clearit">
+  <section class="calendar-shell">
+    <h2>每日放送</h2>
+    <ul class="large">
+      <li class="week ">
+        <dl>
+          <dt class="Fri"><div><h3>星期五</h3></div></dt>
+          <dd class="Fri">
+            <ul class="coverList">
+              <li style="background: center no-repeat url('//lain.bgm.tv/r/400/pic/cover/l/aa/bb/900001_test.jpg'); background-size: cover">
+                <div class="info_bg">
+                  <div class="info">
+                    <p><a href="/subject/900001" class="nav">测试中文标题</a></p>
+                    <p><a href="/subject/900001" class="nav"><small><em>テスト原題</em></small></a></p>
+                  </div>
+                </div>
+              </li>
+              <li style="background: center no-repeat url('//lain.bgm.tv/r/400/pic/cover/l/cc/dd/900002_only.jpg'); background-size: cover">
+                <div class="info_bg">
+                  <div class="info">
+                    <p><a href="/subject/900002" class="nav"></a></p>
+                    <p><a href="/subject/900002" class="nav"><small><em>只有原题</em></small></a></p>
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </dd>
+        </dl>
+      </li>
+    </ul>
+  </section>
 </div>
 ''';
 }

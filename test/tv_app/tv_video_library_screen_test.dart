@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_video_library_screen.dart';
+import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 
 void main() {
   testWidgets('video library page keeps title away from top edge',
@@ -60,6 +61,101 @@ void main() {
       tester.getTopLeft(clearButtonFinder).dy,
       initialClearButtonTopLeft.dy,
     );
+  });
+
+  testWidgets('video library page keeps first row below pinned header',
+      (tester) async {
+    final videos = List<VideoInfo>.generate(
+      12,
+      (index) => _videoInfo('history_$index', '历史影片 $index'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '收藏夹',
+          loadVideos: (_) async => videos,
+          onClearVideos: (_) async => true,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final titleBottom = tester.getBottomLeft(find.text('收藏夹')).dy;
+    final clearButtonBottom = tester
+        .getBottomLeft(find.byKey(const ValueKey('tv-video-library-clear-button')))
+        .dy;
+    final firstPosterTop = tester
+        .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-history_0')))
+        .dy;
+
+    expect(firstPosterTop, greaterThan(titleBottom));
+    expect(firstPosterTop, greaterThan(clearButtonBottom));
+  });
+
+  testWidgets('video library page keeps first focused card outline visible',
+      (tester) async {
+    final videos = List<VideoInfo>.generate(
+      8,
+      (index) => _videoInfo('history_$index', '历史影片 $index'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '播放历史',
+          loadVideos: (_) async => videos,
+          onClearVideos: (_) async => true,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final firstCardFocusNode = _focusNodeForCard(tester, 'history_0');
+    firstCardFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final titleBottom = tester.getBottomLeft(find.text('播放历史')).dy;
+    final focusedCardTop = tester
+        .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-history_0')))
+        .dy;
+
+    expect(focusedCardTop, greaterThan(titleBottom));
+  });
+
+  testWidgets('clear button arrow down restores remembered grid focus',
+      (tester) async {
+    final videos = List<VideoInfo>.generate(
+      14,
+      (index) => _videoInfo('history_$index', '历史影片 $index'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '播放历史',
+          loadVideos: (_) async => videos,
+          onClearVideos: (_) async => true,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final targetCardFocusNode = _focusNodeForCard(tester, 'history_8');
+    targetCardFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(targetCardFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(targetCardFocusNode.hasFocus, isTrue);
   });
 
   testWidgets('video library page moves initial focus to first card after load',
@@ -145,6 +241,10 @@ void main() {
       find.byKey(const ValueKey('tv-video-library-screen-播放历史')),
       findsNothing,
     );
+
+    // 这条用例只验证“当前帧即可返回”，断言完成后手动清掉返回键静态兜底计时器，
+    // 避免测试框架把这段保护定时器误判成泄漏。
+    TvBackIntent.debugResetBackKeyTracking();
   });
 
   testWidgets('history page clears all items from header action',

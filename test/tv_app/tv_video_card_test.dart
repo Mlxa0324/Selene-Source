@@ -6,12 +6,19 @@ import 'package:selene/tv_app/widgets/tv_video_card.dart';
 void main() {
   test('TV video card keeps compact poster proportions', () {
     expect(TvVideoCard.width, 158);
-    expect(TvVideoCard.height, 297);
+    expect(TvVideoCard.height, 298);
     expect(TvVideoCard.coverHeight, 237);
     expect(TvVideoCard.focusedScale, 1.08);
-    expect(TvVideoCard.shimmerBegin, const Alignment(-1.2, -0.34));
-    expect(TvVideoCard.shimmerEnd, const Alignment(1.2, 0.34));
-    expect(TvVideoCard.shimmerVerticalTravelFactor, 0.34);
+    expect(TvVideoCard.shimmerBegin, const Alignment(-1.2, 0));
+    expect(TvVideoCard.shimmerEnd, const Alignment(1.2, 0));
+    expect(TvVideoCard.shimmerVerticalTravelFactor, 0);
+    expect(TvVideoCard.shimmerSoftEdgeColor, const Color(0x12FFFFFF));
+    expect(TvVideoCard.shimmerMidColor, const Color(0x20FFFFFF));
+    expect(TvVideoCard.shimmerCenterColor, const Color(0x2CFFFFFF));
+    expect(
+      TvVideoCard.shimmerStops,
+      const <double>[0.08, 0.24, 0.38, 0.50, 0.62, 0.76, 0.92],
+    );
     expect(TvVideoCard.shimmerDuration, const Duration(milliseconds: 1800));
     expect(TvVideoCard.focusSweepDelay, const Duration(milliseconds: 300));
     expect(TvVideoCard.coverHeight / TvVideoCard.width, closeTo(1.5, 0.01));
@@ -23,11 +30,19 @@ void main() {
     expect(TvCoverLoadingSkeleton.shimmerVerticalTravelFactor, 0);
     expect(
       TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
-      const Color(0x0FE4EAED),
+      const Color(0x12E4EAED),
+    );
+    expect(
+      TvCoverLoadingSkeleton.shimmerMidColor,
+      const Color(0x1EE4EAED),
     );
     expect(
       TvCoverLoadingSkeleton.shimmerCenterColor,
-      const Color(0x1CE4EAED),
+      const Color(0x2AE4EAED),
+    );
+    expect(
+      TvCoverLoadingSkeleton.shimmerStops,
+      const <double>[0.10, 0.26, 0.40, 0.50, 0.60, 0.74, 0.90],
     );
   });
 
@@ -265,6 +280,39 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
 
     expect(find.byKey(const ValueKey('tv-cover-focus-sweep')), findsOneWidget);
+
+    focusNode.dispose();
+  });
+
+  testWidgets('TV video card focus sweep uses horizontal shimmer only',
+      (tester) async {
+    final focusNode = FocusNode();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvVideoCard(
+            focusNode: focusNode,
+            videoInfo: _videoInfo(),
+          ),
+        ),
+      ),
+    );
+
+    focusNode.requestFocus();
+    await tester.pump();
+    await tester.pump(TvVideoCard.focusSweepDelay);
+
+    final sweepDecoration = tester
+        .widget<DecoratedBox>(
+          find.byKey(const ValueKey('tv-cover-focus-sweep')),
+        )
+        .decoration as BoxDecoration;
+    final sweepGradient = sweepDecoration.gradient! as LinearGradient;
+
+    expect(sweepGradient.begin, TvVideoCard.shimmerBegin);
+    expect(sweepGradient.end, TvVideoCard.shimmerEnd);
+    expect(TvVideoCard.shimmerVerticalTravelFactor, 0);
 
     focusNode.dispose();
   });

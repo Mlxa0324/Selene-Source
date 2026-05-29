@@ -369,6 +369,18 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 当前手机扫码配置桥接会话。
   TvMobileSettingsBridgeSession? _mobileConfigBridgeSession;
 
+  /// 当前主操作提示文案。
+  ///
+  /// 三颗主操作按钮统一使用页内浮层提示，避免独立设置页路由
+  /// 把提示画到上一层 Scaffold 里，导致离开页面后才看得到。
+  String? _actionNoticeMessage;
+
+  /// 当前主操作提示类型。
+  _TvSettingsActionNoticeType? _actionNoticeType;
+
+  /// 主操作提示自动关闭定时器。
+  Timer? _actionNoticeTimer;
+
   @override
   void initState() {
     super.initState();
@@ -385,6 +397,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
   @override
   void dispose() {
+    _actionNoticeTimer?.cancel();
     unawaited(_mobileConfigBridgeSession?.dispose() ?? Future<void>.value());
     _serverUrlController.dispose();
     _usernameController.dispose();
@@ -532,25 +545,38 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       _savingAccount = true;
     });
     final saver = widget.saveAccount ?? TvSettingsScreen.defaultSaveAccount;
-    final result = await saver(
-      TvServerCredentials(
-        serverUrl: _serverUrlController.text,
-        username: _usernameController.text,
-        password: _passwordController.text,
-      ),
-    );
-    if (!mounted) {
-      return;
+    try {
+      final result = await saver(
+        TvServerCredentials(
+          serverUrl: _serverUrlController.text,
+          username: _usernameController.text,
+          password: _passwordController.text,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _savingAccount = false;
+      });
+      _showActionNotice(
+        result.message,
+        type: result.success
+            ? _TvSettingsActionNoticeType.success
+            : _TvSettingsActionNoticeType.error,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _savingAccount = false;
+      });
+      _showActionNotice(
+        '保存配置失败',
+        type: _TvSettingsActionNoticeType.error,
+      );
     }
-    setState(() {
-      _savingAccount = false;
-    });
-    _showActionNotice(
-      result.message,
-      type: result.success
-          ? _TvSettingsActionNoticeType.success
-          : _TvSettingsActionNoticeType.error,
-    );
   }
 
   /// 保存 TV 主题色配置。
@@ -578,17 +604,30 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       _savingDanmaku = true;
     });
     final saver = widget.saveDanmaku ?? TvSettingsScreen.defaultSaveDanmaku;
-    await saver(_danmakuBaseApiController.text, _danmakuSettings);
-    if (!mounted) {
-      return;
+    try {
+      await saver(_danmakuBaseApiController.text, _danmakuSettings);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _savingDanmaku = false;
+      });
+      _showActionNotice(
+        '弹幕配置已保存',
+        type: _TvSettingsActionNoticeType.success,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _savingDanmaku = false;
+      });
+      _showActionNotice(
+        '保存弹幕配置失败',
+        type: _TvSettingsActionNoticeType.error,
+      );
     }
-    setState(() {
-      _savingDanmaku = false;
-    });
-    _showActionNotice(
-      '弹幕配置已保存',
-      type: _TvSettingsActionNoticeType.success,
-    );
   }
 
   /// 保存图片代理配置。
@@ -674,48 +713,34 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     );
   }
 
-  /// 展示三颗主操作按钮专用的大圆角提示。
+  /// 展示三颗主操作按钮专用的页内提示。
   ///
-  /// 电视端保存成功后，需要比普通开关更醒目的反馈，
-  /// 这里统一用底部上浮的大卡片提示结果。
+  /// 成功提示保持明显的底部上浮反馈，失败提示则收敛成更紧凑的卡片，
+  /// 避免遮住设置页主体内容。
   void _showActionNotice(
     String message, {
     required _TvSettingsActionNoticeType type,
   }) {
-    final theme = TvTheme.of(context);
-    final bool isSuccess = type == _TvSettingsActionNoticeType.success;
-    final Color backgroundColor =
-        isSuccess ? const Color(0xFF163E2A) : const Color(0xFF4A1E24);
-    final Color borderColor =
-        isSuccess
-            ? theme.accent.withValues(alpha: 0.82)
-            : const Color(0xFFFF919A);
-    final Color iconBackgroundColor =
-        isSuccess ? theme.accent : const Color(0xFFE05A5A);
+    _actionNoticeTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
 
-    ScaffoldMessenger.of(context)
-      ..removeCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-          margin: const EdgeInsets.fromLTRB(120, 0, 120, 42),
-          padding: EdgeInsets.zero,
-          content: _TvSettingsActionNotice(
-            key: const ValueKey('tv-settings-action-notice'),
-            title: isSuccess ? '保存成功' : '操作失败',
-            message: message,
-            backgroundColor: backgroundColor,
-            borderColor: borderColor,
-            iconBackgroundColor: iconBackgroundColor,
-            icon: isSuccess
-                ? Icons.check_rounded
-                : Icons.error_outline_rounded,
-          ),
-        ),
-      );
+    setState(() {
+      _actionNoticeMessage = message;
+      _actionNoticeType = type;
+    });
+
+    // 固定 2 秒自动收起，避免长时间遮住底部操作区。
+    _actionNoticeTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _actionNoticeMessage = null;
+        _actionNoticeType = null;
+      });
+    });
   }
 
   @override
@@ -742,58 +767,63 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
             return LayoutBuilder(
               builder: (context, constraints) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                return Stack(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        TvLayout.pageHorizontalPadding,
-                        _headerTopPadding,
-                        TvLayout.pageHorizontalPadding,
-                        0,
-                      ),
-                      child: _buildPinnedHeader(),
-                    ),
-                    const SizedBox(height: _headerBottomSpacing),
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, scrollConstraints) {
-                          // 追加半屏高度的底部缓冲，让末尾设置项也能滚到屏幕中线附近。
-                          final bottomFocusBuffer =
-                              scrollConstraints.maxHeight * 0.5;
-                          return SingleChildScrollView(
-                            padding: EdgeInsets.fromLTRB(
-                              TvLayout.pageHorizontalPadding,
-                              20,
-                              TvLayout.pageHorizontalPadding,
-                              64 + bottomFocusBuffer,
-                            ),
-                            child: Align(
-                              alignment: Alignment.topLeft,
-                              child: ConstrainedBox(
-                                constraints: const BoxConstraints(
-                                  maxWidth: _contentMaxWidth,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            TvLayout.pageHorizontalPadding,
+                            _headerTopPadding,
+                            TvLayout.pageHorizontalPadding,
+                            0,
+                          ),
+                          child: _buildPinnedHeader(),
+                        ),
+                        const SizedBox(height: _headerBottomSpacing),
+                        Expanded(
+                          child: LayoutBuilder(
+                            builder: (context, scrollConstraints) {
+                              // 追加半屏高度的底部缓冲，让末尾设置项也能滚到屏幕中线附近。
+                              final bottomFocusBuffer =
+                                  scrollConstraints.maxHeight * 0.5;
+                              return SingleChildScrollView(
+                                padding: EdgeInsets.fromLTRB(
+                                  TvLayout.pageHorizontalPadding,
+                                  20,
+                                  TvLayout.pageHorizontalPadding,
+                                  64 + bottomFocusBuffer,
                                 ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    // 先展示手机扫码区，方便用户进入设置页后先扫码在手机端填表。
-                                    _buildMobileConfigSection(),
-                                    const SizedBox(height: _panelSpacing),
-                                    _buildAccountSection(),
-                                    const SizedBox(height: _panelSpacing),
-                                    _buildDanmakuSection(),
-                                    const SizedBox(height: _panelSpacing),
-                                    _buildCacheSection(),
-                                  ],
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: _contentMaxWidth,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        // 先展示手机扫码区，方便用户进入设置页后先扫码在手机端填表。
+                                        _buildMobileConfigSection(),
+                                        const SizedBox(height: _panelSpacing),
+                                        _buildAccountSection(),
+                                        const SizedBox(height: _panelSpacing),
+                                        _buildDanmakuSection(),
+                                        const SizedBox(height: _panelSpacing),
+                                        _buildCacheSection(),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
+                    _buildActionNoticeOverlay(),
                   ],
                 );
               },
@@ -833,6 +863,83 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建设置页内部的主操作提示浮层。
+  ///
+  /// 提示挂在当前页面自己的 Stack 里，确保独立路由下也能立刻看见。
+  Widget _buildActionNoticeOverlay() {
+    final message = _actionNoticeMessage;
+    final noticeType = _actionNoticeType;
+    final bool hasNotice = message != null && noticeType != null;
+    final theme = TvTheme.of(context);
+    final bool isSuccess = noticeType == _TvSettingsActionNoticeType.success;
+    final Color backgroundColor =
+        isSuccess ? const Color(0xF1163E2A) : const Color(0xF131171B);
+    final Color borderColor =
+        isSuccess
+            ? theme.accent.withValues(alpha: 0.78)
+            : const Color(0xFFFF858F);
+    final Color iconBackgroundColor =
+        isSuccess ? theme.accent : const Color(0xFFE05A5A);
+    final double maxNoticeWidth = isSuccess ? 520 : 400;
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: true,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TvLayout.pageHorizontalPadding,
+              0,
+              TvLayout.pageHorizontalPadding,
+              34,
+            ),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final slideAnimation = Tween<Offset>(
+                    begin: const Offset(0, 0.16),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: slideAnimation,
+                      child: child,
+                    ),
+                  );
+                },
+                child: !hasNotice
+                    ? const SizedBox.shrink()
+                    : ConstrainedBox(
+                        key: ValueKey<String>(
+                          'tv-settings-action-notice-$message-${noticeType.name}',
+                        ),
+                        constraints: BoxConstraints(maxWidth: maxNoticeWidth),
+                        child: _TvSettingsActionNotice(
+                          key: const ValueKey('tv-settings-action-notice'),
+                          title: isSuccess ? '保存成功' : null,
+                          message: message,
+                          backgroundColor: backgroundColor,
+                          borderColor: borderColor,
+                          iconBackgroundColor: iconBackgroundColor,
+                          icon: isSuccess
+                              ? Icons.check_rounded
+                              : Icons.error_outline_rounded,
+                          compact: !isSuccess,
+                        ),
+                      ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1275,16 +1382,19 @@ class _TvSettingsActionNotice extends StatelessWidget {
   /// 创建 TV 设置页主操作提示卡。
   const _TvSettingsActionNotice({
     super.key,
-    required this.title,
+    this.title,
     required this.message,
     required this.backgroundColor,
     required this.borderColor,
     required this.iconBackgroundColor,
     required this.icon,
+    this.compact = false,
   });
 
   /// 标题文案。
-  final String title;
+  ///
+  /// 失败提示会收敛成纯消息卡，因此标题允许为空。
+  final String? title;
 
   /// 提示正文。
   final String message;
@@ -1301,61 +1411,74 @@ class _TvSettingsActionNotice extends StatelessWidget {
   /// 状态图标。
   final IconData icon;
 
+  /// 是否使用紧凑布局。
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
+    final bool hasTitle = title != null && title!.trim().isNotEmpty;
+    final double iconBoxSize = compact ? 40 : 48;
+    final double iconSize = compact ? 24 : 28;
+    final EdgeInsets contentPadding = compact
+        ? const EdgeInsets.symmetric(horizontal: 18, vertical: 14)
+        : const EdgeInsets.symmetric(horizontal: 22, vertical: 16);
     return Container(
-      constraints: const BoxConstraints(minHeight: 108),
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+      constraints: BoxConstraints(minHeight: compact ? 68 : 86),
+      padding: contentPadding,
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: borderColor, width: 1.6),
+        borderRadius: BorderRadius.circular(compact ? 22 : 24),
+        border: Border.all(color: borderColor, width: compact ? 1.2 : 1.5),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x66000000),
-            blurRadius: 24,
-            offset: Offset(0, 14),
+            color: Color(0x52000000),
+            blurRadius: 18,
+            offset: Offset(0, 10),
           ),
         ],
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 58,
-            height: 58,
+            width: iconBoxSize,
+            height: iconBoxSize,
             decoration: BoxDecoration(
               color: iconBackgroundColor,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(compact ? 12 : 16),
             ),
             child: Icon(
               icon,
-              size: 34,
+              size: iconSize,
               color: Colors.white,
             ),
           ),
-          const SizedBox(width: 20),
-          Expanded(
+          SizedBox(width: compact ? 14 : 16),
+          Flexible(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: FontUtils.poppins(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                if (hasTitle) ...[
+                  Text(
+                    title!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FontUtils.poppins(
+                      fontSize: compact ? 18 : 20,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
+                  const SizedBox(height: 4),
+                ],
                 Text(
                   message,
-                  maxLines: 2,
+                  maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: FontUtils.poppins(
-                    fontSize: 16,
+                    fontSize: compact ? 15 : 16,
+                    fontWeight: compact ? FontWeight.w600 : FontWeight.w500,
                     color: const Color(0xFFE7F0EC),
                   ),
                 ),

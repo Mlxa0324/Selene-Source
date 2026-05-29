@@ -30,6 +30,7 @@ class TvVideoCard extends StatelessWidget {
     this.onPressed,
     this.onLongPressed,
     this.onFocusChanged,
+    this.onFocusedNodeChanged,
     this.onArrowLeft,
     this.onArrowRight,
     this.onArrowUp,
@@ -57,6 +58,11 @@ class TvVideoCard extends StatelessWidget {
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
+
+  /// 当前卡片真正获焦时的焦点节点回调。
+  ///
+  /// 上层可借此记录用户最近一次停留的卡片位置。
+  final ValueChanged<FocusNode>? onFocusedNodeChanged;
 
   /// 左方向键回调。
   final VoidCallback? onArrowLeft;
@@ -128,14 +134,48 @@ class TvVideoCard extends StatelessWidget {
   /// TV 卡片副标题字号。
   static const double subtitleFontSize = 13.0;
 
-  /// TV 雨刷光带起点，横向为主并轻微向下倾斜。
-  static const Alignment shimmerBegin = Alignment(-1.2, -0.34);
+  /// TV 焦点雨刷光带起点。
+  ///
+  /// 保持纯横向移动，避免卡片停留后的延迟雨刷继续出现斜向扫过效果。
+  static const Alignment shimmerBegin = Alignment(-1.2, 0);
 
-  /// TV 雨刷光带终点，横向为主并轻微向下倾斜。
-  static const Alignment shimmerEnd = Alignment(1.2, 0.34);
+  /// TV 焦点雨刷光带终点。
+  ///
+  /// 与起点保持同一水平线，只做从左到右的平移。
+  static const Alignment shimmerEnd = Alignment(1.2, 0);
 
-  /// TV 雨刷纵向位移系数，避免光带角度过于对角。
-  static const double shimmerVerticalTravelFactor = 0.34;
+  /// TV 焦点雨刷纵向位移系数。
+  ///
+  /// 当前交互明确要求只做左右平移，因此固定为 0。
+  static const double shimmerVerticalTravelFactor = 0;
+
+  /// TV 焦点雨刷边缘高光色。
+  ///
+  /// 维持轻量提亮，让光带两侧先有一层柔和扩散，避免看起来像硬白线。
+  static const Color shimmerSoftEdgeColor = Color(0x12FFFFFF);
+
+  /// TV 焦点雨刷中段高光色。
+  ///
+  /// 位于中心亮带两侧，用于拉宽整体高光过渡范围。
+  static const Color shimmerMidColor = Color(0x20FFFFFF);
+
+  /// TV 焦点雨刷中心高光色。
+  ///
+  /// 中心保持最亮，但不使用纯实心白条，避免在深色封面上显得生硬。
+  static const Color shimmerCenterColor = Color(0x2CFFFFFF);
+
+  /// TV 焦点雨刷渐变停靠点。
+  ///
+  /// 使用更宽的七段式渐变，让延迟雨刷从“细线”变成更有体积感的柔和光带。
+  static const List<double> shimmerStops = <double>[
+    0.08,
+    0.24,
+    0.38,
+    0.50,
+    0.62,
+    0.76,
+    0.92,
+  ];
 
   /// TV 雨刷动画时长，焦点雨刷与骨架雨刷保持同速。
   static const Duration shimmerDuration = Duration(milliseconds: 1800);
@@ -155,6 +195,7 @@ class TvVideoCard extends StatelessWidget {
       onPressed: onPressed,
       onLongPressed: onLongPressed,
       onFocusChanged: onFocusChanged,
+      onFocusedNodeChanged: onFocusedNodeChanged,
       onArrowLeft: onArrowLeft,
       onArrowRight: onArrowRight,
       onArrowUp: onArrowUp,
@@ -470,20 +511,22 @@ class _TvFocusSweepOverlayState extends State<_TvFocusSweepOverlay>
             ),
           );
         },
-        child: DecoratedBox(
-          key: const ValueKey('tv-cover-focus-sweep'),
+        child: const DecoratedBox(
+          key: ValueKey('tv-cover-focus-sweep'),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: TvVideoCard.shimmerBegin,
               end: TvVideoCard.shimmerEnd,
-              colors: [
+              colors: <Color>[
                 Colors.transparent,
-                Colors.white.withValues(alpha: 0.08),
-                Colors.white.withValues(alpha: 0.18),
-                Colors.white.withValues(alpha: 0.08),
+                TvVideoCard.shimmerSoftEdgeColor,
+                TvVideoCard.shimmerMidColor,
+                TvVideoCard.shimmerCenterColor,
+                TvVideoCard.shimmerMidColor,
+                TvVideoCard.shimmerSoftEdgeColor,
                 Colors.transparent,
               ],
-              stops: const [0.30, 0.44, 0.50, 0.56, 0.70],
+              stops: TvVideoCard.shimmerStops,
             ),
           ),
         ),
@@ -714,12 +757,30 @@ class TvCoverLoadingSkeleton extends StatefulWidget {
   /// 骨架雨刷边缘高光色。
   ///
   /// 使用偏灰白的低透明度高光，避免在深色海报占位上显得过亮突兀。
-  static const Color shimmerSoftEdgeColor = Color(0x0FE4EAED);
+  static const Color shimmerSoftEdgeColor = Color(0x12E4EAED);
+
+  /// 骨架雨刷中段高光色。
+  ///
+  /// 在中心高光外再补一层过渡，拉宽可见高光区域。
+  static const Color shimmerMidColor = Color(0x1EE4EAED);
 
   /// 骨架雨刷中心高光色。
   ///
   /// 中心亮度仍高于边缘，但相比纯白高光更柔和，减少“白条”割裂感。
-  static const Color shimmerCenterColor = Color(0x1CE4EAED);
+  static const Color shimmerCenterColor = Color(0x2AE4EAED);
+
+  /// 骨架雨刷渐变停靠点。
+  ///
+  /// 采用更宽的七段式高光，让封面加载时的雨刷更有体积感。
+  static const List<double> shimmerStops = <double>[
+    0.10,
+    0.26,
+    0.40,
+    0.50,
+    0.60,
+    0.74,
+    0.90,
+  ];
 
   @override
   State<TvCoverLoadingSkeleton> createState() => _TvCoverLoadingSkeletonState();
@@ -779,11 +840,13 @@ class _TvCoverLoadingSkeletonState extends State<TvCoverLoadingSkeleton>
                 colors: <Color>[
                   Colors.transparent,
                   TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
+                  TvCoverLoadingSkeleton.shimmerMidColor,
                   TvCoverLoadingSkeleton.shimmerCenterColor,
+                  TvCoverLoadingSkeleton.shimmerMidColor,
                   TvCoverLoadingSkeleton.shimmerSoftEdgeColor,
                   Colors.transparent,
                 ],
-                stops: [0.28, 0.42, 0.50, 0.58, 0.72],
+                stops: TvCoverLoadingSkeleton.shimmerStops,
               ),
             ),
           ),

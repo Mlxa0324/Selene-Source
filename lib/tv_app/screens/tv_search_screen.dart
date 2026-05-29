@@ -342,6 +342,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   static const Object _suggestionFocusMemoryGroupKey =
       'tv-search-suggestion-tiles';
 
+  /// 搜索结果焦点记忆分组。
+  ///
+  /// 左侧输入区回到结果区时，优先恢复用户刚离开的那张结果卡片。
+  static const Object _searchResultFocusMemoryGroupKey =
+      'tv-search-result-grid';
+
   /// 右下推荐区焦点记忆分组。
   ///
   /// 搜索历史、热词和联想词再次向下进入推荐区时，应尽量回到上次离开的位置。
@@ -423,6 +429,52 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _query.isNotEmpty &&
       (_isSearchResultLoading || _searchResults.isNotEmpty);
 
+  /// 搜索结果区首次回左时可承接焦点的键盘边缘列节点。
+  List<FocusNode> get _searchResultKeyboardBridgeNodes => <FocusNode>[
+    _keyboardTopRowFocusNodes.last,
+    _keyboardBridgeLFocusNode,
+    _keyboardBridgeRFocusNode,
+    _keyboardBridgeXFocusNode,
+    _keyboardBridge4FocusNode,
+    _keyboardBottomRowFocusNodes.last,
+  ];
+
+  /// 返回指定键盘索引真正使用的焦点节点。
+  ///
+  /// 顶行和底行沿用现有节点；中间几行仅暴露最右列节点，
+  /// 供结果区首次左移时落到 `F/L/R/X/4/0` 这一列。
+  FocusNode? _focusNodeForKeyboardIndex(int index) {
+    return switch (index) {
+      0 || 1 || 2 || 3 || 4 || 5 => _keyboardTopRowFocusNodes[index],
+      11 => _keyboardBridgeLFocusNode,
+      17 => _keyboardBridgeRFocusNode,
+      23 => _keyboardBridgeXFocusNode,
+      29 => _keyboardBridge4FocusNode,
+      30 || 31 || 32 || 33 || 34 || 35 =>
+        _keyboardBottomRowFocusNodes[index - (_keyboardKeys.length - 6)],
+      _ => null,
+    };
+  }
+
+  /// 重置当前搜索结果页的焦点状态。
+  ///
+  /// 新搜索开始、退出结果页或回退到联想页时，都恢复成“首卡首焦点 + 首次回左就近落点”。
+  void _resetSearchResultFocusState() {
+    _didDispatchSearchResultInitialFocus = false;
+    _searchResultRememberedLeftPanelFocusNode = null;
+    TvFocusable.clearLastFocusedForGroup(_searchResultFocusMemoryGroupKey);
+  }
+
+  /// 记录结果页场景下最近一次停留的左侧输入区焦点节点。
+  ///
+  /// 只在当前处于结果页时更新，避免首页态或联想态污染结果页回左记忆。
+  void _rememberLeftPanelFocusNodeForSearchResult(FocusNode focusNode) {
+    if (!_shouldShowSearchResultPanel) {
+      return;
+    }
+    _searchResultRememberedLeftPanelFocusNode = focusNode;
+  }
+
   /// 推荐影片横向列表控制器。
   final ScrollController _recommendScrollController = ScrollController();
 
@@ -440,6 +492,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 推荐区首张卡片焦点节点。
   final FocusNode _recommendFirstFocusNode = FocusNode();
+
+  /// 搜索结果首张卡片焦点节点。
+  final FocusNode _searchResultFirstFocusNode = FocusNode();
 
   /// 联想结果标题定位键。
   ///
@@ -462,11 +517,32 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 左侧删除按钮焦点节点。
   final FocusNode _leftDeleteActionFocusNode = FocusNode();
 
+  /// 结果区首次左移时承接第二行最右列的焦点节点。
+  final FocusNode _keyboardBridgeLFocusNode = FocusNode();
+
+  /// 结果区首次左移时承接第三行最右列的焦点节点。
+  final FocusNode _keyboardBridgeRFocusNode = FocusNode();
+
+  /// 结果区首次左移时承接第四行最右列的焦点节点。
+  final FocusNode _keyboardBridgeXFocusNode = FocusNode();
+
+  /// 结果区首次左移时承接第五行最右列的焦点节点。
+  final FocusNode _keyboardBridge4FocusNode = FocusNode();
+
   /// 搜索历史标题清空按钮焦点节点。
   final FocusNode _historyClearButtonFocusNode = FocusNode();
 
   /// 是否已经完成首屏默认焦点分发。
   bool _didDispatchInitialContentFocus = false;
+
+  /// 是否已经完成当前结果页的首个默认焦点分发。
+  bool _didDispatchSearchResultInitialFocus = false;
+
+  /// 当前结果页最近一次停留的左侧输入区焦点节点。
+  ///
+  /// 首次从结果区回左侧时，按视觉距离就近落到 `F/L/R/X/4/0`；
+  /// 后续再恢复用户离开左侧前真正停留的位置。
+  FocusNode? _searchResultRememberedLeftPanelFocusNode;
 
   /// TV 键盘字符。
   static const List<String> _keyboardKeys = [
@@ -525,6 +601,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _hotWordFirstFocusNode.dispose();
     _suggestionFirstFocusNode.dispose();
     _recommendFirstFocusNode.dispose();
+    _searchResultFirstFocusNode.dispose();
     for (final focusNode in _keyboardTopRowFocusNodes) {
       focusNode.dispose();
     }
@@ -533,6 +610,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
     _leftClearActionFocusNode.dispose();
     _leftDeleteActionFocusNode.dispose();
+    _keyboardBridgeLFocusNode.dispose();
+    _keyboardBridgeRFocusNode.dispose();
+    _keyboardBridgeXFocusNode.dispose();
+    _keyboardBridge4FocusNode.dispose();
     _historyClearButtonFocusNode.dispose();
     super.dispose();
   }
@@ -619,6 +700,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 清掉联想词、搜索结果和加载状态，让右侧重新展示搜索历史与影片推荐。
   void _resetToSearchHome() {
     _invalidateSearchRequests();
+    _resetSearchResultFocusState();
     setState(() {
       _query = '';
       _suggestions = <String>[];
@@ -655,6 +737,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
     final suggestionSnapshot = List<String>.from(_suggestionsBeforeSearch);
     _invalidateSearchRequests();
+    _resetSearchResultFocusState();
     setState(() {
       _query = suggestionQuery;
       _suggestions = suggestionSnapshot;
@@ -787,22 +870,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       itemBuilder: (context, index) {
         final keyLabel = _keyboardKeys[index];
         final isRightEdge = _isKeyboardRightEdge(index);
-        final isTopRow = index < 6;
-        final isBottomRow = index >= _keyboardKeys.length - 6;
         return TvFocusable(
-          focusNode: isTopRow
-              ? _keyboardTopRowFocusNodes[index]
-              : isBottomRow
-                  ? _keyboardBottomRowFocusNodes[
-                      index - (_keyboardKeys.length - 6)
-                    ]
-                  : null,
+          focusNode: _focusNodeForKeyboardIndex(index),
           focusMemoryGroupKey: _leftPanelFocusMemoryGroupKey,
           onPressed: () => _appendQuery(keyLabel),
-          onArrowRight: isRightEdge && _shouldShowSuggestionPanel
-              ? _moveLeftPanelFocusToSuggestions
-              : null,
-          onArrowUp: isTopRow ? _moveKeyboardTopRowToBottomActions : null,
+          onArrowRight: isRightEdge ? _moveLeftPanelFocusToRightPanel : null,
+          onArrowUp: index < 6 ? _moveKeyboardTopRowToBottomActions : null,
+          onFocusedNodeChanged: _rememberLeftPanelFocusNodeForSearchResult,
           builder: (context, hasFocus) {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 140),
@@ -851,7 +925,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             containerKey: const ValueKey('tv-search-left-delete-button'),
             focusNode: _leftDeleteActionFocusNode,
             onPressed: _deleteLastQueryChar,
-            enableSuggestionArrow: true,
+            enableRightPanelArrow: true,
             onArrowUp: _moveBottomActionFocusToKeyboardBottomRow,
             onArrowDown: _moveLeftDeleteActionFocusToTopKeyboardRow,
           ),
@@ -866,7 +940,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     Key? containerKey,
     FocusNode? focusNode,
     required VoidCallback onPressed,
-    bool enableSuggestionArrow = false,
+    bool enableRightPanelArrow = false,
     VoidCallback? onArrowUp,
     VoidCallback? onArrowDown,
   }) {
@@ -874,11 +948,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       focusNode: focusNode,
       focusMemoryGroupKey: _leftPanelFocusMemoryGroupKey,
       onPressed: onPressed,
-      onArrowRight: enableSuggestionArrow && _shouldShowSuggestionPanel
-          ? _moveLeftPanelFocusToSuggestions
-          : null,
+      onArrowRight: enableRightPanelArrow ? _moveLeftPanelFocusToRightPanel : null,
       onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
+      onFocusedNodeChanged: _rememberLeftPanelFocusNodeForSearchResult,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           key: containerKey,
@@ -1285,7 +1358,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     TvSearchData data,
     bool isLoading,
   ) {
-    if (_didDispatchInitialContentFocus || isLoading) {
+    if (_didDispatchInitialContentFocus ||
+        isLoading ||
+        _shouldShowSuggestionPanel ||
+        _shouldShowSearchResultPanel) {
       return;
     }
 
@@ -1824,6 +1900,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     final aggregatedVideos = _aggregateSearchResults(_searchResults);
     final shouldShowInitialSearchSkeleton =
         _isSearchResultLoading && aggregatedVideos.isEmpty;
+    _dispatchSearchResultInitialFocusIfNeeded(aggregatedVideos);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1845,6 +1922,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                     title: '搜索结果',
                     showTitle: false,
                     videos: aggregatedVideos,
+                    firstItemFocusNode: _searchResultFirstFocusNode,
                     rightPadding: 0,
                     crossAxisCount: _searchResultCrossAxisCount,
                     crossAxisSpacing: _searchResultCrossAxisSpacing,
@@ -1852,6 +1930,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                     onLeadingEdgeArrowLeft: _moveSearchResultFocusToLeftPanel,
                     onTopEdgeArrowUp: _keepSearchResultTopFocusOnArrowUp,
                     topEdgeArrowLockCount: _searchResultTopArrowLockedCount,
+                    focusMemoryGroupKey: _searchResultFocusMemoryGroupKey,
                     onVideoPressed: _openVideo,
                   ),
           ),
@@ -2239,6 +2318,36 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _suggestionFirstFocusNode.requestFocus();
   }
 
+  /// 把左侧输入区焦点移动到右侧内容区。
+  ///
+  /// 结果页优先进入结果列表，联想页则保持现有联想词回焦逻辑。
+  void _moveLeftPanelFocusToRightPanel() {
+    if (_shouldShowSearchResultPanel) {
+      _moveLeftPanelFocusToSearchResults();
+      return;
+    }
+    if (_shouldShowSuggestionPanel) {
+      _moveLeftPanelFocusToSuggestions();
+    }
+  }
+
+  /// 把左侧输入区焦点移动到搜索结果区。
+  ///
+  /// 优先恢复结果区最近一次停留的卡片；没有记忆时回首张卡片。
+  void _moveLeftPanelFocusToSearchResults() {
+    if (!_shouldShowSearchResultPanel) {
+      return;
+    }
+
+    final moved = TvFocusable.requestRememberedFocusForGroup(
+      _searchResultFocusMemoryGroupKey,
+    );
+    if (moved) {
+      return;
+    }
+    _searchResultFirstFocusNode.requestFocus();
+  }
+
   /// 把联想区焦点退回左侧输入区。
   ///
   /// 优先恢复左侧最近一次停留的字符键或操作按钮，保持遥控器来回切换手感稳定。
@@ -2271,9 +2380,58 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   ///
   /// 优先恢复左侧最近一次停留的字符键或操作按钮，保持左右切换手感一致。
   void _moveSearchResultFocusToLeftPanel() {
-    TvFocusable.requestRememberedFocusForGroup(
-      _leftPanelFocusMemoryGroupKey,
-    );
+    final rememberedFocusNode = _searchResultRememberedLeftPanelFocusNode;
+    if (rememberedFocusNode != null && rememberedFocusNode.canRequestFocus) {
+      rememberedFocusNode.requestFocus();
+      return;
+    }
+    _moveSearchResultFocusToNearestKeyboardBridge();
+  }
+
+  /// 把搜索结果区首次左移焦点落到左侧就近键位。
+  ///
+  /// 对应结果区左侧视觉上最近的 `F/L/R/X/4/0` 竖列。
+  void _moveSearchResultFocusToNearestKeyboardBridge() {
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    final focusedRect =
+        focusedContext == null ? null : _globalRectForContext(focusedContext);
+    if (focusedRect == null) {
+      _keyboardTopRowFocusNodes.last.requestFocus();
+      return;
+    }
+
+    FocusNode? targetNode;
+    double? minDistance;
+    for (final focusNode in _searchResultKeyboardBridgeNodes) {
+      final keyRect = _globalRectForFocusNode(focusNode);
+      if (keyRect == null) {
+        continue;
+      }
+      final distance = (focusedRect.center.dy - keyRect.center.dy).abs();
+      if (minDistance == null || distance < minDistance) {
+        minDistance = distance;
+        targetNode = focusNode;
+      }
+    }
+
+    (targetNode ?? _keyboardTopRowFocusNodes.last).requestFocus();
+  }
+
+  /// 搜索结果首批卡片准备完成后，默认把焦点交给第一张卡片。
+  ///
+  /// 每轮新搜索只触发一次，避免流式补结果时把用户焦点从左侧抢回右侧。
+  void _dispatchSearchResultInitialFocusIfNeeded(List<VideoInfo> videos) {
+    if (_didDispatchSearchResultInitialFocus || videos.isEmpty) {
+      return;
+    }
+
+    _didDispatchSearchResultInitialFocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_shouldShowSearchResultPanel) {
+        return;
+      }
+      _searchResultFirstFocusNode.requestFocus();
+    });
   }
 
   /// 让右侧内容获焦项尽量停留在屏幕中段。
@@ -2358,6 +2516,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
 
     _searchRequestVersion++;
+    _resetSearchResultFocusState();
     setState(() {
       _query = normalizedQuery;
       _searchResults = <SearchResult>[];
@@ -2425,6 +2584,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
 
     final requestVersion = ++_searchRequestVersion;
+    _resetSearchResultFocusState();
     setState(() {
       if (preserveSuggestionContext) {
         _suggestionQueryBeforeSearch = _query;

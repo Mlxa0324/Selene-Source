@@ -29,6 +29,7 @@ class TvFocusable extends StatefulWidget {
     this.onPressed,
     this.onLongPressed,
     this.onFocusChanged,
+    this.onFocusedNodeChanged,
     this.onArrowLeft,
     this.onArrowRight,
     this.onArrowUp,
@@ -57,6 +58,12 @@ class TvFocusable extends StatefulWidget {
 
   /// 焦点变化回调。
   final ValueChanged<bool>? onFocusChanged;
+
+  /// 当前控件实际获焦时的焦点节点回调。
+  ///
+  /// 与 [onFocusNodeReady] 不同，这个回调只在控件真正拿到焦点时触发，
+  /// 适合记录“最近一次停留的焦点位置”。
+  final ValueChanged<FocusNode>? onFocusedNodeChanged;
 
   /// 左方向键回调。
   final VoidCallback? onArrowLeft;
@@ -596,6 +603,7 @@ class _TvFocusableState extends State<TvFocusable> {
       if (groupKey != null) {
         _lastFocusedByGroup[groupKey] = this;
       }
+      widget.onFocusedNodeChanged?.call(_effectiveFocusNode);
     }
     if (hasFocus && widget.autoScrollOnFocus) {
       final targetContext = _scrollTargetKey.currentContext;

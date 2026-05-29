@@ -642,6 +642,123 @@ void main() {
     expect(find.text('服务器配置已保存'), findsOneWidget);
   });
 
+  testWidgets('shows save notice inside pushed TV settings route',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) {
+                        return TvSettingsScreen(
+                          loadSettings: () async => TvSettingsData.empty(),
+                          saveAccount: (credentials) async {
+                            return const TvAccountSaveResult(
+                              success: true,
+                              message: '服务器配置已保存',
+                            );
+                          },
+                        );
+                      },
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开设置页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开设置页'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('保存配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存配置'));
+    await tester.pumpAndSettle();
+
+    // 提示必须直接显示在当前设置页里，不能等退出页面后才露出来。
+    expect(find.text('设置'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tv-settings-action-notice')),
+      findsOneWidget,
+    );
+    expect(find.text('服务器配置已保存'), findsOneWidget);
+  });
+
+  testWidgets('shows compact error notice for TV settings main actions',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            saveAccount: (credentials) async {
+              return const TvAccountSaveResult(
+                success: false,
+                message: '保存失败，请检查服务器地址',
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('保存配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存配置'));
+    await tester.pumpAndSettle();
+
+    final noticeFinder =
+        find.byKey(const ValueKey('tv-settings-action-notice'));
+    final noticeSize = tester.getSize(noticeFinder);
+
+    // 报错提示要明显收小，避免遮住设置页主体内容。
+    expect(noticeFinder, findsOneWidget);
+    expect(noticeSize.width, lessThanOrEqualTo(420));
+    expect(noticeSize.height, lessThanOrEqualTo(92));
+    expect(find.text('保存失败，请检查服务器地址'), findsOneWidget);
+  });
+
+  testWidgets('shows inline error notice when saving TV danmaku fails',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            saveDanmaku: (baseApi, settings) async {
+              throw Exception('network error');
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('保存弹幕配置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存弹幕配置'));
+    await tester.pumpAndSettle();
+
+    final noticeFinder =
+        find.byKey(const ValueKey('tv-settings-action-notice'));
+    final noticeSize = tester.getSize(noticeFinder);
+
+    expect(noticeFinder, findsOneWidget);
+    expect(noticeSize.width, lessThanOrEqualTo(420));
+    expect(noticeSize.height, lessThanOrEqualTo(92));
+    expect(find.text('保存弹幕配置失败'), findsOneWidget);
+  });
+
   testWidgets('saves TV danmaku endpoint and switch settings', (tester) async {
     String? savedBaseApi;
     DanmakuSettings? savedSettings;

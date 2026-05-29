@@ -437,7 +437,7 @@ void main() {
     );
   });
 
-  testWidgets('pressing history item starts search with confirm keys',
+  testWidgets('pressing history item starts search with enter key',
       (tester) async {
     final searchedQueries = <String>[];
 
@@ -477,23 +477,143 @@ void main() {
     }
 
     Future<void> expectHistoryConfirmSearch(LogicalKeyboardKey key) async {
+      searchedQueries.clear();
       await pumpSearchScreen();
       await tester.sendKeyDownEvent(key);
       await tester.pump();
       await tester.sendKeyUpEvent(key);
-      await tester.pumpAndSettle();
+      await _pumpUntil(
+        tester,
+        condition: () => searchedQueries.isNotEmpty,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
 
       expect(searchedQueries.last, '庆余年');
-      expect(
-        find.byKey(const ValueKey('tv-search-result-grid-panel')),
-        findsOneWidget,
-      );
       expect(find.text('搜索结果'), findsOneWidget);
       expect(find.text('庆余年'), findsWidgets);
     }
 
     await expectHistoryConfirmSearch(LogicalKeyboardKey.enter);
+  });
+
+  testWidgets('pressing history item starts search with space key',
+      (tester) async {
+    final searchedQueries = <String>[];
+
+    Future<void> pumpSearchScreen() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TvSearchScreen(
+            loadSearchData: (_) async => const TvSearchData(
+              searchHistory: ['庆余年'],
+              hotWords: [],
+              recommends: [],
+            ),
+            loadSearchResults: (query) async {
+              searchedQueries.add(query);
+              return <SearchResult>[
+                SearchResult(
+                  id: 'video_$query',
+                  title: query,
+                  poster: '',
+                  episodes: const ['episode-1'],
+                  episodesTitles: const ['第1集'],
+                  source: 'test',
+                  sourceName: '测试源',
+                  year: '2026',
+                ),
+              ];
+            },
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      final historyNode = _focusNodeForText(tester, '庆余年');
+      historyNode.requestFocus();
+      await tester.pumpAndSettle();
+      expect(historyNode.hasFocus, isTrue);
+    }
+
+    Future<void> expectHistoryConfirmSearch(LogicalKeyboardKey key) async {
+      searchedQueries.clear();
+      await pumpSearchScreen();
+      await tester.sendKeyDownEvent(key);
+      await tester.pump();
+      await tester.sendKeyUpEvent(key);
+      await _pumpUntil(
+        tester,
+        condition: () => searchedQueries.isNotEmpty,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(searchedQueries.last, '庆余年');
+      expect(find.text('搜索结果'), findsOneWidget);
+      expect(find.text('庆余年'), findsWidgets);
+    }
+
     await expectHistoryConfirmSearch(LogicalKeyboardKey.space);
+  });
+
+  testWidgets('pressing history item starts search with select key',
+      (tester) async {
+    final searchedQueries = <String>[];
+
+    Future<void> pumpSearchScreen() async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TvSearchScreen(
+            loadSearchData: (_) async => const TvSearchData(
+              searchHistory: ['庆余年'],
+              hotWords: [],
+              recommends: [],
+            ),
+            loadSearchResults: (query) async {
+              searchedQueries.add(query);
+              return <SearchResult>[
+                SearchResult(
+                  id: 'video_$query',
+                  title: query,
+                  poster: '',
+                  episodes: const ['episode-1'],
+                  episodesTitles: const ['第1集'],
+                  source: 'test',
+                  sourceName: '测试源',
+                  year: '2026',
+                ),
+              ];
+            },
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      final historyNode = _focusNodeForText(tester, '庆余年');
+      historyNode.requestFocus();
+      await tester.pumpAndSettle();
+      expect(historyNode.hasFocus, isTrue);
+    }
+
+    Future<void> expectHistoryConfirmSearch(LogicalKeyboardKey key) async {
+      searchedQueries.clear();
+      await pumpSearchScreen();
+      await tester.sendKeyDownEvent(key);
+      await tester.pump();
+      await tester.sendKeyUpEvent(key);
+      await _pumpUntil(
+        tester,
+        condition: () => searchedQueries.isNotEmpty,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(searchedQueries.last, '庆余年');
+      expect(find.text('搜索结果'), findsOneWidget);
+      expect(find.text('庆余年'), findsWidgets);
+    }
+
     await expectHistoryConfirmSearch(LogicalKeyboardKey.select);
   });
 
@@ -1223,7 +1343,7 @@ void main() {
     expect(resultGrid.crossAxisSpacing, 18);
   });
 
-  testWidgets('leftmost search result moves focus back to left controls',
+  testWidgets('leftmost search result first moves focus to nearest keyboard edge',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -1253,10 +1373,6 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final leftFocusNode = _focusNodeForText(tester, '删除');
-    leftFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-
     await tester.tap(find.text('J'));
     await tester.pumpAndSettle();
     await tester
@@ -1268,10 +1384,166 @@ void main() {
     await tester.pumpAndSettle();
     expect(firstResultNode.hasFocus, isTrue);
 
+    final expectedNearestKey = _nearestLabelByCenterY(
+      tester,
+      sourceLabel: '结果0',
+      candidateLabels: const ['F', 'L', 'R', 'X', '4', '0'],
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pumpAndSettle();
 
-    expect(leftFocusNode.hasFocus, isTrue);
+    expect(_focusNodeForText(tester, expectedNearestKey).hasFocus, isTrue);
+  });
+
+  testWidgets('autofocuses first search result card after entering result page',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResults: (_) async => List<SearchResult>.generate(
+            6,
+            (index) => SearchResult(
+              id: 'video_$index',
+              title: '结果$index',
+              poster: '',
+              episodes: const ['episode-1'],
+              episodesTitles: const ['第1集'],
+              source: 'source_$index',
+              sourceName: '源$index',
+              year: '2025',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, '结果0').hasFocus, isTrue);
+  });
+
+  testWidgets('first left from search results moves to nearest keyboard bridge',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResults: (_) async => List<SearchResult>.generate(
+            20,
+            (index) => SearchResult(
+              id: 'video_$index',
+              title: '结果$index',
+              poster: '',
+              episodes: const ['episode-1'],
+              episodesTitles: const ['第1集'],
+              source: 'source_$index',
+              sourceName: '源$index',
+              year: '2025',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await tester.pumpAndSettle();
+
+    final firstResultNode = _focusNodeForText(tester, '结果0');
+    firstResultNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(firstResultNode.hasFocus, isTrue);
+
+    final expectedNearestKey = _nearestLabelByCenterY(
+      tester,
+      sourceLabel: '结果0',
+      candidateLabels: const ['F', 'L', 'R', 'X', '4', '0'],
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, expectedNearestKey).hasFocus, isTrue);
+  });
+
+  testWidgets(
+      'later left from search results restores last remembered left control',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResults: (_) async => List<SearchResult>.generate(
+            20,
+            (index) => SearchResult(
+              id: 'video_$index',
+              title: '结果$index',
+              poster: '',
+              episodes: const ['episode-1'],
+              episodesTitles: const ['第1集'],
+              source: 'source_$index',
+              sourceName: '源$index',
+              year: '2025',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await tester.pumpAndSettle();
+
+    final firstResultNode = _focusNodeForText(tester, '结果0');
+    firstResultNode.requestFocus();
+    await tester.pumpAndSettle();
+    final expectedNearestKey = _nearestLabelByCenterY(
+      tester,
+      sourceLabel: '结果0',
+      candidateLabels: const ['F', 'L', 'R', 'X', '4', '0'],
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForText(tester, expectedNearestKey).hasFocus, isTrue);
+
+    final zeroFocusNode = _focusNodeForText(tester, '0');
+    zeroFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(zeroFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(firstResultNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(zeroFocusNode.hasFocus, isTrue);
   });
 
   testWidgets('top four search results keep focus on arrow up', (tester) async {
@@ -2765,6 +3037,54 @@ FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+Future<void> _pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  int maxPumps = 30,
+}) async {
+  for (var index = 0; index < maxPumps; index++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+  }
+  expect(finder, findsOneWidget);
+}
+
+Future<void> _pumpUntil(
+  WidgetTester tester, {
+  required bool Function() condition,
+  int maxPumps = 30,
+}) async {
+  for (var index = 0; index < maxPumps; index++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (condition()) {
+      return;
+    }
+  }
+  expect(condition(), isTrue);
+}
+
+String _nearestLabelByCenterY(
+  WidgetTester tester, {
+  required String sourceLabel,
+  required List<String> candidateLabels,
+}) {
+  final sourceCenterY =
+      tester.getRect(find.byKey(ValueKey('tv-video-card-focus-video_0'))).center.dy;
+  String? nearestLabel;
+  double? minDistance;
+  for (final label in candidateLabels) {
+    final candidateCenterY = tester.getRect(find.text(label)).center.dy;
+    final distance = (sourceCenterY - candidateCenterY).abs();
+    if (minDistance == null || distance < minDistance) {
+      minDistance = distance;
+      nearestLabel = label;
+    }
+  }
+  return nearestLabel!;
 }
 
 VideoInfo _videoInfo(String id, String title) {
