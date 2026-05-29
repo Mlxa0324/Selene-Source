@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/screens/tv_search_screen.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
@@ -236,6 +237,13 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
             Expanded(
               child: TvSectionTitle(title: widget.title),
             ),
+            const SizedBox(width: 16),
+            TvVideoGridActionButton(
+              key: const ValueKey('tv-video-library-search-button'),
+              label: '搜索',
+              onPressed: _openSearch,
+              onArrowDown: _restoreGridFocusFromHeader,
+            ),
             if (widget.onClearVideos != null) ...[
               const SizedBox(width: 16),
               TvVideoGridActionButton(
@@ -249,6 +257,11 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
         ),
       ),
     );
+  }
+
+  /// 打开 TV 搜索页，并替换当前列表页释放页面实例。
+  void _openSearch() {
+    TvRoute.pushReplacement<void, void>(context, const TvSearchScreen());
   }
 
   /// 打开当前卡片对应的 TV 详情页。

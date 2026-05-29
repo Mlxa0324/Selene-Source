@@ -72,8 +72,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: const Scaffold(
+      const MaterialApp(
+        home: Scaffold(
           backgroundColor: Color(0xFF10131D),
           body: SizedBox.shrink(),
         ),
@@ -166,6 +166,68 @@ void main() {
         .dy;
 
     expect(focusedCardTop, greaterThan(titleBottom));
+  });
+
+  testWidgets('video library page shows header search action', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '播放历史',
+          loadVideos: (_) async => [
+            _videoInfo('history_1', '历史影片 1'),
+          ],
+          onClearVideos: (_) async => true,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-video-library-search-button')),
+        findsOneWidget);
+    expect(find.text('搜索'), findsOneWidget);
+  });
+
+  testWidgets('video library search action opens TV search screen',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvVideoLibraryScreen(
+                        title: '收藏夹',
+                        loadVideos: (_) async => [
+                          _videoInfo('favorite_1', '收藏影片 1'),
+                        ],
+                        onClearVideos: (_) async => true,
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开收藏夹页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开收藏夹页'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('tv-video-library-search-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-search-screen')), findsOneWidget);
+    expect(find.byType(TvVideoLibraryScreen), findsNothing);
   });
 
   testWidgets('clear button arrow down restores remembered grid focus',

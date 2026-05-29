@@ -896,10 +896,12 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 设置页作为独立路由时也要主动铺满全局 TV 背景，避免透明材质漏出默认底色。
+    final pageBackgroundColor = TvTheme.backgroundOf(context).color;
     return TvBackHandler(
       autofocus: true,
       child: Material(
-        type: MaterialType.transparency,
+        color: pageBackgroundColor,
         child: FutureBuilder<TvSettingsData>(
           future: _settingsFuture,
           builder: (context, snapshot) {

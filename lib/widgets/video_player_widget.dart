@@ -28,8 +28,9 @@ String buildVideoSurfaceKey({
   required Type adapterType,
   required VideoFitType fitType,
 }) {
-  return 'video_${surface.name}_${adapterType}_'
-      '${fitType.name}';
+  // 画面比例切换只需要更新 fit，不应该因此重建视频表面；
+  // 否则全屏切比例时会出现闪屏，某些后端还会从头起播。
+  return 'video_${surface.name}_$adapterType';
 }
 
 class VideoPlayerWidget extends StatefulWidget {

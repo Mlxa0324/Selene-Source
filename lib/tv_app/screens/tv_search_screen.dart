@@ -173,8 +173,7 @@ class TvSearchScreen extends StatefulWidget {
 
 class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索页当前全局背景色。
-  Color get _pageBackgroundColor =>
-      TvTheme.backgroundOf(context).color;
+  Color get _pageBackgroundColor => TvTheme.backgroundOf(context).color;
 
   /// 搜索页首屏顶部留白。
   ///
@@ -1982,7 +1981,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
     return Container(
       key: const ValueKey('tv-search-result-header'),
-      color: const Color(0xFF10131D),
+      color: _pageBackgroundColor,
       child: SizedBox(
         height: _searchResultHeaderTopCoverHeight + _searchResultHeaderHeight,
         child: Padding(
@@ -2350,7 +2349,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 把左侧输入区焦点移动到右侧内容区。
   ///
-  /// 结果页优先进入结果列表，联想页则保持现有联想词回焦逻辑。
+  /// 结果页优先进入结果列表，联想页进入联想词，默认主页则按垂直距离
+  /// 就近进入搜索历史 / 热词 / 推荐区，避免最右列键位按右后像撞墙。
   void _moveLeftPanelFocusToRightPanel() {
     if (_shouldShowSearchResultPanel) {
       _moveLeftPanelFocusToSearchResults();
@@ -2358,6 +2358,80 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
     if (_shouldShowSuggestionPanel) {
       _moveLeftPanelFocusToSuggestions();
+      return;
+    }
+    _moveLeftPanelFocusToDefaultRightPanel();
+  }
+
+  /// 把左侧输入区焦点移动到默认右侧内容区。
+  ///
+  /// 搜索主页默认展示搜索历史、热词和推荐区。这里按当前左侧键位的垂直位置，
+  /// 优先回到视觉上最近的右侧分区首项或该分区最近一次停留位置。
+  void _moveLeftPanelFocusToDefaultRightPanel() {
+    final candidates = <({Object groupKey, FocusNode fallbackNode, Rect rect})>[];
+
+    void addCandidate({
+      required Object groupKey,
+      required FocusNode fallbackNode,
+    }) {
+      final focusNode = fallbackNode;
+      final rect = _globalRectForFocusNode(focusNode);
+      if (rect == null || !focusNode.canRequestFocus) {
+        return;
+      }
+      candidates.add((groupKey: groupKey, fallbackNode: focusNode, rect: rect));
+    }
+
+    addCandidate(
+      groupKey: _historyWordFocusMemoryGroupKey,
+      fallbackNode: _historyFirstFocusNode,
+    );
+    addCandidate(
+      groupKey: _hotWordFocusMemoryGroupKey,
+      fallbackNode: _hotWordFirstFocusNode,
+    );
+    addCandidate(
+      groupKey: _recommendFocusMemoryGroupKey,
+      fallbackNode: _recommendFirstFocusNode,
+    );
+
+    if (candidates.isEmpty) {
+      return;
+    }
+
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    final focusedRect =
+        focusedContext == null ? null : _globalRectForContext(focusedContext);
+    if (focusedRect == null) {
+      final firstCandidate = candidates.first;
+      final moved = TvFocusable.requestRememberedFocusForGroup(
+        firstCandidate.groupKey,
+      );
+      if (!moved) {
+        firstCandidate.fallbackNode.requestFocus();
+      }
+      return;
+    }
+
+    ({Object groupKey, FocusNode fallbackNode, Rect rect})? nearestCandidate;
+    double? minDistance;
+    for (final candidate in candidates) {
+      final distance = (focusedRect.center.dy - candidate.rect.center.dy).abs();
+      if (minDistance == null || distance < minDistance) {
+        minDistance = distance;
+        nearestCandidate = candidate;
+      }
+    }
+
+    if (nearestCandidate == null) {
+      return;
+    }
+
+    final moved = TvFocusable.requestRememberedFocusForGroup(
+      nearestCandidate.groupKey,
+    );
+    if (!moved) {
+      nearestCandidate.fallbackNode.requestFocus();
     }
   }
 

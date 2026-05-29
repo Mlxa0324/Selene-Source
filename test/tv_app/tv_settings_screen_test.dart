@@ -81,6 +81,34 @@ void main() {
     expect(find.text('清除所有缓存'), findsOneWidget);
   });
 
+  testWidgets('settings screen follows global TV background color',
+      (tester) async {
+    final themeService = TvThemeService();
+    await themeService.setBackgroundKey(TvThemeBackground.deepBlack.key);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            body: TvSettingsScreen(
+              loadSettings: () async => TvSettingsData.empty(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final materialFinder = find.descendant(
+      of: find.byType(TvSettingsScreen),
+      matching: find.byType(Material),
+    );
+    final material = tester.widget<Material>(materialFinder.first);
+    expect(material.color, TvThemeBackground.deepBlack.color);
+  });
+
   testWidgets('keeps pinned settings header above mobile scan section',
       (tester) async {
     final fakeBridge = _FakeMobileConfigBridge();

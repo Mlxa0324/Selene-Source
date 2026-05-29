@@ -36,6 +36,7 @@ class TvHomeSection extends StatelessWidget {
     this.scrollController,
     this.autofocusFirstItem = false,
     this.firstItemFocusNode,
+    this.onArrowUpFromAnyItem,
     this.onArrowUpFromFirstItem,
     this.onArrowDownToNextSection,
   });
@@ -121,6 +122,12 @@ class TvHomeSection extends StatelessWidget {
   /// 第一个卡片的外部焦点节点。
   final FocusNode? firstItemFocusNode;
 
+  /// 任意卡片按上方向键时的回调。
+  ///
+  /// 仅当整个分区都需要把上键交给外层时使用，例如首页第一排任意卡片
+  /// 都需要回到顶部导航。
+  final VoidCallback? onArrowUpFromAnyItem;
+
   /// 首个卡片按上方向键时的回调。
   final VoidCallback? onArrowUpFromFirstItem;
 
@@ -141,6 +148,7 @@ class TvHomeSection extends StatelessWidget {
       scrollController: scrollController,
       autofocusFirstItem: autofocusFirstItem,
       firstItemFocusNode: firstItemFocusNode,
+      onArrowUpFromAnyItem: onArrowUpFromAnyItem,
       onArrowUpFromFirstItem: onArrowUpFromFirstItem,
       onArrowDownToNextSection: onArrowDownToNextSection,
     );
@@ -162,6 +170,7 @@ class _TvHomeSectionBody extends StatefulWidget {
     this.scrollController,
     this.autofocusFirstItem = false,
     this.firstItemFocusNode,
+    this.onArrowUpFromAnyItem,
     this.onArrowUpFromFirstItem,
     this.onArrowDownToNextSection,
   });
@@ -198,6 +207,9 @@ class _TvHomeSectionBody extends StatefulWidget {
 
   /// 第一个卡片的外部焦点节点。
   final FocusNode? firstItemFocusNode;
+
+  /// 任意卡片按上方向键时的回调。
+  final VoidCallback? onArrowUpFromAnyItem;
 
   /// 首个卡片按上方向键时的回调。
   final VoidCallback? onArrowUpFromFirstItem;
@@ -405,7 +417,8 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
               const SizedBox(height: 12),
               SizedBox(
                 height: TvVideoCard.height + 42,
-                child: widget.isLoading ? _buildLoadingList() : _buildVideoList(),
+                child:
+                    widget.isLoading ? _buildLoadingList() : _buildVideoList(),
               ),
             ],
           ),
@@ -498,6 +511,8 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
         final edgeShakeKey = _edgeShakeKeyFor(index);
         final isFirstItem = index == 0;
         final isLastItem = index == itemCount - 1;
+        final onArrowUp = widget.onArrowUpFromAnyItem ??
+            (isFirstItem ? widget.onArrowUpFromFirstItem : null);
         Widget item;
         if (showMore && index == visibleVideos.length) {
           item = _TvMoreCard(
@@ -513,7 +528,7 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
             onArrowRight: isLastItem
                 ? () => _handleEdge(index, AxisDirection.right)
                 : null,
-            onArrowUp: isFirstItem ? widget.onArrowUpFromFirstItem : null,
+            onArrowUp: onArrowUp,
             onArrowDown: widget.onArrowDownToNextSection,
           );
         } else {
@@ -542,7 +557,7 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
             onArrowRight: isLastItem
                 ? () => _handleEdge(index, AxisDirection.right)
                 : null,
-            onArrowUp: isFirstItem ? widget.onArrowUpFromFirstItem : null,
+            onArrowUp: onArrowUp,
             onArrowDown: widget.onArrowDownToNextSection,
           );
         }

@@ -9,6 +9,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_home_screen.dart';
 import 'package:selene/tv_app/screens/tv_history_screen.dart';
 import 'package:selene/tv_app/tv_layout.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
@@ -37,6 +38,44 @@ void main() {
   test('TV layout uses compact page padding and fixed grid columns', () {
     expect(TvLayout.pageHorizontalPadding, 36);
     expect(TvLayout.gridCrossAxisCount, 7);
+  });
+
+  testWidgets('non home tabs follow global TV background color', (tester) async {
+    final themeService = TvThemeService();
+    await themeService.setBackgroundKey(TvThemeBackground.deepBlack.key);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: const [],
+              hotMovies: [_videoInfo('movie_0', '电影 0')],
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: const [],
+              favorites: const [],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pumpAndSettle();
+
+    final expectedColor = TvThemeBackground.deepBlack.color;
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold).first);
+    expect(scaffold.backgroundColor, expectedColor);
+
+    final topNavDecoratedBox = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('tv-top-nav-visible')),
+    );
+    final topNavDecoration = topNavDecoratedBox.decoration as BoxDecoration;
+    expect(topNavDecoration.color, expectedColor);
   });
 
   test('TV category filters mirror mobile filter option sets', () {
@@ -556,6 +595,88 @@ void main() {
 
     expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
     expect(firstMovieFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets(
+      'non first card of first non empty home section moves up to selected top nav',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final secondMovieFocusNode = _focusNodeForVideoCard(tester, 'movie_1');
+    secondMovieFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(secondMovieFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(secondMovieFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('penultimate home card can move up into previous home section',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: List.generate(
+              16,
+              (index) => _videoInfo('continue_$index', '继续观看影片 $index'),
+            ),
+            hotMovies: List.generate(
+              16,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final firstMovieFocusNode = _focusNodeForVideoCard(tester, 'movie_0');
+    firstMovieFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(firstMovieFocusNode.hasFocus, isTrue);
+
+    for (var i = 0; i < 14; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+
+    final movieFocusNode = _focusNodeForVideoCard(tester, 'movie_14');
+    expect(movieFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isTrue);
+    expect(movieFocusNode.hasFocus, isFalse);
   });
 
   testWidgets('initial TV app focus stays on home top nav tab', (tester) async {

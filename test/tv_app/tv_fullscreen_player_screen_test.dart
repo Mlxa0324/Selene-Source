@@ -117,8 +117,47 @@ void main() {
     expect(find.text('备用线路'), findsOneWidget);
   });
 
-  testWidgets(
-      'renders fullscreen player before ad filter preference resolves',
+  testWidgets('menu interactions do not rebuild fullscreen player layer',
+      (tester) async {
+    var playerBuildCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+            _searchResult('source_b', '备用线路'),
+          ],
+          playerBuilder: (_, __) {
+            playerBuildCount++;
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final settledPlayerBuildCount = playerBuildCount;
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
+    expect(playerBuildCount, settledPlayerBuildCount);
+
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(find.text('备用线路'), findsOneWidget);
+    expect(playerBuildCount, settledPlayerBuildCount);
+  });
+
+  testWidgets('renders fullscreen player before ad filter preference resolves',
       (tester) async {
     final adFilterCompleter = Completer<bool>();
     bool? resolvedAdFilterEnabled;
@@ -1792,6 +1831,52 @@ void main() {
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
   });
 
+  testWidgets('long press right seek keeps 1 second numeric steps',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(playback.seekPositions, hasLength(2));
+    expect(
+        playback.seekPositions.first, const Duration(minutes: 35, seconds: 30));
+    expect(
+        playback.seekPositions.last, const Duration(minutes: 35, seconds: 31));
+    expect(
+      playback.seekPositions[1].inSeconds - playback.seekPositions[0].inSeconds,
+      1,
+    );
+  });
+
   testWidgets('global remote keys drive fullscreen chrome without root focus',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
@@ -2263,27 +2348,30 @@ void main() {
     );
   });
 
-  test('TV fullscreen seek acceleration holds then eases to 19s', () {
-    expect(TvFullscreenSeekStep.secondsForElapsed(Duration.zero), 5);
+  test('TV fullscreen seek acceleration keeps 1 second steps after hold', () {
+    expect(TvFullscreenSeekStep.initialPressSeconds, 5);
+    expect(TvFullscreenSeekStep.repeatStepSeconds, 1);
+    expect(TvFullscreenSeekStep.repeatIntervalForElapsed(Duration.zero), 240);
     expect(
-      TvFullscreenSeekStep.secondsForElapsed(
+      TvFullscreenSeekStep.repeatIntervalForElapsed(
         const Duration(milliseconds: 4900),
       ),
-      5,
+      240,
     );
     expect(
-      TvFullscreenSeekStep.secondsForElapsed(const Duration(seconds: 5)),
-      5,
+      TvFullscreenSeekStep.repeatIntervalForElapsed(const Duration(seconds: 5)),
+      240,
     );
     expect(
-      TvFullscreenSeekStep.secondsForElapsed(
+      TvFullscreenSeekStep.repeatIntervalForElapsed(
         const Duration(milliseconds: 7500),
       ),
-      12,
+      150,
     );
     expect(
-      TvFullscreenSeekStep.secondsForElapsed(const Duration(seconds: 10)),
-      19,
+      TvFullscreenSeekStep.repeatIntervalForElapsed(
+          const Duration(seconds: 10)),
+      60,
     );
   });
 }

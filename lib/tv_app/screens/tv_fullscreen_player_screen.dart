@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:canvas_danmaku/canvas_danmaku.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -85,31 +86,39 @@ abstract interface class TvFullscreenVideoControllerProvider {
 
 /// TV 全屏播放器遥控器 seek 步长规则。
 ///
-/// 左右键长按前期保持小步进，持续操作后再平滑加速。
+/// 首次按下保持短跳，长按重复时固定 1 秒粒度，并通过缩短重复间隔实现加速。
 class TvFullscreenSeekStep {
   /// 私有构造，避免工具类被实例化。
   const TvFullscreenSeekStep._();
 
-  /// 起始 seek 秒数。
-  static const int minSeconds = 5;
+  /// 首次按下方向键时的 seek 秒数。
+  static const int initialPressSeconds = 5;
 
-  /// 长按加速后的最大 seek 秒数。
-  static const int maxSeconds = 19;
+  /// 长按重复事件的固定数字步进秒数。
+  static const int repeatStepSeconds = 1;
 
-  /// 固定小步进保持时间。
+  /// 长按前期保持初始重复间隔的时间。
   static const Duration holdDuration = Duration(seconds: 5);
 
-  /// 固定期结束后，从起始到最大步长的加速时间。
+  /// 固定期结束后，从初始重复间隔加速到最快间隔的时间。
   static const Duration rampDuration = Duration(seconds: 5);
 
-  /// 根据长按持续时间计算当前 seek 秒数。
-  static int secondsForElapsed(Duration elapsed) {
+  /// 长按重复前期的触发间隔。
+  static const int initialRepeatIntervalMs = 240;
+
+  /// 长按加速后的最快触发间隔。
+  static const int minRepeatIntervalMs = 60;
+
+  /// 根据长按持续时间计算当前重复 seek 的触发间隔。
+  static int repeatIntervalForElapsed(Duration elapsed) {
     final rampElapsed = elapsed - holdDuration;
     final progress = rampElapsed.inMilliseconds <= 0
         ? 0.0
         : (rampElapsed.inMilliseconds / rampDuration.inMilliseconds)
             .clamp(0.0, 1.0);
-    return (minSeconds + (maxSeconds - minSeconds) * progress).round();
+    return (initialRepeatIntervalMs -
+            (initialRepeatIntervalMs - minRepeatIntervalMs) * progress)
+        .round();
   }
 }
 
@@ -247,6 +256,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 播放列表分组定位 Key。
   final Map<int, GlobalKey> _episodeGroupTargetKeys = <int, GlobalKey>{};
 
+  /// 选集卡片尺寸缓存。
+  ///
+  /// 底部菜单切换和焦点移动会频繁重建菜单层，长标题尺寸测量需要缓存，避免
+  /// 每一帧都同步执行多次 `TextPainter.layout`。
+  final Map<String, _TvPlayerMenuCardSize> _episodeCardSizeCache =
+      <String, _TvPlayerMenuCardSize>{};
+
   /// 非播放列表二级菜单最近一次获焦下标。
   ///
   /// 一级菜单上下切换时，优先回到各自最近一次停留的二级项。
@@ -271,6 +287,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前播放源详情。
   late SearchResult? _currentDetail = widget.currentDetail;
+
+  /// 缓存后的播放器画面层。
+  ///
+  /// 底部菜单显示、焦点移动和自动隐藏都属于壳层 UI 状态，不应反复更新
+  /// Android WebView/平台视图播放器子树，否则会放大模拟器和 TV 设备上的合成开销。
+  Widget? _cachedPlayerLayer;
+
+  /// 当前播放器画面层对应的业务签名。
+  _TvFullscreenPlayerLayerSignature? _cachedPlayerLayerSignature;
 
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
@@ -376,11 +401,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前 seek 方向，-1 为后退，1 为前进。
   int _seekDirection = 0;
 
-  /// 当前方向键连续 seek 起始时间。
-  DateTime? _seekHoldStartAt;
+  /// 当前方向键连续 seek 起始时间戳。
+  Duration? _seekHoldStartAt;
 
-  /// 上一次 seek 按键触发时间。
-  DateTime? _lastSeekAt;
+  /// 上一次 seek 按键触发时间戳。
+  Duration? _lastSeekAt;
+
+  /// 上一次长按重复 seek 真正执行时间戳。
+  Duration? _lastSeekRepeatAppliedAt;
 
   /// seek 中心提示是否展示。
   bool _seekOverlayVisible = false;
@@ -522,6 +550,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       _bindTestHooks();
     }
 
+    if (!identical(oldWidget.playerBuilder, widget.playerBuilder) ||
+        !identical(oldWidget.playbackController, widget.playbackController) ||
+        oldWidget.reuseExistingPlayer != widget.reuseExistingPlayer) {
+      _invalidateCachedPlayerLayer();
+    }
+
     final sourceChanged =
         oldWidget.currentDetail?.source != widget.currentDetail?.source ||
             oldWidget.currentDetail?.id != widget.currentDetail?.id;
@@ -537,6 +571,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _episodeGroupIndex = nextEpisodeIndex ~/ _episodeGroupSize;
     _lastFocusedEpisodeIndex = nextEpisodeIndex;
     _lastFocusedEpisodeGroupIndex = _episodeGroupIndex;
+    _episodeCardSizeCache.clear();
+    _invalidateCachedPlayerLayer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _ensureCurrentSelectionsVisible();
@@ -565,9 +601,37 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (!mounted) {
       return;
     }
+    if (_adFilterEnabled == adFilterEnabled) {
+      return;
+    }
+    _invalidateCachedPlayerLayer();
     setState(() {
       _adFilterEnabled = adFilterEnabled;
     });
+  }
+
+  /// 清理播放器画面层缓存。
+  void _invalidateCachedPlayerLayer() {
+    _cachedPlayerLayer = null;
+    _cachedPlayerLayerSignature = null;
+  }
+
+  /// 当前播放器画面层签名。
+  _TvFullscreenPlayerLayerSignature _playerLayerSignature() {
+    final detail = _currentDetail;
+    return _TvFullscreenPlayerLayerSignature(
+      title: _title,
+      year: _year,
+      sourceName: _sourceName,
+      source: detail?.source,
+      sourceId: detail?.id,
+      episodeIndex: _episodeIndex,
+      episodeCount: _episodes.length,
+      episodeTitles: _episodeTitles,
+      fitType: _fitType,
+      adFilterEnabled: _adFilterEnabled,
+      playerBuilder: widget.playerBuilder,
+    );
   }
 
   /// 后台预热 M3U8 代理地址。
@@ -857,12 +921,20 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      _seekByDirection(-1);
+      _seekByDirection(
+        -1,
+        isRepeat: event is KeyRepeatEvent,
+        eventTimeStamp: event.timeStamp,
+      );
       return KeyEventResult.handled;
     }
 
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      _seekByDirection(1);
+      _seekByDirection(
+        1,
+        isRepeat: event is KeyRepeatEvent,
+        eventTimeStamp: event.timeStamp,
+      );
       return KeyEventResult.handled;
     }
 
@@ -914,12 +986,20 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     if (key == LogicalKeyboardKey.arrowLeft) {
-      _seekByDirection(-1);
+      _seekByDirection(
+        -1,
+        isRepeat: event is KeyRepeatEvent,
+        eventTimeStamp: event.timeStamp,
+      );
       return true;
     }
 
     if (key == LogicalKeyboardKey.arrowRight) {
-      _seekByDirection(1);
+      _seekByDirection(
+        1,
+        isRepeat: event is KeyRepeatEvent,
+        eventTimeStamp: event.timeStamp,
+      );
       return true;
     }
 
@@ -1002,26 +1082,44 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   }
 
   /// 按左右方向键执行相对 seek。
-  void _seekByDirection(int direction) {
+  void _seekByDirection(
+    int direction, {
+    required bool isRepeat,
+    required Duration eventTimeStamp,
+  }) {
     final duration = _currentPlaybackDuration;
     if (duration <= Duration.zero) {
       return;
     }
 
-    final now = DateTime.now();
     final lastSeekAt = _lastSeekAt;
     final shouldReset = _seekDirection != direction ||
         lastSeekAt == null ||
-        now.difference(lastSeekAt) > const Duration(milliseconds: 900);
+        eventTimeStamp - lastSeekAt > const Duration(milliseconds: 900);
     if (shouldReset) {
       _seekDirection = direction;
-      _seekHoldStartAt = now;
+      _seekHoldStartAt = eventTimeStamp;
       _seekPreviewPosition = _currentPlaybackPosition;
+      _lastSeekRepeatAppliedAt = null;
     }
-    _lastSeekAt = now;
+    _lastSeekAt = eventTimeStamp;
 
-    final elapsed = now.difference(_seekHoldStartAt ?? now);
-    final seconds = TvFullscreenSeekStep.secondsForElapsed(elapsed);
+    final elapsed = eventTimeStamp - (_seekHoldStartAt ?? eventTimeStamp);
+    if (isRepeat) {
+      final repeatInterval = TvFullscreenSeekStep.repeatIntervalForElapsed(
+        elapsed,
+      );
+      final lastRepeatAppliedAt = _lastSeekRepeatAppliedAt;
+      if (lastRepeatAppliedAt != null &&
+          (eventTimeStamp - lastRepeatAppliedAt).inMilliseconds <
+              repeatInterval) {
+        return;
+      }
+      _lastSeekRepeatAppliedAt = eventTimeStamp;
+    }
+    final seconds = isRepeat
+        ? TvFullscreenSeekStep.repeatStepSeconds
+        : TvFullscreenSeekStep.initialPressSeconds;
     final basePosition = _seekPreviewPosition ?? _currentPlaybackPosition;
     final target = _clampDuration(
       basePosition + Duration(seconds: seconds * direction),
@@ -1180,6 +1278,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekDirection = 0;
     _seekHoldStartAt = null;
     _lastSeekAt = null;
+    _lastSeekRepeatAppliedAt = null;
     _seekPreviewPosition = null;
     _seekPreviewDuration = null;
   }
@@ -1925,6 +2024,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
     unawaited(_saveProgress(force: true, scene: scene));
     final nextGroupIndex = index ~/ _episodeGroupSize;
+    _invalidateCachedPlayerLayer();
     setState(() {
       _episodeIndex = index;
       _episodeGroupIndex = nextGroupIndex;
@@ -1974,6 +2074,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final currentTotalDuration = _currentPlaybackDuration.inSeconds;
     final currentEpisode = _episodeIndex;
 
+    _episodeCardSizeCache.clear();
+    _invalidateCachedPlayerLayer();
     setState(() {
       _currentDetail = source;
       final maxEpisodeIndex =
@@ -2005,6 +2107,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 切换画面比例。
   void _switchFit(VideoFitType fitType) {
+    if (_fitType == fitType) {
+      return;
+    }
+    _invalidateCachedPlayerLayer();
     setState(() => _fitType = fitType);
     _effectiveVideoController?.setVideoFit(fitType);
   }
@@ -2400,7 +2506,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Widget _buildPlayer() {
     widget.testHooks?.onAdFilterResolved?.call(_adFilterEnabled);
 
-    return widget.playerBuilder?.call(
+    final signature = _playerLayerSignature();
+    final cachedLayer = _cachedPlayerLayer;
+    if (cachedLayer != null && _cachedPlayerLayerSignature == signature) {
+      return cachedLayer;
+    }
+
+    final player = widget.playerBuilder?.call(
           context,
           _handlePlayerControllerCreated,
         ) ??
@@ -2429,6 +2541,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           },
           onVideoCompleted: _handleVideoCompleted,
         );
+
+    _cachedPlayerLayerSignature = signature;
+    _cachedPlayerLayer = RepaintBoundary(
+      key: const ValueKey('tv-fullscreen-player-layer'),
+      child: player,
+    );
+    return _cachedPlayerLayer!;
   }
 
   /// 记录播放器控制器并执行一次首次续播加载。
@@ -3339,6 +3458,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 先根据单行标题宽度算出卡片宽度，再按该宽度测量折行后的高度。
   _TvPlayerMenuCardSize _resolveEpisodeCardSize(String label) {
     final safeLabel = label.trim().isEmpty ? '第${_episodeIndex + 1}集' : label;
+    final cachedSize = _episodeCardSizeCache[safeLabel];
+    if (cachedSize != null) {
+      return cachedSize;
+    }
+
     final textStyle = FontUtils.poppins(
       fontSize: 18,
       fontWeight: FontWeight.w800,
@@ -3380,11 +3504,98 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         )
         .ceilToDouble();
 
-    return _TvPlayerMenuCardSize(
+    final size = _TvPlayerMenuCardSize(
       width: cardWidth,
       height: cardHeight,
     );
+    _episodeCardSizeCache[safeLabel] = size;
+    return size;
   }
+}
+
+/// TV 全屏播放器画面层签名。
+///
+/// 只有这些字段变化才会影响底层播放器 Widget 配置；菜单显隐、焦点位置、
+/// seek 提示和顶部时钟不进入签名，避免操作态反复更新 Android 平台视图。
+class _TvFullscreenPlayerLayerSignature {
+  /// 创建播放器画面层签名。
+  const _TvFullscreenPlayerLayerSignature({
+    required this.title,
+    required this.year,
+    required this.sourceName,
+    required this.source,
+    required this.sourceId,
+    required this.episodeIndex,
+    required this.episodeCount,
+    required this.episodeTitles,
+    required this.fitType,
+    required this.adFilterEnabled,
+    required this.playerBuilder,
+  });
+
+  /// 当前标题。
+  final String title;
+
+  /// 当前年份。
+  final String year;
+
+  /// 当前来源名称。
+  final String sourceName;
+
+  /// 当前来源标识。
+  final String? source;
+
+  /// 当前来源内视频 ID。
+  final String? sourceId;
+
+  /// 当前选集下标。
+  final int episodeIndex;
+
+  /// 当前选集总数。
+  final int episodeCount;
+
+  /// 当前选集标题列表。
+  final List<String> episodeTitles;
+
+  /// 当前画面比例。
+  final VideoFitType fitType;
+
+  /// 当前自动去广告开关。
+  final bool adFilterEnabled;
+
+  /// 当前测试或特殊播放器构建函数。
+  final TvFullscreenPlayerBuilder? playerBuilder;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _TvFullscreenPlayerLayerSignature &&
+        other.title == title &&
+        other.year == year &&
+        other.sourceName == sourceName &&
+        other.source == source &&
+        other.sourceId == sourceId &&
+        other.episodeIndex == episodeIndex &&
+        other.episodeCount == episodeCount &&
+        other.fitType == fitType &&
+        other.adFilterEnabled == adFilterEnabled &&
+        identical(other.playerBuilder, playerBuilder) &&
+        listEquals(other.episodeTitles, episodeTitles);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        title,
+        year,
+        sourceName,
+        source,
+        sourceId,
+        episodeIndex,
+        episodeCount,
+        fitType,
+        adFilterEnabled,
+        identityHashCode(playerBuilder),
+        Object.hashAll(episodeTitles),
+      );
 }
 
 /// TV 播放器二级卡片尺寸。

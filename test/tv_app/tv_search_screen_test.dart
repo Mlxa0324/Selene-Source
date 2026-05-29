@@ -649,6 +649,39 @@ void main() {
     expect(_focusNodeForText(tester, '世界的主人').hasFocus, isTrue);
   });
 
+  testWidgets('right arrow on keyboard enters nearest default right panel item',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: ['蜡笔小新', '人世间', '幽灵'],
+            hotWords: [],
+            recommends: [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final keyboardFocusNode = _focusNodeForText(tester, 'L');
+    keyboardFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(keyboardFocusNode.hasFocus, isTrue);
+
+    final expectedNearestItem = _nearestTextLabelByCenterY(
+      tester,
+      sourceLabel: 'L',
+      candidateLabels: const ['蜡笔小新', '人世间', '幽灵'],
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForText(tester, expectedNearestItem).hasFocus, isTrue);
+  });
+
   testWidgets('left arrow on suggestion returns focus to left controls',
       (tester) async {
     await tester.pumpWidget(
@@ -2776,6 +2809,81 @@ void main() {
     expect(rootColoredBox.color, const Color(0xFF10131D));
   });
 
+  testWidgets('search result header follows global TV background color',
+      (tester) async {
+    final themeService = TvThemeService()
+      ..setBackgroundKey(TvThemeBackground.deepBlackKey);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: TvSearchScreen(
+            loadSearchData: (_) async => const TvSearchData(
+              searchHistory: [],
+              hotWords: [],
+              recommends: [],
+            ),
+            loadSuggestions: (_) async => const ['人世间'],
+            loadSearchResultsWithProgress: (
+              query, {
+              required onPartialResults,
+              required onProgress,
+            }) async {
+              onProgress(
+                const SearchProgressSnapshot(
+                  totalResources: 1,
+                  completedResources: 1,
+                  currentResourceName: '测试源',
+                  isComplete: true,
+                ),
+              );
+              onPartialResults(
+                <SearchResult>[
+                  SearchResult(
+                    title: '人世间',
+                    year: '2024',
+                    sourceName: '源一',
+                    source: 'source_1',
+                    id: 'video_1',
+                    poster: '',
+                    episodes: ['第1集'],
+                    episodesTitles: ['第1集'],
+                  ),
+                ],
+              );
+              return <SearchResult>[
+                SearchResult(
+                  title: '人世间',
+                  year: '2024',
+                  sourceName: '源一',
+                  source: 'source_1',
+                  id: 'video_1',
+                  poster: '',
+                  episodes: ['第1集'],
+                  episodesTitles: ['第1集'],
+                ),
+              ];
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('R'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-人世间')));
+    await tester.pumpAndSettle();
+
+    final header = tester.widget<Container>(
+      find.byKey(const ValueKey('tv-search-result-header')),
+    );
+
+    expect(header.color, TvThemeBackground.deepBlack.color);
+  });
+
   testWidgets('right search panels use more compact sizing', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -3308,9 +3416,28 @@ String _nearestLabelByCenterY(
   required List<String> candidateLabels,
 }) {
   final sourceCenterY = tester
-      .getRect(find.byKey(ValueKey('tv-video-card-focus-video_0')))
+      .getRect(find.byKey(const ValueKey('tv-video-card-focus-video_0')))
       .center
       .dy;
+  String? nearestLabel;
+  double? minDistance;
+  for (final label in candidateLabels) {
+    final candidateCenterY = tester.getRect(find.text(label)).center.dy;
+    final distance = (sourceCenterY - candidateCenterY).abs();
+    if (minDistance == null || distance < minDistance) {
+      minDistance = distance;
+      nearestLabel = label;
+    }
+  }
+  return nearestLabel!;
+}
+
+String _nearestTextLabelByCenterY(
+  WidgetTester tester, {
+  required String sourceLabel,
+  required List<String> candidateLabels,
+}) {
+  final sourceCenterY = tester.getRect(find.text(sourceLabel)).center.dy;
   String? nearestLabel;
   double? minDistance;
   for (final label in candidateLabels) {

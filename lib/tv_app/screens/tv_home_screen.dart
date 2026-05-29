@@ -806,9 +806,6 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   static const String _hotAnimeSectionFocusGroup = 'tv-home-section-新番放送';
   static const String _hotVarietySectionFocusGroup = 'tv-home-section-热门综艺';
 
-  /// TV 顶部固定区域半透遮罩色。
-  static const Color _topScrimColor = Color(0xD00B0D0E);
-
   /// 顶部菜单收起动画时长。
   static const Duration _topNavAnimationDuration = Duration(milliseconds: 240);
 
@@ -1367,6 +1364,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   /// 构建带收起动画的顶部导航。
   Widget _buildAnimatedTopNav() {
+    // 非首页标签页需要和全局 TV 页面背景保持一致，避免顶部区域残留写死底色。
+    final topNavBackgroundColor =
+        _selectedIndex == 0 ? Colors.transparent : TvTheme.backgroundOf(context).color;
     return AnimatedSwitcher(
       duration: _topNavAnimationDuration,
       switchInCurve: Curves.easeOutCubic,
@@ -1386,8 +1386,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
           : DecoratedBox(
               key: const ValueKey('tv-top-nav-visible'),
               decoration: BoxDecoration(
-                color:
-                    _selectedIndex == 0 ? Colors.transparent : _topScrimColor,
+                color: topNavBackgroundColor,
               ),
               child: TvTopNav(
                 tabs: _tabs,
@@ -1508,6 +1507,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
                 onVideoLongPressed: _deleteContinueWatchingItem,
                 autofocusFirstItem: true,
                 firstItemFocusNode: _continueWatchingFirstFocusNode,
+                onArrowUpFromAnyItem: _topNavController.requestSelectedFocus,
                 onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
                 onArrowDownToNextSection: () =>
                     _requestAdjacentHomeSectionFocus(
@@ -1524,6 +1524,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotMoviesScrollController,
               onVideoPressed: (video) => _openVideo(video, stype: 'movie'),
               firstItemFocusNode: _hotMoviesFirstFocusNode,
+              onArrowUpFromAnyItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotMovies,
+                moveForward: false,
+              ),
               onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
                 currentSection: _TvHomeSectionKey.hotMovies,
                 moveForward: false,
@@ -1541,6 +1545,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotSeriesScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotSeriesFirstFocusNode,
+              onArrowUpFromAnyItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotTvShows,
+                moveForward: false,
+              ),
               onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
                 currentSection: _TvHomeSectionKey.hotTvShows,
                 moveForward: false,
@@ -1560,6 +1568,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotAnimeScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotAnimeFirstFocusNode,
+              onArrowUpFromAnyItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.bangumiCalendar,
+                moveForward: false,
+              ),
               onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
                 currentSection: _TvHomeSectionKey.bangumiCalendar,
                 moveForward: false,
@@ -1577,6 +1589,10 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               scrollController: _hotVarietyScrollController,
               onVideoPressed: _openVideo,
               firstItemFocusNode: _hotVarietyFirstFocusNode,
+              onArrowUpFromAnyItem: () => _requestAdjacentHomeSectionFocus(
+                currentSection: _TvHomeSectionKey.hotShows,
+                moveForward: false,
+              ),
               onArrowUpFromFirstItem: () => _requestAdjacentHomeSectionFocus(
                 currentSection: _TvHomeSectionKey.hotShows,
                 moveForward: false,
@@ -2066,16 +2082,22 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 避免焦点系统按几何距离默认跳到中间列卡片。
   bool _requestFirstAvailableHomeSectionFocus() {
     for (final target in _homeSectionFocusTargets()) {
-      if (!_isAttachedFocusableNode(target.firstNode)) {
+      if (_hasEnteredHomeContentOnce) {
+        if (_requestHomeSectionFocus(
+          focusGroupKey: target.groupKey,
+          fallbackFocusNode: target.firstNode,
+        )) {
+          return true;
+        }
         continue;
       }
-      if (_hasEnteredHomeContentOnce &&
-          TvFocusable.requestRememberedFocusForGroup(target.groupKey)) {
+      if (_requestHomeSectionFocus(
+        focusGroupKey: target.groupKey,
+        fallbackFocusNode: target.firstNode,
+      )) {
+        _hasEnteredHomeContentOnce = true;
         return true;
       }
-      _hasEnteredHomeContentOnce = true;
-      target.firstNode.requestFocus();
-      return true;
     }
     return false;
   }
@@ -2086,7 +2108,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 避免某个中间分区为空时还写死跳到它，导致焦点停在原地。
   List<({Object groupKey, FocusNode firstNode, _TvHomeSectionKey section})>
       _homeSectionFocusTargets() {
-    return <({Object groupKey, FocusNode firstNode, _TvHomeSectionKey section})>[
+    return <({
+      Object groupKey,
+      FocusNode firstNode,
+      _TvHomeSectionKey section
+    })>[
       if (_showContinueWatchingSection)
         (
           groupKey: _continueWatchingSectionFocusGroup,
@@ -2137,14 +2163,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         index >= 0 && index < focusTargets.length;
         index += step) {
       final target = focusTargets[index];
-      if (!_isAttachedFocusableNode(target.firstNode)) {
-        continue;
-      }
-      _requestHomeSectionFocus(
+      if (_requestHomeSectionFocus(
         focusGroupKey: target.groupKey,
         fallbackFocusNode: target.firstNode,
-      );
-      return;
+      )) {
+        return;
+      }
     }
 
     // 已经来到首页内容区最顶部的非空分区时，上键应当回到当前顶部导航入口。
@@ -2158,17 +2182,20 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   ///
   /// 多个横向分区上下切换时，统一优先回到分区里上次停留的卡片，
   /// 没有焦点记忆时才回到该分区第一张卡片。
-  void _requestHomeSectionFocus({
+  bool _requestHomeSectionFocus({
     required Object focusGroupKey,
     required FocusNode fallbackFocusNode,
   }) {
-    if (!_isAttachedFocusableNode(fallbackFocusNode)) {
-      return;
-    }
+    // 横向分区滚到右侧后，首卡可能已经被 Sliver 回收；这时要先尝试该分区最近
+    // 一次停留的可用卡片，再退回到首卡兜底，避免整排被误判为“不可回焦”。
     if (TvFocusable.requestRememberedFocusForGroup(focusGroupKey)) {
-      return;
+      return true;
+    }
+    if (!_isAttachedFocusableNode(fallbackFocusNode)) {
+      return false;
     }
     fallbackFocusNode.requestFocus();
+    return true;
   }
 
   /// 判断首页分区首卡焦点节点是否已挂到真实控件上。

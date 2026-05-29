@@ -123,9 +123,6 @@ class TvCategoryFilterPanel extends StatefulWidget {
 }
 
 class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
-  /// 筛选面板半透黑色遮罩，避免下方海报和选项文字重叠。
-  static const Color _panelScrimColor = Color(0xD00B0D0E);
-
   /// 展开态左侧保留页面对齐，右侧贴齐屏幕边缘。
   static const double _expandedLeftPadding = TvLayout.pageHorizontalPadding;
 
@@ -330,11 +327,14 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
   @override
   Widget build(BuildContext context) {
     final rows = _rows;
+    // 分类页筛选摘要和面板也需要跟随全局 TV 背景，只保留轻量半透覆盖感。
+    final panelBackgroundColor =
+        TvTheme.backgroundOf(context).color.withAlpha(0xD0);
     if (widget.mode == TvCategoryFilterPanelMode.compact) {
       return Container(
         key: const ValueKey('tv-category-filter-summary'),
         padding: _compactPadding,
-        color: _panelScrimColor,
+        color: panelBackgroundColor,
         child: _TvCategoryFilterCompactSummary(
           rows: rows,
           selectedOptions: widget.selectedOptions,
@@ -350,7 +350,7 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
         _expandedRightPadding,
         _expandedBottomPadding,
       ),
-      color: _panelScrimColor,
+      color: panelBackgroundColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

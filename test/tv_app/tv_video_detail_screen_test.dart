@@ -198,7 +198,8 @@ void main() {
     expect(movieLeft, lessThan(shortLeft));
   });
 
-  testWidgets('detail source order cache skips rereading sources on parent rebuild',
+  testWidgets(
+      'detail source order cache skips rereading sources on parent rebuild',
       (tester) async {
     await _setTvSurfaceSize(tester);
     final countedSources = _CountedSearchResultList([
@@ -314,8 +315,8 @@ void main() {
     final shortLeft = tester.getTopLeft(find.text('短资源')).dx;
 
     expect(countedSources.readCount, 0);
-    expect(movieLeft, lessThan(maxLeft));
-    expect(maxLeft, lessThan(stormLeft));
+    expect(maxLeft, lessThan(movieLeft));
+    expect(movieLeft, lessThan(stormLeft));
     expect(stormLeft, lessThan(shortLeft));
   });
 
@@ -405,10 +406,12 @@ void main() {
     expect(resolvedAdFilterEnabled, isFalse);
   });
 
-  testWidgets('detail keeps first playable source independent from slow recommends',
+  testWidgets(
+      'detail keeps first playable source independent from slow recommends',
       (tester) async {
     await _setTvSurfaceSize(tester);
     final recommendsCompleter = Completer<List<VideoInfo>>();
+    var controllerCreated = false;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -421,10 +424,22 @@ void main() {
             _searchResult('source_a', '主源'),
           ],
           loadRecommends: (_, __, ___) => recommendsCompleter.future,
-          playerBuilder: (_, __) => Container(
-            key: const ValueKey('tv-detail-player-placeholder'),
-            color: Colors.black,
-          ),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 3600),
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
           fullscreenPlayerBuilder: (_, __) => Container(
             key: const ValueKey('tv-fullscreen-player-placeholder'),
             color: Colors.black,
@@ -450,6 +465,63 @@ void main() {
 
     expect(find.text('相关推荐'), findsOneWidget);
     expect(find.text('推荐影片'), findsOneWidget);
+  });
+
+  testWidgets('detail starts playback request before recommends loader',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final events = <String>[];
+    final recommendsCompleter = Completer<List<VideoInfo>>();
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadInitialSources: (_, __) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadMoreSources: (_, __, ___) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadRecommends: (_, __, ___) async {
+            events.add('recommend-start');
+            return recommendsCompleter.future;
+          },
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 3600),
+                  onUpdateDataSource: (url, {startAt, headers}) {
+                    events.add('play-request');
+                  },
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump();
+
+    expect(events, containsAllInOrder(['play-request', 'recommend-start']));
+
+    recommendsCompleter.complete(const <VideoInfo>[]);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('detail recommends are recorded for TV search page cache',
@@ -629,6 +701,59 @@ void main() {
     expect(find.byKey(const ValueKey('tv-search-screen')), findsOneWidget);
   });
 
+  testWidgets('detail search replaces detail route to release page instance',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      TvVideoDetailScreen(
+                    videoInfo: _videoInfo('main', '主影片'),
+                    loadDetail: (_, __) async => TvVideoDetailData(
+                      currentDetail: _searchResult('source_a', '主源'),
+                      sources: [
+                        _searchResult('source_a', '主源'),
+                      ],
+                      recommends: const [],
+                    ),
+                    playerBuilder: (_, __) => Container(
+                      key: const ValueKey('tv-detail-player-placeholder'),
+                      color: Colors.black,
+                    ),
+                    fullscreenPlayerBuilder: (_, __) => Container(
+                      key: const ValueKey('tv-fullscreen-player-placeholder'),
+                      color: Colors.black,
+                    ),
+                  ),
+                  transitionDuration: Duration.zero,
+                  reverseTransitionDuration: Duration.zero,
+                ),
+              );
+            },
+            child: const Text('打开详情页'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开详情页'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TvVideoDetailScreen), findsOneWidget);
+
+    await _pumpUntilFound(tester, find.text('搜索'));
+    await tester.tap(find.text('搜索'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-search-screen')), findsOneWidget);
+    expect(find.byType(TvVideoDetailScreen), findsNothing);
+  });
+
   testWidgets('moving focus from player to fullscreen keeps scroll position',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -736,7 +861,7 @@ void main() {
     );
   });
 
-  testWidgets('detail page guide shares the same leading line as content',
+  testWidgets('detail section titles align with their list leading edge',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -767,15 +892,47 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final guideLeft = tester.getTopLeft(find.text('IvyTV')).dx;
     final sourceTitleLeft = tester.getTopLeft(find.text('切换线路')).dx;
+    final sourceChipLeft = tester
+        .getRect(
+          find
+              .ancestor(
+                of: find.text('主源'),
+                matching: find.byType(AnimatedContainer),
+              )
+              .first,
+        )
+        .left;
+    final episodeTitleLeft = tester.getTopLeft(find.text('选集')).dx;
+    final episodeChipLeft = tester
+        .getRect(
+          find
+              .ancestor(
+                of: find.text('第1集'),
+                matching: find.byType(AnimatedContainer),
+              )
+              .first,
+        )
+        .left;
     final recommendTitleLeft = tester.getTopLeft(find.text('相关推荐')).dx;
+    final recommendCardLeft = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('推荐影片'),
+            matching: find.byWidgetPredicate((widget) => widget is TvVideoCard),
+          )
+          .first,
+    ).left;
 
-    expect((guideLeft - sourceTitleLeft).abs(), lessThanOrEqualTo(1));
-    expect((guideLeft - recommendTitleLeft).abs(), lessThanOrEqualTo(1));
+    expect((sourceTitleLeft - sourceChipLeft).abs(), lessThanOrEqualTo(1));
+    expect((episodeTitleLeft - episodeChipLeft).abs(), lessThanOrEqualTo(1));
+    expect(
+      (recommendTitleLeft - recommendCardLeft).abs(),
+      lessThanOrEqualTo(1),
+    );
   });
 
-  testWidgets('paused detail preview shows TV playback chrome', (tester) async {
+  testWidgets('paused detail preview hides TV playback chrome', (tester) async {
     await _setTvSurfaceSize(tester);
     var controllerCreated = false;
 
@@ -820,14 +977,14 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('tv-detail-preview-center-play')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey('tv-detail-preview-bottom-progress')),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text('02:49'), findsOneWidget);
-    expect(find.text('24:21'), findsOneWidget);
+    expect(find.text('02:49'), findsNothing);
+    expect(find.text('24:21'), findsNothing);
   });
 
   testWidgets('loading detail preview shows spinner without pause chrome',
@@ -886,6 +1043,108 @@ void main() {
       find.byKey(const ValueKey('tv-detail-preview-bottom-progress')),
       findsNothing,
     );
+  });
+
+  testWidgets('loading detail preview still allows moving focus to source row',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+              _searchResult('source_b', '备用源'),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: false,
+                  isLoading: true,
+                  currentPosition: const Duration(minutes: 2, seconds: 49),
+                  duration: const Duration(minutes: 24, seconds: 21),
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    _expectFocused(
+      tester,
+      find.byKey(const ValueKey('tv-detail-player-entry')),
+    );
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    _expectFocused(tester, find.text('主源'));
+  });
+
+  testWidgets(
+      'detail player keeps outer TV focus navigation when preview subtree requests focus',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+              _searchResult('source_b', '备用源'),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => const _DirectionalKeyEatingPreview(),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    _expectFocused(
+      tester,
+      find.byKey(const ValueKey('tv-detail-player-entry')),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    _expectFocused(tester, find.text('主源'));
   });
 
   testWidgets('detail preview spinner hides once playback has started',
@@ -1819,6 +2078,62 @@ void main() {
     );
   });
 
+  testWidgets('bottom action stays fully visible when focused from recommends',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 25,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 25),
+            ],
+            recommends: [
+              _videoInfo('recommend_1', '推荐影片'),
+            ],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('推荐影片'))).requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _expectFocused(tester, find.text('回到顶部'));
+
+    final viewportRect = tester.getRect(find.byType(SingleChildScrollView));
+    final buttonRect = tester.getRect(
+      find
+          .ancestor(
+            of: find.text('回到顶部'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+
+    // 底部按钮获焦后必须完整留在可视区域内，避免焦点框被页面底边裁掉。
+    expect(buttonRect.top, greaterThanOrEqualTo(viewportRect.top));
+    expect(buttonRect.bottom, lessThanOrEqualTo(viewportRect.bottom - 12));
+  });
+
   testWidgets('renders episode groups for long TV episode lists',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -2530,7 +2845,7 @@ void main() {
   });
 
   testWidgets(
-      'detail recommend list keeps first focus border after edge return',
+      'detail recommend list keeps first focused card inside leading safe inset after edge return',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -2587,7 +2902,7 @@ void main() {
       tester,
       listKey: 'tv-detail-recommend-list',
       itemFinder: find.text('推荐影片0'),
-      minLeadingInset: 10,
+      minLeadingInset: 16,
     );
   });
 
@@ -4297,16 +4612,20 @@ void _expectVideoCardFocusPaintInsideList(
   double minLeadingInset = 1,
 }) {
   final listRect = tester.getRect(find.byKey(ValueKey(listKey)));
-  final cardRect = tester.getRect(
-    find
-        .ancestor(
-          of: itemFinder,
-          matching: find.byWidgetPredicate((widget) => widget is TvVideoCard),
-        )
-        .first,
+  final cardFinder = find
+      .ancestor(
+        of: itemFinder,
+        matching: find.byWidgetPredicate((widget) => widget is TvVideoCard),
+      )
+      .first;
+  final cardRect = tester.getRect(cardFinder);
+  final cardWidget = tester.widget<TvVideoCard>(cardFinder);
+  final alignmentFactor = ((cardWidget.scaleAlignment.x + 1) / 2).clamp(
+    0.0,
+    1.0,
   );
-  final scaledWidth = cardRect.width * TvVideoCard.focusedScale;
-  final scaledLeft = cardRect.center.dx - (scaledWidth / 2);
+  final scaledLeft =
+      cardRect.left + (cardRect.width * alignmentFactor * (1 - TvVideoCard.focusedScale));
   expect(scaledLeft, greaterThanOrEqualTo(listRect.left + minLeadingInset));
 }
 
@@ -4473,6 +4792,61 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   double? get volume => 1.0;
+}
+
+/// 测试用：模拟会主动请求内部焦点、并吞掉方向键的预览子树。
+///
+/// 用于验证详情页外层播放器焦点在内层真实播放器抢焦点时，
+/// 仍然能按 TV 既定的方向键规则继续移动。
+class _DirectionalKeyEatingPreview extends StatefulWidget {
+  /// 创建抢焦点预览占位。
+  const _DirectionalKeyEatingPreview();
+
+  @override
+  State<_DirectionalKeyEatingPreview> createState() =>
+      _DirectionalKeyEatingPreviewState();
+}
+
+class _DirectionalKeyEatingPreviewState
+    extends State<_DirectionalKeyEatingPreview> {
+  /// 预览子树内部焦点节点。
+  final FocusNode _innerFocusNode = FocusNode(
+    debugLabel: 'focus-stealing-preview-inner',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _innerFocusNode.requestFocus();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _innerFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _innerFocusNode,
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Container(
+        key: const ValueKey('directional-key-eating-preview'),
+        color: Colors.black,
+      ),
+    );
+  }
 }
 
 /// 统计 TV 详情页对源列表元素读取次数的测试桩。
