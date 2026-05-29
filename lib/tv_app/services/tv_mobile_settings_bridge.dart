@@ -119,10 +119,10 @@ class TvMobileSettingsBridgeSession {
 ///
 /// 负责在局域网里起一个轻量网页，让手机扫码后填写配置并回传给电视。
 class TvMobileSettingsBridge {
-  /// 手机扫码配置固定端口。
+  /// 手机扫码配置起始端口。
   ///
-  /// 同一 App 生命周期内保持端口不变，方便电视端和手机端重复使用同一地址。
-  static const int sharePort = 18321;
+  /// 默认优先从这个端口开始尝试，方便局域网里人工核对地址。
+  static const int initialSharePort = 18321;
 
   /// 手机网页可用时的默认提示。
   static const String readyStatus = '请使用与电视同一局域网的手机扫码填写配置';
@@ -138,12 +138,18 @@ class TvMobileSettingsBridge {
   /// 只要应用进程不退出，就尽量复用第一次成功解析出的地址，避免二维码频繁变动。
   static String? _cachedShareHost;
 
+  /// 下一个优先尝试的分享端口。
+  ///
+  /// 每次手动重生成二维码后都会递增，确保新的二维码地址确实发生变化。
+  static int _nextPreferredPort = initialSharePort;
+
   /// 启动一个新的手机配置桥接会话。
   static Future<TvMobileSettingsBridgeSession> startSession(
     TvMobileSettingsDraft initialDraft,
     ValueChanged<TvMobileSettingsDraft> onDraftSubmitted, {
     InternetAddress? bindAddress,
     String? preferredHost,
+    bool allocateNewPort = false,
   }) async {
     final shareHost = await _resolveShareHost(preferredHost);
     final statusNotifier = ValueNotifier<String>(
@@ -160,9 +166,9 @@ class TvMobileSettingsBridge {
       );
     }
 
-    final server = await HttpServer.bind(
-      bindAddress ?? InternetAddress.anyIPv4,
-      sharePort,
+    final server = await _bindShareServer(
+      bindAddress: bindAddress ?? InternetAddress.anyIPv4,
+      allocateNewPort: allocateNewPort,
     );
     final runner = _RunningTvMobileSettingsBridge(
       server: server,
@@ -178,6 +184,24 @@ class TvMobileSettingsBridge {
       updateDraft: runner.updateDraft,
       dispose: runner.dispose,
     );
+  }
+
+  /// 绑定扫码配置服务端口。
+  static Future<HttpServer> _bindShareServer({
+    required InternetAddress bindAddress,
+    required bool allocateNewPort,
+  }) async {
+    final preferredPort = allocateNewPort ? _nextPreferredPort + 1 : _nextPreferredPort;
+    var candidatePort = preferredPort;
+    while (true) {
+      try {
+        final server = await HttpServer.bind(bindAddress, candidatePort);
+        _nextPreferredPort = server.port;
+        return server;
+      } on SocketException {
+        candidatePort++;
+      }
+    }
   }
 
   /// 解析当前设备对手机可见的局域网地址。

@@ -41,6 +41,8 @@ class TvVideoGrid extends StatefulWidget {
     this.isLoadingMore = false,
     this.hasMore = false,
     this.onLoadMore,
+    this.initialRenderCount = TvVideoGrid.defaultInitialRenderCount,
+    this.renderBatchSize = TvVideoGrid.defaultRenderBatchSize,
   });
 
   /// 页面标题。
@@ -133,8 +135,25 @@ class TvVideoGrid extends StatefulWidget {
   /// 触发加载下一页的回调。
   final VoidCallback? onLoadMore;
 
+  /// 首批渲染数量。
+  ///
+  /// 大列表首次进入时，只先挂载这一批卡片，
+  /// 降低搜索结果页和独立视频库页首屏一次性建树压力。
+  final int initialRenderCount;
+
+  /// 每次追加渲染数量。
+  ///
+  /// 当焦点逼近当前批次尾部时，继续按这一批次扩充可导航卡片。
+  final int renderBatchSize;
+
   /// Grid 横向间距。
   static const double defaultCrossAxisSpacing = 26.0;
+
+  /// 默认首批渲染数量。
+  static const int defaultInitialRenderCount = 80;
+
+  /// 默认单次追加渲染数量。
+  static const int defaultRenderBatchSize = 40;
 
   /// Grid 纵向间距。
   static const double mainAxisSpacing = 34.0;
@@ -152,13 +171,104 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   /// 同一批数据里多个倒数第二行卡片连续获焦时，只触发一次分页。
   int? _lastLoadMoreTriggerLength;
 
+  /// 当前已经开放给 Grid 的卡片数量。
+  ///
+  /// 这里只控制“能参与构建和焦点导航的条目数”，
+  /// 让大列表先展示首批卡片，后续再随着焦点推进逐步放开。
+  int _visibleItemCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleItemCount = _computeInitialVisibleItemCount(widget.videos.length);
+  }
+
   @override
   void didUpdateWidget(covariant TvVideoGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videos.length != widget.videos.length ||
+        oldWidget.initialRenderCount != widget.initialRenderCount ||
+        oldWidget.renderBatchSize != widget.renderBatchSize ||
+        oldWidget.hasMore != widget.hasMore) {
+      _syncVisibleItemCount(oldWidget);
+    }
+    if (oldWidget.videos.length != widget.videos.length ||
         oldWidget.isLoadingMore && !widget.isLoadingMore && widget.hasMore) {
       _lastLoadMoreTriggerLength = null;
     }
+  }
+
+  /// 当前实际参与构建的卡片数量。
+  ///
+  /// 结果必须落在 `0 ~ videos.length` 范围内，避免委托 childCount 越界。
+  int get _renderedItemCount {
+    if (widget.videos.isEmpty) {
+      return 0;
+    }
+    return _visibleItemCount.clamp(0, widget.videos.length) as int;
+  }
+
+  /// 计算首批应该开放的卡片数量。
+  ///
+  /// 当列表本身比首批阈值更短时，直接全部渲染，避免小列表反而被人为截断。
+  int _computeInitialVisibleItemCount(int totalItemCount) {
+    if (totalItemCount <= 0) {
+      return 0;
+    }
+    return totalItemCount < widget.initialRenderCount
+        ? totalItemCount
+        : widget.initialRenderCount;
+  }
+
+  /// 在数据长度变化后同步当前可见批次。
+  ///
+  /// 1. 小列表始终全部开放。
+  /// 2. 大列表默认回落到首批数量。
+  /// 3. 真分页场景在“原列表已全部开放”的前提下，自动把新页数据一并放开。
+  void _syncVisibleItemCount(TvVideoGrid oldWidget) {
+    final totalItemCount = widget.videos.length;
+    if (totalItemCount <= 0) {
+      _visibleItemCount = 0;
+      return;
+    }
+
+    final initialVisibleItemCount =
+        _computeInitialVisibleItemCount(totalItemCount);
+    if (totalItemCount <= widget.initialRenderCount) {
+      _visibleItemCount = totalItemCount;
+      return;
+    }
+
+    final appendedByPaging = totalItemCount > oldWidget.videos.length &&
+        _visibleItemCount >= oldWidget.videos.length;
+    if (appendedByPaging) {
+      _visibleItemCount = totalItemCount;
+      return;
+    }
+
+    _visibleItemCount = _visibleItemCount.clamp(
+      initialVisibleItemCount,
+      totalItemCount,
+    ) as int;
+  }
+
+  /// 焦点逼近当前批次尾部时，提前开放下一批卡片。
+  ///
+  /// 让用户在长按方向键浏览大列表时，不需要等真的撞到“假尾部”才继续出项。
+  void _maybeExtendVisibleItems(int focusedIndex, int crossAxisCount) {
+    if (_renderedItemCount >= widget.videos.length) {
+      return;
+    }
+
+    final triggerIndex = _renderedItemCount - crossAxisCount;
+    if (focusedIndex < triggerIndex) {
+      return;
+    }
+
+    setState(() {
+      _visibleItemCount = (_renderedItemCount + widget.renderBatchSize)
+          .clamp(0, widget.videos.length) as int;
+    });
   }
 
   @override
@@ -298,6 +408,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
 
   /// 构建视频网格。
   Widget _buildVideoGrid(int crossAxisCount) {
+    final renderedItemCount = _renderedItemCount;
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(
         TvVideoGrid.focusSafePadding,
@@ -319,17 +430,19 @@ class _TvVideoGridState extends State<TvVideoGrid> {
             return _TvGridEdgeItem(
               crossAxisCount: crossAxisCount,
               index: index,
-              itemCount: widget.videos.length,
+              itemCount: renderedItemCount,
               videoInfo: videoInfo,
               scaleAlignment: _scaleAlignmentForGridItem(
                 index: index,
                 crossAxisCount: crossAxisCount,
+                itemCount: renderedItemCount,
               ),
               focusNode: index == 0 ? widget.firstItemFocusNode : null,
               onPressed: () => widget.onVideoPressed?.call(videoInfo),
               onLongPressed: () => widget.onVideoLongPressed?.call(videoInfo),
               onFocusChanged: (hasFocus) {
                 if (hasFocus) {
+                  _maybeExtendVisibleItems(index, crossAxisCount);
                   _tryTriggerLoadMore(index, crossAxisCount);
                 }
                 widget.onVideoFocusChanged?.call(hasFocus);
@@ -343,7 +456,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
                   widget.focusMemoryGroupKey ?? 'tv-grid-${widget.title}',
             );
           },
-          childCount: widget.videos.length,
+          childCount: renderedItemCount,
         ),
       ),
     );
@@ -355,9 +468,10 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   Alignment _scaleAlignmentForGridItem({
     required int index,
     required int crossAxisCount,
+    required int itemCount,
   }) {
     final isRightEdge = index % crossAxisCount == crossAxisCount - 1 ||
-        index == widget.videos.length - 1;
+        index == itemCount - 1;
     if (widget.rightPadding == 0 && isRightEdge) {
       return Alignment.centerRight;
     }

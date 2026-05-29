@@ -68,7 +68,8 @@ void main() {
     expect(appliedDraft.danmakuBaseApi, 'https://danmaku.tv.example.com/');
   });
 
-  test('reuses the same share uri within one app lifetime', () async {
+  test('manual regenerate allocation starts from the next share port',
+      () async {
     final firstSession = await TvMobileSettingsBridge.startSession(
       TvMobileSettingsDraft.empty(),
       (_) {},
@@ -83,7 +84,8 @@ void main() {
     });
 
     expect(firstSession.shareUri, isNotNull);
-    expect(firstSession.shareUri?.port, 18321);
+    final firstPort = firstSession.shareUri?.port;
+    expect(firstPort, isNotNull);
 
     await firstSession.dispose();
     firstSessionDisposed = true;
@@ -93,11 +95,14 @@ void main() {
       (_) {},
       bindAddress: InternetAddress.loopbackIPv4,
       preferredHost: '127.0.0.1',
+      allocateNewPort: true,
     );
     addTearDown(() async {
       await secondSession.dispose();
     });
 
-    expect(secondSession.shareUri, firstSession.shareUri);
+    expect(secondSession.shareUri, isNotNull);
+    expect(secondSession.shareUri?.host, firstSession.shareUri?.host);
+    expect(secondSession.shareUri?.port, isNot(firstPort));
   });
 }

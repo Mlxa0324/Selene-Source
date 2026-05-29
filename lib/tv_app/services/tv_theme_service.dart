@@ -81,6 +81,61 @@ class TvThemePalette {
   }
 }
 
+/// TV 页面背景配置。
+///
+/// 独立承载 TV 页面级底色，避免和焦点主色耦合在一起。
+class TvThemeBackground {
+  /// 创建 TV 页面背景配置。
+  const TvThemeBackground({
+    required this.key,
+    required this.label,
+    required this.color,
+  });
+
+  /// 背景唯一标识。
+  final String key;
+
+  /// 设置页展示名称。
+  final String label;
+
+  /// 页面级背景色。
+  final Color color;
+
+  /// 深蓝灰背景。
+  static const String deepBlueKey = 'deep_blue';
+
+  /// 深黑夜幕背景。
+  static const String deepBlackKey = 'deep_black';
+
+  /// 深蓝灰背景。
+  static const TvThemeBackground deepBlue = TvThemeBackground(
+    key: deepBlueKey,
+    label: '深蓝灰',
+    color: Color(0xFF0F131E),
+  );
+
+  /// 深黑夜幕背景。
+  static const TvThemeBackground deepBlack = TvThemeBackground(
+    key: deepBlackKey,
+    label: '深黑夜幕',
+    color: Color(0xFF0A0D0E),
+  );
+
+  /// 当前可选背景色列表。
+  static const List<TvThemeBackground> values = [
+    deepBlue,
+    deepBlack,
+  ];
+
+  /// 根据存储标识解析背景色。
+  static TvThemeBackground fromKey(String key) {
+    return values.firstWhere(
+      (background) => background.key == key,
+      orElse: () => deepBlue,
+    );
+  }
+}
+
 /// TV 主题色服务。
 ///
 /// 负责读取、保存并通知 TV 页面刷新主题色。
@@ -91,8 +146,14 @@ class TvThemeService extends ChangeNotifier {
   /// 本地存储 Key。
   static const String storageKey = 'tv_theme_palette_key';
 
+  /// TV 页面背景色本地存储 Key。
+  static const String backgroundStorageKey = 'tv_theme_background_key';
+
   /// 当前主题色。
   TvThemePalette _palette = TvThemePalette.ivyGreen;
+
+  /// 当前 TV 页面背景色。
+  TvThemeBackground _background = TvThemeBackground.deepBlue;
 
   /// 当前主题色。
   TvThemePalette get palette => _palette;
@@ -100,9 +161,16 @@ class TvThemeService extends ChangeNotifier {
   /// 当前主题标识。
   String get themeKey => _palette.key;
 
+  /// 当前背景配置。
+  TvThemeBackground get background => _background;
+
+  /// 当前背景标识。
+  String get backgroundKey => _background.key;
+
   /// 读取本地主题色配置。
   Future<void> load() async {
     _palette = TvThemePalette.fromKey(await loadSavedThemeKey());
+    _background = TvThemeBackground.fromKey(await loadSavedBackgroundKey());
     notifyListeners();
   }
 
@@ -117,16 +185,43 @@ class TvThemeService extends ChangeNotifier {
     await saveThemeKey(next.key);
   }
 
+  /// 切换页面背景色并持久化。
+  Future<void> setBackgroundKey(String key) async {
+    final next = TvThemeBackground.fromKey(key);
+    if (next.key == _background.key) {
+      return;
+    }
+    _background = next;
+    notifyListeners();
+    await saveBackgroundKey(next.key);
+  }
+
   /// 读取已保存的主题标识。
   static Future<String> loadSavedThemeKey() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(storageKey) ?? TvThemePalette.ivyGreen.key;
   }
 
+  /// 读取已保存的背景标识。
+  static Future<String> loadSavedBackgroundKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(backgroundStorageKey) ??
+        TvThemeBackground.deepBlue.key;
+  }
+
   /// 保存主题标识。
   static Future<void> saveThemeKey(String key) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(storageKey, TvThemePalette.fromKey(key).key);
+  }
+
+  /// 保存背景标识。
+  static Future<void> saveBackgroundKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      backgroundStorageKey,
+      TvThemeBackground.fromKey(key).key,
+    );
   }
 }
 

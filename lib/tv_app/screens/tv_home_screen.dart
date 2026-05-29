@@ -1021,12 +1021,15 @@ class _TvHomeScreenState extends State<TvHomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final pageBackgroundColor =
+        TvTheme.maybeServiceOf(context)?.background.color ??
+            TvThemeBackground.deepBlue.color;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) =>
           _handlePopInvokedWithResult(didPop),
       child: Scaffold(
-        backgroundColor: const Color(0xFF0B0D0E),
+        backgroundColor: pageBackgroundColor,
         body: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

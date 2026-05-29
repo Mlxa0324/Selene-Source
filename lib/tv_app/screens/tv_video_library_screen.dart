@@ -74,11 +74,6 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 让顶部“删除全部”按钮回到内容区时，优先恢复到用户离开前停留的那张卡片。
   Object get _gridFocusMemoryGroupKey => 'tv-video-library-grid-${widget.title}';
 
-  /// 页面主背景色。
-  ///
-  /// 独立页标题区和内容区共用同一层底色，避免顶部固定头出现色块断层。
-  static const Color _pageBackgroundColor = Color(0xFF10131D);
-
   /// 页面内容顶部留白。
   ///
   /// 独立播放历史页和收藏夹页没有首页那样的顶部导航，
@@ -132,12 +127,15 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pageBackgroundColor =
+        TvTheme.maybeServiceOf(context)?.background.color ??
+            TvThemeBackground.deepBlue.color;
     return TvBackHandler(
       autofocus: true,
       onBackPressed: _handleBackPressed,
       child: Scaffold(
         key: ValueKey('tv-video-library-screen-${widget.title}'),
-        backgroundColor: _pageBackgroundColor,
+        backgroundColor: pageBackgroundColor,
         body: SafeArea(
           child: FutureBuilder<List<VideoInfo>>(
             future: _videosFuture,
@@ -237,7 +235,8 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 这样长列表滚动时也能随时看到当前页面名称，并快速执行清空操作。
   Widget _buildPinnedHeader() {
     return ColoredBox(
-      color: _pageBackgroundColor,
+      color: TvTheme.maybeServiceOf(context)?.background.color ??
+          TvThemeBackground.deepBlue.color,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
           TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,

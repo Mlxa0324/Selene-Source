@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -19,10 +20,24 @@ class GlobalBackHandler extends StatelessWidget {
   /// 根导航器 Key，用于在 `MaterialApp.builder` 中执行全局返回。
   final GlobalKey<NavigatorState>? navigatorKey;
 
-  /// 判断是否为全局返回类按键。
-  static bool isBackKey(LogicalKeyboardKey key) {
-    return key == LogicalKeyboardKey.escape ||
-        key == LogicalKeyboardKey.goBack ||
+  /// 判断当前平台是否应该由全局快捷键接管该返回键。
+  ///
+  /// Android 和 iOS 已经由系统统一派发返回路由，
+  /// 这里不能再额外接管 `goBack/browserBack`，否则独立页面会出现一次返回连退两层。
+  /// `Esc` 仍然保留给桌面调试和模拟器兜底使用。
+  static bool shouldHandleShortcut(
+    LogicalKeyboardKey key, {
+    TargetPlatform? platform,
+  }) {
+    final resolvedPlatform = platform ?? defaultTargetPlatform;
+    if (key == LogicalKeyboardKey.escape) {
+      return true;
+    }
+    if (resolvedPlatform == TargetPlatform.android ||
+        resolvedPlatform == TargetPlatform.iOS) {
+      return false;
+    }
+    return key == LogicalKeyboardKey.goBack ||
         key == LogicalKeyboardKey.browserBack;
   }
 
@@ -42,18 +57,32 @@ class GlobalBackHandler extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          _handleBackKey();
-        },
-        const SingleActivator(LogicalKeyboardKey.goBack): () {
-          _handleBackKey();
-        },
-        const SingleActivator(LogicalKeyboardKey.browserBack): () {
-          _handleBackKey();
-        },
+    final platform = Theme.of(context).platform;
+    final bindings = <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.escape): () {
+        _handleBackKey();
       },
+    };
+
+    if (shouldHandleShortcut(
+      LogicalKeyboardKey.goBack,
+      platform: platform,
+    )) {
+      bindings[const SingleActivator(LogicalKeyboardKey.goBack)] = () {
+        _handleBackKey();
+      };
+    }
+    if (shouldHandleShortcut(
+      LogicalKeyboardKey.browserBack,
+      platform: platform,
+    )) {
+      bindings[const SingleActivator(LogicalKeyboardKey.browserBack)] = () {
+        _handleBackKey();
+      };
+    }
+
+    return CallbackShortcuts(
+      bindings: bindings,
       child: child,
     );
   }

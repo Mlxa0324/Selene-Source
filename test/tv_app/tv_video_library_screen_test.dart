@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_video_library_screen.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
+import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
 void main() {
   testWidgets('video library page keeps title away from top edge',
@@ -61,6 +62,48 @@ void main() {
       tester.getTopLeft(clearButtonFinder).dy,
       initialClearButtonTopLeft.dy,
     );
+  });
+
+  testWidgets('video grid appends next batch after focus reaches batch tail',
+      (tester) async {
+    final videos = List<VideoInfo>.generate(
+      12,
+      (index) => _videoInfo('history_$index', '历史影片 $index'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: const Scaffold(
+          backgroundColor: Color(0xFF10131D),
+          body: SizedBox.shrink(),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF10131D),
+          body: TvVideoGrid(
+            title: '播放历史',
+            videos: videos,
+            crossAxisCount: 4,
+            initialRenderCount: 8,
+            renderBatchSize: 4,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(_videoGridRenderedChildCount(tester), 8);
+
+    final batchTailFocusNode = _focusNodeForCard(tester, 'history_7');
+    batchTailFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(_videoGridRenderedChildCount(tester), 12);
   });
 
   testWidgets('video library page keeps first row below pinned header',
@@ -406,4 +449,11 @@ VideoInfo _videoInfo(String id, String title) {
     saveTime: 0,
     searchTitle: title,
   );
+}
+
+int _videoGridRenderedChildCount(WidgetTester tester) {
+  final sliverGrid =
+      tester.widget<SliverGrid>(find.byKey(const ValueKey('tv-video-grid')));
+  final delegate = sliverGrid.delegate as SliverChildBuilderDelegate;
+  return delegate.childCount ?? 0;
 }

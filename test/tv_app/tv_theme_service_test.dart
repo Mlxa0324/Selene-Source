@@ -18,4 +18,15 @@ void main() {
     expect(
         await TvThemeService.loadSavedThemeKey(), TvThemePalette.netflixRedKey);
   });
+
+  test('TV theme service persists selected background key', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    await TvThemeService.saveBackgroundKey(TvThemeBackground.deepBlack.key);
+
+    expect(
+      await TvThemeService.loadSavedBackgroundKey(),
+      TvThemeBackground.deepBlack.key,
+    );
+  });
 }

@@ -47,6 +47,9 @@ typedef TvAdFilterSaver = Future<void> Function(bool enabled);
 /// TV 主题色保存函数。
 typedef TvThemeSaver = Future<void> Function(String themeKey);
 
+/// TV 背景色保存函数。
+typedef TvBackgroundSaver = Future<void> Function(String backgroundKey);
+
 /// TV 缓存大小加载函数。
 typedef TvCacheSizeLoader = Future<int> Function();
 
@@ -77,6 +80,7 @@ class TvSettingsData {
     required this.username,
     required this.password,
     this.themeKey = TvThemePalette.ivyGreenKey,
+    this.backgroundKey = TvThemeBackground.deepBlueKey,
     required this.adFilterEnabled,
     required this.doubanImageSource,
     required this.danmakuBaseApi,
@@ -94,6 +98,9 @@ class TvSettingsData {
 
   /// TV 主题色标识。
   final String themeKey;
+
+  /// TV 页面背景色标识。
+  final String backgroundKey;
 
   /// 是否开启自动去广告。
   final bool adFilterEnabled;
@@ -114,6 +121,7 @@ class TvSettingsData {
       username: '',
       password: '',
       themeKey: TvThemePalette.ivyGreenKey,
+      backgroundKey: TvThemeBackground.deepBlueKey,
       adFilterEnabled: true,
       doubanImageSource: '直连',
       danmakuBaseApi: '',
@@ -132,6 +140,7 @@ class TvSettingsScreen extends StatefulWidget {
     this.loadSettings,
     this.saveAccount,
     this.saveTheme,
+    this.saveBackground,
     this.saveDoubanImageSource,
     this.loadAdFilterEnabled,
     this.saveAdFilterEnabled,
@@ -149,6 +158,9 @@ class TvSettingsScreen extends StatefulWidget {
 
   /// 主题色保存函数。
   final TvThemeSaver? saveTheme;
+
+  /// 背景色保存函数。
+  final TvBackgroundSaver? saveBackground;
 
   /// 图片代理保存函数。
   final TvImageSourceSaver? saveDoubanImageSource;
@@ -184,6 +196,7 @@ class TvSettingsScreen extends StatefulWidget {
       username: credentials.username,
       password: credentials.password,
       themeKey: await TvThemeService.loadSavedThemeKey(),
+      backgroundKey: await TvThemeService.loadSavedBackgroundKey(),
       adFilterEnabled: await UserDataService.getAdFilterEnabled(),
       doubanImageSource:
           await UserDataService.getDoubanImageSourceDisplayName(),
@@ -222,6 +235,11 @@ class TvSettingsScreen extends StatefulWidget {
   /// 默认主题色保存逻辑。
   static Future<void> defaultSaveTheme(String themeKey) {
     return TvThemeService.saveThemeKey(themeKey);
+  }
+
+  /// 默认背景色保存逻辑。
+  static Future<void> defaultSaveBackground(String backgroundKey) {
+    return TvThemeService.saveBackgroundKey(backgroundKey);
   }
 
   /// 默认缓存大小加载逻辑。
@@ -351,6 +369,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 当前 TV 主题色标识。
   String _themeKey = TvThemePalette.ivyGreen.key;
 
+  /// 当前 TV 页面背景色标识。
+  String _backgroundKey = TvThemeBackground.deepBlue.key;
+
   /// 是否已把加载数据同步到输入框。
   bool _appliedLoadedData = false;
 
@@ -368,6 +389,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
   /// 当前手机扫码配置桥接会话。
   TvMobileSettingsBridgeSession? _mobileConfigBridgeSession;
+
+  /// 重新生成二维码按钮焦点。
+  final FocusNode _regenerateQrFocusNode = FocusNode(
+    debugLabel: 'tv-settings-regenerate-qr-button',
+  );
 
   /// 当前主操作提示文案。
   ///
@@ -406,6 +432,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _serverUrlBrowseFocusNode.dispose();
     _usernameBrowseFocusNode.dispose();
     _passwordBrowseFocusNode.dispose();
+    _regenerateQrFocusNode.dispose();
     _saveAccountFocusNode.dispose();
     _danmakuBaseApiBrowseFocusNode.dispose();
     _adFilterFocusNode.dispose();
@@ -425,11 +452,8 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// TV 端页面会在进入设置页后立即生成一个局域网页面，
   /// 让手机扫码后直接填写服务器、图片代理和弹幕地址。
   Future<void> _startMobileConfigBridge() async {
-    final starter =
-        widget.startMobileConfigBridge ?? TvMobileSettingsBridge.startSession;
-    final session = await starter(
-      _buildMobileSettingsDraft(),
-      _applyMobileSettingsDraft,
+    final session = await _createMobileConfigBridgeSession(
+      allocateNewPort: false,
     );
     if (!mounted) {
       await session.dispose();
@@ -450,7 +474,36 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     if (!mounted) {
       return;
     }
-    await _startMobileConfigBridge();
+    final session = await _createMobileConfigBridgeSession(
+      allocateNewPort: true,
+    );
+    if (!mounted) {
+      await session.dispose();
+      return;
+    }
+    setState(() {
+      _mobileConfigBridgeSession = session;
+    });
+  }
+
+  /// 创建手机扫码配置桥接会话。
+  ///
+  /// 默认实现支持“手动重生成时分配新端口”；测试注入的假桥接仍沿用旧签名。
+  Future<TvMobileSettingsBridgeSession> _createMobileConfigBridgeSession({
+    required bool allocateNewPort,
+  }) {
+    final starter = widget.startMobileConfigBridge;
+    if (starter != null) {
+      return starter(
+        _buildMobileSettingsDraft(),
+        _applyMobileSettingsDraft,
+      );
+    }
+    return TvMobileSettingsBridge.startSession(
+      _buildMobileSettingsDraft(),
+      _applyMobileSettingsDraft,
+      allocateNewPort: allocateNewPort,
+    );
   }
 
   /// 根据当前页面状态构建手机端草稿。
@@ -502,7 +555,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       if (!mounted) {
         return;
       }
-      _serverUrlBrowseFocusNode.requestFocus();
+      _regenerateQrFocusNode.requestFocus();
     });
   }
 
@@ -515,6 +568,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _usernameController.text = data.username;
     _passwordController.text = data.password;
     _themeKey = TvThemePalette.fromKey(data.themeKey).key;
+    _backgroundKey = TvThemeBackground.fromKey(data.backgroundKey).key;
     _adFilterEnabled = data.adFilterEnabled;
     _doubanImageSource = data.doubanImageSource;
     _danmakuBaseApiController.text = data.danmakuBaseApi;
@@ -529,6 +583,14 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 避免默认遍历在 Wrap 布局里偶发把焦点丢回页面根节点。
   void _requestThemeOptionFocus() {
     TvFocusable.requestRememberedFocusForGroup('tv-setting-theme-主题色');
+  }
+
+  /// 请求焦点进入背景色选项组。
+  ///
+  /// 背景色与主题色一样是横向 Wrap 结构，单独补齐焦点记忆，
+  /// 避免上下切换时跳回错误的彩色按钮或页面根节点。
+  void _requestBackgroundOptionFocus() {
+    TvFocusable.requestRememberedFocusForGroup('tv-setting-background-背景色');
   }
 
   /// 请求焦点进入图片代理选项组。
@@ -596,6 +658,28 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
       _themeKey = nextThemeKey;
     });
     _showToast('主题色已保存', TvThemePalette.fromKey(nextThemeKey).accent);
+  }
+
+  /// 保存 TV 页面背景色配置。
+  Future<void> _saveBackground(String backgroundKey) async {
+    final nextBackgroundKey = TvThemeBackground.fromKey(backgroundKey).key;
+    final scopedService = TvTheme.maybeServiceOf(context);
+    if (scopedService != null) {
+      await scopedService.setBackgroundKey(nextBackgroundKey);
+    } else {
+      final saver = widget.saveBackground ?? TvSettingsScreen.defaultSaveBackground;
+      await saver(nextBackgroundKey);
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _backgroundKey = nextBackgroundKey;
+    });
+    _showToast(
+      '背景色已保存',
+      TvTheme.of(context).accent,
+    );
   }
 
   /// 保存弹幕配置。
@@ -998,6 +1082,15 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           options: TvThemePalette.values,
           onChanged: _saveTheme,
           onArrowUp: () => _saveAccountFocusNode.requestFocus(),
+          onArrowDown: _requestBackgroundOptionFocus,
+        ),
+        const SizedBox(height: 18),
+        _TvBackgroundOptionRow(
+          label: '背景色',
+          value: _backgroundKey,
+          options: TvThemeBackground.values,
+          onChanged: _saveBackground,
+          onArrowUp: _requestThemeOptionFocus,
           onArrowDown: _requestImageSourceOptionFocus,
         ),
         const SizedBox(height: 18),
@@ -1006,7 +1099,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           value: _doubanImageSource,
           options: TvMobileSettingsDraft.availableDoubanImageSources,
           onChanged: _saveDoubanImageSource,
-          onArrowUp: _requestThemeOptionFocus,
+          onArrowUp: _requestBackgroundOptionFocus,
           onArrowDown: () => _adFilterFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
@@ -1356,8 +1449,10 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         SizedBox(
           width: 260,
           child: _TvActionButton(
+            focusNode: _regenerateQrFocusNode,
             label: '重新生成二维码',
             onPressed: _restartMobileConfigBridge,
+            onArrowDown: () => _serverUrlBrowseFocusNode.requestFocus(),
           ),
         ),
       ],
@@ -1921,6 +2016,132 @@ class _TvThemeOptionRow extends StatelessWidget {
                           color: selected
                               ? option.selectedText
                               : const Color(0xFFD9E2E0),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+}
+
+/// TV 设置背景色选项行。
+class _TvBackgroundOptionRow extends StatelessWidget {
+  /// 创建 TV 设置背景色选项行。
+  const _TvBackgroundOptionRow({
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.onArrowUp,
+    this.onArrowDown,
+  });
+
+  /// 设置项标签。
+  final String label;
+
+  /// 当前背景色标识。
+  final String value;
+
+  /// 可选背景色列表。
+  final List<TvThemeBackground> options;
+
+  /// 背景色变更回调。
+  final ValueChanged<String> onChanged;
+
+  /// 所有选项统一的上方向键回调。
+  final VoidCallback? onArrowUp;
+
+  /// 所有选项统一的下方向键回调。
+  final VoidCallback? onArrowDown;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = TvTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: FontUtils.poppins(
+            fontSize: 15,
+            color: const Color(0xFF98A2A8),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 14,
+          runSpacing: 10,
+          children: options.map((option) {
+            final selected = option.key == value;
+            return TvFocusable(
+              directionalRepeatThrottleGroupKey: 'tv-setting-background-$label',
+              focusMemoryGroupKey: 'tv-setting-background-$label',
+              onPressed: () => onChanged(option.key),
+              onArrowUp: onArrowUp,
+              onArrowDown: onArrowDown,
+              focusScrollAlignment: _tvSettingsFocusScrollAlignment,
+              builder: (context, hasFocus) {
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  constraints: const BoxConstraints(minHeight: 42),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0E1112),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: hasFocus
+                          ? Colors.white
+                          : selected
+                              ? palette.accent
+                              : const Color(0xFF293136),
+                      width: hasFocus ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: option.color,
+                          border: Border.all(
+                            color: selected ? palette.accent : Colors.white24,
+                            width: selected ? 2 : 1,
+                          ),
+                        ),
+                        child: selected
+                            ? Center(
+                                child: Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: palette.accent,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        option.label,
+                        style: FontUtils.poppins(
+                          fontSize: 14,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                          color: const Color(0xFFD9E2E0),
                         ),
                       ),
                     ],

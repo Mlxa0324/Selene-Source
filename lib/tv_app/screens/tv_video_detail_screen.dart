@@ -685,6 +685,30 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return indexedSources.map((entry) => entry.source).toList();
   }
 
+  /// 获取详情页当前用于展示的线路列表。
+  ///
+  /// 首次进入详情页时，当前播放线路要固定落在第一位，
+  /// 其余线路再按“集数倒序 + 原始顺序稳定”的规则继续追加到右侧，
+  /// 避免补源完成后在当前线路前后同时插入其它线路，导致顺序看起来混乱。
+  List<SearchResult> get _displaySources {
+    final sortedSources = _sourcesByEpisodeCountDesc;
+    final detail = _currentDetail;
+    if (detail == null || sortedSources.isEmpty) {
+      return sortedSources;
+    }
+    final selectedSourceIndex = sortedSources.indexWhere(
+      (source) => source.source == detail.source && source.id == detail.id,
+    );
+    if (selectedSourceIndex <= 0) {
+      return sortedSources;
+    }
+    return [
+      sortedSources[selectedSourceIndex],
+      ...sortedSources.take(selectedSourceIndex),
+      ...sortedSources.skip(selectedSourceIndex + 1),
+    ];
+  }
+
   /// 加载收藏状态。
   Future<void> _loadFavoriteState() async {
     final isFavorite = PageCacheService().isFavoritedSync(
@@ -1965,15 +1989,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         return;
       }
 
-      final sortedSources = _sourcesByEpisodeCountDesc;
-      final selectedSourceIndex = sortedSources.indexWhere(
+      final displaySources = _displaySources;
+      final selectedSourceIndex = displaySources.indexWhere(
         (source) => source.source == detail.source && source.id == detail.id,
       );
       if (selectedSourceIndex >= 0) {
         _jumpHorizontalListToLeadingIndex(
           controller: _sourceListScrollController,
           index: selectedSourceIndex,
-          itemCount: sortedSources.length,
+          itemCount: displaySources.length,
           spacing: 12,
           fallbackItemExtent: 148,
         );
@@ -2209,7 +2233,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 获取第一个已构建的播放源焦点节点，避免焦点落到未渲染项后看起来消失。
   FocusNode? _firstVisibleSourceFocusNode() {
-    for (final source in _sourcesByEpisodeCountDesc) {
+    for (final source in _displaySources) {
       final node = _visibleSourceFocusNodeFor(source);
       if (node != null) {
         return node;
@@ -2579,10 +2603,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pageBackgroundColor =
+        TvTheme.maybeServiceOf(context)?.background.color ??
+            TvThemeBackground.deepBlue.color;
     return TvBackHandler(
       onBackPressed: _handleDetailBackPressed,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0B0D0E),
+        backgroundColor: pageBackgroundColor,
         body: SafeArea(
           child: Stack(
             children: [
@@ -3187,7 +3214,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 构建换源区。
   Widget _buildSourcesSection() {
-    final sources = _sourcesByEpisodeCountDesc;
+    final sources = _displaySources;
     return _TvDetailSection(
       title: '切换线路',
       subtitle: '遇播放卡顿，音画不同步或无法播放时，请切换播放线路',

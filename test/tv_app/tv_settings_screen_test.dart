@@ -40,7 +40,10 @@ void main() {
     expect(find.text('保存配置'), findsOneWidget);
     expect(find.text('图片与弹幕'), findsOneWidget);
     expect(find.text('主题色'), findsOneWidget);
+    expect(find.text('背景色'), findsOneWidget);
     expect(find.text('奈飞红'), findsOneWidget);
+    expect(find.text('深蓝灰'), findsOneWidget);
+    expect(find.text('深黑夜幕'), findsOneWidget);
     expect(find.text('图片代理'), findsOneWidget);
     expect(find.text('豆瓣官方精品 CDN'), findsOneWidget);
     expect(find.text('自动去广告'), findsOneWidget);
@@ -123,7 +126,7 @@ void main() {
 
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
-      'tv-settings-server-url-browse',
+      'tv-settings-regenerate-qr-button',
     );
   });
 
@@ -235,7 +238,8 @@ void main() {
     );
   });
 
-  testWidgets('moves focus across theme and image options without dropping out',
+  testWidgets(
+      'moves focus across theme background and image options without dropping out',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -256,6 +260,13 @@ void main() {
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+
+    await tester.tap(find.text('深蓝灰'));
     await tester.pumpAndSettle();
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
@@ -360,6 +371,29 @@ void main() {
     expect(find.text('手机扫码配置'), findsOneWidget);
     expect(find.text('使用手机扫码打开配置页'), findsOneWidget);
     expect(find.text('192.168.1.8:18321'), findsOneWidget);
+  });
+
+  testWidgets('regenerate qr button requests a new share port',
+      (tester) async {
+    final fakeBridge = _FakeMobileConfigBridge();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            startMobileConfigBridge: fakeBridge.start,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('192.168.1.8:18321'), findsOneWidget);
+
+    await tester.tap(find.text('重新生成二维码'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('192.168.1.8:18322'), findsOneWidget);
   });
 
   testWidgets('reopening TV settings keeps the same mobile scan address',
@@ -552,6 +586,31 @@ void main() {
 
     expect(savedThemeKey, TvThemePalette.netflixRedKey);
     expect(find.text('主题色已保存'), findsOneWidget);
+  });
+
+  testWidgets('saves TV background color option', (tester) async {
+    String? savedBackgroundKey;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            saveBackground: (backgroundKey) async {
+              savedBackgroundKey = backgroundKey;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('深黑夜幕'));
+    await tester.tap(find.text('深黑夜幕'));
+    await tester.pumpAndSettle();
+
+    expect(savedBackgroundKey, TvThemeBackground.deepBlack.key);
+    expect(find.text('背景色已保存'), findsOneWidget);
   });
 
   testWidgets('applies TV theme immediately after opening settings from home',
@@ -897,11 +956,11 @@ Future<void> _activateTextField(WidgetTester tester, int index) async {
 }
 
 class _FakeMobileConfigBridge {
-  final ValueNotifier<String> _statusNotifier = ValueNotifier<String>(
+  ValueNotifier<String>? _statusNotifier = ValueNotifier<String>(
     '请使用手机扫码填写配置',
   );
 
-  final Uri shareUri = Uri.parse('http://192.168.1.8:18321');
+  int _port = 18321;
 
   late ValueChanged<TvMobileSettingsDraft> _onDraftSubmitted;
 
@@ -910,18 +969,23 @@ class _FakeMobileConfigBridge {
     ValueChanged<TvMobileSettingsDraft> onDraftSubmitted,
   ) async {
     _onDraftSubmitted = onDraftSubmitted;
+    final shareUri = Uri.parse('http://192.168.1.8:$_port');
+    _port++;
+    final statusNotifier = _statusNotifier ??=
+        ValueNotifier<String>('请使用手机扫码填写配置');
     return TvMobileSettingsBridgeSession(
       shareUri: shareUri,
-      statusNotifier: _statusNotifier,
+      statusNotifier: statusNotifier,
       updateDraft: (_) {},
       dispose: () async {
-        _statusNotifier.dispose();
+        _statusNotifier?.dispose();
+        _statusNotifier = null;
       },
     );
   }
 
   void submit(TvMobileSettingsDraft draft) {
-    _statusNotifier.value = '已接收手机端提交';
+    _statusNotifier?.value = '已接收手机端提交';
     _onDraftSubmitted(draft);
   }
 }

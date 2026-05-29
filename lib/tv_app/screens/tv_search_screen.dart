@@ -171,10 +171,10 @@ class TvSearchScreen extends StatefulWidget {
 }
 
 class _TvSearchScreenState extends State<TvSearchScreen> {
-  /// 搜索页主背景色。
-  ///
-  /// 页面主体和状态栏背景统一使用这层深色，避免顶端出现透明穿透。
-  static const Color _pageBackgroundColor = Color(0xFF10131D);
+  /// 搜索页当前全局背景色。
+  Color get _pageBackgroundColor =>
+      TvTheme.maybeServiceOf(context)?.background.color ??
+      TvThemeBackground.deepBlue.color;
 
   /// 搜索页首屏顶部留白。
   ///
@@ -388,6 +388,12 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 当前搜索结果列表。
   List<SearchResult> _searchResults = <SearchResult>[];
 
+  /// 当前搜索结果聚合后的卡片列表缓存。
+  ///
+  /// 搜索进度更新会频繁触发 rebuild，这里把“按片名 regroup”从 build 阶段挪到状态层，
+  /// 避免进度文案变化时反复重算整份结果集。
+  List<VideoInfo> _aggregatedSearchVideos = <VideoInfo>[];
+
   /// 当前搜索资源站总数。
   int _searchTotalResourceCount = 0;
 
@@ -463,6 +469,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _didDispatchSearchResultInitialFocus = false;
     _searchResultRememberedLeftPanelFocusNode = null;
     TvFocusable.clearLastFocusedForGroup(_searchResultFocusMemoryGroupKey);
+  }
+
+  /// 同步搜索结果聚合缓存。
+  ///
+  /// 只有 `_searchResults` 真正变更时才调用它，避免纯进度刷新重复 regroup。
+  void _syncAggregatedSearchVideos() {
+    _aggregatedSearchVideos = _aggregateSearchResults(_searchResults);
   }
 
   /// 记录结果页场景下最近一次停留的左侧输入区焦点节点。
@@ -620,22 +633,23 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final pageBackgroundColor = _pageBackgroundColor;
     return TvBackHandler(
       autofocus: true,
       onBackPressed: _handleBackPressed,
       child: Scaffold(
         key: const ValueKey('tv-search-screen'),
-        backgroundColor: _pageBackgroundColor,
+        backgroundColor: pageBackgroundColor,
         body: AnnotatedRegion<SystemUiOverlayStyle>(
-          value: const SystemUiOverlayStyle(
-            statusBarColor: _pageBackgroundColor,
+          value: SystemUiOverlayStyle(
+            statusBarColor: pageBackgroundColor,
             statusBarIconBrightness: Brightness.light,
             statusBarBrightness: Brightness.dark,
-            systemNavigationBarColor: _pageBackgroundColor,
+            systemNavigationBarColor: pageBackgroundColor,
             systemNavigationBarIconBrightness: Brightness.light,
           ),
           child: ColoredBox(
-            color: _pageBackgroundColor,
+            color: pageBackgroundColor,
             child: SafeArea(
               top: false,
               child: FutureBuilder<TvSearchData>(
@@ -705,6 +719,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _query = '';
       _suggestions = <String>[];
       _searchResults = <SearchResult>[];
+      _aggregatedSearchVideos = <VideoInfo>[];
       _searchTotalResourceCount = 0;
       _searchCompletedResourceCount = 0;
       _isSuggestionLoading = false;
@@ -742,6 +757,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _query = suggestionQuery;
       _suggestions = suggestionSnapshot;
       _searchResults = <SearchResult>[];
+      _aggregatedSearchVideos = <VideoInfo>[];
       _searchTotalResourceCount = 0;
       _searchCompletedResourceCount = 0;
       _isSuggestionLoading = false;
@@ -1432,14 +1448,14 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                 ),
               ),
               if (_recommendLeadingMaskWidth > 0)
-                const Positioned(
+                Positioned(
                   left: 0,
                   top: 0,
                   bottom: 0,
                   width: _recommendLeadingMaskWidth,
                   child: IgnorePointer(
                     child: ColoredBox(
-                      key: ValueKey('tv-search-recommend-leading-mask'),
+                      key: const ValueKey('tv-search-recommend-leading-mask'),
                       color: _pageBackgroundColor,
                     ),
                   ),
@@ -1821,7 +1837,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             ],
           ),
         ),
-        const SizedBox(height: _wordSectionTitleBottomSpacing),
+        words.isEmpty ? const SizedBox(height: _wordSectionTitleBottomSpacing): const SizedBox(),
         Padding(
           padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
           child: words.isEmpty
@@ -1897,10 +1913,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 构建搜索结果模式下的右侧面板。
   Widget _buildSearchResultPanel() {
-    final aggregatedVideos = _aggregateSearchResults(_searchResults);
     final shouldShowInitialSearchSkeleton =
-        _isSearchResultLoading && aggregatedVideos.isEmpty;
-    _dispatchSearchResultInitialFocusIfNeeded(aggregatedVideos);
+        _isSearchResultLoading && _aggregatedSearchVideos.isEmpty;
+    _dispatchSearchResultInitialFocusIfNeeded(_aggregatedSearchVideos);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -1921,7 +1936,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                     key: const ValueKey('tv-search-result-grid-panel'),
                     title: '搜索结果',
                     showTitle: false,
-                    videos: aggregatedVideos,
+                    videos: _aggregatedSearchVideos,
                     firstItemFocusNode: _searchResultFirstFocusNode,
                     rightPadding: 0,
                     crossAxisCount: _searchResultCrossAxisCount,
@@ -1938,7 +1953,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             left: 0,
             right: 0,
             top: -_searchResultHeaderTopCoverHeight,
-            child: _buildSearchResultHeader(aggregatedVideos.length),
+            child: _buildSearchResultHeader(_aggregatedSearchVideos.length),
           ),
         ],
       ),
@@ -1980,7 +1995,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
                   ),
                 ),
                 Text(
-                  '共：$aggregatedCount个影片',
+                  '$aggregatedCount个影片',
                   key: const ValueKey('tv-search-result-count'),
                   style: FontUtils.poppins(
                     fontSize: 16,
@@ -2520,6 +2535,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     setState(() {
       _query = normalizedQuery;
       _searchResults = <SearchResult>[];
+      _aggregatedSearchVideos = <VideoInfo>[];
       _searchTotalResourceCount = 0;
       _searchCompletedResourceCount = 0;
       _isSearchResultLoading = false;
@@ -2596,6 +2612,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       _suggestions = <String>[];
       _isSuggestionLoading = false;
       _searchResults = <SearchResult>[];
+      _aggregatedSearchVideos = <VideoInfo>[];
       _searchTotalResourceCount = 0;
       _searchCompletedResourceCount = 0;
       _isSearchResultLoading = true;
@@ -2619,6 +2636,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             }
             setState(() {
               _searchResults = partialResults;
+              _syncAggregatedSearchVideos();
             });
           },
           onProgress: (progress) {
@@ -2636,6 +2654,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         if (mounted && requestVersion == _searchRequestVersion) {
           setState(() {
             _searchResults = results;
+            _syncAggregatedSearchVideos();
           });
         }
       } else {
@@ -2647,6 +2666,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             }
             setState(() {
               _searchResults = partialResults;
+              _syncAggregatedSearchVideos();
             });
           },
           onProgress: (progress) {
@@ -2670,6 +2690,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
     setState(() {
       _searchResults = results;
+      _syncAggregatedSearchVideos();
       _isSearchResultLoading = false;
       if (_searchTotalResourceCount > 0 &&
           _searchCompletedResourceCount < _searchTotalResourceCount) {

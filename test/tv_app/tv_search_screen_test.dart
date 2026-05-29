@@ -425,7 +425,7 @@ void main() {
     expect(find.byKey(const ValueKey('tv-video-grid')), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tv-search-result-header')), findsOneWidget);
-    expect(find.text('共：1个影片'), findsOneWidget);
+    expect(find.text('1个影片'), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tv-search-suggestion-panel')), findsNothing);
     expect(
@@ -870,7 +870,7 @@ void main() {
     );
     expect(resultGrid.crossAxisCount, 5);
     expect(resultGrid.showTitle, isFalse);
-    expect(find.text('共：2个影片'), findsOneWidget);
+    expect(find.text('2个影片'), findsOneWidget);
   });
 
   testWidgets('shows search progress and fixed aggregated result header',
@@ -985,7 +985,7 @@ void main() {
     expect(find.byKey(const ValueKey('tv-search-result-progress')),
         findsOneWidget);
     expect(find.text('已搜索 40/40 个资源站'), findsOneWidget);
-    expect(find.text('共：2个影片'), findsOneWidget);
+    expect(find.text('2个影片'), findsOneWidget);
     expect(find.text('搜索结果'), findsOneWidget);
   });
 
@@ -1293,7 +1293,7 @@ void main() {
       find.byKey(const ValueKey('tv-search-result-initial-skeleton-grid')),
       findsNothing,
     );
-    expect(find.text('共：1个影片'), findsOneWidget);
+    expect(find.text('1个影片'), findsOneWidget);
   });
 
   testWidgets('shows all aggregated search results without local truncation',
@@ -1341,6 +1341,128 @@ void main() {
     expect(resultGrid.hasMore, isFalse);
     expect(resultGrid.onLoadMore, isNull);
     expect(resultGrid.crossAxisSpacing, 18);
+  });
+
+  testWidgets('search result grid renders only first batch initially',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResults: (_) async => List<SearchResult>.generate(
+            120,
+            (index) => SearchResult(
+              id: 'video_$index',
+              title: '结果$index',
+              poster: '',
+              episodes: const ['episode-1'],
+              episodesTitles: const ['第1集'],
+              source: 'source_$index',
+              sourceName: '源$index',
+              year: '2025',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await tester.pumpAndSettle();
+
+    expect(_videoGridRenderedChildCount(tester), 80);
+  });
+
+  testWidgets(
+      'search result aggregation cache reuses grouped videos during progress-only rebuilds',
+      (tester) async {
+    final progressSignals = <void Function()>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['剑来'],
+          loadSearchResultsWithProgress: (query,
+              {required onPartialResults, required onProgress}) async {
+            final partialResults = List<SearchResult>.generate(
+              2,
+              (index) => SearchResult(
+                id: 'video_$index',
+                title: '结果$index',
+                poster: '',
+                episodes: const ['episode-1'],
+                episodesTitles: const ['第1集'],
+                source: 'source_$index',
+                sourceName: '源$index',
+                year: '2025',
+              ),
+            );
+
+            onPartialResults(partialResults);
+            onProgress(
+              const SearchProgressSnapshot(
+                totalResources: 3,
+                completedResources: 1,
+                currentResourceName: '资源站 1',
+                isComplete: false,
+              ),
+            );
+            progressSignals.add(() {
+              onProgress(
+                const SearchProgressSnapshot(
+                  totalResources: 3,
+                  completedResources: 2,
+                  currentResourceName: '资源站 2',
+                  isComplete: false,
+                ),
+              );
+            });
+
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+            return partialResults;
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('J'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey('tv-search-result-grid-panel')),
+    );
+
+    final initialResultGrid = tester.widget<TvVideoGrid>(
+      find.byKey(const ValueKey('tv-search-result-grid-panel')),
+    );
+
+    expect(progressSignals, hasLength(1));
+    progressSignals.single();
+    await tester.pump();
+
+    final rebuiltResultGrid = tester.widget<TvVideoGrid>(
+      find.byKey(const ValueKey('tv-search-result-grid-panel')),
+    );
+
+    expect(identical(rebuiltResultGrid.videos, initialResultGrid.videos), isTrue);
   });
 
   testWidgets('leftmost search result first moves focus to nearest keyboard edge',
@@ -3102,4 +3224,11 @@ VideoInfo _videoInfo(String id, String title) {
     saveTime: 0,
     searchTitle: title,
   );
+}
+
+int _videoGridRenderedChildCount(WidgetTester tester) {
+  final sliverGrid =
+      tester.widget<SliverGrid>(find.byKey(const ValueKey('tv-video-grid')));
+  final delegate = sliverGrid.delegate as SliverChildBuilderDelegate;
+  return delegate.childCount ?? 0;
 }

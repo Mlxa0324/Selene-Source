@@ -99,7 +99,8 @@ void main() {
         find.byKey(const ValueKey('tv-detail-episode-list')), findsOneWidget);
   });
 
-  testWidgets('detail source list shows episode counts sorted descending',
+  testWidgets(
+      'detail source list keeps remaining sources sorted descending after selected source',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -141,8 +142,57 @@ void main() {
     final maxLeft = tester.getTopLeft(find.text('最大资源')).dx;
     final stormLeft = tester.getTopLeft(find.text('暴风资源')).dx;
     final shortLeft = tester.getTopLeft(find.text('短资源')).dx;
-    expect(maxLeft, lessThan(stormLeft));
-    expect(stormLeft, lessThan(shortLeft));
+    expect(stormLeft, lessThan(maxLeft));
+    expect(maxLeft, lessThan(shortLeft));
+  });
+
+  testWidgets('selected source is rendered first on detail initial load',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'main',
+            '多源影片',
+            source: 'source_c',
+          ),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_c',
+              '暴风资源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '最大资源', episodeCount: 99),
+              _searchResult('source_b', '电影天堂', episodeCount: 63),
+              _searchResult('source_c', '暴风资源', episodeCount: 45),
+              _searchResult('source_d', '短资源', episodeCount: 12),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final selectedLeft = tester.getTopLeft(find.text('暴风资源')).dx;
+    final maxLeft = tester.getTopLeft(find.text('最大资源')).dx;
+    final movieLeft = tester.getTopLeft(find.text('电影天堂')).dx;
+    final shortLeft = tester.getTopLeft(find.text('短资源')).dx;
+
+    expect(selectedLeft, lessThan(maxLeft));
+    expect(maxLeft, lessThan(movieLeft));
+    expect(movieLeft, lessThan(shortLeft));
   });
 
   testWidgets('hides recommends section and bottom action when no recommends',

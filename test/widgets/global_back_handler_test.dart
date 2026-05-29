@@ -4,6 +4,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/widgets/global_back_handler.dart';
 
 void main() {
+  test('global back handler leaves Android back-like keys to platform', () {
+    expect(
+      GlobalBackHandler.shouldHandleShortcut(
+        LogicalKeyboardKey.goBack,
+        platform: TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
+      GlobalBackHandler.shouldHandleShortcut(
+        LogicalKeyboardKey.browserBack,
+        platform: TargetPlatform.android,
+      ),
+      isFalse,
+    );
+    expect(
+      GlobalBackHandler.shouldHandleShortcut(
+        LogicalKeyboardKey.escape,
+        platform: TargetPlatform.android,
+      ),
+      isTrue,
+    );
+    expect(
+      GlobalBackHandler.shouldHandleShortcut(
+        LogicalKeyboardKey.browserBack,
+        platform: TargetPlatform.macOS,
+      ),
+      isTrue,
+    );
+  });
+
   testWidgets('global back handler pops current route with escape key',
       (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
