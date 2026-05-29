@@ -214,6 +214,16 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索词列表纵向间距。
   static const double _wordTileMainSpacing = 14;
 
+  /// 搜索词标题和下方词条区之间的纵向留白。
+  ///
+  /// 给“搜索历史”“搜索热词”和首行词条之间补一点呼吸空间，避免标题和内容贴得过紧。
+  static const double _wordSectionTitleBottomSpacing = 20;
+
+  /// 搜索结果面板底部安全留白。
+  ///
+  /// 给右侧结果区底部保留一条稳定的呼吸空间，避免内容贴到页面最下沿。
+  static const double _searchResultPanelBottomInset = 10;
+
   /// 联想词条横向间距。
   ///
   /// 右侧联想区改为更贴字的自然排布，横向间距适当收紧。
@@ -1735,6 +1745,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             ],
           ),
         ),
+        const SizedBox(height: _wordSectionTitleBottomSpacing),
         Padding(
           padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
           child: words.isEmpty
@@ -1819,7 +1830,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         _rightPanelLeftPadding,
         _panelTopPadding,
         _rightPanelRightPadding,
-        0,
+        _searchResultPanelBottomInset,
       ),
       child: Stack(
         key: const ValueKey('tv-search-result-panel'),

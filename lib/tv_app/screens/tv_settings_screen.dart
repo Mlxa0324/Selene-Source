@@ -15,6 +15,12 @@ import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/utils/font_utils.dart';
 
+/// 设置页焦点滚动对齐位置。
+///
+/// 纵向浏览设置项时，让获焦控件尽量稳定停留在视口下半区，
+/// 给顶部二维码与说明区留出更完整的展示空间。
+const double _tvSettingsFocusScrollAlignment = 0.72;
+
 /// TV 设置数据加载函数。
 typedef TvSettingsLoader = Future<TvSettingsData> Function();
 
@@ -224,6 +230,12 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 页面内容最大宽度。
   static const double _contentMaxWidth = 1360;
 
+  /// 固定页头距离顶部的安全留白。
+  static const double _headerTopPadding = 20;
+
+  /// 固定页头与滚动内容之间的垂直间距。
+  static const double _headerBottomSpacing = 15;
+
   /// 分组面板之间的垂直间距。
   static const double _panelSpacing = 24;
 
@@ -255,6 +267,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 密码输入框的浏览态焦点。
   final FocusNode _passwordBrowseFocusNode = FocusNode(
     debugLabel: 'tv-settings-password-browse',
+  );
+
+  /// 保存服务器配置按钮焦点。
+  final FocusNode _saveAccountFocusNode = FocusNode(
+    debugLabel: 'tv-settings-save-account-button',
   );
 
   /// 弹幕服务器地址输入框的浏览态焦点。
@@ -367,6 +384,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _serverUrlBrowseFocusNode.dispose();
     _usernameBrowseFocusNode.dispose();
     _passwordBrowseFocusNode.dispose();
+    _saveAccountFocusNode.dispose();
     _danmakuBaseApiBrowseFocusNode.dispose();
     _adFilterFocusNode.dispose();
     _danmakuEnabledFocusNode.dispose();
@@ -640,50 +658,99 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
               isLoading: snapshot.connectionState != ConnectionState.done,
             );
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                TvLayout.pageHorizontalPadding,
-                56,
-                TvLayout.pageHorizontalPadding,
-                64,
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '设置',
-                        style: FontUtils.poppins(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        TvLayout.pageHorizontalPadding,
+                        _headerTopPadding,
+                        TvLayout.pageHorizontalPadding,
+                        0,
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        '首焦点会自动进入服务器地址；输入框按确认编辑，开关和滑杆可直接用左右键调节。',
-                        style: FontUtils.poppins(
-                          fontSize: 15,
-                          color: const Color(0xFF98A2A8),
-                        ),
+                      child: _buildPinnedHeader(),
+                    ),
+                    const SizedBox(height: _headerBottomSpacing),
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, scrollConstraints) {
+                          // 追加半屏高度的底部缓冲，让末尾设置项也能滚到屏幕中线附近。
+                          final bottomFocusBuffer =
+                              scrollConstraints.maxHeight * 0.5;
+                          return SingleChildScrollView(
+                            padding: EdgeInsets.fromLTRB(
+                              TvLayout.pageHorizontalPadding,
+                              20,
+                              TvLayout.pageHorizontalPadding,
+                              64 + bottomFocusBuffer,
+                            ),
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: _contentMaxWidth,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    // 先展示手机扫码区，方便用户进入设置页后先扫码在手机端填表。
+                                    _buildMobileConfigSection(),
+                                    const SizedBox(height: _panelSpacing),
+                                    _buildAccountSection(),
+                                    const SizedBox(height: _panelSpacing),
+                                    _buildDanmakuSection(),
+                                    const SizedBox(height: _panelSpacing),
+                                    _buildCacheSection(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                      const SizedBox(height: 18),
-                      _buildAccountSection(),
-                      const SizedBox(height: _panelSpacing),
-                      _buildMobileConfigSection(),
-                      const SizedBox(height: _panelSpacing),
-                      _buildDanmakuSection(),
-                      const SizedBox(height: _panelSpacing),
-                      _buildCacheSection(),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
+                  ],
+                );
+              },
             );
           },
+        ),
+      ),
+    );
+  }
+
+  /// 构建固定在顶部的页头。
+  ///
+  /// 设置页在内容滚动时始终保留标题和操作提示，
+  /// 避免首焦点自动滚动后把“设置”页头直接推出视口。
+  Widget _buildPinnedHeader() {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: _contentMaxWidth),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '设置',
+              style: FontUtils.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '首焦点会自动进入服务器地址；输入框按确认编辑，开关和滑杆可直接用左右键调节。',
+              style: FontUtils.poppins(
+                fontSize: 15,
+                color: const Color(0xFF98A2A8),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -721,6 +788,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         ),
         const SizedBox(height: 24),
         _TvActionButton(
+          focusNode: _saveAccountFocusNode,
           label: _savingAccount ? '保存中...' : '保存配置',
           onPressed: _savingAccount ? null : _saveAccount,
         ),
@@ -739,6 +807,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           value: _themeKey,
           options: TvThemePalette.values,
           onChanged: _saveTheme,
+          onArrowUp: () => _saveAccountFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
         _TvOptionRow(
@@ -746,6 +815,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           value: _doubanImageSource,
           options: TvMobileSettingsDraft.availableDoubanImageSources,
           onChanged: _saveDoubanImageSource,
+          onArrowUp: () => TvFocusable.requestRememberedFocusForGroup(
+            'tv-setting-theme-主题色',
+          ),
           onArrowDown: () => _adFilterFocusNode.requestFocus(),
         ),
         const SizedBox(height: 18),
@@ -1365,6 +1437,7 @@ class _TvTextFieldState extends State<_TvTextField> {
           onPressed: _startEditing,
           onArrowUp: widget.onArrowUp,
           onArrowDown: widget.onArrowDown,
+          focusScrollAlignment: _tvSettingsFocusScrollAlignment,
           builder: (context, hasFocus) {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 140),
@@ -1456,6 +1529,7 @@ class _TvThemeOptionRow extends StatelessWidget {
     required this.value,
     required this.options,
     required this.onChanged,
+    this.onArrowUp,
   });
 
   /// 设置项标签。
@@ -1469,6 +1543,9 @@ class _TvThemeOptionRow extends StatelessWidget {
 
   /// 主题色变更回调。
   final ValueChanged<String> onChanged;
+
+  /// 所有选项统一的上方向键回调。
+  final VoidCallback? onArrowUp;
 
   @override
   Widget build(BuildContext context) {
@@ -1492,6 +1569,8 @@ class _TvThemeOptionRow extends StatelessWidget {
               directionalRepeatThrottleGroupKey: 'tv-setting-theme-$label',
               focusMemoryGroupKey: 'tv-setting-theme-$label',
               onPressed: () => onChanged(option.key),
+              onArrowUp: onArrowUp,
+              focusScrollAlignment: _tvSettingsFocusScrollAlignment,
               builder: (context, hasFocus) {
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 140),
@@ -1556,6 +1635,7 @@ class _TvOptionRow extends StatelessWidget {
     required this.value,
     required this.options,
     required this.onChanged,
+    this.onArrowUp,
     this.onArrowDown,
   });
 
@@ -1570,6 +1650,9 @@ class _TvOptionRow extends StatelessWidget {
 
   /// 选项变更回调。
   final ValueChanged<String> onChanged;
+
+  /// 所有选项统一的上方向键回调。
+  final VoidCallback? onArrowUp;
 
   /// 所有选项统一的下方向键回调。
   final VoidCallback? onArrowDown;
@@ -1597,7 +1680,9 @@ class _TvOptionRow extends StatelessWidget {
               directionalRepeatThrottleGroupKey: 'tv-setting-option-$label',
               focusMemoryGroupKey: 'tv-setting-option-$label',
               onPressed: () => onChanged(option),
+              onArrowUp: onArrowUp,
               onArrowDown: onArrowDown,
+              focusScrollAlignment: _tvSettingsFocusScrollAlignment,
               builder: (context, hasFocus) {
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 140),
@@ -1672,6 +1757,7 @@ class _TvActionButton extends StatelessWidget {
       onPressed: onPressed,
       onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
+      focusScrollAlignment: _tvSettingsFocusScrollAlignment,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
@@ -1743,6 +1829,7 @@ class _TvSwitchRow extends StatelessWidget {
       onArrowRight: !value ? () => onChanged(true) : null,
       onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
+      focusScrollAlignment: _tvSettingsFocusScrollAlignment,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),
@@ -1865,6 +1952,7 @@ class _TvSliderRow extends StatelessWidget {
       },
       onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
+      focusScrollAlignment: _tvSettingsFocusScrollAlignment,
       builder: (context, hasFocus) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 140),

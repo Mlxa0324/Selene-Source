@@ -48,6 +48,11 @@ class ApiResponse<T> {
 class ApiService {
   static const Duration _timeout = Duration(seconds: 30);
 
+  /// 当前正在执行的自动登录任务。
+  ///
+  /// TV 首页、搜索和详情页可能并发打多条受保护请求，这里用来合并重复登录。
+  static Future<ApiResponse<String>>? _autoLoginInFlight;
+
   /// 清除 fetchSourcesData 缓存
   static void clearSourcesDataCache() {
     UserDataService.clearSearchCache();
@@ -61,6 +66,11 @@ class ApiService {
   /// 获取认证cookies
   static Future<String?> _getCookies() async {
     return await UserDataService.getCookies();
+  }
+
+  /// 检查当前是否具备自动续登录所需数据。
+  static Future<bool> _canAutoLogin() async {
+    return UserDataService.hasAutoLoginData();
   }
 
   /// 构建完整URL
@@ -105,6 +115,47 @@ class ApiService {
     return headers;
   }
 
+  /// 在发起鉴权请求前确保本地存在有效 cookies。
+  ///
+  /// TV 设置页允许“只保存配置、不立即登录”，因此后续首页、搜索和详情链路
+  /// 需要在真正发请求前按已保存账号自动续登录一次，避免首次请求直接 401。
+  static Future<void> _ensureAuthenticatedSession({
+    bool includeAuth = true,
+  }) async {
+    if (!includeAuth) {
+      return;
+    }
+
+    final cookies = await _getCookies();
+    if (cookies != null && cookies.isNotEmpty) {
+      return;
+    }
+
+    if (!await _canAutoLogin()) {
+      return;
+    }
+
+    await _ensureAutoLogin();
+  }
+
+  /// 去重自动登录请求，避免多条并发接口同时重复登录。
+  static Future<ApiResponse<String>> _ensureAutoLogin() async {
+    final inFlight = _autoLoginInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final future = autoLogin();
+    _autoLoginInFlight = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_autoLoginInFlight, future)) {
+        _autoLoginInFlight = null;
+      }
+    }
+  }
+
   /// 处理响应
   static Future<ApiResponse<T>> _handleResponse<T>(
     http.Response response,
@@ -113,11 +164,11 @@ class ApiService {
   ) async {
     // 处理401未授权
     if (response.statusCode == 401) {
-      // 清除用户数据
-      await UserDataService.clearUserData();
+      // 仅清理失效会话，保留服务器配置，便于 TV 端重新进入设置页时继续回显。
+      await UserDataService.clearSessionCookies();
 
       // 跳转到登录页
-      if (context != null) {
+      if (context != null && context.mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const LoginScreen()),
           (route) => false,
@@ -191,6 +242,7 @@ class ApiService {
     BuildContext? context,
   }) async {
     try {
+      await _ensureAuthenticatedSession();
       String url = await _buildUrl(endpoint);
 
       // 添加查询参数
@@ -209,6 +261,26 @@ class ApiService {
           )
           .timeout(_timeout);
 
+      if (response.statusCode == 401 && await _canAutoLogin()) {
+        final loginResult = await _ensureAutoLogin();
+        if (loginResult.success) {
+          final retryHeaders = await _buildHeaders(additionalHeaders: headers);
+          final retriedResponse = await http
+              .get(
+                Uri.parse(url),
+                headers: retryHeaders,
+              )
+              .timeout(_timeout);
+          if (context != null && !context.mounted) {
+            return await _handleResponse(retriedResponse, fromJson, null);
+          }
+          return await _handleResponse(retriedResponse, fromJson, context);
+        }
+      }
+
+      if (context != null && !context.mounted) {
+        return await _handleResponse(response, fromJson, null);
+      }
       return await _handleResponse(response, fromJson, context);
     } catch (e) {
       return ApiResponse.error('网络请求异常: ${e.toString()}');
@@ -224,6 +296,7 @@ class ApiService {
     BuildContext? context,
   }) async {
     try {
+      await _ensureAuthenticatedSession();
       final url = await _buildUrl(endpoint);
       final requestHeaders = await _buildHeaders(additionalHeaders: headers);
 
@@ -235,6 +308,27 @@ class ApiService {
           )
           .timeout(_timeout);
 
+      if (response.statusCode == 401 && await _canAutoLogin()) {
+        final loginResult = await _ensureAutoLogin();
+        if (loginResult.success) {
+          final retryHeaders = await _buildHeaders(additionalHeaders: headers);
+          final retriedResponse = await http
+              .post(
+                Uri.parse(url),
+                headers: retryHeaders,
+                body: body != null ? json.encode(body) : null,
+              )
+              .timeout(_timeout);
+          if (context != null && !context.mounted) {
+            return await _handleResponse(retriedResponse, fromJson, null);
+          }
+          return await _handleResponse(retriedResponse, fromJson, context);
+        }
+      }
+
+      if (context != null && !context.mounted) {
+        return await _handleResponse(response, fromJson, null);
+      }
       return await _handleResponse(response, fromJson, context);
     } catch (e) {
       return ApiResponse.error('网络请求异常: ${e.toString()}');
@@ -250,6 +344,7 @@ class ApiService {
     BuildContext? context,
   }) async {
     try {
+      await _ensureAuthenticatedSession();
       final url = await _buildUrl(endpoint);
       final requestHeaders = await _buildHeaders(additionalHeaders: headers);
 
@@ -261,6 +356,27 @@ class ApiService {
           )
           .timeout(_timeout);
 
+      if (response.statusCode == 401 && await _canAutoLogin()) {
+        final loginResult = await _ensureAutoLogin();
+        if (loginResult.success) {
+          final retryHeaders = await _buildHeaders(additionalHeaders: headers);
+          final retriedResponse = await http
+              .put(
+                Uri.parse(url),
+                headers: retryHeaders,
+                body: body != null ? json.encode(body) : null,
+              )
+              .timeout(_timeout);
+          if (context != null && !context.mounted) {
+            return await _handleResponse(retriedResponse, fromJson, null);
+          }
+          return await _handleResponse(retriedResponse, fromJson, context);
+        }
+      }
+
+      if (context != null && !context.mounted) {
+        return await _handleResponse(response, fromJson, null);
+      }
       return await _handleResponse(response, fromJson, context);
     } catch (e) {
       return ApiResponse.error('网络请求异常: ${e.toString()}');
@@ -275,6 +391,7 @@ class ApiService {
     BuildContext? context,
   }) async {
     try {
+      await _ensureAuthenticatedSession();
       final url = await _buildUrl(endpoint);
       final requestHeaders = await _buildHeaders(additionalHeaders: headers);
 
@@ -285,6 +402,26 @@ class ApiService {
           )
           .timeout(_timeout);
 
+      if (response.statusCode == 401 && await _canAutoLogin()) {
+        final loginResult = await _ensureAutoLogin();
+        if (loginResult.success) {
+          final retryHeaders = await _buildHeaders(additionalHeaders: headers);
+          final retriedResponse = await http
+              .delete(
+                Uri.parse(url),
+                headers: retryHeaders,
+              )
+              .timeout(_timeout);
+          if (context != null && !context.mounted) {
+            return await _handleResponse(retriedResponse, fromJson, null);
+          }
+          return await _handleResponse(retriedResponse, fromJson, context);
+        }
+      }
+
+      if (context != null && !context.mounted) {
+        return await _handleResponse(response, fromJson, null);
+      }
       return await _handleResponse(response, fromJson, context);
     } catch (e) {
       return ApiResponse.error('网络请求异常: ${e.toString()}');
@@ -324,6 +461,9 @@ class ApiService {
       final streamedResponse = await request.send().timeout(_timeout);
       final response = await http.Response.fromStream(streamedResponse);
 
+      if (context != null && !context.mounted) {
+        return await _handleResponse(response, fromJson, null);
+      }
       return await _handleResponse(response, fromJson, context);
     } catch (e) {
       return ApiResponse.error('文件上传异常: ${e.toString()}');
@@ -334,50 +474,28 @@ class ApiService {
   static Future<ApiResponse<List<FavoriteItem>>> getFavorites(
       BuildContext context) async {
     try {
-      final baseUrl = await _getBaseUrl();
-      if (baseUrl == null) {
-        return ApiResponse.error('服务器地址未配置');
-      }
+      final response = await get<Map<String, dynamic>>(
+        '/api/favorites',
+        context: context,
+        fromJson: (data) => data as Map<String, dynamic>,
+      );
 
-      final cookies = await _getCookies();
-      if (cookies == null) {
-        return ApiResponse.error('用户未登录');
-      }
+      if (response.success && response.data != null) {
+        final favorites = <FavoriteItem>[];
 
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/favorites'),
-        headers: {
-          'Accept': 'application/json',
-          'Cookie': cookies,
-        },
-      ).timeout(_timeout);
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        final List<FavoriteItem> favorites = [];
-
-        // 将Map转换为List并按save_time降序排序
-        data.forEach((id, itemData) {
+        // 逐条转成业务模型，并按最近收藏时间倒序展示。
+        response.data!.forEach((id, itemData) {
           favorites.add(FavoriteItem.fromJson(id, itemData));
         });
-
-        // 按save_time降序排序
         favorites.sort((a, b) => b.saveTime.compareTo(a.saveTime));
 
         return ApiResponse.success(favorites, statusCode: response.statusCode);
-      } else if (response.statusCode == 401) {
-        // 未授权，跳转到登录页面
-        if (context.mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-          );
-        }
-        return ApiResponse.error('登录已过期，请重新登录',
-            statusCode: response.statusCode);
-      } else {
-        return ApiResponse.error('获取收藏夹失败: ${response.statusCode}',
-            statusCode: response.statusCode);
       }
+
+      return ApiResponse.error(
+        response.message ?? '获取收藏夹失败',
+        statusCode: response.statusCode,
+      );
     } catch (e) {
       return ApiResponse.error('获取收藏夹异常: ${e.toString()}');
     }

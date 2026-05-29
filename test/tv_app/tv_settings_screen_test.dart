@@ -53,13 +53,15 @@ void main() {
     expect(find.text('清除所有缓存'), findsOneWidget);
   });
 
-  testWidgets('shows settings title at top left above settings panels',
+  testWidgets('keeps pinned settings header above mobile scan section',
       (tester) async {
+    final fakeBridge = _FakeMobileConfigBridge();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: TvSettingsScreen(
             loadSettings: () async => TvSettingsData.empty(),
+            startMobileConfigBridge: fakeBridge.start,
           ),
         ),
       ),
@@ -68,11 +70,17 @@ void main() {
     await tester.pumpAndSettle();
 
     final settingsTop = tester.getTopLeft(find.text('设置')).dy;
+
+    await tester.ensureVisible(find.text('手机扫码配置'));
+    await tester.pumpAndSettle();
+
+    final mobileConfigTop = tester.getTopLeft(find.text('手机扫码配置')).dy;
     final sectionTop = tester.getTopLeft(find.text('服务器配置')).dy;
 
     expect(find.text('设置'), findsOneWidget);
     expect(settingsTop, lessThanOrEqualTo(64));
-    expect(settingsTop, lessThan(sectionTop));
+    expect(settingsTop, lessThan(mobileConfigTop));
+    expect(mobileConfigTop, lessThan(sectionTop));
   });
 
   testWidgets('keeps TV text fields readonly until confirm is pressed',
@@ -156,7 +164,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await _sendArrowDownTimes(tester, 7);
+    // 扫码区调整到顶部后，首焦点仍从服务器配置开始，向下计数减少一步。
+    await _sendArrowDownTimes(tester, 6);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -182,6 +191,108 @@ void main() {
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-opacity-row',
     );
+  });
+
+  testWidgets('moving up from danmaku options keeps focus inside settings chain',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await _sendArrowDownTimes(tester, 6);
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      'tv-settings-ad-filter-row',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+  });
+
+  testWidgets('keeps focused settings control in lower half of viewport',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final scrollViewRect = tester.getRect(find.byType(SingleChildScrollView));
+    final viewportMidpointDy = scrollViewRect.center.dy;
+    final lowerHalfTargetDy =
+        scrollViewRect.top + (scrollViewRect.height * 0.72);
+
+    await _sendArrowDownTimes(tester, 6);
+    final adFilterCenterDy =
+        tester.getCenter(find.byKey(const ValueKey('tv-settings-ad-filter-switch'))).dy;
+    expect(adFilterCenterDy, greaterThan(viewportMidpointDy));
+    expect((adFilterCenterDy - lowerHalfTargetDy).abs(), lessThan(90));
+
+    await _sendArrowDownTimes(tester, 3);
+    final opacitySliderCenterDy = tester.getCenter(find.byType(Slider).first).dy;
+    expect(opacitySliderCenterDy, greaterThan(viewportMidpointDy));
+    expect((opacitySliderCenterDy - lowerHalfTargetDy).abs(), lessThan(90));
+
+    await _sendArrowDownTimes(tester, 6);
+    final clearCachesCenterDy = tester.getCenter(find.text('清除所有缓存')).dy;
+    expect(clearCachesCenterDy, greaterThan(viewportMidpointDy));
+    expect((clearCachesCenterDy - lowerHalfTargetDy).abs(), lessThan(90));
+  });
+
+  testWidgets('keeps settings page header visible after scrolling down',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await _sendArrowDownTimes(tester, 15);
+    await tester.pumpAndSettle();
+
+    final viewportRect = tester.getRect(find.byType(Scaffold).first);
+    final headerRect = tester.getRect(find.text('设置').first);
+
+    expect(headerRect.top, greaterThanOrEqualTo(viewportRect.top));
+    expect(headerRect.bottom, lessThanOrEqualTo(viewportRect.bottom));
   });
 
   testWidgets('shows mobile scan config section in TV settings',

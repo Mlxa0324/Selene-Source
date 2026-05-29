@@ -4,6 +4,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/bangumi_service.dart';
 import 'package:selene/services/douban_service.dart';
 import 'package:selene/services/page_cache_service.dart';
+import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_favorites_screen.dart';
 import 'package:selene/tv_app/screens/tv_history_screen.dart';
 import 'package:selene/tv_app/screens/tv_live_screen.dart';
@@ -77,6 +78,11 @@ typedef TvContinueWatchingDeleter = Future<bool> Function(
   BuildContext context,
   VideoInfo videoInfo,
 );
+
+/// TV 首页登录态读取函数。
+///
+/// 用于判断“继续观看”分区是否应该展示。
+typedef TvHomeLoginStateLoader = Future<bool> Function();
 
 /// TV 首页各分区的本地状态键。
 ///
@@ -191,6 +197,7 @@ class TvHomeScreen extends StatefulWidget {
     this.loadHomeHotShows,
     this.loadHomeFavorites,
     this.loadContinueWatching,
+    this.loadHasLoginSession,
     this.loadCategoryData,
     this.deleteContinueWatchingItem,
     this.buildDetailPage,
@@ -225,6 +232,11 @@ class TvHomeScreen extends StatefulWidget {
 
   /// 首页继续观看局部刷新函数。
   final TvContinueWatchingLoader? loadContinueWatching;
+
+  /// 首页登录态读取函数。
+  ///
+  /// 未登录时隐藏首页“继续观看”分区，避免展示无意义的空占位。
+  final TvHomeLoginStateLoader? loadHasLoginSession;
 
   /// 分类筛选数据加载函数。
   final TvCategoryDataLoader? loadCategoryData;
@@ -338,6 +350,11 @@ class TvHomeScreen extends StatefulWidget {
     BuildContext context,
   ) {
     return TvVideoLibraryService.loadHistory(context);
+  }
+
+  /// 默认首页登录态读取逻辑。
+  static Future<bool> defaultLoadHasLoginSession() {
+    return UserDataService.isLoggedIn();
   }
 
   /// 从播放记录里提取首页“继续观看”分区数据。
@@ -929,6 +946,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 首页分区初始入口状态是否待重置。
   bool _shouldResetHomeEntryState = true;
 
+  /// 是否已经派发过首页冷启动首焦点。
+  ///
+  /// 外层 `TvBackHandler` 会先拿到根焦点，导致首页顶部导航的 `autofocus`
+  /// 在真实 App 壳里失效。这里在首页首帧完成后补发一次，把焦点稳定收回
+  /// 当前选中的顶部 tab。
+  bool _didDispatchInitialTopNavFocus = false;
+
   /// 首页内容区是否已经完成过首次人工浏览。
   ///
   /// 首次冷启动进入首页时，顶部导航按下应该固定进入首个非空分区，
@@ -942,6 +966,11 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   ///
   /// 删除继续观看等本地操作优先在这份快照上做局部更新，避免整页重新挂骨架。
   TvHomeData? _lastResolvedHomeData;
+
+  /// 当前是否展示“继续观看”分区。
+  ///
+  /// 仅当存在有效登录态时才展示，未登录时整块入口直接隐藏。
+  bool _showContinueWatchingSection = true;
 
   /// 继续观看局部刷新序号。
   ///
@@ -1032,6 +1061,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   void _loadHomeData() {
     final loadVersion = ++_homeDataLoadVersion;
     _logHomeDebug('start load version=$loadVersion.');
+    if (_shouldResolveContinueWatchingVisibility()) {
+      _loadHomeLoginState(loadVersion);
+    }
     if (widget.loadHomeData != null) {
       _logHomeDebug('version=$loadVersion using legacy aggregate loader.');
       _loadLegacyHomeData(loadVersion);
@@ -1067,6 +1099,50 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       section: _TvHomeSectionKey.favorites,
       loader: widget.loadHomeFavorites ?? TvHomeScreen.defaultLoadHomeFavorites,
     );
+  }
+
+  /// 判断当前首页是否需要主动读取登录态。
+  ///
+  /// 生产环境使用默认加载链路时需要真实判断登录态；测试若注入了首页数据，
+  /// 则只有显式传入 `loadHasLoginSession` 才启用该逻辑，避免误读空偏好导致用例串成“未登录”。
+  bool _shouldResolveContinueWatchingVisibility() {
+    if (widget.loadHasLoginSession != null) {
+      return true;
+    }
+    return widget.loadHomeData == null &&
+        widget.loadHomePlayRecords == null &&
+        widget.loadHomeHotMovies == null &&
+        widget.loadHomeHotTvShows == null &&
+        widget.loadHomeBangumiCalendar == null &&
+        widget.loadHomeHotShows == null &&
+        widget.loadHomeFavorites == null &&
+        widget.loadContinueWatching == null;
+  }
+
+  /// 读取首页当前登录态。
+  ///
+  /// 登录态只影响“继续观看”分区是否可见，不阻塞其它热门分区继续加载。
+  Future<void> _loadHomeLoginState(int loadVersion) async {
+    final loader =
+        widget.loadHasLoginSession ?? TvHomeScreen.defaultLoadHasLoginSession;
+    try {
+      final hasLoginSession = await loader();
+      if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
+        return;
+      }
+      setState(() {
+        _showContinueWatchingSection = hasLoginSession;
+        _syncLastResolvedHomeData();
+      });
+    } catch (_) {
+      if (!mounted || !_isCurrentHomeLoadVersion(loadVersion)) {
+        return;
+      }
+      setState(() {
+        _showContinueWatchingSection = true;
+        _syncLastResolvedHomeData();
+      });
+    }
   }
 
   /// 加载旧版聚合首页数据。
@@ -1408,6 +1484,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 构建 TV 首页标签内容。
   Widget _buildHomeTab(TvHomeData data) {
     _scheduleInitialHomeEntryState();
+    _dispatchInitialTopNavFocusIfNeeded();
     return Focus(
       canRequestFocus: false,
       onKeyEvent: _handleSelectedTabBackKey,
@@ -1415,27 +1492,29 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TvHomeSection(
-              title: '继续观看',
-              titleHint: '长按删除',
-              pendingFocusVideoId: _pendingContinueWatchingFocusVideoId,
-              videos: data.continueWatching,
-              isLoading: _isHomeSectionLoading(
-                _TvHomeSectionKey.continueWatching,
+            if (_showContinueWatchingSection)
+              TvHomeSection(
+                title: '继续观看',
+                titleHint: '长按删除',
+                pendingFocusVideoId: _pendingContinueWatchingFocusVideoId,
+                videos: data.continueWatching,
+                isLoading: _isHomeSectionLoading(
+                  _TvHomeSectionKey.continueWatching,
+                ),
+                scrollController: _continueWatchingScrollController,
+                onVideoPressed: _openVideoFromRecord,
+                onVideoLongPressed: _deleteContinueWatchingItem,
+                autofocusFirstItem: true,
+                firstItemFocusNode: _continueWatchingFirstFocusNode,
+                onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
+                onArrowDownToNextSection: () =>
+                    _requestAdjacentHomeSectionFocus(
+                  currentSection: _TvHomeSectionKey.continueWatching,
+                  moveForward: true,
+                ),
+                // “继续观看”的“查看更多”进入独立播放历史页。
+                onMorePressed: _openHistory,
               ),
-              scrollController: _continueWatchingScrollController,
-              onVideoPressed: _openVideoFromRecord,
-              onVideoLongPressed: _deleteContinueWatchingItem,
-              autofocusFirstItem: true,
-              firstItemFocusNode: _continueWatchingFirstFocusNode,
-              onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
-              onArrowDownToNextSection: () => _requestAdjacentHomeSectionFocus(
-                currentSection: _TvHomeSectionKey.continueWatching,
-                moveForward: true,
-              ),
-              // “继续观看”的“查看更多”进入独立播放历史页。
-              onMorePressed: _openHistory,
-            ),
             TvHomeSection(
               title: '热门电影',
               videos: data.hotMovies,
@@ -1506,6 +1585,23 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         ),
       ),
     );
+  }
+
+  /// 在首页冷启动首帧完成后，把焦点显式送回当前选中的顶部导航项。
+  ///
+  /// 这样即便外层 App 壳的返回键处理节点先拿到焦点，用户首次进入 TV 首页时
+  /// 仍然会从“首页”tab 开始浏览，而不是停在页面根节点或内容卡片上。
+  void _dispatchInitialTopNavFocusIfNeeded() {
+    if (_didDispatchInitialTopNavFocus) {
+      return;
+    }
+    _didDispatchInitialTopNavFocus = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _topNavController.requestSelectedFocus();
+    });
   }
 
   /// 构建电影分类标签内容。
@@ -1989,11 +2085,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   List<({Object groupKey, FocusNode firstNode, _TvHomeSectionKey section})>
       _homeSectionFocusTargets() {
     return <({Object groupKey, FocusNode firstNode, _TvHomeSectionKey section})>[
-      (
-        groupKey: _continueWatchingSectionFocusGroup,
-        firstNode: _continueWatchingFirstFocusNode,
-        section: _TvHomeSectionKey.continueWatching,
-      ),
+      if (_showContinueWatchingSection)
+        (
+          groupKey: _continueWatchingSectionFocusGroup,
+          firstNode: _continueWatchingFirstFocusNode,
+          section: _TvHomeSectionKey.continueWatching,
+        ),
       (
         groupKey: _hotMoviesSectionFocusGroup,
         firstNode: _hotMoviesFirstFocusNode,
@@ -2370,9 +2467,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   }
 
   /// 打开搜索页面。
-  void _openSearch() {
+  Future<void> _openSearch() async {
     final searchPage = widget.buildSearchPage?.call() ?? const TvSearchScreen();
-    _pushQuickPage(searchPage);
+    await _openQuickPageAndRefreshContinueWatching(searchPage);
   }
 
   /// 打开播放历史页面。
@@ -2383,11 +2480,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               widget.buildDetailPage?.call(videoInfo, null) ??
               TvVideoDetailScreen(videoInfo: videoInfo),
         );
-    final refreshHome = await _pushQuickPage<bool>(historyPage);
-    if (!mounted || refreshHome != true) {
-      return;
-    }
-    await _refreshContinueWatchingOnly();
+    await _openQuickPageAndRefreshContinueWatching(historyPage);
   }
 
   /// 打开收藏夹页面。
@@ -2398,18 +2491,14 @@ class _TvHomeScreenState extends State<TvHomeScreen>
               widget.buildDetailPage?.call(videoInfo, null) ??
               TvVideoDetailScreen(videoInfo: videoInfo),
         );
-    final refreshHome = await _pushQuickPage<bool>(favoritesPage);
-    if (!mounted || refreshHome != true) {
-      return;
-    }
-    await _refreshContinueWatchingOnly();
+    await _openQuickPageAndRefreshContinueWatching(favoritesPage);
   }
 
   /// 打开设置页面。
-  void _openSettings() {
+  Future<void> _openSettings() async {
     final settingsPage =
         widget.buildSettingsPage?.call() ?? const TvSettingsScreen();
-    _pushQuickPage(settingsPage);
+    await _openQuickPageAndRefreshContinueWatching(settingsPage);
   }
 
   /// 统一打开顶部快捷入口对应的独立页面。
@@ -2425,6 +2514,18 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         reverseTransitionDuration: Duration.zero,
       ),
     );
+  }
+
+  /// 打开右上角快捷页，并在返回首页后刷新继续观看。
+  ///
+  /// 搜索、播放历史、收藏夹和设置都可能改动播放记录或登录态，
+  /// 因此返回首页后统一只刷新“继续观看”和历史快照，不重刷热门分区。
+  Future<void> _openQuickPageAndRefreshContinueWatching(Widget page) async {
+    await _pushQuickPage<Object?>(page);
+    if (!mounted) {
+      return;
+    }
+    await _refreshContinueWatchingOnly();
   }
 
   /// 只刷新首页“继续观看”和历史快照。
@@ -2447,17 +2548,27 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return;
     }
 
+    final refreshedContinueWatching =
+        TvHomeScreen._buildContinueWatchingVideos(refreshedPlayRecordVideos);
+    final refreshedHistory =
+        TvHomeScreen._buildHistoryVideos(refreshedPlayRecordVideos);
+
     setState(() {
       _setHomeSectionSnapshot(
         _TvHomeSectionKey.continueWatching,
-        TvHomeScreen._buildContinueWatchingVideos(refreshedPlayRecordVideos),
+        refreshedContinueWatching,
         isLoading: false,
       );
       _setHomeSectionSnapshot(
         _TvHomeSectionKey.history,
-        TvHomeScreen._buildHistoryVideos(refreshedPlayRecordVideos),
+        refreshedHistory,
         isLoading: false,
       );
+      // 刷新后只要真的拿到了继续观看数据，就立即恢复分区显示，
+      // 避免首页还停留在旧的隐藏态，导致用户误以为记录被清空。
+      if (refreshedContinueWatching.isNotEmpty) {
+        _showContinueWatchingSection = true;
+      }
       _syncLastResolvedHomeData();
     });
   }

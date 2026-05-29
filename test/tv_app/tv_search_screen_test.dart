@@ -79,6 +79,30 @@ void main() {
     );
   });
 
+  testWidgets('keeps vertical gap between history title and history words',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['庆余年', '长安的荔枝'],
+            hotWords: const [],
+            recommends: [_videoInfo('recommend_1', '世界的主人')],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final historyTitleBottom = tester.getBottomLeft(find.text('搜索历史')).dy;
+    final historyGridTop = tester
+        .getTopLeft(find.byKey(const ValueKey('tv-search-word-grid-搜索历史')))
+        .dy;
+
+    expect(historyGridTop - historyTitleBottom, greaterThanOrEqualTo(10));
+  });
+
   testWidgets('fills search input from hot word tile', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

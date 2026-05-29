@@ -703,6 +703,27 @@ class UserDataService {
     }
   }
 
+  /// 只清除当前登录会话 cookies，保留服务器地址、用户名和密码。
+  ///
+  /// TV 设置页保存的是可复用的服务器配置，登录态过期时不能把这份配置一并抹掉。
+  /// 这里仅移除当前会话，并同步把已保存账号里的 cookies 清空，方便后续自动续登录。
+  static Future<void> clearSessionCookies() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentServerUrl = prefs.getString(_serverUrlKey) ?? '';
+    final currentUsername = prefs.getString(_usernameKey) ?? '';
+    final currentPassword = prefs.getString(_passwordKey) ?? '';
+    await prefs.remove(_cookiesKey);
+    if (currentServerUrl.isNotEmpty && currentUsername.isNotEmpty) {
+      await _upsertSavedAccount(
+        prefs: prefs,
+        serverUrl: currentServerUrl,
+        username: currentUsername,
+        password: currentPassword,
+        cookies: '',
+      );
+    }
+  }
+
   // 获取所有用户数据
   static Future<Map<String, String?>> getAllUserData() async {
     final prefs = await SharedPreferences.getInstance();

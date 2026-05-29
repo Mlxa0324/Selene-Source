@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,11 +10,81 @@ class TvBackIntent {
   /// 私有构造，避免工具类被实例化。
   const TvBackIntent._();
 
+  /// 当前仍处于按下态的返回键集合。
+  ///
+  /// 顶层独立页返回首页时，旧页面的 `TvBackHandler` 会立刻销毁，
+  /// 但同一次物理按压后续仍可能继续派发到首页。这里改成跨页面共享的
+  /// “按下态”锁，确保同一次返回只会触发一次真正的返回动作。
+  static final Set<LogicalKeyboardKey> _pressedBackKeys =
+      <LogicalKeyboardKey>{};
+
+  /// 返回键按下态的兜底释放定时器。
+  ///
+  /// 正常路径会由 `KeyUpEvent` 释放；如果某些设备偶发丢失 `KeyUp`，
+  /// 这里再用短超时兜底，避免后续返回键永久失效。
+  static final Map<LogicalKeyboardKey, Timer> _pressedBackKeyTimers =
+      <LogicalKeyboardKey, Timer>{};
+
+  /// 返回键按下态兜底释放时长。
+  static const Duration _pressedBackKeyFallbackReleaseDuration =
+      Duration(milliseconds: 700);
+
   /// 判断是否为 TV 端返回类按键。
   static bool isBackKey(LogicalKeyboardKey key) {
     return key == LogicalKeyboardKey.escape ||
         key == LogicalKeyboardKey.goBack ||
         key == LogicalKeyboardKey.browserBack;
+  }
+
+  /// 记录首次返回键按下。
+  ///
+  /// 返回 `true` 表示这是当前物理按压的首次 `KeyDown`，可以真正执行返回；
+  /// 返回 `false` 表示仍属于同一次按压，当前事件只消费不重复返回。
+  static bool registerBackKeyDown(LogicalKeyboardKey key) {
+    if (!isBackKey(key)) {
+      return false;
+    }
+    final isFirstDown = _pressedBackKeys.add(key);
+    _refreshBackKeyFallbackRelease(key);
+    return isFirstDown;
+  }
+
+  /// 延续当前返回键按下态。
+  ///
+  /// 用于吃掉长按重复事件，或兼容个别设备在同一次长按里补发的异常回调。
+  static void keepBackKeyPressed(LogicalKeyboardKey key) {
+    if (!isBackKey(key) || !_pressedBackKeys.contains(key)) {
+      return;
+    }
+    _refreshBackKeyFallbackRelease(key);
+  }
+
+  /// 释放返回键按下态。
+  static void releaseBackKey(LogicalKeyboardKey key) {
+    if (!isBackKey(key)) {
+      return;
+    }
+    _pressedBackKeys.remove(key);
+    _pressedBackKeyTimers.remove(key)?.cancel();
+  }
+
+  /// 重置返回键按下态调试数据。
+  @visibleForTesting
+  static void debugResetBackKeyTracking() {
+    for (final timer in _pressedBackKeyTimers.values) {
+      timer.cancel();
+    }
+    _pressedBackKeyTimers.clear();
+    _pressedBackKeys.clear();
+  }
+
+  /// 刷新返回键按下态的兜底释放计时。
+  static void _refreshBackKeyFallbackRelease(LogicalKeyboardKey key) {
+    _pressedBackKeyTimers.remove(key)?.cancel();
+    _pressedBackKeyTimers[key] = Timer(
+      _pressedBackKeyFallbackReleaseDuration,
+      () => releaseBackKey(key),
+    );
   }
 }
 
@@ -69,14 +141,30 @@ class _TvBackHandlerState extends State<TvBackHandler> {
 
   /// 处理返回类按键。
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    // 返回键只响应首次按下，长按重复事件统一忽略，
-    // 避免子页刚返回时，同一次物理按压的 repeat 又落到上一页。
+    if (!TvBackIntent.isBackKey(event.logicalKey)) {
+      return KeyEventResult.ignored;
+    }
+
+    if (event is KeyUpEvent) {
+      TvBackIntent.releaseBackKey(event.logicalKey);
+      return KeyEventResult.handled;
+    }
+
+    if (event is KeyRepeatEvent) {
+      TvBackIntent.keepBackKeyPressed(event.logicalKey);
+      return KeyEventResult.handled;
+    }
+
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
 
-    if (!TvBackIntent.isBackKey(event.logicalKey)) {
-      return KeyEventResult.ignored;
+    // 返回键只响应当前物理按压的首次 KeyDown，后续重复事件统一吞掉，
+    // 避免子页刚返回时，同一次按压又被首页重新消费一次。
+    final isFirstBackKeyDown =
+        TvBackIntent.registerBackKeyDown(event.logicalKey);
+    if (!isFirstBackKeyDown) {
+      return KeyEventResult.handled;
     }
 
     _dispatchBack();

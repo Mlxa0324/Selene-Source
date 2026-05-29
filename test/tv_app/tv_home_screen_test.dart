@@ -27,6 +27,7 @@ void main() {
     final binding = TestWidgetsFlutterBinding.instance;
     binding.window.clearPhysicalSizeTestValue();
     binding.window.clearDevicePixelRatioTestValue();
+    TvBackIntent.debugResetBackKeyTracking();
   });
 
   test('TV video grid keeps focus overflow visible', () {
@@ -268,6 +269,35 @@ void main() {
     expect(find.text('热门剧集'), findsOneWidget);
     expect(find.text('新番放送'), findsOneWidget);
     expect(find.text('热门综艺'), findsOneWidget);
+  });
+
+  testWidgets('hides continue watching section when user is not logged in',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHasLoginSession: () async => false,
+          loadHomePlayRecords: (_) async => [
+            _videoInfo('continue_0', '继续 0'),
+          ],
+          loadHomeHotMovies: (_) async => [
+            _videoInfo('movie_0', '电影 0'),
+          ],
+          loadHomeHotTvShows: (_) async => const <VideoInfo>[],
+          loadHomeBangumiCalendar: (_) async => const <VideoInfo>[],
+          loadHomeHotShows: (_) async => const <VideoInfo>[],
+          loadHomeFavorites: (_) async => const <VideoInfo>[],
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续观看'), findsNothing);
+    expect(find.text('长按删除'), findsNothing);
+    expect(find.text('继续 0'), findsNothing);
+    expect(find.text('热门电影'), findsOneWidget);
+    expect(find.text('电影 0'), findsOneWidget);
   });
 
   testWidgets(
@@ -526,6 +556,62 @@ void main() {
 
     expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
     expect(firstMovieFocusNode.hasFocus, isFalse);
+  });
+
+  testWidgets('initial TV app focus stays on home top nav tab', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [_videoInfo('continue_0', '继续 0')],
+            hotMovies: List.generate(
+              6,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isFalse);
+  });
+
+  testWidgets('initial TV app shell focus stays on home top nav tab',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvBackHandler(
+          autofocus: true,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: [_videoInfo('continue_0', '继续 0')],
+              hotMovies: List.generate(
+                6,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: const [],
+              favorites: const [],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+    expect(_focusNodeForVideoCard(tester, 'continue_0').hasFocus, isFalse);
   });
 
   testWidgets(
@@ -839,6 +925,70 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('确定退出 IvyTV？'), findsNothing);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+      'second back key down from quick page is ignored until first back key up',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvBackHandler(
+          autofocus: true,
+          child: TvHomeScreen(
+            loadHomeData: (_) async => TvHomeData(
+              continueWatching: [_videoInfo('continue_0', '继续 0')],
+              hotMovies: List.generate(
+                6,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: const [],
+              favorites: const [],
+            ),
+            buildSettingsPage: () => const Scaffold(
+              body: TvBackHandler(
+                autofocus: true,
+                child: SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-settings')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SizedBox), findsWidgets);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TvHomeScreen), findsOneWidget);
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    expect(find.text('确定退出 IvyTV？'), findsNothing);
+    expect(_focusNodeForTopNavLabel(tester, '首页').hasFocus, isTrue);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
   });
 
   testWidgets(
@@ -934,6 +1084,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+    TvBackIntent.debugResetBackKeyTracking();
 
     expect(homeLoadCount, 1);
     expect(continueWatchingLoadCount, 1);
@@ -992,6 +1143,117 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TV 设置页已打开'), findsOneWidget);
+  });
+
+  testWidgets(
+      'search page return refreshes continue watching without reloading home sections',
+      (tester) async {
+    var homeLoadCount = 0;
+    var continueWatchingLoadCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async {
+            homeLoadCount++;
+            return TvHomeData(
+              continueWatching: [_videoInfo('continue_1', '继续 1')],
+              hotMovies: [_videoInfo('movie_1', '热门电影 1')],
+              hotTvShows: const [],
+              bangumiCalendar: const [],
+              hotShows: const [],
+              history: [_videoInfo('continue_1', '继续 1')],
+              favorites: const [],
+            );
+          },
+          loadContinueWatching: (_) async {
+            continueWatchingLoadCount++;
+            return [_videoInfo('continue_2', '继续 2')];
+          },
+          buildSearchPage: () => Builder(
+            builder: (context) {
+              return Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('返回首页'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('继续 1'), findsOneWidget);
+    expect(find.text('热门电影 1'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-search')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('返回首页'));
+    await tester.pumpAndSettle();
+
+    expect(homeLoadCount, 1);
+    expect(continueWatchingLoadCount, 1);
+    expect(find.text('热门电影 1'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-home-loading-card')), findsNothing);
+    expect(find.text('继续 2'), findsOneWidget);
+  });
+
+  testWidgets(
+      'settings page return shows continue watching section again when refresh has data',
+      (tester) async {
+    var continueWatchingLoadCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHasLoginSession: () async => false,
+          loadHomePlayRecords: (_) async => [
+            _videoInfo('continue_1', '继续 1'),
+          ],
+          loadHomeHotMovies: (_) async => [
+            _videoInfo('movie_1', '热门电影 1'),
+          ],
+          loadHomeHotTvShows: (_) async => const <VideoInfo>[],
+          loadHomeBangumiCalendar: (_) async => const <VideoInfo>[],
+          loadHomeHotShows: (_) async => const <VideoInfo>[],
+          loadHomeFavorites: (_) async => const <VideoInfo>[],
+          loadContinueWatching: (_) async {
+            continueWatchingLoadCount++;
+            return [_videoInfo('continue_2', '继续 2')];
+          },
+          buildSettingsPage: () => Builder(
+            builder: (context) {
+              return Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('返回首页'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.text('继续观看'), findsNothing);
+    expect(find.text('热门电影 1'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('tv-top-nav-action-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('返回首页'));
+    await tester.pumpAndSettle();
+
+    expect(continueWatchingLoadCount, 1);
+    expect(find.text('继续观看'), findsOneWidget);
+    expect(find.text('继续 2'), findsOneWidget);
+    expect(find.text('热门电影 1'), findsOneWidget);
   });
 
   testWidgets('settings quick action blocks right key and keeps focus',
