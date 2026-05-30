@@ -41,6 +41,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":feature-tv-home"))
+    implementation(project(":feature-tv-search"))
+    implementation(project(":feature-tv-history"))
+    implementation(project(":feature-tv-favorites"))
+    implementation(project(":feature-tv-settings"))
+    implementation(project(":feature-tv-live"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

@@ -13,6 +13,12 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
+import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
+import org.moontechlab.selene.tv.feature.home.TvHomeRoute
+import org.moontechlab.selene.tv.feature.live.TvLiveRoute
+import org.moontechlab.selene.tv.feature.search.TvSearchRoute
+import org.moontechlab.selene.tv.feature.settings.TvSettingsRoute
 
 /**
  * 搭建 TV 根导航图。
@@ -30,24 +36,23 @@ fun TvNavGraph(
         startDestination = TvDestination.Home.route,
         modifier = modifier,
     ) {
-        // 顶层页面先使用最小占位壳，后续功能模块逐步替换。
         composable(TvDestination.Home.route) {
-            TvPlaceholderScreen(label = "Home")
+            TvHomeRoute()
         }
         composable(TvDestination.Search.route) {
-            TvPlaceholderScreen(label = "Search")
+            TvSearchRoute()
         }
         composable(TvDestination.History.route) {
-            TvPlaceholderScreen(label = "History")
+            TvHistoryRoute()
         }
         composable(TvDestination.Favorites.route) {
-            TvPlaceholderScreen(label = "Favorites")
+            TvFavoritesRoute()
         }
         composable(TvDestination.Settings.route) {
-            TvPlaceholderScreen(label = "Settings")
+            TvSettingsRoute()
         }
         composable(TvDestination.Live.route) {
-            TvPlaceholderScreen(label = "Live")
+            TvLiveRoute()
         }
         composable(
             route = TvDestination.Player.route,
@@ -61,24 +66,25 @@ fun TvNavGraph(
             val videoId = backStackEntry.arguments
                 ?.getString(TvDestination.Player.videoIdArg)
                 .orEmpty()
-            TvPlaceholderScreen(label = "Player: $videoId")
+            TvPlayerPlaceholder(videoId = videoId)
         }
     }
 }
 
 /**
- * 展示当前导航节点的最小占位内容。
+ * 展示全屏播放器的临时占位内容。
  *
- * @param label 页面中心展示的占位标题。
+ * @param videoId 当前视频 ID。
  */
 @Composable
-private fun TvPlaceholderScreen(label: String) {
+private fun TvPlayerPlaceholder(videoId: String) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
+        // 播放器主壳会在详情和全屏任务中接入，这里先保留路由参数通路。
         Text(
-            text = label,
+            text = "Player: $videoId",
             modifier = Modifier.padding(horizontal = 24.dp),
         )
     }
