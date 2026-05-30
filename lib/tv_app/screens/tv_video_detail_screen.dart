@@ -2305,7 +2305,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             _episodeGroupTargetKeyFor(selectedGroupIndex),
           );
         }
-        _ensureHorizontalTargetVisible(_episodeTargetKeyFor(_episodeIndex));
+        if (!_jumpHorizontalListTargetToSafeLeadingInset(
+          controller: _episodeListScrollController,
+          targetKey: _episodeTargetKeyFor(_episodeIndex),
+        )) {
+          _ensureHorizontalTargetVisible(_episodeTargetKeyFor(_episodeIndex));
+        }
       });
     });
   }
@@ -2341,6 +2346,28 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     controller.jumpTo(targetOffset.toDouble());
+  }
+
+  /// 按真实组件位置把横向列表立即校正到左安全区。
+  ///
+  /// 初始进入详情页时先按索引粗略跳到当前选集，让目标项参与构建；随后再用真实
+  /// 渲染位置补一次无动画校正，避免估算宽度把左右 padding 平摊进 item 后导致贴边。
+  bool _jumpHorizontalListTargetToSafeLeadingInset({
+    required ScrollController controller,
+    required GlobalKey targetKey,
+  }) {
+    final targetOffset = _horizontalListTargetSafeLeadingOffset(
+      controller: controller,
+      targetKey: targetKey,
+    );
+    if (targetOffset == null) {
+      return false;
+    }
+    if ((controller.position.pixels - targetOffset).abs() < 1) {
+      return true;
+    }
+    controller.jumpTo(targetOffset);
+    return true;
   }
 
   /// 按索引把横向列表尽量滚到左侧起点，保持当前焦点项排在前面。
@@ -2388,39 +2415,55 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required ScrollController controller,
     required GlobalKey targetKey,
   }) {
-    if (!controller.hasClients) {
+    final targetOffset = _horizontalListTargetSafeLeadingOffset(
+      controller: controller,
+      targetKey: targetKey,
+    );
+    if (targetOffset == null) {
       return false;
+    }
+    if ((controller.position.pixels - targetOffset).abs() < 1) {
+      return true;
+    }
+    controller.position.animateTo(
+      targetOffset,
+      duration: TvFocusScroll.duration,
+      curve: TvFocusScroll.curve,
+    );
+    return true;
+  }
+
+  /// 计算目标控件对齐左安全区时的横向滚动位置。
+  double? _horizontalListTargetSafeLeadingOffset({
+    required ScrollController controller,
+    required GlobalKey targetKey,
+  }) {
+    if (!controller.hasClients) {
+      return null;
     }
     final targetRect = _globalRectForKey(targetKey);
     if (targetRect == null) {
-      return false;
+      return null;
     }
 
     final listContext = controller.position.context.notificationContext;
     if (listContext == null || !listContext.mounted) {
-      return false;
+      return null;
     }
     final listRect = _globalRectForContext(listContext);
     if (listRect == null) {
-      return false;
+      return null;
     }
 
     final position = controller.position;
     final deltaToLeadingEdge =
         targetRect.left - listRect.left - _detailHorizontalListSafePadding;
-    final targetOffset = (position.pixels + deltaToLeadingEdge).clamp(
-      position.minScrollExtent,
-      position.maxScrollExtent,
-    );
-    if ((position.pixels - targetOffset).abs() < 1) {
-      return true;
-    }
-    position.animateTo(
-      targetOffset.toDouble(),
-      duration: TvFocusScroll.duration,
-      curve: TvFocusScroll.curve,
-    );
-    return true;
+    return (position.pixels + deltaToLeadingEdge)
+        .clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        )
+        .toDouble();
   }
 
   /// 使用真实组件上下文微调横向列表，让目标项稳定落在可视窗口内。
@@ -3518,11 +3561,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
             final isFirstItem = index == 0;
             final isLastItem = index == _recommends.length - 1;
-            final scaleAlignment = isFirstItem
-                ? Alignment.centerLeft
-                : isLastItem
-                    ? Alignment.centerRight
-                    : Alignment.center;
             return TvEdgeShake(
               key: edgeShakeKey,
               child: KeyedSubtree(
@@ -3531,7 +3569,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   videoInfo: videoInfo,
                   focusNode: _recommendFocusNodeFor(videoInfo),
                   focusMemoryGroupKey: 'tv-detail-recommend-list',
-                  scaleAlignment: scaleAlignment,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)

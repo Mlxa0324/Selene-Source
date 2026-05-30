@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_top_nav.dart';
 
 void main() {
@@ -94,6 +96,48 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(selectedIndex, 1);
+  });
+
+  testWidgets('top nav focus border stays white under scoped theme',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final themeService = TvThemeService()
+      ..setThemeKey(TvThemePalette.netflixRedKey);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: TvTopNav(
+              tabs: const ['首页', '电影', '剧集', '动漫', '综艺', '直播'],
+              selectedIndex: 0,
+              onChanged: (_) {},
+              onSearchPressed: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    _focusNodeForAction(tester, 'search').requestFocus();
+    await tester.pumpAndSettle();
+
+    final actionDecoration = tester
+        .widget<AnimatedContainer>(
+          find
+              .descendant(
+                of: find.byKey(const ValueKey('tv-top-nav-action-search')),
+                matching: find.byType(AnimatedContainer),
+              )
+              .first,
+        )
+        .decoration! as BoxDecoration;
+
+    expect(actionDecoration.border, isA<Border>());
+    expect((actionDecoration.border! as Border).top.color, Colors.white);
   });
 
   testWidgets('renders utility actions outside main tab menu', (tester) async {

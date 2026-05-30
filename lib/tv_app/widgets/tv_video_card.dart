@@ -279,19 +279,24 @@ class TvVideoCard extends StatelessWidget {
         color: const Color(0xFF171A1C),
         borderRadius: BorderRadius.circular(8),
         boxShadow: hasFocus
-            ? [
-                BoxShadow(
-                  color: palette.focus.withValues(alpha: 0.28),
-                  blurRadius: 22,
-                  offset: const Offset(0, 10),
-                ),
-              ]
-            : null,
+            // ? [
+            //     BoxShadow(
+            //       color: palette.focus.withValues(alpha: 0.28),
+            //       blurRadius: 22,
+            //       offset: const Offset(0, 10),
+            //     ),
+            //   ]
+            // : null,
+        ?[BoxShadow(
+          color: Color(0xFFE2E6EA).withValues(alpha: 0.08),
+          blurRadius: 22,
+          offset: const Offset(0, 10),
+        ),]:null,
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: hasFocus ? palette.focus : const Color(0xFF2A2F32),
+          color: hasFocus ? const Color(0xFFE2E6EA) : const Color(0xFF2A2F32),
           width: hasFocus ? 3 : 1,
         ),
       ),

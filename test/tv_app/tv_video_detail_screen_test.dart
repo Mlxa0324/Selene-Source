@@ -939,7 +939,7 @@ void main() {
     );
   });
 
-  testWidgets('detail recommend edge cards scale inward without side padding',
+  testWidgets('detail recommend edge cards use normal centered scale',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -984,8 +984,8 @@ void main() {
           )
           .first,
     );
-    expect(firstRecommendCard.scaleAlignment, Alignment.centerLeft);
-    expect(lastRecommendCard.scaleAlignment, Alignment.centerRight);
+    expect(firstRecommendCard.scaleAlignment, Alignment.center);
+    expect(lastRecommendCard.scaleAlignment, Alignment.center);
   });
 
   testWidgets(
@@ -2942,6 +2942,53 @@ void main() {
     expect(find.text('暴风资源'), findsOneWidget);
     expect(find.text('第220集'), findsOneWidget);
     expect(find.text('201-220'), findsOneWidget);
+  });
+
+  testWidgets(
+      'initial selected episode keeps safe leading padding before focus',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'detail_source_a',
+            '主影片',
+            source: 'source_a',
+            index: 504,
+            totalEpisodes: 720,
+            playTime: 120,
+          ),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '无尽资源',
+              episodeCount: 720,
+            ),
+            sources: [
+              _searchResult('source_a', '无尽资源', episodeCount: 720),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('第504集'), findsOneWidget);
+    expect(
+      _leftOfFocusableForText(tester, '第504集'),
+      closeTo(TvLayout.pageHorizontalPadding, 1.0),
+    );
   });
 
   testWidgets('detail focused leading items keep focus border inside list',

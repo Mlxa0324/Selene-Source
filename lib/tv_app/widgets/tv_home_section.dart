@@ -647,7 +647,7 @@ class _TvMoreCard extends StatelessWidget {
                   color: const Color(0xFF15191B),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: hasFocus ? palette.focus : const Color(0xFF2A2F32),
+                    color: hasFocus ? Colors.white : const Color(0xFF2A2F32),
                     width: hasFocus ? 3 : 1,
                   ),
                   boxShadow: hasFocus

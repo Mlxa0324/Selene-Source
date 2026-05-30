@@ -303,6 +303,50 @@ void main() {
     expect(progressDecoration.color, TvThemePalette.netflixRed.accent);
   });
 
+  testWidgets('TV video card focus border stays white under scoped theme',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final focusNode = FocusNode();
+    final themeService = TvThemeService()
+      ..setThemeKey(TvThemePalette.netflixRedKey);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            body: TvVideoCard(
+              focusNode: focusNode,
+              videoInfo: _videoInfo(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    focusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    final coverContainerFinder = find
+        .byWidgetPredicate(
+          (widget) => widget is AnimatedContainer,
+        )
+        .evaluate()
+        .map((element) => find.byWidget(element.widget))
+        .firstWhere(
+          (finder) => tester.getSize(finder) ==
+              const Size(TvVideoCard.width, TvVideoCard.coverHeight),
+        );
+    final coverDecoration = tester
+        .widget<AnimatedContainer>(coverContainerFinder)
+        .foregroundDecoration! as BoxDecoration;
+
+    expect(coverDecoration.border, isA<Border>());
+    expect((coverDecoration.border! as Border).top.color, Colors.white);
+
+    focusNode.dispose();
+  });
+
   testWidgets(
       'TV video card shows only source name in continue watching subtitle',
       (tester) async {

@@ -2031,7 +2031,7 @@ class _TvTextFieldState extends State<_TvTextField> {
                 color: const Color(0xFF0E1112),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: hasFocus ? palette.focus : const Color(0xFF293136),
+                  color: hasFocus ? Colors.white : const Color(0xFF293136),
                   width: hasFocus ? 2 : 1,
                 ),
               ),
@@ -2372,7 +2372,7 @@ class _TvSwitchRow extends StatelessWidget {
             color: const Color(0xFF0E1112),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: hasFocus ? palette.focus : const Color(0xFF293136),
+              color: hasFocus ? Colors.white : const Color(0xFF293136),
               width: hasFocus ? 2 : 1,
             ),
           ),
@@ -2495,7 +2495,7 @@ class _TvSliderRow extends StatelessWidget {
             color: const Color(0xFF0E1112),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: hasFocus ? palette.focus : const Color(0xFF293136),
+              color: hasFocus ? Colors.white : const Color(0xFF293136),
               width: hasFocus ? 2 : 1,
             ),
           ),

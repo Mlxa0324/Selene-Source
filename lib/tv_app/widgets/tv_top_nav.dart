@@ -631,7 +631,7 @@ class _TvTopNavState extends State<TvTopNav> {
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: hasFocus
-                                      ? palette.focus
+                                      ? Colors.white
                                       : Colors.transparent,
                                 ),
                               ),
@@ -739,7 +739,7 @@ class _TvTopNavActionButton extends StatelessWidget {
                         : const Color(0xFF272C30),
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(
-                  color: hasFocus ? palette.focus : Colors.transparent,
+                  color: hasFocus ? Colors.white : Colors.transparent,
                   width: 2,
                 ),
               ),
