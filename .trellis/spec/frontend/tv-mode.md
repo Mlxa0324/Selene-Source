@@ -406,6 +406,47 @@ TV 详情页加载错误契约：
 | 底部提醒 | 菜单未弹出时展示返回键、下键和安全提醒文案 |
 | 返回键 | `Esc`、遥控器返回键和系统返回统一处理；菜单已弹出时先关闭菜单；无菜单时退出全屏回到详情页 |
 
+#### 原生播放器内核协议
+
+```kotlin
+interface PlayerEngine {
+    val state: StateFlow<PlayerState>
+    suspend fun load(request: PlaybackRequest)
+    suspend fun play()
+    suspend fun pause()
+    suspend fun seekTo(positionMs: Long)
+    suspend fun captureSnapshot(): PlaybackSnapshot
+    suspend fun restoreSnapshot(snapshot: PlaybackSnapshot)
+    suspend fun release()
+}
+
+data class PlaybackSnapshot(
+    val videoId: String,
+    val sourceId: String,
+    val episodeId: String,
+    val url: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val playbackSpeed: Float,
+    val resizeMode: TvResizeMode,
+)
+```
+
+实现要求：
+
+- `core-player-api` 只定义播放器协议、播放请求、播放快照、状态和画面比例枚举，不依赖 ExoPlayer 或 WebView。
+- `core-player-exo` 是 ExoPlayer 主内核实现，必须依赖 `DispatcherProvider.playback` 执行 `load / play / pause / seekTo / restoreSnapshot / release` 等播放控制动作。
+- `PlaybackSnapshot` 必须保留 `videoId / sourceId / episodeId / url / positionMs / durationMs / playbackSpeed / resizeMode`，用于全屏切内核后恢复当前线路、剧集、进度、倍速和画面比例。
+- `TvSeekController.computeDeltaSeconds(holdMs)` 的规则必须对齐 Flutter TV 全屏播放器：长按初期固定 5 秒，小步进后平滑加速，最大 19 秒封顶。
+- ExoPlayer 和 WebView 兜底内核都必须实现 `PlayerEngine`，全屏播放器壳只依赖协议，不直接引用具体内核类。
+
+测试要求：
+
+- `PlaybackSnapshotTest.snapshot_keeps_source_episode_position_speed_and_resize_mode` 覆盖快照恢复字段。
+- `ExoPlayerEngineTest.seekTo_runs_on_playback_dispatcher` 覆盖 seek 不在主线程直接执行。
+- `TvSeekControllerTest.longPress_seek_delta_accelerates_after_threshold` 覆盖长按加速。
+- `TvSeekControllerTest.longPress_seek_delta_caps_at_max_step` 覆盖 19 秒封顶。
+
 ### 4.5 TV 设置输入框契约
 
 | 状态 | 预期 |
