@@ -2625,6 +2625,56 @@ void main() {
     expect(find.text('第25集'), findsOneWidget);
   });
 
+  testWidgets('episode group focus coalesces rapid switching asynchronously',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 80,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 80),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('21-40'))).requestFocus();
+    await tester.pump();
+    Focus.of(tester.element(find.text('41-60'))).requestFocus();
+    await tester.pump();
+    Focus.of(tester.element(find.text('61-80'))).requestFocus();
+    await tester.pump();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第61集'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 90));
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第41集'), findsNothing);
+    expect(find.text('第61集'), findsOneWidget);
+  });
+
   testWidgets('episode group up key focuses nearest episode range',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -2670,6 +2720,7 @@ void main() {
       tester,
       listKey: 'tv-detail-episode-group-list',
       itemFinder: find.text('221-240'),
+      maxLeadingGap: 120,
     );
 
     Focus.of(tester.element(find.text('221-240'))).requestFocus();
@@ -3059,7 +3110,7 @@ void main() {
       closeTo(TvLayout.pageHorizontalPadding, 1.0),
     );
 
-    // 选集长按右移到中段选集时同样保留 36px 左安全区。
+    // 选集长按右移到中段选集时，不允许贴边裁掉焦点框。
     Focus.of(tester.element(find.text('第1集'))).requestFocus();
     await tester.pumpAndSettle();
     for (var step = 0; step < 11; step++) {
@@ -3068,7 +3119,7 @@ void main() {
     }
     expect(
       _leftOfFocusableForText(tester, '第12集'),
-      closeTo(TvLayout.pageHorizontalPadding, 1.0),
+      greaterThanOrEqualTo(TvLayout.pageHorizontalPadding - 1),
     );
 
     // 推荐卡片浏览到中段时，海报左侧也保留 36px，放大描边不会被屏幕裁掉。
@@ -4921,14 +4972,18 @@ void _expectHorizontalListFlushToScreen(WidgetTester tester, String listKey) {
   final listFinder = find.byKey(ValueKey(listKey));
   final listRect = tester.getRect(listFinder);
   final listView = tester.widget<ListView>(listFinder);
+  final listPadding = listView.padding?.resolve(TextDirection.ltr);
   final screenRect = Offset.zero & tester.view.physicalSize;
   final visibleRect = listRect.intersect(screenRect);
 
   expect(visibleRect.left, closeTo(0, 0.1));
   expect(visibleRect.right, closeTo(tester.view.physicalSize.width, 0.1));
+  expect(listPadding?.left, TvLayout.pageHorizontalPadding);
   expect(
-    listView.padding,
-    const EdgeInsets.symmetric(horizontal: TvLayout.pageHorizontalPadding),
+    listPadding?.right,
+    listKey == 'tv-detail-episode-group-list'
+        ? TvLayout.pageHorizontalPadding
+        : TvLayout.pageHorizontalPadding * 3,
   );
 }
 

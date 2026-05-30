@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 
 void main() {
@@ -140,7 +142,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
     final secondSweepStartedOffset = _skeletonSweepOffset(tester);
 
-    await tester.pump(TvVideoCard.shimmerDuration - const Duration(milliseconds: 1));
+    await tester
+        .pump(TvVideoCard.shimmerDuration - const Duration(milliseconds: 1));
     final secondCompletedOffset = _skeletonSweepOffset(tester);
 
     await tester.pump(TvVideoCard.shimmerDuration);
@@ -263,6 +266,41 @@ void main() {
       find.byKey(const ValueKey('tv-card-progress-fill')),
     );
     expect(progressFill.widthFactor, 0.25);
+  });
+
+  testWidgets('TV video card progress fill uses scoped theme accent',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final themeService = TvThemeService()
+      ..setThemeKey(TvThemePalette.netflixRedKey);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            body: TvVideoCard(
+              videoInfo: _videoInfo(
+                playTime: 300,
+                totalTime: 1200,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final progressDecoration = tester
+        .widget<DecoratedBox>(
+          find.descendant(
+            of: find.byKey(const ValueKey('tv-card-progress-fill')),
+            matching: find.byType(DecoratedBox),
+          ),
+        )
+        .decoration as BoxDecoration;
+
+    // 继续观看封面底部进度条跟随当前 TV 主题色。
+    expect(progressDecoration.color, TvThemePalette.netflixRed.accent);
   });
 
   testWidgets(

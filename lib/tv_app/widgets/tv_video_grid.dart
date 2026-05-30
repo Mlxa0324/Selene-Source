@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
@@ -470,8 +471,8 @@ class _TvVideoGridState extends State<TvVideoGrid> {
     required int crossAxisCount,
     required int itemCount,
   }) {
-    final isRightEdge = index % crossAxisCount == crossAxisCount - 1 ||
-        index == itemCount - 1;
+    final isRightEdge =
+        index % crossAxisCount == crossAxisCount - 1 || index == itemCount - 1;
     if (widget.rightPadding == 0 && isRightEdge) {
       return Alignment.centerRight;
     }
@@ -563,6 +564,7 @@ class TvVideoGridActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = TvTheme.of(context);
     return TvFocusable(
       onPressed: onPressed,
       onArrowDown: onArrowDown,
@@ -571,7 +573,7 @@ class TvVideoGridActionButton extends StatelessWidget {
           duration: const Duration(milliseconds: 140),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           decoration: BoxDecoration(
-            color: hasFocus ? const Color(0xFF27AE60) : const Color(0xFF1A1E21),
+            color: hasFocus ? palette.accent : const Color(0xFF1A1E21),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: hasFocus ? Colors.white : const Color(0xFF2A2F32),

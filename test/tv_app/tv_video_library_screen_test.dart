@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_video_library_screen.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
@@ -127,7 +129,8 @@ void main() {
 
     final titleBottom = tester.getBottomLeft(find.text('收藏夹')).dy;
     final clearButtonBottom = tester
-        .getBottomLeft(find.byKey(const ValueKey('tv-video-library-clear-button')))
+        .getBottomLeft(
+            find.byKey(const ValueKey('tv-video-library-clear-button')))
         .dy;
     final firstPosterTop = tester
         .getTopLeft(find.byKey(const ValueKey('tv-video-card-focus-history_0')))
@@ -188,6 +191,46 @@ void main() {
     expect(find.text('搜索'), findsOneWidget);
   });
 
+  testWidgets('video library header actions use scoped theme accent',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final themeService = TvThemeService()
+      ..setThemeKey(TvThemePalette.netflixRedKey);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: TvVideoLibraryScreen(
+            title: '播放历史',
+            loadVideos: (_) async => [
+              _videoInfo('history_1', '历史影片 1'),
+            ],
+            onClearVideos: (_) async => true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // 搜索按钮获焦时使用当前主题色，避免继续沿用默认 Ivy 绿。
+    Focus.of(tester.element(find.text('搜索'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(
+      _actionButtonFillColor(tester, '搜索'),
+      TvThemePalette.netflixRed.accent,
+    );
+
+    // 删除全部按钮同样走当前主题色，历史页和收藏页共用这一套头部按钮。
+    Focus.of(tester.element(find.text('删除全部'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(
+      _actionButtonFillColor(tester, '删除全部'),
+      TvThemePalette.netflixRed.accent,
+    );
+  });
+
   testWidgets('video library search action opens TV search screen',
       (tester) async {
     await tester.pumpWidget(
@@ -223,7 +266,8 @@ void main() {
     await tester.tap(find.text('打开收藏夹页'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('tv-video-library-search-button')));
+    await tester
+        .tap(find.byKey(const ValueKey('tv-video-library-search-button')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('tv-search-screen')), findsOneWidget);
@@ -518,4 +562,15 @@ int _videoGridRenderedChildCount(WidgetTester tester) {
       tester.widget<SliverGrid>(find.byKey(const ValueKey('tv-video-grid')));
   final delegate = sliverGrid.delegate as SliverChildBuilderDelegate;
   return delegate.childCount ?? 0;
+}
+
+Color? _actionButtonFillColor(WidgetTester tester, String label) {
+  final container = tester.widget<AnimatedContainer>(
+    find.ancestor(
+      of: find.text(label),
+      matching: find.byType(AnimatedContainer),
+    ),
+  );
+  final decoration = container.decoration as BoxDecoration?;
+  return decoration?.color;
 }

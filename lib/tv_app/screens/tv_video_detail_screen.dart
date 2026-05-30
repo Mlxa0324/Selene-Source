@@ -358,7 +358,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   ///
   /// 页面外层已经保留 `TvLayout.pageHorizontalPadding`，这里不再额外缩进，
   /// 保证播放器、分区标题和顶部 `IvyTV` 共用同一条左基线。
-  static const double _detailSectionLeadingInset = TvLayout.pageHorizontalPadding;
+  static const double _detailSectionLeadingInset =
+      TvLayout.pageHorizontalPadding;
 
   /// 详情页横向列表的首尾焦点安全留白。
   ///
@@ -369,18 +370,21 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   static const double _detailHorizontalListSafePadding =
       TvLayout.pageHorizontalPadding;
 
+  /// 详情页横向列表的内容内边距。
+  ///
+  /// 左侧保持 36px 焦点安全区；右侧额外补两段页面边距，保证滚到末尾时
+  /// 最后一个获焦项和焦点描边也能完整露出。
+  static const EdgeInsets _detailHorizontalListPadding = EdgeInsets.only(
+    left: _detailHorizontalListSafePadding,
+    right: _detailHorizontalListSafePadding * 3,
+  );
+
   /// 详情页横向列表从页面内容区扩到屏幕两侧的补偿宽度。
   ///
   /// 页面正文保留 36px 左右边距用于标题和播放器对齐，但遥控器横向列表滚动时
   /// 不允许保留首尾空白，因此列表视口需要反向抵消父级这段边距。
   static const double _detailHorizontalListOverflow =
       TvLayout.pageHorizontalPadding;
-
-  /// 横向列表首项获焦时的停留偏移。
-  ///
-  /// 滚动过程中内容可以贴到屏幕边缘，但回到首项时必须停在列表内部安全区，
-  /// 保持第一张卡片和分区标题左侧对齐。
-  static const double _detailListLeadingBias = 0;
 
   /// 详情页纵向焦点跟随的稳定中线。
   ///
@@ -399,6 +403,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 大屏焦点边框会外扩 2px，且底部按钮获焦时不能贴着视口边缘，
   /// 因此这里统一预留一小段上下安全距离，避免看起来像被页面裁掉。
   static const double _detailVerticalFocusVisibleInset = 12;
+
+  /// 选集分组获焦后的延迟提交时间。
+  ///
+  /// 遥控器快速左右移动时，先让焦点和文字高亮即时响应，选集列表刷新延后合并，
+  /// 避免每个路过的分组都同步重建一组选集。
+  static const Duration _episodeGroupFocusCommitDelay =
+      Duration(milliseconds: 80);
 
   /// 页面滚动控制器。
   final ScrollController _scrollController = ScrollController();
@@ -585,6 +596,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 小播放器初始加载保护计时器。
   Timer? _previewLoadingHoldTimer;
 
+  /// 选集分组获焦后的延迟提交计时器。
+  Timer? _episodeGroupFocusCommitTimer;
+
+  /// 等待提交的选集分组下标。
+  int? _pendingEpisodeGroupFocusIndex;
+
   /// 顶部右侧当前时间。
   late String _currentTime;
 
@@ -685,6 +702,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
     _clockTimer?.cancel();
     _previewLoadingHoldTimer?.cancel();
+    _episodeGroupFocusCommitTimer?.cancel();
     // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
     unawaited(_saveProgress(force: true, scene: '详情页销毁'));
     // 播放器实例由子组件自己管理，详情页销毁时只解绑进度监听，
@@ -1572,7 +1590,46 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   }
 
   /// 切换选集分组。
-  void _switchEpisodeGroup(int index) {
+  void _switchEpisodeGroup(int index, {bool defer = false}) {
+    if (defer) {
+      _scheduleEpisodeGroupFocusCommit(index);
+      return;
+    }
+    _cancelPendingEpisodeGroupFocusCommit();
+    _commitEpisodeGroupSwitch(index);
+  }
+
+  /// 延迟提交选集分组切换。
+  void _scheduleEpisodeGroupFocusCommit(int index) {
+    _pendingEpisodeGroupFocusIndex = index;
+    _episodeGroupFocusCommitTimer?.cancel();
+    _episodeGroupFocusCommitTimer = Timer(
+      _episodeGroupFocusCommitDelay,
+      () {
+        _episodeGroupFocusCommitTimer = null;
+        final pendingIndex = _pendingEpisodeGroupFocusIndex;
+        _pendingEpisodeGroupFocusIndex = null;
+        if (!mounted || pendingIndex == null) {
+          return;
+        }
+        _commitEpisodeGroupSwitch(pendingIndex);
+      },
+    );
+  }
+
+  /// 取消等待中的选集分组切换任务。
+  void _cancelPendingEpisodeGroupFocusCommit() {
+    _episodeGroupFocusCommitTimer?.cancel();
+    _episodeGroupFocusCommitTimer = null;
+    _pendingEpisodeGroupFocusIndex = null;
+  }
+
+  /// 提交选集分组切换并刷新可见选集。
+  void _commitEpisodeGroupSwitch(int index) {
+    if (_episodeGroupIndex == index) {
+      _pinEpisodeGroupAndEpisodeNearLeadingEdge(index, _episodeIndex);
+      return;
+    }
     setState(() => _episodeGroupIndex = index);
     final groupIndexes = _episodeIndexesForGroup(
       _currentDetail?.episodes.length ?? 0,
@@ -1586,13 +1643,21 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     } else {
       targetEpisodeIndex = _episodeIndex;
     }
+    _pinEpisodeGroupAndEpisodeNearLeadingEdge(index, targetEpisodeIndex);
+  }
+
+  /// 延后定位分组和选集，等待列表完成本轮构建。
+  void _pinEpisodeGroupAndEpisodeNearLeadingEdge(
+    int groupIndex,
+    int? episodeIndex,
+  ) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
-      _pinEpisodeGroupNearLeadingEdge(index);
-      if (targetEpisodeIndex != null) {
-        _pinEpisodeNearLeadingEdge(targetEpisodeIndex);
+      _pinEpisodeGroupNearLeadingEdge(groupIndex);
+      if (episodeIndex != null) {
+        _pinEpisodeNearLeadingEdge(episodeIndex);
       }
     });
   }
@@ -1697,18 +1762,16 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _lastFocusedRecommendKey = _recommendFocusKey(videoInfo);
   }
 
-  /// 在条目真正获焦后，再按指定留白把目标推到屏幕左边。
-  void _scheduleHorizontalTargetToLeadingInset({
+  /// 在条目真正获焦后，再按安全留白把目标推到屏幕左边。
+  void _scheduleHorizontalTargetToSafeLeadingInset({
     required ScrollController controller,
     required GlobalKey targetKey,
-    required double leadingInset,
   }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _animateHorizontalListTargetToLeadingInset(
+        _animateHorizontalListTargetToSafeLeadingInset(
           controller: controller,
           targetKey: targetKey,
-          leadingInset: leadingInset,
         );
       }
     });
@@ -2138,10 +2201,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (localIndex < 0) {
       return;
     }
-    if (_animateHorizontalListTargetToLeadingInset(
+    if (_animateHorizontalListTargetToSafeLeadingInset(
       controller: _episodeListScrollController,
       targetKey: _episodeTargetKeyFor(episodeIndex),
-      leadingInset: _detailHorizontalListSafePadding,
     )) {
       return;
     }
@@ -2161,10 +2223,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (groupCount <= 1 || groupIndex < 0 || groupIndex >= groupCount) {
       return;
     }
-    _animateHorizontalListTargetToLeadingInset(
+    _animateHorizontalListTargetToSafeLeadingInset(
       controller: _episodeGroupListScrollController,
       targetKey: _episodeGroupTargetKeyFor(groupIndex),
-      leadingInset: _detailHorizontalListSafePadding,
     );
   }
 
@@ -2256,7 +2317,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required int itemCount,
     required double spacing,
     required double fallbackItemExtent,
-    double leadingInset = _detailHorizontalListSafePadding,
   }) {
     if (!controller.hasClients || itemCount <= 0 || index < 0) {
       return;
@@ -2273,12 +2333,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final itemExtent = estimatedItemExtent.isFinite && estimatedItemExtent > 0
         ? estimatedItemExtent
         : fallbackItemExtent;
-    final leadingCompensation =
-        _detailHorizontalListSafePadding - leadingInset;
-    final targetOffset = (index * (itemExtent + spacing) +
-            leadingCompensation +
-            _detailListLeadingBias)
-        .clamp(
+    final targetOffset = (index * (itemExtent + spacing)).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
@@ -2295,7 +2350,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required int itemCount,
     required double spacing,
     required double fallbackItemExtent,
-    double leadingInset = _detailHorizontalListSafePadding,
   }) {
     if (!controller.hasClients || itemCount <= 0 || index < 0) {
       return;
@@ -2312,12 +2366,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final itemExtent = estimatedItemExtent.isFinite && estimatedItemExtent > 0
         ? estimatedItemExtent
         : fallbackItemExtent;
-    final leadingCompensation =
-        _detailHorizontalListSafePadding - leadingInset;
-    final targetOffset = (index * (itemExtent + spacing) +
-            leadingCompensation +
-            _detailListLeadingBias)
-        .clamp(
+    final targetOffset = (index * (itemExtent + spacing)).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
@@ -2331,15 +2380,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
   }
 
-  /// 按真实组件位置把横向列表推到指定左安全区。
+  /// 按真实组件位置把横向列表推到左安全区。
   ///
   /// 线路按钮宽度差异比较大，单纯按平均宽度估算会偏得很厉害，
-  /// 这里改成读取真实渲染位置，确保首项能回到默认 36px 安全区，
-  /// 横向浏览时也能只保留一小段防裁切留白。
-  bool _animateHorizontalListTargetToLeadingInset({
+  /// 这里改成读取真实渲染位置，确保获焦项能回到默认 36px 安全区。
+  bool _animateHorizontalListTargetToSafeLeadingInset({
     required ScrollController controller,
     required GlobalKey targetKey,
-    required double leadingInset,
   }) {
     if (!controller.hasClients) {
       return false;
@@ -2359,10 +2406,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     final position = controller.position;
-    final deltaToLeadingEdge = targetRect.left -
-        listRect.left -
-        leadingInset -
-        _detailListLeadingBias;
+    final deltaToLeadingEdge =
+        targetRect.left - listRect.left - _detailHorizontalListSafePadding;
     final targetOffset = (position.pixels + deltaToLeadingEdge).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
@@ -2831,48 +2876,48 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               Column(
                 children: [
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        // horizontal: TvLayout.pageHorizontalPadding,
-                      ),
-                      child: Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(_detailHorizontalListSafePadding, 20, _detailHorizontalListSafePadding, 15),
-                            child: _buildPageGuide(),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            _detailHorizontalListSafePadding,
+                            20,
+                            _detailHorizontalListSafePadding,
+                            15,
                           ),
-                          Expanded(
-                            child: _isInitialDetailLoading &&
-                                    _currentDetail == null
-                                ? Center(
-                                    child: CircularProgressIndicator(
-                                      color: TvTheme.of(context).accent,
-                                    ),
-                                  )
-                                : SingleChildScrollView(
-                                    controller: _scrollController,
-                                    padding: const EdgeInsets.only(bottom: 56),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        _buildHeroArea(),
-                                        const SizedBox(height: 30),
-                                        _buildSourcesSection(),
-                                        const SizedBox(height: 28),
-                                        _buildEpisodesSection(),
-                                        if (_hasVisibleRecommends) ...[
-                                          const SizedBox(height: 34),
-                                          _buildRecommendsSection(),
-                                          const SizedBox(height: 38),
-                                          _buildBottomActions(),
-                                        ],
-                                      ],
-                                    ),
+                          child: _buildPageGuide(),
+                        ),
+                        Expanded(
+                          child: _isInitialDetailLoading &&
+                                  _currentDetail == null
+                              ? Center(
+                                  child: CircularProgressIndicator(
+                                    color: TvTheme.of(context).accent,
                                   ),
-                          ),
-                        ],
-                      ),
+                                )
+                              : SingleChildScrollView(
+                                  controller: _scrollController,
+                                  padding: const EdgeInsets.only(bottom: 56),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _buildHeroArea(),
+                                      const SizedBox(height: 30),
+                                      _buildSourcesSection(),
+                                      const SizedBox(height: 28),
+                                      _buildEpisodesSection(),
+                                      if (_hasVisibleRecommends) ...[
+                                        const SizedBox(height: 34),
+                                        _buildRecommendsSection(),
+                                        const SizedBox(height: 38),
+                                        _buildBottomActions(),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -2979,7 +3024,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   Widget _buildHeroArea() {
     final detail = _currentDetail;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: _detailHorizontalListSafePadding),
+      padding: const EdgeInsets.symmetric(
+          horizontal: _detailHorizontalListSafePadding),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final useVerticalLayout = constraints.maxWidth < 980;
@@ -3258,10 +3304,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               child: ListView.separated(
                 key: const ValueKey('tv-detail-source-list'),
                 controller: _sourceListScrollController,
-                padding: const EdgeInsets.only(
-                  left: _detailHorizontalListSafePadding,
-                  right: _detailHorizontalListSafePadding * 3,
-                ),
+                padding: _detailHorizontalListPadding,
                 scrollDirection: Axis.horizontal,
                 clipBehavior: Clip.none,
                 itemCount: sources.length,
@@ -3299,10 +3342,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                             // 任意线路获焦时都保留 36px 左安全区：首项与标题对齐，
                             // 滚到最左侧获焦时焦点描边也不会被屏幕裁掉。
                             _rememberFocusedSource(source);
-                            _scheduleHorizontalTargetToLeadingInset(
+                            _scheduleHorizontalTargetToSafeLeadingInset(
                               controller: _sourceListScrollController,
                               targetKey: _sourceTargetKeyFor(source),
-                              leadingInset: _detailHorizontalListSafePadding,
                             );
                           },
                           onPressed: () => _switchSource(source),
@@ -3343,10 +3385,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   child: ListView.separated(
                     key: const ValueKey('tv-detail-episode-list'),
                     controller: _episodeListScrollController,
-                    padding: const EdgeInsets.only(
-                      left: _detailHorizontalListSafePadding,
-                      right: _detailHorizontalListSafePadding * 3,
-                    ),
+                    padding: _detailHorizontalListPadding,
                     scrollDirection: Axis.horizontal,
                     clipBehavior: Clip.none,
                     itemCount: visibleIndexes.length,
@@ -3385,10 +3424,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               // 复用按真实渲染位置定位的方案，避免选集宽度估算误差把焦点
                               // 推过安全区，和线路/分组/推荐保持一致的贴边手感。
                               _rememberFocusedEpisode(index);
-                              _scheduleHorizontalTargetToLeadingInset(
+                              _scheduleHorizontalTargetToSafeLeadingInset(
                                 controller: _episodeListScrollController,
                                 targetKey: _episodeTargetKeyFor(index),
-                                leadingInset: _detailHorizontalListSafePadding,
                               );
                             },
                             onPressed: () => _switchEpisode(index),
@@ -3440,13 +3478,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               onFocus: () {
                                 // 任意分组获焦时都保留 36px 左安全区，滚到最左侧也不裁焦点框。
                                 _rememberFocusedEpisodeGroup(index);
-                                _scheduleHorizontalTargetToLeadingInset(
+                                _scheduleHorizontalTargetToSafeLeadingInset(
                                   controller: _episodeGroupListScrollController,
                                   targetKey: _episodeGroupTargetKeyFor(index),
-                                  leadingInset:
-                                      _detailHorizontalListSafePadding,
                                 );
-                                _switchEpisodeGroup(index);
+                                _switchEpisodeGroup(index, defer: true);
                               },
                               onPressed: () => _switchEpisodeGroup(index),
                               throttleGroupKey: 'tv-detail-episode-group-list',
@@ -3472,10 +3508,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         child: ListView.separated(
           key: const ValueKey('tv-detail-recommend-list'),
           controller: _recommendListScrollController,
-          padding: const EdgeInsets.only(
-            left: _detailHorizontalListSafePadding,
-            right: _detailHorizontalListSafePadding * 3,
-          ),
+          padding: _detailHorizontalListPadding,
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           itemCount: _recommends.length,
@@ -3514,10 +3547,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                       // 任意推荐卡片获焦时都保留 36px 左安全区，和首页继续观看一致，
                       // 滚到最左侧获焦时海报放大描边也不会被屏幕裁掉。
                       _rememberFocusedRecommend(videoInfo);
-                      _scheduleHorizontalTargetToLeadingInset(
+                      _scheduleHorizontalTargetToSafeLeadingInset(
                         controller: _recommendListScrollController,
                         targetKey: _recommendTargetKeyFor(videoInfo),
-                        leadingInset: _detailHorizontalListSafePadding,
                       );
                     }
                   },

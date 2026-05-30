@@ -318,7 +318,7 @@ class TvVideoCard extends StatelessWidget {
             ),
           ),
           if (_shouldShowEpisodeBadge) _buildEpisodeBadge(),
-          if (_shouldShowProgress) _buildProgressBar(),
+          if (_shouldShowProgress) _buildProgressBar(palette),
           _TvFocusSweepOverlay(active: hasFocus),
         ],
       ),
@@ -363,7 +363,7 @@ class TvVideoCard extends StatelessWidget {
   }
 
   /// 构建封面底部播放进度条。
-  Widget _buildProgressBar() {
+  Widget _buildProgressBar(TvThemePalette palette) {
     return Positioned(
       left: 0,
       right: 0,
@@ -383,9 +383,9 @@ class TvVideoCard extends StatelessWidget {
           key: const ValueKey('tv-card-progress-fill'),
           alignment: Alignment.centerLeft,
           widthFactor: videoInfo.progressPercentage,
-          child: const DecoratedBox(
+          child: DecoratedBox(
             decoration: BoxDecoration(
-              color: Color(0xFF27AE60),
+              color: palette.accent,
             ),
           ),
         ),
