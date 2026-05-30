@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 rootProject.name = "selene-re-android"
 
 include(":app-tv")
+include(":core-design")
