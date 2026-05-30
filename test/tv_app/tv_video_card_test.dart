@@ -303,7 +303,7 @@ void main() {
     expect(progressDecoration.color, TvThemePalette.netflixRed.accent);
   });
 
-  testWidgets('TV video card focus border stays white under scoped theme',
+  testWidgets('TV video card focus border stays neutral under scoped theme',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     final focusNode = FocusNode();
@@ -334,7 +334,8 @@ void main() {
         .evaluate()
         .map((element) => find.byWidget(element.widget))
         .firstWhere(
-          (finder) => tester.getSize(finder) ==
+          (finder) =>
+              tester.getSize(finder) ==
               const Size(TvVideoCard.width, TvVideoCard.coverHeight),
         );
     final coverDecoration = tester
@@ -342,7 +343,10 @@ void main() {
         .foregroundDecoration! as BoxDecoration;
 
     expect(coverDecoration.border, isA<Border>());
-    expect((coverDecoration.border! as Border).top.color, Colors.white);
+    expect(
+      (coverDecoration.border! as Border).top.color,
+      const Color(0xFFE2E6EA),
+    );
 
     focusNode.dispose();
   });

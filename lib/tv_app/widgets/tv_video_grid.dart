@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/tv_layout.dart';
@@ -167,6 +168,16 @@ class TvVideoGrid extends StatefulWidget {
 }
 
 class _TvVideoGridState extends State<TvVideoGrid> {
+  /// 当前获焦卡片的封面局部区域。
+  ///
+  /// Grid 使用 Sliver 布局，不同页面标题和滚动位置会改变卡片实际坐标，
+  /// 因此共享焦点框通过独立通知器跟随真实渲染区域移动，避免滚动时重建整页 Grid。
+  final ValueNotifier<Rect?> _focusedCoverRectNotifier =
+      ValueNotifier<Rect?>(null);
+
+  /// 当前获焦卡片的封面定位 Key。
+  GlobalKey? _focusedCoverKey;
+
   /// 最近一次触发加载更多时的列表长度。
   ///
   /// 同一批数据里多个倒数第二行卡片连续获焦时，只触发一次分页。
@@ -178,10 +189,25 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   /// 让大列表先展示首批卡片，后续再随着焦点推进逐步放开。
   int _visibleItemCount = 0;
 
+  /// Grid 叠层根节点，用于把封面全局坐标换算成当前组件内坐标。
+  final GlobalKey _stackKey = GlobalKey();
+
+  /// Grid 滚动控制器。
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _visibleItemCount = _computeInitialVisibleItemCount(widget.videos.length);
+    _scrollController.addListener(_handleGridScrollChange);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleGridScrollChange);
+    _scrollController.dispose();
+    _focusedCoverRectNotifier.dispose();
+    super.dispose();
   }
 
   @override
@@ -207,6 +233,88 @@ class _TvVideoGridState extends State<TvVideoGrid> {
       return 0;
     }
     return _visibleItemCount.clamp(0, widget.videos.length);
+  }
+
+  /// Grid 滚动时同步共享焦点框位置。
+  void _handleGridScrollChange() {
+    if (_focusedCoverKey == null) {
+      return;
+    }
+    _updateFocusFrameForKey(_focusedCoverKey!);
+  }
+
+  /// 记录当前获焦卡片并刷新共享焦点框位置。
+  void _handleGridItemFocusChanged({
+    required bool hasFocus,
+    required GlobalKey coverKey,
+    required int index,
+    required int crossAxisCount,
+    required bool usesSmoothFrame,
+  }) {
+    if (!hasFocus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || FocusManager.instance.primaryFocus?.context == null) {
+          return;
+        }
+        final focusedContext = FocusManager.instance.primaryFocus!.context!;
+        final stillInsideGrid = _stackKey.currentContext != null &&
+            _isDescendantOfGrid(focusedContext);
+        if (stillInsideGrid) {
+          return;
+        }
+        _focusedCoverKey = null;
+        _focusedCoverRectNotifier.value = null;
+      });
+      widget.onVideoFocusChanged?.call(false);
+      return;
+    }
+
+    if (usesSmoothFrame) {
+      _focusedCoverKey = coverKey;
+      _updateFocusFrameForKey(coverKey);
+    }
+    _maybeExtendVisibleItems(index, crossAxisCount);
+    _tryTriggerLoadMore(index, crossAxisCount);
+    widget.onVideoFocusChanged?.call(true);
+  }
+
+  /// 判断指定焦点上下文是否仍在当前 Grid 内。
+  bool _isDescendantOfGrid(BuildContext focusedContext) {
+    var found = false;
+    (focusedContext as Element).visitAncestorElements((ancestor) {
+      if (ancestor == _stackKey.currentContext) {
+        found = true;
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
+  /// 根据封面 Key 更新共享焦点框局部区域。
+  void _updateFocusFrameForKey(GlobalKey coverKey) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final stackContext = _stackKey.currentContext;
+      final coverContext = coverKey.currentContext;
+      if (stackContext == null || coverContext == null) {
+        return;
+      }
+      final stackBox = stackContext.findRenderObject() as RenderBox?;
+      final coverBox = coverContext.findRenderObject() as RenderBox?;
+      if (stackBox == null || coverBox == null || !coverBox.hasSize) {
+        return;
+      }
+      final globalTopLeft = coverBox.localToGlobal(Offset.zero);
+      final localTopLeft = stackBox.globalToLocal(globalTopLeft);
+      final nextRect = localTopLeft & coverBox.size;
+      if (_focusedCoverRectNotifier.value == nextRect) {
+        return;
+      }
+      _focusedCoverRectNotifier.value = nextRect;
+    });
   }
 
   /// 计算首批应该开放的卡片数量。
@@ -284,24 +392,41 @@ class _TvVideoGridState extends State<TvVideoGrid> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final crossAxisCount = widget.crossAxisCount;
-          return CustomScrollView(
-            key: const ValueKey('tv-video-grid-scroll'),
+          final usesSmoothFrame = TvTheme.focusEffectModeOf(context) ==
+              TvFocusEffectMode.smoothFrame;
+          return Stack(
+            key: _stackKey,
             clipBehavior: Clip.none,
-            slivers: [
-              if (widget.showTitle) _buildTitleSliver(),
-              if (widget.isLoading)
-                _buildLoadingGrid(crossAxisCount)
-              else if (widget.videos.isEmpty)
-                _buildEmptyState()
-              else ...[
-                _buildVideoGrid(crossAxisCount),
-                if (widget.isLoadingMore) _buildLoadMoreIndicator(),
-              ],
+            children: [
+              CustomScrollView(
+                key: const ValueKey('tv-video-grid-scroll'),
+                controller: _scrollController,
+                clipBehavior: Clip.none,
+                slivers: [
+                  if (widget.showTitle) _buildTitleSliver(),
+                  if (widget.isLoading)
+                    _buildLoadingGrid(crossAxisCount)
+                  else if (widget.videos.isEmpty)
+                    _buildEmptyState()
+                  else ...[
+                    _buildVideoGrid(crossAxisCount),
+                    if (widget.isLoadingMore) _buildLoadMoreIndicator(),
+                  ],
+                ],
+              ),
+              if (usesSmoothFrame)
+                _TvVideoGridFocusFrame(
+                    rectListenable: _focusedCoverRectNotifier),
             ],
           );
         },
       ),
     );
+  }
+
+  /// 构建 Grid 卡片的封面测量 Key。
+  GlobalKey _coverKeyForItem(int index) {
+    return GlobalObjectKey('tv-video-grid-cover-${widget.title}-$index');
   }
 
   /// 构建跟随列表滚动的页面标题。
@@ -364,9 +489,9 @@ class _TvVideoGridState extends State<TvVideoGrid> {
               width: TvVideoCard.width,
               height: TvVideoCard.coverHeight,
               decoration: BoxDecoration(
-                color: const Color(0xFF1D2225),
+                color: TvThemeColors.cardSurface,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF2A2F32)),
+                border: Border.all(color: TvThemeColors.cardSurfaceBorder),
               ),
             ),
           ),
@@ -390,9 +515,9 @@ class _TvVideoGridState extends State<TvVideoGrid> {
           height: 96,
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
-            color: const Color(0xFF171A1C),
+            color: TvThemeColors.cardSurface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFF2A2F32)),
+            border: Border.all(color: TvThemeColors.cardSurfaceBorder),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
@@ -410,6 +535,8 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   /// 构建视频网格。
   Widget _buildVideoGrid(int crossAxisCount) {
     final renderedItemCount = _renderedItemCount;
+    final usesSmoothFrame =
+        TvTheme.focusEffectModeOf(context) == TvFocusEffectMode.smoothFrame;
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(
         TvVideoGrid.focusSafePadding,
@@ -428,6 +555,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
         delegate: SliverChildBuilderDelegate(
           (context, index) {
             final videoInfo = widget.videos[index];
+            final coverKey = _coverKeyForItem(index);
             return _TvGridEdgeItem(
               crossAxisCount: crossAxisCount,
               index: index,
@@ -441,13 +569,16 @@ class _TvVideoGridState extends State<TvVideoGrid> {
               focusNode: index == 0 ? widget.firstItemFocusNode : null,
               onPressed: () => widget.onVideoPressed?.call(videoInfo),
               onLongPressed: () => widget.onVideoLongPressed?.call(videoInfo),
-              onFocusChanged: (hasFocus) {
-                if (hasFocus) {
-                  _maybeExtendVisibleItems(index, crossAxisCount);
-                  _tryTriggerLoadMore(index, crossAxisCount);
-                }
-                widget.onVideoFocusChanged?.call(hasFocus);
-              },
+              showFocusFrame: !usesSmoothFrame,
+              enableFocusEffects: !usesSmoothFrame,
+              coverKey: usesSmoothFrame ? coverKey : null,
+              onFocusChanged: (hasFocus) => _handleGridItemFocusChanged(
+                hasFocus: hasFocus,
+                coverKey: coverKey,
+                index: index,
+                crossAxisCount: crossAxisCount,
+                usesSmoothFrame: usesSmoothFrame,
+              ),
               onFocusedNodeChanged: widget.onVideoItemFocused,
               onArrowUp: widget.onArrowUp,
               onLeadingEdgeArrowLeft: widget.onLeadingEdgeArrowLeft,
@@ -541,6 +672,68 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   }
 }
 
+/// TV 纵向 Grid 共享焦点框。
+class _TvVideoGridFocusFrame extends StatelessWidget {
+  /// 创建 TV 纵向 Grid 共享焦点框。
+  const _TvVideoGridFocusFrame({required this.rectListenable});
+
+  /// 当前获焦封面在 Grid 组件内的区域通知器。
+  final ValueListenable<Rect?> rectListenable;
+
+  /// 焦点框尺寸相对封面的外扩距离。
+  static const double outset = 5.0;
+
+  /// 焦点框移动时长。
+  static const Duration duration = Duration(milliseconds: 180);
+
+  /// Grid 卡片获焦时的中性白色光晕。
+  static const Color neutralShadowColor = Color(0x3DFFFFFF);
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Rect?>(
+      valueListenable: rectListenable,
+      builder: (context, targetRect, child) {
+        final left = targetRect == null ? 0.0 : targetRect.left - outset;
+        final top = targetRect == null ? 0.0 : targetRect.top - outset;
+
+        return AnimatedPositioned(
+          key: const ValueKey('tv-video-grid-focus-frame'),
+          left: left,
+          top: top,
+          width: (targetRect?.width ?? TvVideoCard.width) + outset * 2,
+          height: (targetRect?.height ?? TvVideoCard.coverHeight) + outset * 2,
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: targetRect == null ? 0 : 1,
+              duration: const Duration(milliseconds: 90),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                    color: const Color(0xFFE2E6EA),
+                    width: 3,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: neutralShadowColor,
+                      blurRadius: 24,
+                      spreadRadius: 1,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// TV 视频库标题操作按钮。
 class TvVideoGridActionButton extends StatelessWidget {
   /// 创建视频库标题操作按钮。
@@ -573,10 +766,10 @@ class TvVideoGridActionButton extends StatelessWidget {
           duration: const Duration(milliseconds: 140),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
           decoration: BoxDecoration(
-            color: hasFocus ? palette.accent : const Color(0xFF1A1E21),
+            color: hasFocus ? palette.accent : TvThemeColors.cardSurface,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: hasFocus ? Colors.white : const Color(0xFF2A2F32),
+              color: hasFocus ? Colors.white : TvThemeColors.cardSurfaceBorder,
               width: 2,
             ),
           ),
@@ -613,6 +806,9 @@ class _TvGridEdgeItem extends StatefulWidget {
     this.topEdgeArrowLockCount = 0,
     this.scaleAlignment = Alignment.center,
     this.focusMemoryGroupKey,
+    this.showFocusFrame = true,
+    this.enableFocusEffects = true,
+    this.coverKey,
   });
 
   /// 视频展示数据。
@@ -660,6 +856,17 @@ class _TvGridEdgeItem extends StatefulWidget {
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
 
+  /// 是否由卡片自身绘制焦点边框和阴影。
+  final bool showFocusFrame;
+
+  /// 是否启用卡片内部焦点效果。
+  final bool enableFocusEffects;
+
+  /// 卡片封面测量 Key。
+  ///
+  /// 平滑外框模式用它测量真实封面位置，放大镜模式不需要额外测量。
+  final Key? coverKey;
+
   @override
   State<_TvGridEdgeItem> createState() => _TvGridEdgeItemState();
 }
@@ -701,29 +908,33 @@ class _TvGridEdgeItemState extends State<_TvGridEdgeItem> {
 
   @override
   Widget build(BuildContext context) {
+    final card = TvVideoCard(
+      videoInfo: widget.videoInfo,
+      focusNode: widget.focusNode,
+      focusMemoryGroupKey: widget.focusMemoryGroupKey,
+      scaleAlignment: widget.scaleAlignment,
+      showFocusFrame: widget.showFocusFrame,
+      enableFocusEffects: widget.enableFocusEffects,
+      coverKey: widget.coverKey,
+      onPressed: widget.onPressed,
+      onLongPressed: widget.onLongPressed,
+      onFocusChanged: widget.onFocusChanged,
+      onFocusedNodeChanged: widget.onFocusedNodeChanged,
+      onArrowLeft: _isLeftEdge
+          ? (widget.onLeadingEdgeArrowLeft ?? () => _shake(AxisDirection.left))
+          : null,
+      onArrowRight: _isRightEdge ? () => _shake(AxisDirection.right) : null,
+      onArrowUp: _isTopArrowLocked
+          ? (widget.onTopEdgeArrowUp ?? widget.onArrowUp)
+          : _isTopEdge
+              ? widget.onArrowUp
+              : null,
+      onArrowDown: _isLastRowItem ? () => _shake(AxisDirection.down) : null,
+    );
+
     return TvEdgeShake(
       key: _edgeShakeKey,
-      child: TvVideoCard(
-        videoInfo: widget.videoInfo,
-        focusNode: widget.focusNode,
-        focusMemoryGroupKey: widget.focusMemoryGroupKey,
-        scaleAlignment: widget.scaleAlignment,
-        onPressed: widget.onPressed,
-        onLongPressed: widget.onLongPressed,
-        onFocusChanged: widget.onFocusChanged,
-        onFocusedNodeChanged: widget.onFocusedNodeChanged,
-        onArrowLeft: _isLeftEdge
-            ? (widget.onLeadingEdgeArrowLeft ??
-                () => _shake(AxisDirection.left))
-            : null,
-        onArrowRight: _isRightEdge ? () => _shake(AxisDirection.right) : null,
-        onArrowUp: _isTopArrowLocked
-            ? (widget.onTopEdgeArrowUp ?? widget.onArrowUp)
-            : _isTopEdge
-                ? widget.onArrowUp
-                : null,
-        onArrowDown: _isLastRowItem ? () => _shake(AxisDirection.down) : null,
-      ),
+      child: card,
     );
   }
 }

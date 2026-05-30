@@ -78,6 +78,47 @@ void main() {
     expect(topNavDecoration.color, expectedColor);
   });
 
+  testWidgets('switching from home to movie tab does not throw controller assertion',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: List.generate(
+              6,
+              (index) => _videoInfo('continue_$index', '继续观看 $index'),
+            ),
+            hotMovies: List.generate(
+              12,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: List.generate(
+              6,
+              (index) => _videoInfo('anime_$index', '动漫 $index'),
+            ),
+            hotShows: List.generate(
+              6,
+              (index) => _videoInfo('show_$index', '综艺 $index'),
+            ),
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _tapTopNavLabel(tester, '电影');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(tester.takeException(), isNull);
+  });
+
   test('TV category filters mirror mobile filter option sets', () {
     expect(
       _rowLabels(TvCategoryFilterKind.movie),
@@ -1424,6 +1465,27 @@ void main() {
     expect(focusedRect.left, unfocusedRect.left);
     expect(focusedRect.width, unfocusedRect.width);
     expect(focusedRect.height, unfocusedRect.height);
+  });
+
+  testWidgets('quick action focus uses translucent white background',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData.empty(),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    _focusNodeForAction(tester, 'search').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(
+      _actionBackgroundColor(tester, 'search'),
+      const Color(0x26FFFFFF),
+    );
   });
 
   testWidgets('renders live tab as developing placeholder page',
@@ -3009,6 +3071,16 @@ FocusNode _focusNodeForAction(WidgetTester tester, String key) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+Color? _actionBackgroundColor(WidgetTester tester, String key) {
+  final containerFinder = find.descendant(
+    of: find.byKey(ValueKey('tv-top-nav-action-$key')),
+    matching: find.byType(AnimatedContainer),
+  );
+  final container = tester.widget<AnimatedContainer>(containerFinder.first);
+  final decoration = container.decoration! as BoxDecoration;
+  return decoration.color;
 }
 
 FocusNode _focusNodeForTopNavLabel(WidgetTester tester, String label) {

@@ -40,6 +40,9 @@ class TvVideoCard extends StatelessWidget {
     this.autoScrollOnFocus = true,
     this.focusScrollAlignment = TvFocusScroll.defaultAlignment,
     this.scaleAlignment = Alignment.center,
+    this.showFocusFrame = true,
+    this.enableFocusEffects = true,
+    this.coverKey,
     this.focusMemoryGroupKey,
     this.deferredLoadingDecider,
     this.deferredLoadingRetryDelay =
@@ -94,6 +97,21 @@ class TvVideoCard extends StatelessWidget {
   ///
   /// 末列卡片贴右边时改为向内放大，避免右侧焦点描边被裁掉。
   final Alignment scaleAlignment;
+
+  /// 是否由卡片自身绘制焦点边框和阴影。
+  ///
+  /// 首页横向列表会使用列表级共享外框承载移动动效，因此会关闭卡片内置焦点框。
+  final bool showFocusFrame;
+
+  /// 是否启用卡片内部焦点效果。
+  ///
+  /// 平滑外框模式只显示外部共享框，不改变卡片缩放、遮罩和内部扫光。
+  final bool enableFocusEffects;
+
+  /// 封面区域测量 Key。
+  ///
+  /// 纵向 Grid 的共享焦点框通过它读取真实封面尺寸，避免不同宽度卡片复用固定尺寸。
+  final Key? coverKey;
 
   /// 上下跨列表焦点记忆分组 Key。
   final Object? focusMemoryGroupKey;
@@ -201,8 +219,9 @@ class TvVideoCard extends StatelessWidget {
       onArrowUp: onArrowUp,
       onArrowDown: onArrowDown,
       builder: (context, hasFocus) {
+        final focusEffectsActive = hasFocus && enableFocusEffects;
         return AnimatedScale(
-          scale: hasFocus ? focusedScale : 1,
+          scale: focusEffectsActive ? focusedScale : 1,
           alignment: scaleAlignment,
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
@@ -271,33 +290,33 @@ class TvVideoCard extends StatelessWidget {
   /// 构建封面区域。
   Widget _buildCover(BuildContext context, bool hasFocus) {
     final palette = TvTheme.of(context);
+    final focusEffectsActive = hasFocus && enableFocusEffects;
+    final showFocusedFrame = focusEffectsActive && showFocusFrame;
     return AnimatedContainer(
+      key: coverKey,
       width: width,
       height: coverHeight,
       duration: const Duration(milliseconds: 140),
       decoration: BoxDecoration(
-        color: const Color(0xFF171A1C),
+        color: TvThemeColors.cardSurface,
         borderRadius: BorderRadius.circular(8),
-        boxShadow: hasFocus
-            // ? [
-            //     BoxShadow(
-            //       color: palette.focus.withValues(alpha: 0.28),
-            //       blurRadius: 22,
-            //       offset: const Offset(0, 10),
-            //     ),
-            //   ]
-            // : null,
-        ?[BoxShadow(
-          color: Color(0xFFE2E6EA).withValues(alpha: 0.08),
-          blurRadius: 22,
-          offset: const Offset(0, 10),
-        ),]:null,
+        boxShadow: showFocusedFrame
+            ? [
+                BoxShadow(
+                  color: const Color(0xFFE2E6EA).withValues(alpha: 0.08),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ]
+            : null,
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: hasFocus ? const Color(0xFFE2E6EA) : const Color(0xFF2A2F32),
-          width: hasFocus ? 3 : 1,
+          color: showFocusedFrame
+              ? const Color(0xFFE2E6EA)
+              : TvThemeColors.cardSurfaceBorder,
+          width: showFocusedFrame ? 3 : 1,
         ),
       ),
       clipBehavior: Clip.antiAlias,
@@ -317,14 +336,16 @@ class TvVideoCard extends StatelessWidget {
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.transparent,
-                  Colors.black.withValues(alpha: hasFocus ? 0.20 : 0.34),
+                  Colors.black.withValues(
+                    alpha: focusEffectsActive ? 0.20 : 0.34,
+                  ),
                 ],
               ),
             ),
           ),
           if (_shouldShowEpisodeBadge) _buildEpisodeBadge(),
           if (_shouldShowProgress) _buildProgressBar(palette),
-          _TvFocusSweepOverlay(active: hasFocus),
+          _TvFocusSweepOverlay(active: focusEffectsActive),
         ],
       ),
     );
@@ -911,7 +932,7 @@ class _TvCoverFallback extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             Color(0xFF252B2E),
-            Color(0xFF15191B),
+            TvThemeColors.cardSurface,
           ],
         ),
       ),

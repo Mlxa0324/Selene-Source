@@ -307,6 +307,45 @@ void main() {
     expect(targetCardFocusNode.hasFocus, isTrue);
   });
 
+  testWidgets('header action buttons move down to remembered grid focus',
+      (tester) async {
+    final videos = List<VideoInfo>.generate(
+      14,
+      (index) => _videoInfo('history_$index', '历史影片 $index'),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoLibraryScreen(
+          title: '播放历史',
+          loadVideos: (_) async => videos,
+          onClearVideos: (_) async => true,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final targetCardFocusNode = _focusNodeForCard(tester, 'history_8');
+    targetCardFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+
+    for (final buttonKey in [
+      const ValueKey('tv-video-library-search-button'),
+      const ValueKey('tv-video-library-clear-button'),
+    ]) {
+      final buttonFocusNode = _focusNodeForActionButton(tester, buttonKey);
+      buttonFocusNode.requestFocus();
+      await tester.pumpAndSettle();
+      expect(buttonFocusNode.hasFocus, isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+
+      expect(targetCardFocusNode.hasFocus, isTrue);
+    }
+  });
+
   testWidgets('video library page moves initial focus to first card after load',
       (tester) async {
     await tester.pumpWidget(
@@ -533,6 +572,16 @@ void main() {
 FocusNode _focusNodeForCard(WidgetTester tester, String id) {
   final focusFinder = find.descendant(
     of: find.byKey(ValueKey('tv-video-card-focus-$id')),
+    matching: find.byWidgetPredicate((widget) {
+      return widget is Focus && widget.focusNode != null;
+    }),
+  );
+  return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+FocusNode _focusNodeForActionButton(WidgetTester tester, Key key) {
+  final focusFinder = find.descendant(
+    of: find.byKey(key),
     matching: find.byWidgetPredicate((widget) {
       return widget is Focus && widget.focusNode != null;
     }),

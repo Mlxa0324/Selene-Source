@@ -26,10 +26,10 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 三组芯片选项行应统一收敛到一个通用泛型实现，避免继续分叉维护。
+    // 四组芯片选项行应统一收敛到一个通用泛型实现，避免继续分叉维护。
     expect(
       _countWidgetsByRuntimeTypePrefix('_TvChipOptionRow<'),
-      3,
+      4,
     );
     expect(_countWidgetsByRuntimeTypeName('_TvThemeOptionRow'), 0);
     expect(_countWidgetsByRuntimeTypeName('_TvBackgroundOptionRow'), 0);
@@ -66,6 +66,9 @@ void main() {
     expect(find.text('图片与弹幕'), findsOneWidget);
     expect(find.text('主题色'), findsOneWidget);
     expect(find.text('背景色'), findsOneWidget);
+    expect(find.text('焦点效果'), findsOneWidget);
+    expect(find.text('平滑外框'), findsOneWidget);
+    expect(find.text('放大镜'), findsOneWidget);
     expect(find.text('奈飞红'), findsOneWidget);
     expect(find.text('深蓝灰'), findsOneWidget);
     expect(find.text('深黑夜幕'), findsOneWidget);
@@ -223,8 +226,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 首焦点从扫码按钮开始，向下依次穿过服务器配置与三组芯片选项后进入弹幕开关。
-    await _sendArrowDownTimes(tester, 8);
+    // 首焦点从扫码按钮开始，向下依次穿过服务器配置与四组芯片选项后进入弹幕开关。
+    await _sendArrowDownTimes(tester, 9);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -267,7 +270,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await _sendArrowDownTimes(tester, 8);
+    await _sendArrowDownTimes(tester, 9);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -318,6 +321,7 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
+    expect(find.text('平滑外框'), findsOneWidget);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       isNot('tv-back-handler'),
@@ -341,6 +345,15 @@ void main() {
       FocusManager.instance.primaryFocus?.debugLabel,
       isNot('tv-back-handler'),
     );
+    expect(find.text('放大镜'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
+    expect(find.text('直连'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -376,7 +389,7 @@ void main() {
     final lowerHalfTargetDy =
         scrollViewRect.top + (scrollViewRect.height * 0.72);
 
-    await _sendArrowDownTimes(tester, 8);
+    await _sendArrowDownTimes(tester, 9);
     final adFilterCenterDy = tester
         .getCenter(find.byKey(const ValueKey('tv-settings-ad-filter-switch')))
         .dy;
@@ -711,6 +724,31 @@ void main() {
 
     expect(savedBackgroundKey, TvThemeBackground.deepBlack.key);
     expect(find.text('背景色已保存'), findsOneWidget);
+  });
+
+  testWidgets('saves TV focus effect option', (tester) async {
+    String? savedFocusEffectKey;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            saveFocusEffect: (focusEffectModeKey) async {
+              savedFocusEffectKey = focusEffectModeKey;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('放大镜'));
+    await tester.tap(find.text('放大镜'));
+    await tester.pumpAndSettle();
+
+    expect(savedFocusEffectKey, TvFocusEffectMode.magnifier.key);
+    expect(find.text('焦点效果已保存'), findsOneWidget);
   });
 
   testWidgets('applies TV theme immediately after opening settings from home',

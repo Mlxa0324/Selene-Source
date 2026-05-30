@@ -680,6 +680,9 @@ class _TopNavFocusTarget {
 
 /// TV 顶部导航快捷按钮。
 class _TvTopNavActionButton extends StatelessWidget {
+  /// 右上角快捷入口获焦或选中时的浅色蒙层。
+  static const Color _activeBackgroundColor = Color(0x26FFFFFF);
+
   /// 创建 TV 顶部导航快捷按钮。
   const _TvTopNavActionButton({
     required this.action,
@@ -710,7 +713,6 @@ class _TvTopNavActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = TvTheme.of(context);
     return Focus(
       canRequestFocus: false,
       onKeyEvent: _handleBackKeyEvent,
@@ -732,11 +734,9 @@ class _TvTopNavActionButton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: action.selected
-                    ? palette.accent
-                    : hasFocus
-                        ? palette.focusFill
-                        : const Color(0xFF272C30),
+                color: active
+                    ? _activeBackgroundColor
+                    : const Color(0xFF272C30),
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(
                   color: hasFocus ? Colors.white : Colors.transparent,
@@ -749,8 +749,7 @@ class _TvTopNavActionButton extends StatelessWidget {
                   Icon(
                     action.icon,
                     size: 19,
-                    color:
-                        action.selected ? palette.selectedText : Colors.white,
+                    color: Colors.white,
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -758,9 +757,7 @@ class _TvTopNavActionButton extends StatelessWidget {
                     style: FontUtils.poppins(
                       fontSize: 16,
                       fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                      color: action.selected
-                          ? palette.selectedText
-                          : const Color(0xFFE6ECEA),
+                      color: active ? Colors.white : const Color(0xFFE6ECEA),
                     ),
                   ),
                 ],

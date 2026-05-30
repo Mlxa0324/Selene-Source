@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
+import 'package:selene/tv_app/widgets/tv_video_card.dart';
 
 void main() {
   testWidgets('resets horizontal scroll when section focus moves away',
@@ -79,6 +82,80 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('tv-edge-shake')), findsOneWidget);
+  });
+
+  testWidgets('horizontal row moves a shared focus frame between cards',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvHomeSection(
+            title: '热门电影',
+            videos: List.generate(
+              3,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    _focusNodeForVideoCard(tester, 'movie_0').requestFocus();
+    await tester.pump(const Duration(milliseconds: 160));
+
+    final focusFrame =
+        find.byKey(const ValueKey('tv-home-section-focus-frame'));
+    expect(focusFrame, findsOneWidget);
+    final firstFrameLeft = tester.getTopLeft(focusFrame).dx;
+
+    _focusNodeForVideoCard(tester, 'movie_1').requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(focusFrame).dx, greaterThan(firstFrameLeft));
+  });
+
+  testWidgets(
+      'shared focus frame stays stable when controller has multiple positions',
+      (tester) async {
+    final sharedController = ScrollController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                TvHomeSection(
+                  title: '热门电影 A',
+                  videos: List.generate(
+                    3,
+                    (index) => _videoInfo('movie_a_$index', '电影 A$index'),
+                  ),
+                  scrollController: sharedController,
+                ),
+                TvHomeSection(
+                  title: '热门电影 B',
+                  videos: List.generate(
+                    3,
+                    (index) => _videoInfo('movie_b_$index', '电影 B$index'),
+                  ),
+                  scrollController: sharedController,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    _focusNodeForVideoCard(tester, 'movie_a_0').requestFocus();
+    await tester.pump(const Duration(milliseconds: 160));
+
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('uses cover size for horizontal loading skeletons',
@@ -161,6 +238,107 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(morePressed, isTrue);
+  });
+
+  testWidgets('more card uses shared row focus frame instead of own glow',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF0B0D0E),
+          body: TvHomeSection(
+            title: '热门电影',
+            videos: List.generate(
+              16,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            onMorePressed: () {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('tv-home-section-list-热门电影')),
+      const Offset(-2800, 0),
+    );
+    await tester.pumpAndSettle();
+
+    _focusNodeForFocusableContainer(tester, const ValueKey('tv-home-more-card'))
+        .requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(
+      _homeFocusFrameShadowColor(tester),
+      const Color(0x3DFFFFFF),
+    );
+    expect(_moreCardShadowColor(tester), isNull);
+  });
+
+  testWidgets('smooth frame mode keeps focused card internals unchanged',
+      (tester) async {
+    final themeService = TvThemeService();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: TvHomeSection(
+              title: '热门电影',
+              videos: [_videoInfo('movie_0', '电影 0')],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    _focusNodeForVideoCard(tester, 'movie_0').requestFocus();
+    await tester.pump(const Duration(milliseconds: 160));
+
+    expect(find.byKey(const ValueKey('tv-home-section-focus-frame')),
+        findsOneWidget);
+    expect(_videoCardScale(tester), 1);
+    expect(find.byKey(const ValueKey('tv-cover-focus-sweep')), findsNothing);
+    expect(_focusedVideoCardShadowColor(tester), isNull);
+  });
+
+  testWidgets(
+      'magnifier mode disables shared frame and uses card focus effects',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final themeService = TvThemeService();
+    await themeService.setFocusEffectModeKey(TvFocusEffectMode.magnifier.key);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: TvHomeSection(
+              title: '热门电影',
+              videos: [_videoInfo('movie_0', '电影 0')],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    _focusNodeForVideoCard(tester, 'movie_0').requestFocus();
+    await tester.pump(const Duration(milliseconds: 160));
+
+    expect(find.byKey(const ValueKey('tv-home-section-focus-frame')),
+        findsNothing);
+    expect(_videoCardScale(tester), TvVideoCard.focusedScale);
+    expect(_focusedVideoCardShadowColor(tester), isNotNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(TvVideoCard.focusSweepDelay);
   });
 
   testWidgets('right edge key reveals trailing padding before shaking',
@@ -370,6 +548,47 @@ FocusNode _focusNodeForVideoCard(WidgetTester tester, String id) {
     tester,
     ValueKey('tv-video-card-focus-$id'),
   );
+}
+
+Color? _homeFocusFrameShadowColor(WidgetTester tester) {
+  final decoratedBox = tester.widget<DecoratedBox>(
+    find.descendant(
+      of: find.byKey(const ValueKey('tv-home-section-focus-frame')),
+      matching: find.byType(DecoratedBox),
+    ),
+  );
+  final decoration = decoratedBox.decoration as BoxDecoration;
+  return decoration.boxShadow?.first.color;
+}
+
+Color? _moreCardShadowColor(WidgetTester tester) {
+  final container = tester.widget<Container>(
+    find.byKey(const ValueKey('tv-home-more-card')),
+  );
+  final decoration = container.decoration! as BoxDecoration;
+  return decoration.boxShadow?.first.color;
+}
+
+double _videoCardScale(WidgetTester tester) {
+  final scale = tester.widget<AnimatedScale>(find.byType(AnimatedScale).first);
+  return scale.scale;
+}
+
+Color? _focusedVideoCardShadowColor(WidgetTester tester) {
+  final containerFinder = find
+      .byWidgetPredicate(
+        (widget) => widget is AnimatedContainer,
+      )
+      .evaluate()
+      .map((element) => find.byWidget(element.widget))
+      .firstWhere(
+        (finder) =>
+            tester.getSize(finder) ==
+            const Size(TvVideoCard.width, TvVideoCard.coverHeight),
+      );
+  final container = tester.widget<AnimatedContainer>(containerFinder);
+  final decoration = container.decoration as BoxDecoration;
+  return decoration.boxShadow?.first.color;
 }
 
 Future<void> _setTvSurfaceSize(WidgetTester tester) async {

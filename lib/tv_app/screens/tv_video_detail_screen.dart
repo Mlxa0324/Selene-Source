@@ -3105,44 +3105,51 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 构建播放器区域。
   Widget _buildPlayerBox(SearchResult? detail) {
-    return KeyedSubtree(
-      key: _playerTargetKey,
-      child: TvFocusable(
-        focusNode: _playerFocusNode,
-        autofocus: true,
-        autoScrollOnFocus: false,
-        onArrowLeft: _keepCurrentFocusAtBoundary,
-        onArrowDown: _focusPreferredSource,
-        onPressed: _openFullscreenPlayer,
-        builder: (context, hasFocus) {
-          return AnimatedContainer(
-            key: const ValueKey('tv-detail-player-entry'),
-            duration: const Duration(milliseconds: 140),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: hasFocus ? Colors.white : Colors.transparent,
-                width: 2,
+    final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+    return TvEdgeShake(
+      key: edgeShakeKey,
+      child: KeyedSubtree(
+        key: _playerTargetKey,
+        child: TvFocusable(
+          focusNode: _playerFocusNode,
+          autofocus: true,
+          autoScrollOnFocus: false,
+          onArrowLeft: () {
+            edgeShakeKey.currentState?.shake(AxisDirection.left);
+            _keepCurrentFocusAtBoundary();
+          },
+          onArrowDown: _focusPreferredSource,
+          onPressed: _openFullscreenPlayer,
+          builder: (context, hasFocus) {
+            return AnimatedContainer(
+              key: const ValueKey('tv-detail-player-entry'),
+              duration: const Duration(milliseconds: 140),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: hasFocus ? Colors.white : Colors.transparent,
+                  width: 2,
+                ),
               ),
-            ),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _fullscreenOverlayVisible
-                    ? const ColoredBox(color: Colors.black)
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _buildSharedPlayer(detail),
-                          if (_shouldShowPreviewLoading)
-                            _buildPreviewLoadingIndicator(),
-                        ],
-                      ),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: _fullscreenOverlayVisible
+                      ? const ColoredBox(color: Colors.black)
+                      : Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            _buildSharedPlayer(detail),
+                            if (_shouldShowPreviewLoading)
+                              _buildPreviewLoadingIndicator(),
+                          ],
+                        ),
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -3824,7 +3831,7 @@ class _TvDetailActionButton extends StatelessWidget {
           height: 48,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
-            color: const Color(0xCC1B2127),
+            color: TvThemeColors.cardSurface,
             borderRadius: BorderRadius.circular(borderRadius),
             border: Border.all(
               color: hasFocus ? Colors.white : Colors.transparent,
@@ -4044,14 +4051,14 @@ class _TvChoiceChip extends StatelessWidget {
                 _TvVideoDetailScreenState._detailChoiceChipVerticalPadding,
           ),
           decoration: BoxDecoration(
-            color: selected ? palette.accent : const Color(0xFF15191B),
+            color: selected ? palette.accent : TvThemeColors.cardSurface,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: hasFocus
                   ? Colors.white
                   : selected
                       ? palette.accent
-                      : const Color(0xFF293136),
+                      : TvThemeColors.cardSurfaceBorder,
               width: hasFocus ? 2 : 1,
             ),
           ),

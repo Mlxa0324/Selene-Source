@@ -330,23 +330,18 @@ class _TvVideoLibraryScreenState extends State<TvVideoLibraryScreen> {
   /// 先回到用户离开列表前的最近焦点卡片；若当前还没有焦点记忆，
   /// 再兜底回到第一张卡片，保证“删除全部”向下总能回到内容区。
   void _restoreGridFocusFromHeader() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      final lastFocusedGridItemNode = _lastFocusedGridItemNode;
-      if (lastFocusedGridItemNode != null &&
-          lastFocusedGridItemNode.canRequestFocus) {
-        lastFocusedGridItemNode.requestFocus();
-        return;
-      }
-      final restored =
-          TvFocusable.requestRememberedFocusForGroup(_gridFocusMemoryGroupKey);
-      if (restored) {
-        return;
-      }
-      _firstVideoFocusNode.requestFocus();
-    });
+    final lastFocusedGridItemNode = _lastFocusedGridItemNode;
+    if (lastFocusedGridItemNode != null &&
+        lastFocusedGridItemNode.canRequestFocus) {
+      lastFocusedGridItemNode.requestFocus();
+      return;
+    }
+    final restored =
+        TvFocusable.requestRememberedFocusForGroup(_gridFocusMemoryGroupKey);
+    if (restored) {
+      return;
+    }
+    _firstVideoFocusNode.requestFocus();
   }
 
   /// 处理页面返回键。

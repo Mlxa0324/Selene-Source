@@ -14,6 +14,7 @@ import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
@@ -666,6 +667,7 @@ void main() {
     final decoration = container.decoration! as BoxDecoration;
 
     expect(decoration.borderRadius, BorderRadius.circular(22));
+    expect(decoration.color, TvThemeColors.cardSurface);
   });
 
   testWidgets('opens TV search screen from detail header search action',
@@ -3398,6 +3400,41 @@ void main() {
     expect(find.byKey(const ValueKey('tv-fullscreen-player')), findsOneWidget);
   });
 
+  testWidgets('player left key shakes at detail left boundary', (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '边界测试'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [_searchResult('source_a', '主源')],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final playerEntry = find.byKey(const ValueKey('tv-detail-player-entry'));
+    Focus.of(tester.element(playerEntry)).requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    final shakeOffset = await _waitForEdgeShakeOffset(tester, playerEntry);
+
+    expect(Focus.of(tester.element(playerEntry)).hasFocus, isTrue);
+    expect(shakeOffset.dx, lessThan(0));
+  });
+
   testWidgets('opens fullscreen player from current preview position',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
@@ -5122,6 +5159,29 @@ Future<void> _expectFocusStaysAfterKey(
   await tester.pump(const Duration(milliseconds: 80));
 
   expect(Focus.of(tester.element(focusFinder)).hasFocus, isTrue);
+}
+
+Offset _edgeShakeOffsetFor(WidgetTester tester, Finder childFinder) {
+  final shakeFinder = find.ancestor(
+    of: childFinder,
+    matching: find.byKey(const ValueKey('tv-edge-shake')),
+  );
+  final transform = tester.widget<Transform>(shakeFinder.first);
+  return MatrixUtils.getAsTranslation(transform.transform) ?? Offset.zero;
+}
+
+Future<Offset> _waitForEdgeShakeOffset(
+  WidgetTester tester,
+  Finder childFinder,
+) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 40));
+    final offset = _edgeShakeOffsetFor(tester, childFinder);
+    if (offset != Offset.zero) {
+      return offset;
+    }
+  }
+  return _edgeShakeOffsetFor(tester, childFinder);
 }
 
 Future<void> _pumpUntilFound(

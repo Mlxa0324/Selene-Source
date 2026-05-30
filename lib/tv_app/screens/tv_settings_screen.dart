@@ -50,6 +50,9 @@ typedef TvThemeSaver = Future<void> Function(String themeKey);
 /// TV 背景色保存函数。
 typedef TvBackgroundSaver = Future<void> Function(String backgroundKey);
 
+/// TV 焦点效果保存函数。
+typedef TvFocusEffectSaver = Future<void> Function(String focusEffectModeKey);
+
 /// TV 缓存大小加载函数。
 typedef TvCacheSizeLoader = Future<int> Function();
 
@@ -81,6 +84,7 @@ class TvSettingsData {
     required this.password,
     this.themeKey = TvThemePalette.ivyGreenKey,
     this.backgroundKey = TvThemeBackground.deepBlueKey,
+    this.focusEffectModeKey = TvFocusEffectMode.smoothFrameKey,
     required this.adFilterEnabled,
     required this.doubanImageSource,
     required this.danmakuBaseApi,
@@ -102,6 +106,9 @@ class TvSettingsData {
   /// TV 页面背景色标识。
   final String backgroundKey;
 
+  /// TV 焦点效果标识。
+  final String focusEffectModeKey;
+
   /// 是否开启自动去广告。
   final bool adFilterEnabled;
 
@@ -122,6 +129,7 @@ class TvSettingsData {
       password: '',
       themeKey: TvThemePalette.ivyGreenKey,
       backgroundKey: TvThemeBackground.deepBlueKey,
+      focusEffectModeKey: TvFocusEffectMode.smoothFrameKey,
       adFilterEnabled: true,
       doubanImageSource: '直连',
       danmakuBaseApi: '',
@@ -141,6 +149,7 @@ class TvSettingsScreen extends StatefulWidget {
     this.saveAccount,
     this.saveTheme,
     this.saveBackground,
+    this.saveFocusEffect,
     this.saveDoubanImageSource,
     this.loadAdFilterEnabled,
     this.saveAdFilterEnabled,
@@ -161,6 +170,9 @@ class TvSettingsScreen extends StatefulWidget {
 
   /// 背景色保存函数。
   final TvBackgroundSaver? saveBackground;
+
+  /// 焦点效果保存函数。
+  final TvFocusEffectSaver? saveFocusEffect;
 
   /// 图片代理保存函数。
   final TvImageSourceSaver? saveDoubanImageSource;
@@ -197,6 +209,7 @@ class TvSettingsScreen extends StatefulWidget {
       password: credentials.password,
       themeKey: await TvThemeService.loadSavedThemeKey(),
       backgroundKey: await TvThemeService.loadSavedBackgroundKey(),
+      focusEffectModeKey: await TvThemeService.loadSavedFocusEffectModeKey(),
       adFilterEnabled: await UserDataService.getAdFilterEnabled(),
       doubanImageSource:
           await UserDataService.getDoubanImageSourceDisplayName(),
@@ -240,6 +253,11 @@ class TvSettingsScreen extends StatefulWidget {
   /// 默认背景色保存逻辑。
   static Future<void> defaultSaveBackground(String backgroundKey) {
     return TvThemeService.saveBackgroundKey(backgroundKey);
+  }
+
+  /// 默认焦点效果保存逻辑。
+  static Future<void> defaultSaveFocusEffect(String focusEffectModeKey) {
+    return TvThemeService.saveFocusEffectModeKey(focusEffectModeKey);
   }
 
   /// 默认缓存大小加载逻辑。
@@ -371,6 +389,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
   /// 当前 TV 页面背景色标识。
   String _backgroundKey = TvThemeBackground.deepBlue.key;
+
+  /// 当前 TV 焦点效果标识。
+  String _focusEffectModeKey = TvFocusEffectMode.defaultMode.key;
 
   /// 是否已把加载数据同步到输入框。
   bool _appliedLoadedData = false;
@@ -635,6 +656,8 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _passwordController.text = data.password;
     _themeKey = TvThemePalette.fromKey(data.themeKey).key;
     _backgroundKey = TvThemeBackground.fromKey(data.backgroundKey).key;
+    _focusEffectModeKey =
+        TvFocusEffectMode.fromKey(data.focusEffectModeKey).key;
     _adFilterEnabled = data.adFilterEnabled;
     _doubanImageSource = data.doubanImageSource;
     _danmakuBaseApiController.text = data.danmakuBaseApi;
@@ -657,6 +680,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 避免上下切换时跳回错误的彩色按钮或页面根节点。
   void _requestBackgroundOptionFocus() {
     TvFocusable.requestRememberedFocusForGroup('tv-setting-background-背景色');
+  }
+
+  /// 请求焦点进入焦点效果选项组。
+  void _requestFocusEffectOptionFocus() {
+    TvFocusable.requestRememberedFocusForGroup('tv-setting-focus-effect-焦点效果');
   }
 
   /// 请求焦点进入图片代理选项组。
@@ -745,6 +773,29 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     });
     _showToast(
       '背景色已保存',
+      TvTheme.of(context).accent,
+    );
+  }
+
+  /// 保存 TV 焦点效果配置。
+  Future<void> _saveFocusEffect(String focusEffectModeKey) async {
+    final nextModeKey = TvFocusEffectMode.fromKey(focusEffectModeKey).key;
+    final scopedService = TvTheme.maybeServiceOf(context);
+    if (scopedService != null) {
+      await scopedService.setFocusEffectModeKey(nextModeKey);
+    } else {
+      final saver =
+          widget.saveFocusEffect ?? TvSettingsScreen.defaultSaveFocusEffect;
+      await saver(nextModeKey);
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _focusEffectModeKey = nextModeKey;
+    });
+    _showToast(
+      '焦点效果已保存',
       TvTheme.of(context).accent,
     );
   }
@@ -1164,7 +1215,19 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           chipStyleBuilder: _buildBackgroundOptionChip,
           onChanged: (option) => _saveBackground(option.key),
           onArrowUp: _requestThemeOptionFocus,
+          onArrowDown: _requestFocusEffectOptionFocus,
+        ),
+        const SizedBox(height: 18),
+        _TvChipOptionRow<TvFocusEffectMode>(
+          label: '焦点效果',
+          value: _focusEffectModeKey,
+          options: TvFocusEffectMode.values,
+          optionKeyBuilder: (option) => option.key,
+          focusGroupKey: 'tv-setting-focus-effect-焦点效果',
+          onChanged: (option) => _saveFocusEffect(option.key),
+          onArrowUp: _requestBackgroundOptionFocus,
           onArrowDown: _requestImageSourceOptionFocus,
+          chipStyleBuilder: _buildFocusEffectOptionChip,
         ),
         const SizedBox(height: 18),
         _TvChipOptionRow<String>(
@@ -1174,7 +1237,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           optionKeyBuilder: (option) => option,
           focusGroupKey: 'tv-setting-option-图片代理',
           onChanged: _saveDoubanImageSource,
-          onArrowUp: _requestBackgroundOptionFocus,
+          onArrowUp: _requestFocusEffectOptionFocus,
           onArrowDown: () => _adFilterFocusNode.requestFocus(),
           chipStyleBuilder: _buildPlainOptionChip,
         ),
@@ -1676,6 +1739,21 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           color: selected ? palette.selectedText : const Color(0xFFD9E2E0),
         ),
       ),
+    );
+  }
+
+  /// 构建焦点效果选项芯片。
+  _TvChipOptionStyle _buildFocusEffectOptionChip(
+    BuildContext context,
+    TvFocusEffectMode option,
+    bool selected,
+    bool hasFocus,
+  ) {
+    return _buildPlainOptionChip(
+      context,
+      option.label,
+      selected,
+      hasFocus,
     );
   }
 }

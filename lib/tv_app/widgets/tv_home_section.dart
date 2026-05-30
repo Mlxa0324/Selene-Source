@@ -222,6 +222,11 @@ class _TvHomeSectionBody extends StatefulWidget {
 }
 
 class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
+  /// 当前横向列表获焦卡片下标。
+  ///
+  /// 由列表级共享焦点框读取，用于在同一行左右移动时平滑移动外边框。
+  int? _focusedItemIndex;
+
   /// 当前分区是否已有任一卡片获得焦点。
   ///
   /// 用于识别“首次进入该分区”和“同分区内左右移动”这两种场景，
@@ -248,8 +253,20 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
   /// 区块内卡片稳定焦点节点。
   final Map<String, FocusNode> _videoFocusNodes = {};
 
+  /// 当前分区横向列表真实挂载的滚动位置。
+  ///
+  /// 外部可能在切页动画期间把同一个 [ScrollController] 临时挂到多棵列表树上，
+  /// 这里缓存当前分区自己的 position，避免直接读取 controller.position 触发断言。
+  ScrollPosition? _listScrollPosition;
+
   /// 当前区块的焦点记忆分组。
   Object get _focusMemoryGroupKey => 'tv-home-section-${widget.title}';
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_handleHorizontalScrollChange);
+  }
 
   /// 获取指定视频的稳定焦点节点。
   FocusNode _focusNodeForVideoId(String videoId) {
@@ -278,6 +295,8 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleHorizontalScrollChange);
+    _detachListScrollPosition();
     for (final node in _videoFocusNodes.values) {
       node.dispose();
     }
@@ -288,19 +307,76 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
     super.dispose();
   }
 
+  /// 横向滚动时同步刷新列表级焦点框位置。
+  void _handleHorizontalScrollChange() {
+    if (!mounted || _focusedItemIndex == null) {
+      return;
+    }
+    setState(() {});
+  }
+
+  /// 记录当前分区实际使用的滚动位置。
+  void _attachListScrollPosition(ScrollPosition position) {
+    if (identical(_listScrollPosition, position)) {
+      return;
+    }
+    _detachListScrollPosition();
+    _listScrollPosition = position;
+  }
+
+  /// 解除当前分区滚动位置监听。
+  void _detachListScrollPosition() {
+    _listScrollPosition = null;
+  }
+
+  /// 获取当前分区横向列表的滚动位置。
+  ScrollPosition? get _currentScrollPosition {
+    final position = _listScrollPosition;
+    if (position == null || !position.hasPixels || !position.hasContentDimensions) {
+      final positions = _scrollController.positions;
+      if (positions.isEmpty) {
+        return null;
+      }
+      return positions.last;
+    }
+    return position;
+  }
+
+  /// 基于滚动通知同步当前分区的滚动位置。
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final scrollableState = Scrollable.maybeOf(notification.context!);
+    final position = scrollableState?.position;
+    if (position != null) {
+      _attachListScrollPosition(position);
+    }
+    return false;
+  }
+
   /// 卡片获得焦点时，把当前区块平滑滚动到大屏适合浏览的位置。
-  void _handleItemFocusChange(bool hasFocus, int index) {
+  void _handleItemFocusChange(
+    bool hasFocus,
+    int index, {
+    required bool usesSmoothFrame,
+  }) {
     if (!hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _sectionFocusScopeNode.hasFocus) {
           return;
         }
+        setState(() {
+          _focusedItemIndex = null;
+        });
         _sectionHasFocusedDescendant = false;
         _resetHorizontalScrollToLeadingEdge();
       });
       return;
     }
 
+    if (usesSmoothFrame) {
+      setState(() {
+        _focusedItemIndex = index;
+      });
+    }
     final enteringFromOutside = !_sectionHasFocusedDescendant;
     _sectionHasFocusedDescendant = true;
     _revealFocusedItem(index);
@@ -321,23 +397,26 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   /// 当焦点离开整个分区后，把横向列表复位到最左侧。
   void _resetHorizontalScrollToLeadingEdge() {
-    if (!_scrollController.hasClients) {
+    final position = _currentScrollPosition;
+    if (position == null) {
       return;
     }
-    final position = _scrollController.position;
     if ((position.pixels - position.minScrollExtent).abs() <= 1) {
       return;
     }
-    _scrollController.jumpTo(position.minScrollExtent);
+    position.jumpTo(position.minScrollExtent);
   }
 
   /// 当焦点抵达约定卡位后，按卡片步长推动横向列表。
   void _revealFocusedItem(int index) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) {
+      if (!mounted) {
         return;
       }
-      final position = _scrollController.position;
+      final position = _currentScrollPosition;
+      if (position == null) {
+        return;
+      }
       final targetOffset = TvHomeSection.resolveScrollOffset(
         index: index,
         currentPixels: position.pixels,
@@ -372,10 +451,10 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   /// 优先展示横向列表首尾 padding，再触发真正的边界反馈。
   bool _revealScrollableEdge(AxisDirection direction) {
-    if (!_scrollController.hasClients) {
+    final position = _currentScrollPosition;
+    if (position == null) {
       return false;
     }
-    final position = _scrollController.position;
     final target = switch (direction) {
       AxisDirection.left => position.minScrollExtent,
       AxisDirection.right => position.maxScrollExtent,
@@ -429,36 +508,39 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   /// 构建加载骨架列表。
   Widget _buildLoadingList() {
-    return ListView.separated(
-      controller: _scrollController,
-      scrollDirection: Axis.horizontal,
-      clipBehavior: Clip.none,
-      padding: const EdgeInsets.fromLTRB(
-        TvLayout.pageHorizontalPadding,
-        12,
-        TvLayout.pageHorizontalPadding,
-        22,
-      ),
-      itemBuilder: (context, index) => SizedBox(
-        width: TvVideoCard.width,
-        height: TvVideoCard.height,
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Container(
-            key: const ValueKey('tv-home-loading-card'),
-            width: TvVideoCard.width,
-            height: TvVideoCard.coverHeight,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1D2225),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF2A2F32)),
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: ListView.separated(
+        controller: _scrollController,
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        padding: const EdgeInsets.fromLTRB(
+          TvLayout.pageHorizontalPadding,
+          12,
+          TvLayout.pageHorizontalPadding,
+          22,
+        ),
+        itemBuilder: (context, index) => SizedBox(
+          width: TvVideoCard.width,
+          height: TvVideoCard.height,
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Container(
+              key: const ValueKey('tv-home-loading-card'),
+              width: TvVideoCard.width,
+              height: TvVideoCard.coverHeight,
+              decoration: BoxDecoration(
+                color: TvThemeColors.cardSurface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: TvThemeColors.cardSurfaceBorder),
+              ),
             ),
           ),
         ),
+        separatorBuilder: (_, __) =>
+            const SizedBox(width: TvHomeSection.cardSpacing),
+        itemCount: 6,
       ),
-      separatorBuilder: (_, __) =>
-          const SizedBox(width: TvHomeSection.cardSpacing),
-      itemCount: 6,
     );
   }
 
@@ -474,9 +556,9 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
           height: 96,
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
-            color: const Color(0xFF171A1C),
+            color: TvThemeColors.cardSurface,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFF2A2F32)),
+            border: Border.all(color: TvThemeColors.cardSurfaceBorder),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
@@ -495,80 +577,171 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
     final visibleVideos =
         widget.videos.take(TvHomeSection.maxVisibleVideos).toList();
     final itemCount = visibleVideos.length + (showMore ? 1 : 0);
+    final usesSmoothFrame =
+        TvTheme.focusEffectModeOf(context) == TvFocusEffectMode.smoothFrame;
 
-    return ListView.separated(
-      key: ValueKey('tv-home-section-list-${widget.title}'),
-      controller: _scrollController,
-      scrollDirection: Axis.horizontal,
+    return Stack(
       clipBehavior: Clip.none,
-      padding: const EdgeInsets.fromLTRB(
-        TvLayout.pageHorizontalPadding,
-        12,
-        TvLayout.pageHorizontalPadding,
-        22,
+      children: [
+        NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: ListView.separated(
+            key: ValueKey('tv-home-section-list-${widget.title}'),
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            padding: const EdgeInsets.fromLTRB(
+              TvLayout.pageHorizontalPadding,
+              12,
+              TvLayout.pageHorizontalPadding,
+              22,
+            ),
+            itemBuilder: (context, index) {
+              final edgeShakeKey = _edgeShakeKeyFor(index);
+              final isFirstItem = index == 0;
+              final isLastItem = index == itemCount - 1;
+              final onArrowUp = widget.onArrowUpFromAnyItem ??
+                  (isFirstItem ? widget.onArrowUpFromFirstItem : null);
+              Widget item;
+              if (showMore && index == visibleVideos.length) {
+                item = _TvMoreCard(
+                  focusMemoryGroupKey: _focusMemoryGroupKey,
+                  autofocus: widget.autofocusFirstItem && index == 0,
+                  focusNode: index == 0 ? widget.firstItemFocusNode : null,
+                  onPressed: widget.onMorePressed!,
+                  onFocusChanged: (hasFocus) => _handleItemFocusChange(
+                    hasFocus,
+                    index,
+                    usesSmoothFrame: usesSmoothFrame,
+                  ),
+                  onArrowLeft: isFirstItem
+                      ? () => _handleEdge(index, AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () => _handleEdge(index, AxisDirection.right)
+                      : null,
+                  onArrowUp: onArrowUp,
+                  onArrowDown: widget.onArrowDownToNextSection,
+                );
+              } else {
+                final videoInfo = visibleVideos[index];
+                final cardFocusNode =
+                    index == 0 && widget.pendingFocusVideoId == null
+                        ? widget.firstItemFocusNode
+                        : _focusNodeForVideoId(videoInfo.id);
+                item = TvVideoCard(
+                  videoInfo: videoInfo,
+                  focusMemoryGroupKey: _focusMemoryGroupKey,
+                  autofocus: widget.autofocusFirstItem && index == 0,
+                  focusNode: cardFocusNode,
+                  onPressed: () => widget.onVideoPressed?.call(videoInfo),
+                  onLongPressed: widget.onVideoLongPressed == null
+                      ? null
+                      : () => widget.onVideoLongPressed?.call(videoInfo),
+                  onFocusChanged: (hasFocus) => _handleItemFocusChange(
+                    hasFocus,
+                    index,
+                    usesSmoothFrame: usesSmoothFrame,
+                  ),
+                  // 首页横向列表的滚动节奏完全由区块统一控制，
+                  // 避免卡片自身的自动滚动提前触发，导致 scrollStartIndex 失效。
+                  autoScrollOnFocus: false,
+                  focusScrollAlignment: 0.42,
+                  showFocusFrame: !usesSmoothFrame,
+                  enableFocusEffects: !usesSmoothFrame,
+                  onArrowLeft: isFirstItem
+                      ? () => _handleEdge(index, AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () => _handleEdge(index, AxisDirection.right)
+                      : null,
+                  onArrowUp: onArrowUp,
+                  onArrowDown: widget.onArrowDownToNextSection,
+                );
+              }
+              return TvEdgeShake(
+                key: edgeShakeKey,
+                child: item,
+              );
+            },
+            separatorBuilder: (_, __) =>
+                const SizedBox(width: TvHomeSection.cardSpacing),
+            itemCount: itemCount,
+          ),
+        ),
+        if (usesSmoothFrame)
+          _TvHomeSectionFocusFrame(
+            itemIndex: _focusedItemIndex,
+            scrollOffset: _currentScrollPosition?.pixels ?? 0,
+          ),
+      ],
+    );
+  }
+}
+
+/// TV 首页横向列表共享焦点框。
+class _TvHomeSectionFocusFrame extends StatelessWidget {
+  /// 创建 TV 首页横向列表共享焦点框。
+  const _TvHomeSectionFocusFrame({
+    required this.itemIndex,
+    required this.scrollOffset,
+  });
+
+  /// 当前获焦卡片下标。
+  final int? itemIndex;
+
+  /// 当前分区横向列表滚动偏移。
+  final double scrollOffset;
+
+  /// 焦点框顶部位置，与卡片封面顶部对齐。
+  static const double top = 12.0;
+
+  /// 焦点框尺寸相对封面的外扩距离。
+  static const double outset = 5.0;
+
+  /// 焦点框横向移动时长。
+  static const Duration duration = Duration(milliseconds: 180);
+
+  /// 首页横向卡片获焦时的中性白色光晕。
+  static const Color neutralShadowColor = Color(0x3DFFFFFF);
+
+  @override
+  Widget build(BuildContext context) {
+    final itemLeft = itemIndex == null
+        ? 0.0
+        : TvLayout.pageHorizontalPadding +
+            itemIndex! * (TvVideoCard.width + TvHomeSection.cardSpacing) -
+            scrollOffset -
+            outset;
+
+    return AnimatedPositioned(
+      key: const ValueKey('tv-home-section-focus-frame'),
+      left: itemLeft,
+      top: top - outset,
+      width: TvVideoCard.width + outset * 2,
+      height: TvVideoCard.coverHeight + outset * 2,
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: itemIndex == null ? 0 : 1,
+          duration: const Duration(milliseconds: 90),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: const Color(0xFFE2E6EA), width: 3),
+              boxShadow: const [
+                BoxShadow(
+                  color: neutralShadowColor,
+                  blurRadius: 24,
+                  spreadRadius: 1,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      itemBuilder: (context, index) {
-        final edgeShakeKey = _edgeShakeKeyFor(index);
-        final isFirstItem = index == 0;
-        final isLastItem = index == itemCount - 1;
-        final onArrowUp = widget.onArrowUpFromAnyItem ??
-            (isFirstItem ? widget.onArrowUpFromFirstItem : null);
-        Widget item;
-        if (showMore && index == visibleVideos.length) {
-          item = _TvMoreCard(
-            focusMemoryGroupKey: _focusMemoryGroupKey,
-            autofocus: widget.autofocusFirstItem && index == 0,
-            focusNode: index == 0 ? widget.firstItemFocusNode : null,
-            onPressed: widget.onMorePressed!,
-            onFocusChanged: (hasFocus) =>
-                _handleItemFocusChange(hasFocus, index),
-            onArrowLeft: isFirstItem
-                ? () => _handleEdge(index, AxisDirection.left)
-                : null,
-            onArrowRight: isLastItem
-                ? () => _handleEdge(index, AxisDirection.right)
-                : null,
-            onArrowUp: onArrowUp,
-            onArrowDown: widget.onArrowDownToNextSection,
-          );
-        } else {
-          final videoInfo = visibleVideos[index];
-          final cardFocusNode = index == 0 && widget.pendingFocusVideoId == null
-              ? widget.firstItemFocusNode
-              : _focusNodeForVideoId(videoInfo.id);
-          item = TvVideoCard(
-            videoInfo: videoInfo,
-            focusMemoryGroupKey: _focusMemoryGroupKey,
-            autofocus: widget.autofocusFirstItem && index == 0,
-            focusNode: cardFocusNode,
-            onPressed: () => widget.onVideoPressed?.call(videoInfo),
-            onLongPressed: widget.onVideoLongPressed == null
-                ? null
-                : () => widget.onVideoLongPressed?.call(videoInfo),
-            onFocusChanged: (hasFocus) =>
-                _handleItemFocusChange(hasFocus, index),
-            // 首页横向列表的滚动节奏完全由区块统一控制，
-            // 避免卡片自身的自动滚动提前触发，导致 scrollStartIndex 失效。
-            autoScrollOnFocus: false,
-            focusScrollAlignment: 0.42,
-            onArrowLeft: isFirstItem
-                ? () => _handleEdge(index, AxisDirection.left)
-                : null,
-            onArrowRight: isLastItem
-                ? () => _handleEdge(index, AxisDirection.right)
-                : null,
-            onArrowUp: onArrowUp,
-            onArrowDown: widget.onArrowDownToNextSection,
-          );
-        }
-        return TvEdgeShake(
-          key: edgeShakeKey,
-          child: item,
-        );
-      },
-      separatorBuilder: (_, __) =>
-          const SizedBox(width: TvHomeSection.cardSpacing),
-      itemCount: itemCount,
     );
   }
 }
@@ -618,6 +791,8 @@ class _TvMoreCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = TvTheme.of(context);
+    final usesSmoothFrame =
+        TvTheme.focusEffectModeOf(context) == TvFocusEffectMode.smoothFrame;
     return SizedBox(
       width: TvVideoCard.width,
       height: TvVideoCard.height,
@@ -636,7 +811,8 @@ class _TvMoreCard extends StatelessWidget {
           onArrowRight: onArrowRight,
           builder: (context, hasFocus) {
             return AnimatedScale(
-              scale: hasFocus ? TvVideoCard.focusedScale : 1,
+              scale:
+                  hasFocus && !usesSmoothFrame ? TvVideoCard.focusedScale : 1,
               duration: const Duration(milliseconds: 140),
               curve: Curves.easeOutCubic,
               child: Container(
@@ -644,16 +820,19 @@ class _TvMoreCard extends StatelessWidget {
                 width: TvVideoCard.width,
                 height: TvVideoCard.coverHeight,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF15191B),
+                  color: TvThemeColors.cardSurface,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: hasFocus ? Colors.white : const Color(0xFF2A2F32),
-                    width: hasFocus ? 3 : 1,
+                    color: hasFocus && !usesSmoothFrame
+                        ? const Color(0xFFE2E6EA)
+                        : TvThemeColors.cardSurfaceBorder,
+                    width: hasFocus && !usesSmoothFrame ? 3 : 1,
                   ),
-                  boxShadow: hasFocus
+                  boxShadow: hasFocus && !usesSmoothFrame
                       ? [
                           BoxShadow(
-                            color: palette.focus.withValues(alpha: 0.22),
+                            color:
+                                const Color(0xFFE2E6EA).withValues(alpha: 0.08),
                             blurRadius: 22,
                             offset: const Offset(0, 10),
                           ),

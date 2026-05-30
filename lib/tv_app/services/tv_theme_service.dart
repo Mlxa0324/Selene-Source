@@ -44,6 +44,9 @@ class TvThemePalette {
   /// 奈飞红主题标识。
   static const String netflixRedKey = 'netflix_red';
 
+  /// 柔和蓝主题标识。
+  static const String softBlueKey = 'soft_blue';
+
   /// 默认 Ivy 绿色主题。
   static const TvThemePalette ivyGreen = TvThemePalette(
     key: ivyGreenKey,
@@ -66,10 +69,22 @@ class TvThemePalette {
     selectedText: Colors.white,
   );
 
+  /// 柔和蓝主题。
+  static const TvThemePalette softBlue = TvThemePalette(
+    key: softBlueKey,
+    label: '柔和蓝',
+    accent: Color(0xFF5B7CFA),
+    focus: Color(0xFF7F99FF),
+    focusFill: Color(0xFF222A46),
+    disabledFill: Color(0xFF343B50),
+    selectedText: Colors.white,
+  );
+
   /// 所有可选 TV 主题色。
   static const List<TvThemePalette> values = [
     ivyGreen,
     netflixRed,
+    softBlue,
   ];
 
   /// 根据存储标识解析主题色。
@@ -79,6 +94,20 @@ class TvThemePalette {
       orElse: () => ivyGreen,
     );
   }
+}
+
+/// TV 页面共享中性色。
+///
+/// 集中管理非主题主色的背景和卡片底色，保证首页、详情页和列表页一致。
+class TvThemeColors {
+  /// 私有构造，避免实例化工具类。
+  const TvThemeColors._();
+
+  /// 右侧内容区和选集、换源等卡片底色。
+  static const Color cardSurface = Color(0xFF4B4E5A);
+
+  /// 卡片底色上的弱边框色。
+  static const Color cardSurfaceBorder = Color(0xFF616574);
 }
 
 /// TV 页面背景配置。
@@ -111,7 +140,7 @@ class TvThemeBackground {
   static const TvThemeBackground deepBlue = TvThemeBackground(
     key: deepBlueKey,
     label: '深蓝灰',
-    color: Color(0xFF0F131E),
+    color: Color(0xFF1A1D29),
   );
 
   /// 深黑夜幕背景。
@@ -136,6 +165,52 @@ class TvThemeBackground {
   }
 }
 
+/// TV 卡片焦点效果模式。
+///
+/// 用于控制首页横向列表和纵向 Grid 的卡片焦点表现，两个效果互斥。
+enum TvFocusEffectMode {
+  /// 平滑移动的共享外边框。
+  smoothFrame(
+    key: 'smooth_frame',
+    label: '平滑外框',
+  ),
+
+  /// 仅保留当前卡片自身放大和焦点边框。
+  magnifier(
+    key: 'magnifier',
+    label: '放大镜',
+  );
+
+  /// 创建 TV 卡片焦点效果模式。
+  const TvFocusEffectMode({
+    required this.key,
+    required this.label,
+  });
+
+  /// 存储标识。
+  final String key;
+
+  /// 设置页展示名称。
+  final String label;
+
+  /// 默认焦点效果。
+  static const TvFocusEffectMode defaultMode = smoothFrame;
+
+  /// 平滑外框模式标识。
+  static const String smoothFrameKey = 'smooth_frame';
+
+  /// 放大镜模式标识。
+  static const String magnifierKey = 'magnifier';
+
+  /// 根据存储标识解析焦点效果。
+  static TvFocusEffectMode fromKey(String key) {
+    return values.firstWhere(
+      (mode) => mode.key == key,
+      orElse: () => defaultMode,
+    );
+  }
+}
+
 /// TV 主题色服务。
 ///
 /// 负责读取、保存并通知 TV 页面刷新主题色。
@@ -149,11 +224,17 @@ class TvThemeService extends ChangeNotifier {
   /// TV 页面背景色本地存储 Key。
   static const String backgroundStorageKey = 'tv_theme_background_key';
 
+  /// TV 焦点效果本地存储 Key。
+  static const String focusEffectStorageKey = 'tv_focus_effect_mode_key';
+
   /// 当前主题色。
   TvThemePalette _palette = TvThemePalette.ivyGreen;
 
   /// 当前 TV 页面背景色。
   TvThemeBackground _background = TvThemeBackground.deepBlue;
+
+  /// 当前 TV 卡片焦点效果。
+  TvFocusEffectMode _focusEffectMode = TvFocusEffectMode.defaultMode;
 
   /// 当前主题色。
   TvThemePalette get palette => _palette;
@@ -167,10 +248,18 @@ class TvThemeService extends ChangeNotifier {
   /// 当前背景标识。
   String get backgroundKey => _background.key;
 
+  /// 当前 TV 卡片焦点效果。
+  TvFocusEffectMode get focusEffectMode => _focusEffectMode;
+
+  /// 当前 TV 卡片焦点效果标识。
+  String get focusEffectModeKey => _focusEffectMode.key;
+
   /// 读取本地主题色配置。
   Future<void> load() async {
     _palette = TvThemePalette.fromKey(await loadSavedThemeKey());
     _background = TvThemeBackground.fromKey(await loadSavedBackgroundKey());
+    _focusEffectMode =
+        TvFocusEffectMode.fromKey(await loadSavedFocusEffectModeKey());
     notifyListeners();
   }
 
@@ -196,6 +285,17 @@ class TvThemeService extends ChangeNotifier {
     await saveBackgroundKey(next.key);
   }
 
+  /// 切换卡片焦点效果并持久化。
+  Future<void> setFocusEffectModeKey(String key) async {
+    final next = TvFocusEffectMode.fromKey(key);
+    if (next.key == _focusEffectMode.key) {
+      return;
+    }
+    _focusEffectMode = next;
+    notifyListeners();
+    await saveFocusEffectModeKey(next.key);
+  }
+
   /// 读取已保存的主题标识。
   static Future<String> loadSavedThemeKey() async {
     final prefs = await SharedPreferences.getInstance();
@@ -207,6 +307,13 @@ class TvThemeService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(backgroundStorageKey) ??
         TvThemeBackground.deepBlue.key;
+  }
+
+  /// 读取已保存的卡片焦点效果标识。
+  static Future<String> loadSavedFocusEffectModeKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(focusEffectStorageKey) ??
+        TvFocusEffectMode.defaultMode.key;
   }
 
   /// 保存主题标识。
@@ -221,6 +328,15 @@ class TvThemeService extends ChangeNotifier {
     await prefs.setString(
       backgroundStorageKey,
       TvThemeBackground.fromKey(key).key,
+    );
+  }
+
+  /// 保存卡片焦点效果标识。
+  static Future<void> saveFocusEffectModeKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      focusEffectStorageKey,
+      TvFocusEffectMode.fromKey(key).key,
     );
   }
 }
@@ -248,6 +364,12 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
   /// 获取当前 TV 页面背景配置；没有作用域时回退默认深蓝灰。
   static TvThemeBackground backgroundOf(BuildContext context) {
     return maybeServiceOf(context)?.background ?? TvThemeBackground.deepBlue;
+  }
+
+  /// 获取当前 TV 卡片焦点效果；没有作用域时回退平滑外框。
+  static TvFocusEffectMode focusEffectModeOf(BuildContext context) {
+    return maybeServiceOf(context)?.focusEffectMode ??
+        TvFocusEffectMode.defaultMode;
   }
 
   /// 获取当前 TV 主题服务；测试或独立页面可能没有作用域。
