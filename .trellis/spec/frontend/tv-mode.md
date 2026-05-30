@@ -223,6 +223,64 @@ class TvPlayRecordService {
 - 播放进度上报沿用手机端节流：播放位置小于 1 秒不保存，10 秒内重复进度不重复保存。
 - 换源时必须先保存新源 `PlayRecord`，保存失败不得清理旧源记录；保存成功后才清理同一影片其它源记录，避免网络抖动造成继续观看丢失。
 
+### 3.6 原生 TV 数据与网络层契约
+
+```kotlin
+interface SeleneTvApi {
+    @GET("admin/dashboard")
+    suspend fun getDashboard(): TvHomeResponse
+}
+
+data class TvHomeResponse(
+    val sections: List<TvHomeSectionResponse>,
+)
+
+data class TvHomeSectionResponse(
+    val key: String,
+    val title: String,
+    val videos: List<TvVideoCardResponse>,
+)
+
+class TvHomeRepository(
+    private val api: SeleneTvApi,
+    private val playbackRepository: TvPlaybackRepository,
+) {
+    suspend fun loadHome(): TvHomePayload
+}
+```
+
+实现要求：
+
+- `core-network` 只定义 Retrofit/OkHttp、会话 Cookie 和接口响应 DTO，不得依赖 `core-data`。
+- `core-data` 可以依赖 `core-network`，并在 Repository 内把接口 DTO 转换为业务模型。
+- 首页仓库必须把本地继续观看分区插入到远端分区前，分区标识固定为 `continue_watching`，标题固定为「继续观看」。
+- 远端分区顺序保持服务端返回顺序，避免原生 TV 首页和 Flutter TV 首页排序不一致。
+- 会话存储至少暴露 `baseUrl / account / cookie` 三个字段；未接入持久化前允许内存实现，但外部调用契约保持不变。
+- 设置仓库保存服务器配置时只保存表单值，不直接触发登录请求，保持 TV 设置页现有语义。
+
+测试要求：
+
+- `SessionCookieStoreTest.saveSession_persists_base_url_account_and_cookie` 必须覆盖服务器地址、账号和 Cookie 的保存读取。
+- `TvHomeRepositoryTest.loadHome_aggregates_continue_watching_and_hot_sections` 必须覆盖 `continue_watching / hot_movies / hot_tv_shows / bangumi_calendar / hot_shows` 分区聚合。
+
+错误示例：
+
+```kotlin
+// 错误：network 层 DTO 直接复用 data 层业务模型，会造成模块依赖反向耦合。
+data class TvHomeResponse(
+    val sections: List<TvHomeSection>,
+)
+```
+
+正确示例：
+
+```kotlin
+// 正确：network 层 DTO 独立存在，由 data 层 Repository 负责映射。
+data class TvHomeResponse(
+    val sections: List<TvHomeSectionResponse>,
+)
+```
+
 ## 4. Contracts
 
 ### 4.1 启动分流契约

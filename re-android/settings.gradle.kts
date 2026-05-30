@@ -18,3 +18,5 @@ rootProject.name = "selene-re-android"
 
 include(":app-tv")
 include(":core-design")
+include(":core-network")
+include(":core-data")
