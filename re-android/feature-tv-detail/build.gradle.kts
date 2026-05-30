@@ -5,8 +5,8 @@ plugins {
 }
 
 android {
-    // 约束 TV 全屏播放器功能模块的 Android 编译参数。
-    namespace = "org.moontechlab.selene.tv.feature.player"
+    // 约束 TV 详情功能模块的 Android 编译参数。
+    namespace = "org.moontechlab.selene.tv.feature.detail"
     compileSdk = 35
 
     defaultConfig {
@@ -25,13 +25,13 @@ android {
     }
 
     buildFeatures {
-        // 全屏播放器壳使用 Compose 实现。
+        // 详情页 Route 使用 Compose 实现。
         compose = true
     }
 }
 
 dependencies {
-    implementation(project(":core-player-api"))
+    implementation(project(":core-data"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
@@ -40,10 +40,4 @@ dependencies {
     testImplementation(libs.junit4)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
-
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.truth)
 }

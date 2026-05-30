@@ -595,6 +595,15 @@ flutter build apk --debug
 git diff --check
 ```
 
+Kotlin 原生 TV 模块新增 Compose Android 测试时，功能模块必须同时声明：
+
+```kotlin
+androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+debugImplementation(libs.androidx.compose.ui.test.manifest)
+```
+
+缺少 `ui-test-manifest` 时，`createComposeRule()` 会在 `connectedDebugAndroidTest` 中无法解析 `androidx.activity.ComponentActivity`，表现为测试 APK 已安装但测试 Activity 启动失败。
+
 ## 8. Wrong vs Correct
 
 ### 8.1 TV 页面边界
