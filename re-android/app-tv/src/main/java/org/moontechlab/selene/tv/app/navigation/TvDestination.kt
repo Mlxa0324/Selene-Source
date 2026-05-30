@@ -45,6 +45,24 @@ sealed class TvDestination(
 
     companion object {
         /**
+         * 左侧主菜单仅承载首页与直播入口。
+         */
+        val primaryMenuDestinations = listOf(
+            Home,
+            Live,
+        )
+
+        /**
+         * 右上角快捷入口承载搜索与工具页入口。
+         */
+        val quickAccessDestinations = listOf(
+            Search,
+            History,
+            Favorites,
+            Settings,
+        )
+
+        /**
          * 顶层导航仅暴露主页面签，不包含全屏播放器。
          */
         val topLevelDestinations = listOf(

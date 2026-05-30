@@ -77,9 +77,41 @@ private fun TvTopLevelTabs(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        // 左侧区域先表达主菜单结构。
+        TvDestinationGroup(
+            destinations = TvDestination.primaryMenuDestinations,
+            currentRoute = currentRoute,
+            onNavigate = onNavigate,
+        )
+
+        // 右侧区域先表达快捷入口结构。
+        TvDestinationGroup(
+            destinations = TvDestination.quickAccessDestinations,
+            currentRoute = currentRoute,
+            onNavigate = onNavigate,
+        )
+    }
+}
+
+/**
+ * 渲染同一分区内的一组路由按钮。
+ *
+ * @param destinations 当前分区包含的路由集合。
+ * @param currentRoute 当前选中的路由。
+ * @param onNavigate 顶部标签点击后的跳转回调。
+ */
+@Composable
+private fun TvDestinationGroup(
+    destinations: List<TvDestination>,
+    currentRoute: String?,
+    onNavigate: (TvDestination) -> Unit,
+) {
+    Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TvDestination.topLevelDestinations.forEach { destination ->
+        destinations.forEach { destination ->
             val isSelected = destination.route == currentRoute
             TextButton(
                 onClick = { onNavigate(destination) },

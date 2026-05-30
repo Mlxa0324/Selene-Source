@@ -32,4 +32,32 @@ class TvDestinationTest {
         assertThat(TvDestination.Player.route).isEqualTo("player/{videoId}")
         assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.Player)
     }
+
+    /**
+     * 确认首页与直播属于左侧主菜单。
+     */
+    @Test
+    fun primary_menu_destinations_expose_home_and_live() {
+        val routes = TvDestination.primaryMenuDestinations.map { it.route }
+
+        assertThat(routes).containsExactly(
+            "home",
+            "live",
+        ).inOrder()
+    }
+
+    /**
+     * 确认搜索与工具页属于右上角快捷入口。
+     */
+    @Test
+    fun quick_access_destinations_expose_expected_routes() {
+        val routes = TvDestination.quickAccessDestinations.map { it.route }
+
+        assertThat(routes).containsExactly(
+            "search",
+            "history",
+            "favorites",
+            "settings",
+        ).inOrder()
+    }
 }
