@@ -11,8 +11,16 @@ Selene 原生 Android TV 重建工程。
 
 ## 运行测试
 
-如果本机未在 `re-android/` 下生成 Gradle Wrapper，可通过仓库现有 Android Wrapper 执行：
+在 `re-android/` 目录内直接执行：
 
 ```bash
-../android/gradlew -p re-android :app-tv:testDebugUnitTest
+./gradlew :app-tv:testDebugUnitTest
+```
+
+如果本机没有全局 Android SDK 环境变量，可在命令前注入：
+
+```bash
+ANDROID_HOME=/Users/your-name/Library/Android/sdk \
+ANDROID_SDK_ROOT=/Users/your-name/Library/Android/sdk \
+./gradlew :app-tv:testDebugUnitTest --tests "org.moontechlab.selene.tv.app.navigation.TvDestinationTest"
 ```

@@ -16,11 +16,11 @@ class TvDestinationTest {
 
         assertThat(routes).containsExactly(
             "home",
+            "live",
             "search",
             "history",
             "favorites",
             "settings",
-            "live",
         ).inOrder()
     }
 
@@ -31,6 +31,17 @@ class TvDestinationTest {
     fun fullscreen_player_route_is_hidden_from_top_level_tabs() {
         assertThat(TvDestination.Player.route).isEqualTo("player/{videoId}")
         assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.Player)
+    }
+
+    /**
+     * 确认播放器提供统一参数常量和路由构造方法。
+     */
+    @Test
+    fun player_route_builder_encodes_video_id() {
+        assertThat(TvDestination.Player.videoIdArg).isEqualTo("videoId")
+        assertThat(
+            TvDestination.Player.createRoute("anime/id?ep=01 中文"),
+        ).isEqualTo("player/anime%2Fid%3Fep%3D01%20%E4%B8%AD%E6%96%87")
     }
 
     /**

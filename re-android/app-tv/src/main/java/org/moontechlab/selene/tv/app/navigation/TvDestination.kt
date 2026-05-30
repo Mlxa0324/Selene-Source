@@ -1,5 +1,8 @@
 package org.moontechlab.selene.tv.app.navigation
 
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
 /**
  * 描述 TV 壳当前阶段支持的全部路由。
  *
@@ -41,7 +44,27 @@ sealed class TvDestination(
     /**
      * 全屏播放器路由。
      */
-    data object Player : TvDestination("player/{videoId}")
+    data object Player : TvDestination("player/{videoId}") {
+        /**
+         * 播放器路由参数名。
+         */
+        const val videoIdArg = "videoId"
+
+        /**
+         * 根据视频 ID 构造可安全传递的播放器路由。
+         *
+         * @param videoId 原始视频 ID。
+         * @return 经过编码后的播放器路由。
+         */
+        fun createRoute(videoId: String): String {
+            // 对动态参数做 URL 编码，避免斜杠和空格污染路由层级。
+            val encodedVideoId = URLEncoder.encode(
+                videoId,
+                StandardCharsets.UTF_8.toString(),
+            ).replace("+", "%20")
+            return "player/$encodedVideoId"
+        }
+    }
 
     companion object {
         /**
@@ -67,11 +90,11 @@ sealed class TvDestination(
          */
         val topLevelDestinations = listOf(
             Home,
+            Live,
             Search,
             History,
             Favorites,
             Settings,
-            Live,
         )
     }
 }
