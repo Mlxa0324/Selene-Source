@@ -439,6 +439,8 @@ data class PlaybackSnapshot(
 - `PlaybackSnapshot` 必须保留 `videoId / sourceId / episodeId / url / positionMs / durationMs / playbackSpeed / resizeMode`，用于全屏切内核后恢复当前线路、剧集、进度、倍速和画面比例。
 - `TvSeekController.computeDeltaSeconds(holdMs)` 的规则必须对齐 Flutter TV 全屏播放器：长按初期固定 5 秒，小步进后平滑加速，最大 19 秒封顶。
 - ExoPlayer 和 WebView 兜底内核都必须实现 `PlayerEngine`，全屏播放器壳只依赖协议，不直接引用具体内核类。
+- 全屏播放器底部弹框进入「其它」后，必须展示 `内核切换` 入口；切换状态机要先从当前内核 `captureSnapshot()`，再对目标内核执行 `load + restoreSnapshot`，最后释放旧内核。
+- WebView 兜底链路的 JS 桥至少要上报 `positionMs / durationMs / isPlaying` 三个字段，原生桥接层负责把 JSON 映射成可驱动 UI 的播放事件。
 
 测试要求：
 
@@ -446,6 +448,8 @@ data class PlaybackSnapshot(
 - `ExoPlayerEngineTest.seekTo_runs_on_playback_dispatcher` 覆盖 seek 不在主线程直接执行。
 - `TvSeekControllerTest.longPress_seek_delta_accelerates_after_threshold` 覆盖长按加速。
 - `TvSeekControllerTest.longPress_seek_delta_caps_at_max_step` 覆盖 19 秒封顶。
+- `TvPlayerEngineSwitcherTest.switchEngine_restores_snapshot_on_target_engine` 覆盖 Exo -> WebView 切换恢复。
+- `WebViewPlayerBridgeTest.onPlaybackEvent_maps_js_payload_to_player_state` 覆盖 JS 事件桥接。
 
 ### 4.5 TV 设置输入框契约
 
