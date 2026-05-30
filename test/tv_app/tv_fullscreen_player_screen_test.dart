@@ -1837,7 +1837,7 @@ void main() {
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
   });
 
-  testWidgets('long press right seek reaches 20 seconds after 1 second hold',
+  testWidgets('brief arrow key holds seek by ten seconds instead of long press',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
@@ -1864,20 +1864,128 @@ void main() {
 
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
+
+    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+
+    expect(playback.seekPositions, [
+      const Duration(minutes: 35, seconds: 35),
+      const Duration(minutes: 35, seconds: 25),
+    ]);
+  });
+
+  testWidgets(
+      'long press right seek flips center time every video second at 60x rate',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
+    await tester.pump(const Duration(microseconds: 20000));
+
+    expect(playback.seekPositions, [
+      const Duration(minutes: 35, seconds: 26),
+    ]);
+    expect(find.text('35:26/1:46:59'), findsOneWidget);
+
+    await tester.pump(const Duration(microseconds: 16667));
+
+    expect(playback.seekPositions, [
+      const Duration(minutes: 35, seconds: 26),
+      const Duration(minutes: 35, seconds: 27),
+    ]);
+    expect(find.text('35:27/1:46:59'), findsOneWidget);
+
+    await tester.pump(const Duration(microseconds: 966666));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(playback.seekPositions, hasLength(60));
+    expect(
+      playback.seekPositions.last,
+      const Duration(minutes: 36, seconds: 25),
+    );
+  });
+
+  testWidgets('long press right seek keeps 60 video seconds per real second',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
+    await tester.pump(const Duration(seconds: 1));
+    final positionAfterOneSecond = playback.seekPositions.last;
     await tester.pump(const Duration(seconds: 1));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
-    expect(playback.seekPositions, isNotEmpty);
+    expect(
+      positionAfterOneSecond,
+      const Duration(minutes: 36, seconds: 25),
+    );
     expect(
       playback.seekPositions.last,
-      const Duration(minutes: 35, seconds: 45),
+      const Duration(minutes: 37, seconds: 25),
+    );
+    expect(
+      playback.seekPositions.last.inSeconds - positionAfterOneSecond.inSeconds,
+      60,
     );
   });
 
   testWidgets(
-      'long press right seek switches to 40 seconds per second after 5 seconds',
+      'long press right seek switches to 120 video seconds per real second after 6 seconds',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
@@ -1904,25 +2012,70 @@ void main() {
 
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 5));
-    final positionAfterFiveSeconds = playback.seekPositions.last;
+    await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
+    await tester.pump(const Duration(seconds: 6));
+    final positionAfterSixSeconds = playback.seekPositions.last;
     await tester.pump(const Duration(seconds: 1));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
+
     expect(
-      positionAfterFiveSeconds,
-      const Duration(minutes: 37, seconds: 25),
+      positionAfterSixSeconds,
+      const Duration(minutes: 41, seconds: 25),
     );
     expect(
       playback.seekPositions.last,
-      const Duration(minutes: 38, seconds: 5),
+      const Duration(minutes: 43, seconds: 25),
     );
     expect(
-      playback.seekPositions.last.inSeconds -
-          positionAfterFiveSeconds.inSeconds,
-      40,
+      playback.seekPositions.last.inSeconds - positionAfterSixSeconds.inSeconds,
+      120,
     );
+  });
+
+  testWidgets(
+      'long press seek overlay and bottom progress hide immediately on key up',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+        findsOneWidget);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(
+        find.byKey(const ValueKey('tv-fullscreen-seek-overlay')), findsNothing);
+    expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
+        findsNothing);
   });
 
   testWidgets('global remote keys drive fullscreen chrome without root focus',
@@ -1971,7 +2124,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
-    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 30)]);
+    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
     expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
         findsOneWidget);
 
@@ -2052,7 +2205,7 @@ void main() {
     final firstCurrentTimeRect = tester.getRect(
       find.byKey(const ValueKey('tv-fullscreen-bottom-current-time-slot')),
     );
-    expect(find.text('10:04'), findsOneWidget);
+    expect(find.text('10:09'), findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
@@ -2063,7 +2216,7 @@ void main() {
     final secondCurrentTimeRect = tester.getRect(
       find.byKey(const ValueKey('tv-fullscreen-bottom-current-time-slot')),
     );
-    expect(find.text('10:09'), findsOneWidget);
+    expect(find.text('10:19'), findsOneWidget);
     expect(
       secondCurrentTimeRect.width,
       moreOrLessEquals(firstCurrentTimeRect.width, epsilon: 0.01),
@@ -2396,28 +2549,83 @@ void main() {
     );
   });
 
-  test('TV fullscreen seek acceleration keeps long press rates stable', () {
+  test(
+      'TV fullscreen seek long press uses one-second ticks at 60x and 120x rates',
+      () {
     expect(TvFullscreenSeekStep.initialPressSeconds, 10);
-    expect(TvFullscreenSeekStep.repeatStepForElapsed(Duration.zero), 20);
+    expect(
+      TvFullscreenSeekStep.longPressStartThreshold,
+      const Duration(milliseconds: 250),
+    );
+    expect(TvFullscreenSeekStep.repeatStepForElapsed(Duration.zero), 1);
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(
         const Duration(milliseconds: 4900),
       ),
-      20,
+      1,
     );
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(const Duration(seconds: 5)),
-      40,
+      1,
+    );
+    expect(
+      TvFullscreenSeekStep.repeatStepForElapsed(const Duration(seconds: 6)),
+      1,
+    );
+    expect(
+      TvFullscreenSeekStep.repeatStepForElapsed(
+        const Duration(milliseconds: 6050),
+      ),
+      1,
     );
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(
         const Duration(milliseconds: 7500),
       ),
-      40,
+      1,
     );
     expect(
-      TvFullscreenSeekStep.repeatIntervalForElapsed(Duration.zero),
-      1000,
+      TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(Duration.zero),
+      16667,
+    );
+    expect(
+      TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(
+        const Duration(seconds: 6),
+      ),
+      16667,
+    );
+    expect(
+      TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(
+        const Duration(milliseconds: 6050),
+      ),
+      8333,
+    );
+    expect(
+      TvFullscreenSeekStep.totalSeekSecondsForElapsed(
+          const Duration(seconds: 1)),
+      60,
+    );
+    expect(
+      TvFullscreenSeekStep.totalSeekSecondsForElapsed(
+          const Duration(seconds: 6)),
+      360,
+    );
+    expect(
+      TvFullscreenSeekStep.totalSeekSecondsForElapsed(
+          const Duration(seconds: 7)),
+      480,
+    );
+    expect(
+      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(60),
+      1000000,
+    );
+    expect(
+      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(360),
+      6000000,
+    );
+    expect(
+      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(480),
+      7000000,
     );
   });
 }

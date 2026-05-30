@@ -87,8 +87,8 @@ abstract interface class TvFullscreenVideoControllerProvider {
 
 /// TV 全屏播放器遥控器 seek 步长规则。
 ///
-/// 短按保持 10 秒跳转；长按每 1 秒触发一次，
-/// 前 5 秒每次 20 秒，5 秒后每次 40 秒。
+/// 短按保持 10 秒跳转；长按前 6 秒保持每真实秒推进 60 秒视频，
+/// 6 秒后切到每真实秒推进 120 秒视频，但仍按 1 秒粒度快速刷新中心时间。
 class TvFullscreenSeekStep {
   /// 私有构造，避免工具类被实例化。
   const TvFullscreenSeekStep._();
@@ -96,29 +96,91 @@ class TvFullscreenSeekStep {
   /// 短按方向键时的 seek 秒数。
   static const int initialPressSeconds = 10;
 
-  /// 长按前 5 秒每次重复 seek 的秒数。
-  static const int initialRepeatStepSeconds = 20;
+  /// 长按每个内部 tick 推进的视频秒数。
+  static const int normalRepeatStepSeconds = 1;
 
-  /// 长按超过 5 秒后每次重复 seek 的秒数。
-  static const int acceleratedRepeatStepSeconds = 40;
+  /// 长按第一档每真实秒推进的视频秒数。
+  static const int normalSeekSecondsPerSecond = 60;
 
-  /// 长按前 5 秒保持第一段重复速度的时间。
-  static const Duration holdDuration = Duration(seconds: 5);
+  /// 长按第二档每真实秒推进的视频秒数。
+  static const int acceleratedSeekSecondsPerSecond = 120;
 
-  /// 长按重复 seek 的固定触发间隔。
-  static const int repeatIntervalMs = 1000;
+  /// 长按切入第二段加速的持续时间阈值。
+  static const Duration accelerationThreshold = Duration(seconds: 6);
+
+  /// 短按和长按的分界时间。
+  static const Duration longPressStartThreshold = Duration(milliseconds: 250);
+
+  /// 长按第一档重复 seek 的名义最小间隔。
+  static const int normalRepeatIntervalMicroseconds = 16667;
+
+  /// 长按第二档重复 seek 的名义最小间隔。
+  static const int acceleratedRepeatIntervalMicroseconds = 8333;
+
+  /// 根据长按持续时间计算当前重复 seek 的触发间隔微秒数。
+  static int repeatIntervalMicrosecondsForElapsed(Duration elapsed) {
+    if (elapsed <= accelerationThreshold) {
+      return normalRepeatIntervalMicroseconds;
+    }
+    return acceleratedRepeatIntervalMicroseconds;
+  }
 
   /// 根据长按持续时间计算当前重复 seek 的触发间隔。
-  static int repeatIntervalForElapsed(Duration _) {
-    return repeatIntervalMs;
+  static int repeatIntervalForElapsed(Duration elapsed) {
+    return (repeatIntervalMicrosecondsForElapsed(elapsed) / 1000).round();
   }
 
   /// 根据长按持续时间计算当前重复 seek 的步进秒数。
-  static int repeatStepForElapsed(Duration elapsed) {
-    if (elapsed < holdDuration) {
-      return initialRepeatStepSeconds;
+  static int repeatStepForElapsed(Duration _) {
+    return normalRepeatStepSeconds;
+  }
+
+  /// 根据真实长按时长，换算当前应累计推进的视频秒数。
+  static int totalSeekSecondsForElapsed(Duration elapsed) {
+    final elapsedMicros = elapsed.inMicroseconds;
+    if (elapsedMicros <= 0) {
+      return 0;
     }
-    return acceleratedRepeatStepSeconds;
+
+    final thresholdMicros = accelerationThreshold.inMicroseconds;
+    if (elapsedMicros <= thresholdMicros) {
+      return (elapsedMicros * normalSeekSecondsPerSecond) ~/
+          Duration.microsecondsPerSecond;
+    }
+
+    final normalSeconds = (thresholdMicros * normalSeekSecondsPerSecond) ~/
+        Duration.microsecondsPerSecond;
+    final acceleratedMicros = elapsedMicros - thresholdMicros;
+    final acceleratedSeconds =
+        (acceleratedMicros * acceleratedSeekSecondsPerSecond) ~/
+            Duration.microsecondsPerSecond;
+    return normalSeconds + acceleratedSeconds;
+  }
+
+  /// 根据累计推进秒数，反推该秒应落到的真实长按时间点。
+  static int elapsedMicrosecondsForTotalSeekSeconds(int totalSeekSeconds) {
+    if (totalSeekSeconds <= 0) {
+      return 0;
+    }
+
+    final thresholdMicros = accelerationThreshold.inMicroseconds;
+    final normalPhaseSeekSeconds =
+        (thresholdMicros * normalSeekSecondsPerSecond) ~/
+            Duration.microsecondsPerSecond;
+
+    if (totalSeekSeconds <= normalPhaseSeekSeconds) {
+      return ((totalSeekSeconds * Duration.microsecondsPerSecond) +
+              normalSeekSecondsPerSecond -
+              1) ~/
+          normalSeekSecondsPerSecond;
+    }
+
+    final acceleratedSeekSeconds = totalSeekSeconds - normalPhaseSeekSeconds;
+    return thresholdMicros +
+        (((acceleratedSeekSeconds * Duration.microsecondsPerSecond) +
+                acceleratedSeekSecondsPerSecond -
+                1) ~/
+            acceleratedSeekSecondsPerSecond);
   }
 }
 
@@ -424,6 +486,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前长按是否已经进入连续滚动阶段。
   bool _seekHoldHasRepeated = false;
+
+  /// 当前长按 seek 已经累计下发的视频秒数。
+  int _seekHoldAppliedSeconds = 0;
+
+  /// 当前长按 seek 是否已经越过短按保护阈值。
+  bool _seekHoldLongPressStarted = false;
 
   /// 当前长按 seek 的内部调度定时器。
   Timer? _seekHoldTimer;
@@ -1154,6 +1222,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _activeSeekKey = key;
     _seekHoldElapsed = Duration.zero;
     _seekHoldHasRepeated = false;
+    _seekHoldAppliedSeconds = 0;
+    _seekHoldLongPressStarted = false;
     _scheduleNextSeekHoldTick();
   }
 
@@ -1167,10 +1237,19 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final direction = _seekDirection;
     _clearSeekHoldTracking();
 
-    // 没有进入连续滚动时按短按处理，保持单次 5 秒跳转语义。
+    // 没有进入连续滚动时按短按处理，保持单次 10 秒跳转语义。
     if (!hadRepeated && direction != 0) {
       _applySeekDelta(direction, TvFullscreenSeekStep.initialPressSeconds);
+      return;
     }
+
+    // 长按松手后如果视频仍在播放，则立即收起中心提示和底部进度壳层。
+    if (mounted) {
+      setState(() {
+        _seekOverlayVisible = false;
+      });
+    }
+    _resetSeekState();
   }
 
   /// 按当前长按阶段安排下一次 seek tick。
@@ -1181,22 +1260,52 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return;
     }
 
-    final interval = Duration(
-      milliseconds: TvFullscreenSeekStep.repeatIntervalForElapsed(
-        _seekHoldElapsed,
-      ),
-    );
+    int intervalMicros;
+    if (!_seekHoldLongPressStarted) {
+      intervalMicros =
+          TvFullscreenSeekStep.longPressStartThreshold.inMicroseconds -
+              _seekHoldElapsed.inMicroseconds;
+    } else {
+      final nextTargetSeconds = _seekHoldAppliedSeconds + 1;
+      final targetElapsedMicros =
+          TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(
+        nextTargetSeconds,
+      );
+      final longPressElapsedMicros = _seekHoldElapsed.inMicroseconds -
+          TvFullscreenSeekStep.longPressStartThreshold.inMicroseconds;
+      final remainingMicros = targetElapsedMicros - longPressElapsedMicros;
+      final fallbackMicros =
+          TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(
+        Duration(microseconds: longPressElapsedMicros),
+      );
+      intervalMicros = remainingMicros > 0 ? remainingMicros : fallbackMicros;
+    }
+    if (intervalMicros <= 0) {
+      intervalMicros = 1;
+    }
+    final interval = Duration(microseconds: intervalMicros);
     _seekHoldTimer = Timer(interval, () {
       if (!mounted || _activeSeekKey != activeKey) {
         return;
       }
 
       _seekHoldElapsed += interval;
-      _seekHoldHasRepeated = true;
-      _applySeekDelta(
-        _seekDirection,
-        TvFullscreenSeekStep.repeatStepForElapsed(_seekHoldElapsed),
-      );
+      if (!_seekHoldLongPressStarted) {
+        _seekHoldLongPressStarted = true;
+        _scheduleNextSeekHoldTick();
+        return;
+      }
+
+      final longPressElapsed =
+          _seekHoldElapsed - TvFullscreenSeekStep.longPressStartThreshold;
+      final targetSeconds =
+          TvFullscreenSeekStep.totalSeekSecondsForElapsed(longPressElapsed);
+      final deltaSeconds = targetSeconds - _seekHoldAppliedSeconds;
+      if (deltaSeconds > 0) {
+        _seekHoldHasRepeated = true;
+        _seekHoldAppliedSeconds = targetSeconds;
+        _applySeekDelta(_seekDirection, deltaSeconds);
+      }
       _scheduleNextSeekHoldTick();
     });
   }
@@ -1375,6 +1484,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _activeSeekKey = null;
     _seekHoldElapsed = Duration.zero;
     _seekHoldHasRepeated = false;
+    _seekHoldAppliedSeconds = 0;
+    _seekHoldLongPressStarted = false;
   }
 
   /// 重置连续 seek 状态。

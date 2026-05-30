@@ -12,6 +12,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/local_mode_storage_service.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/user_data_service.dart';
+import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/widgets/tv_back_handler.dart';
@@ -861,7 +862,8 @@ void main() {
     );
   });
 
-  testWidgets('detail section titles keep small safe inset before lists',
+  testWidgets(
+      'detail horizontal rows use safe leading padding while titles align IvyTV',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -927,21 +929,17 @@ void main() {
         )
         .left;
 
-    expect(sourceChipLeft, greaterThan(sourceTitleLeft));
-    expect(sourceChipLeft - sourceTitleLeft, lessThanOrEqualTo(8));
-    expect(episodeChipLeft, greaterThan(episodeTitleLeft));
-    expect(episodeChipLeft - episodeTitleLeft, lessThanOrEqualTo(8));
+    expect((sourceTitleLeft - episodeTitleLeft).abs(), lessThanOrEqualTo(1));
+    expect((sourceTitleLeft - recommendTitleLeft).abs(), lessThanOrEqualTo(1));
+    expect((sourceChipLeft - sourceTitleLeft).abs(), lessThanOrEqualTo(1));
+    expect((episodeChipLeft - episodeTitleLeft).abs(), lessThanOrEqualTo(1));
     expect(
-      recommendCardLeft,
-      greaterThan(recommendTitleLeft),
-    );
-    expect(
-      recommendCardLeft - recommendTitleLeft,
-      lessThanOrEqualTo(8),
+      (recommendCardLeft - recommendTitleLeft).abs(),
+      lessThanOrEqualTo(1),
     );
   });
 
-  testWidgets('detail recommend first card uses centered focus scale',
+  testWidgets('detail recommend edge cards scale inward without side padding',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -978,7 +976,16 @@ void main() {
           )
           .first,
     );
-    expect(firstRecommendCard.scaleAlignment, Alignment.center);
+    final lastRecommendCard = tester.widget<TvVideoCard>(
+      find
+          .ancestor(
+            of: find.text('推荐影片二'),
+            matching: find.byWidgetPredicate((widget) => widget is TvVideoCard),
+          )
+          .first,
+    );
+    expect(firstRecommendCard.scaleAlignment, Alignment.centerLeft);
+    expect(lastRecommendCard.scaleAlignment, Alignment.centerRight);
   });
 
   testWidgets(
@@ -1021,7 +1028,7 @@ void main() {
     final episodeTitleLeft = tester.getTopLeft(find.text('选集')).dx;
     final recommendTitleLeft = tester.getTopLeft(find.text('相关推荐')).dx;
 
-    expect(playerLeft, greaterThan(logoLeft));
+    expect(playerLeft, greaterThanOrEqualTo(logoLeft));
     expect(playerLeft - logoLeft, lessThanOrEqualTo(10));
     expect((playerLeft - sourceTitleLeft).abs(), lessThanOrEqualTo(1));
     expect((playerLeft - episodeTitleLeft).abs(), lessThanOrEqualTo(1));
@@ -1894,7 +1901,7 @@ void main() {
       tester,
       listKey: 'tv-detail-episode-list',
       itemFinder: find.text('第208集'),
-      maxLeadingGap: 64,
+      maxLeadingGap: 76,
     );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
@@ -2946,6 +2953,143 @@ void main() {
   });
 
   testWidgets(
+      'detail horizontal lists use full screen viewport with focus safe padding',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '横向贴边'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 45),
+              _searchResult('source_b', '备用源', episodeCount: 45),
+            ],
+            recommends: [
+              _videoInfo('recommend_1', '推荐影片'),
+            ],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    _expectHorizontalListFlushToScreen(tester, 'tv-detail-source-list');
+    _expectHorizontalListFlushToScreen(tester, 'tv-detail-episode-list');
+    _expectHorizontalListFlushToScreen(
+      tester,
+      'tv-detail-episode-group-list',
+    );
+    _expectHorizontalListFlushToScreen(tester, 'tv-detail-recommend-list');
+
+    expect(
+      _leftOfFocusableForText(tester, '主源'),
+      closeTo(TvLayout.pageHorizontalPadding, 0.1),
+    );
+    expect(
+      _leftOfFocusableForText(tester, '第1集'),
+      closeTo(TvLayout.pageHorizontalPadding, 0.1),
+    );
+    expect(
+      _leftOfVideoCardForText(tester, '推荐影片'),
+      closeTo(TvLayout.pageHorizontalPadding, 0.1),
+    );
+  });
+
+  testWidgets(
+      'detail horizontal focused items always keep full safe leading padding',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '横向浏览'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_1',
+              '线路01超长名称',
+              episodeCount: 45,
+            ),
+            sources: List<SearchResult>.generate(
+              20,
+              (index) => _searchResult(
+                'source_${index + 1}',
+                '线路${(index + 1).toString().padLeft(2, '0')}超长名称',
+                episodeCount: 45,
+              ),
+            ),
+            recommends: List<VideoInfo>.generate(
+              20,
+              (index) => _videoInfo('recommend_$index', '推荐影片$index'),
+            ),
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // 浏览到中间线路时，获焦项左侧仍稳定保留 36px，不再贴到屏幕边缘。
+    Focus.of(tester.element(find.text('线路10超长名称'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(
+      _leftOfFocusableForText(tester, '线路10超长名称'),
+      closeTo(TvLayout.pageHorizontalPadding, 1.0),
+    );
+
+    // 选集长按右移到中段选集时同样保留 36px 左安全区。
+    Focus.of(tester.element(find.text('第1集'))).requestFocus();
+    await tester.pumpAndSettle();
+    for (var step = 0; step < 11; step++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+    expect(
+      _leftOfFocusableForText(tester, '第12集'),
+      closeTo(TvLayout.pageHorizontalPadding, 1.0),
+    );
+
+    // 推荐卡片浏览到中段时，海报左侧也保留 36px，放大描边不会被屏幕裁掉。
+    Focus.of(tester.element(find.text('推荐影片0'))).requestFocus();
+    await tester.pumpAndSettle();
+    for (var step = 0; step < 6; step++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+    expect(
+      _leftOfVideoCardForText(tester, '推荐影片6'),
+      closeTo(TvLayout.pageHorizontalPadding, 1.0),
+    );
+    _expectVideoCardFocusPaintInsideScreen(
+      tester,
+      itemFinder: find.text('推荐影片6'),
+      minLeadingInset: 16,
+    );
+  });
+
+  testWidgets(
       'detail recommend list keeps centered first focused card inside screen after edge return',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -3003,6 +3147,10 @@ void main() {
       tester,
       itemFinder: find.text('推荐影片0'),
       minLeadingInset: 16,
+    );
+    expect(
+      _leftOfVideoCardForText(tester, '推荐影片0'),
+      closeTo(TvLayout.pageHorizontalPadding, 0.1),
     );
   });
 
@@ -4752,10 +4900,10 @@ void _expectFinderNearListLeadingEdge(
   WidgetTester tester, {
   required String listKey,
   required Finder itemFinder,
-  double maxLeadingGap = 36,
+  double maxLeadingGap = TvLayout.pageHorizontalPadding + 16,
 }) {
   final listRect = tester.getRect(find.byKey(ValueKey(listKey)));
-  final itemRect = tester.getRect(itemFinder);
+  final itemRect = _rectForFocusableOrItem(tester, itemFinder);
   expect(itemRect.left - listRect.left, lessThanOrEqualTo(maxLeadingGap));
 }
 
@@ -4765,6 +4913,34 @@ void _expectFocusablePaintInsideList(
   required Finder itemFinder,
 }) {
   final listRect = tester.getRect(find.byKey(ValueKey(listKey)));
+  final focusableRect = _rectForFocusableOrItem(tester, itemFinder);
+  expect(focusableRect.left, greaterThanOrEqualTo(listRect.left));
+}
+
+void _expectHorizontalListFlushToScreen(WidgetTester tester, String listKey) {
+  final listFinder = find.byKey(ValueKey(listKey));
+  final listRect = tester.getRect(listFinder);
+  final listView = tester.widget<ListView>(listFinder);
+  final screenRect = Offset.zero & tester.view.physicalSize;
+  final visibleRect = listRect.intersect(screenRect);
+
+  expect(visibleRect.left, closeTo(0, 0.1));
+  expect(visibleRect.right, closeTo(tester.view.physicalSize.width, 0.1));
+  expect(
+    listView.padding,
+    const EdgeInsets.symmetric(horizontal: TvLayout.pageHorizontalPadding),
+  );
+}
+
+double _leftOfFocusableForText(WidgetTester tester, String text) {
+  final focusableFinder = find.ancestor(
+    of: find.text(text),
+    matching: find.byType(AnimatedContainer),
+  );
+  return tester.getRect(focusableFinder.first).left;
+}
+
+Rect _rectForFocusableOrItem(WidgetTester tester, Finder itemFinder) {
   final focusableFinder = find.ancestor(
     of: itemFinder,
     matching: find.byWidgetPredicate(
@@ -4773,8 +4949,21 @@ void _expectFocusablePaintInsideList(
           widget.runtimeType.toString() == 'TvVideoCard',
     ),
   );
-  final focusableRect = tester.getRect(focusableFinder.first);
-  expect(focusableRect.left, greaterThanOrEqualTo(listRect.left + 1));
+
+  if (focusableFinder.evaluate().isNotEmpty) {
+    return tester.getRect(focusableFinder.first);
+  }
+  return tester.getRect(itemFinder);
+}
+
+double _leftOfVideoCardForText(WidgetTester tester, String text) {
+  final cardFinder = find
+      .ancestor(
+        of: find.text(text),
+        matching: find.byWidgetPredicate((widget) => widget is TvVideoCard),
+      )
+      .first;
+  return tester.getRect(cardFinder).left;
 }
 
 void _expectVideoCardFocusPaintInsideScreen(

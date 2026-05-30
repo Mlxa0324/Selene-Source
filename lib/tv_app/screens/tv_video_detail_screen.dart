@@ -356,27 +356,31 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 详情页播放器和分区标题的左基线留白。
   ///
-  /// 这里让内容区更贴近顶部 `IvyTV` 的左边缘，保持同一视觉起点，
-  /// 但仍保留一小段间距，避免播放器焦点边框看起来贴边。
-  static const double _detailSectionLeadingInset = 0;
+  /// 页面外层已经保留 `TvLayout.pageHorizontalPadding`，这里不再额外缩进，
+  /// 保证播放器、分区标题和顶部 `IvyTV` 共用同一条左基线。
+  static const double _detailSectionLeadingInset = TvLayout.pageHorizontalPadding;
 
-  /// 轻量横向选项列表的首尾焦点安全留白。
+  /// 详情页横向列表的首尾焦点安全留白。
   ///
-  /// 线路和选集按钮本身不做整体放大，只需要保留轻微左安全边距，
-  /// 让标题更贴近 `IvyTV` 左基线。
-  static const double _detailHorizontalFocusSafePadding = 0;
+  /// 横向列表视口贴到屏幕边缘，列表内容滚动时可以从屏幕边缘直接进入或离开；
+  /// 但任意获焦项停留在边界时都必须保留这段安全距离，避免焦点描边或放大效果
+  /// 被屏幕裁切。该值与 `IvyTV`/分区标题的左基线对齐，因此首项默认状态、首项获焦
+  /// 以及任意项滚到最左侧获焦时，左侧都稳定保留 36px。
+  static const double _detailHorizontalListSafePadding =
+      TvLayout.pageHorizontalPadding;
 
-  /// 推荐海报横向列表的首尾焦点安全留白。
+  /// 详情页横向列表从页面内容区扩到屏幕两侧的补偿宽度。
   ///
-  /// 海报卡片获焦会按 1.08 放大，第一张卡片需要更大的左安全边距，
-  /// 避免从右端回到首项后左侧描边像被裁掉。
-  static const double _detailRecommendFocusSafePadding = 24;
+  /// 页面正文保留 36px 左右边距用于标题和播放器对齐，但遥控器横向列表滚动时
+  /// 不允许保留首尾空白，因此列表视口需要反向抵消父级这段边距。
+  static const double _detailHorizontalListOverflow =
+      TvLayout.pageHorizontalPadding;
 
-  /// 横向列表贴左时的轻微前靠偏移。
+  /// 横向列表首项获焦时的停留偏移。
   ///
-  /// 详情页这里用户关注的是“当前焦点尽量排到第一个”，所以在正常左对齐基础上
-  /// 再多推进一点，让视觉上更靠前。
-  static const double _detailListLeadingBias = -6;
+  /// 滚动过程中内容可以贴到屏幕边缘，但回到首项时必须停在列表内部安全区，
+  /// 保持第一张卡片和分区标题左侧对齐。
+  static const double _detailListLeadingBias = 0;
 
   /// 详情页纵向焦点跟随的稳定中线。
   ///
@@ -459,6 +463,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 推荐卡片定位 Key 表。
   final Map<String, GlobalKey> _recommendTargetKeys = <String, GlobalKey>{};
+
+  /// 推荐横向列表滚动控制器。
+  final ScrollController _recommendListScrollController = ScrollController();
 
   /// 播放器控制器。
   VideoPlayerWidgetController? _playerController;
@@ -704,6 +711,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _sourceListScrollController.dispose();
     _episodeListScrollController.dispose();
     _episodeGroupListScrollController.dispose();
+    _recommendListScrollController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1689,29 +1697,19 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _lastFocusedRecommendKey = _recommendFocusKey(videoInfo);
   }
 
-  /// 在条目真正获焦后，再把线路尽量推到左侧起点。
-  void _schedulePinSourceNearLeadingEdge(SearchResult source) {
+  /// 在条目真正获焦后，再按指定留白把目标推到屏幕左边。
+  void _scheduleHorizontalTargetToLeadingInset({
+    required ScrollController controller,
+    required GlobalKey targetKey,
+    required double leadingInset,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _pinSourceNearLeadingEdge(source);
-      }
-    });
-  }
-
-  /// 在条目真正获焦后，再把选集尽量推到左侧起点。
-  void _schedulePinEpisodeNearLeadingEdge(int episodeIndex) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _pinEpisodeNearLeadingEdge(episodeIndex);
-      }
-    });
-  }
-
-  /// 在条目真正获焦后，再把分组尽量推到左侧起点。
-  void _schedulePinEpisodeGroupNearLeadingEdge(int groupIndex) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _pinEpisodeGroupNearLeadingEdge(groupIndex);
+        _animateHorizontalListTargetToLeadingInset(
+          controller: controller,
+          targetKey: targetKey,
+          leadingInset: leadingInset,
+        );
       }
     });
   }
@@ -1801,10 +1799,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     targetNode.requestFocus();
-    final targetSource = _preferredSourceForSourceRow();
-    if (targetSource != null) {
-      _schedulePinSourceNearLeadingEdge(targetSource);
-    }
     _ensureFocusedNodeVisible(
       targetNode,
       minimumForwardScroll: _detailVerticalFocusMinForwardStep,
@@ -1818,10 +1812,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     targetNode.requestFocus();
-    final targetSource = _preferredSourceForSourceRow();
-    if (targetSource != null) {
-      _schedulePinSourceNearLeadingEdge(targetSource);
-    }
     _ensureFocusedNodeVisible(
       targetNode,
       minimumForwardScroll: _detailVerticalFocusMinForwardStep,
@@ -1840,8 +1830,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     node.requestFocus();
-    final targetIndex = _lastFocusedEpisodeIndex ?? _episodeIndex;
-    _schedulePinEpisodeNearLeadingEdge(targetIndex);
     _ensureFocusedNodeVisible(
       node,
       minimumForwardScroll: _detailVerticalFocusMinForwardStep,
@@ -1854,9 +1842,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final groupCount = _episodeGroupCount(detail?.episodes.length ?? 0);
     if (groupCount > 1) {
       final node = _preferredVisibleEpisodeGroupFocusNode();
-      node?.requestFocus();
       if (node != null) {
-        _schedulePinEpisodeGroupNearLeadingEdge(_episodeGroupIndex);
+        node.requestFocus();
         _ensureFocusedNodeVisible(
           node,
           minimumForwardScroll: _detailVerticalFocusMinForwardStep,
@@ -1948,9 +1935,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (node == null) {
       return false;
     }
-    node.requestFocus();
     _rememberFocusedEpisode(episodeIndex);
-    _schedulePinEpisodeNearLeadingEdge(episodeIndex);
+    node.requestFocus();
     _ensureFocusedNodeVisible(
       node,
       minimumForwardScroll: _detailVerticalFocusMinForwardStep,
@@ -2134,14 +2120,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return 0;
   }
 
-  /// 让线路尽量贴到横向列表最左侧。
-  void _pinSourceNearLeadingEdge(SearchResult source) {
-    _animateHorizontalListTargetNearLeadingEdge(
-      controller: _sourceListScrollController,
-      targetKey: _sourceTargetKeyFor(source),
-    );
-  }
-
   /// 让选集尽量贴到横向列表最左侧。
   void _pinEpisodeNearLeadingEdge(int episodeIndex) {
     final detail = _currentDetail;
@@ -2160,6 +2138,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (localIndex < 0) {
       return;
     }
+    if (_animateHorizontalListTargetToLeadingInset(
+      controller: _episodeListScrollController,
+      targetKey: _episodeTargetKeyFor(episodeIndex),
+      leadingInset: _detailHorizontalListSafePadding,
+    )) {
+      return;
+    }
     _animateHorizontalListToLeadingIndex(
       controller: _episodeListScrollController,
       index: localIndex,
@@ -2176,9 +2161,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (groupCount <= 1 || groupIndex < 0 || groupIndex >= groupCount) {
       return;
     }
-    _animateHorizontalListTargetNearLeadingEdge(
+    _animateHorizontalListTargetToLeadingInset(
       controller: _episodeGroupListScrollController,
       targetKey: _episodeGroupTargetKeyFor(groupIndex),
+      leadingInset: _detailHorizontalListSafePadding,
     );
   }
 
@@ -2270,6 +2256,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required int itemCount,
     required double spacing,
     required double fallbackItemExtent,
+    double leadingInset = _detailHorizontalListSafePadding,
   }) {
     if (!controller.hasClients || itemCount <= 0 || index < 0) {
       return;
@@ -2286,8 +2273,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final itemExtent = estimatedItemExtent.isFinite && estimatedItemExtent > 0
         ? estimatedItemExtent
         : fallbackItemExtent;
-    final targetOffset =
-        (index * (itemExtent + spacing) + _detailListLeadingBias).clamp(
+    final leadingCompensation =
+        _detailHorizontalListSafePadding - leadingInset;
+    final targetOffset = (index * (itemExtent + spacing) +
+            leadingCompensation +
+            _detailListLeadingBias)
+        .clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
@@ -2304,6 +2295,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required int itemCount,
     required double spacing,
     required double fallbackItemExtent,
+    double leadingInset = _detailHorizontalListSafePadding,
   }) {
     if (!controller.hasClients || itemCount <= 0 || index < 0) {
       return;
@@ -2320,8 +2312,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final itemExtent = estimatedItemExtent.isFinite && estimatedItemExtent > 0
         ? estimatedItemExtent
         : fallbackItemExtent;
-    final targetOffset =
-        (index * (itemExtent + spacing) + _detailListLeadingBias).clamp(
+    final leadingCompensation =
+        _detailHorizontalListSafePadding - leadingInset;
+    final targetOffset = (index * (itemExtent + spacing) +
+            leadingCompensation +
+            _detailListLeadingBias)
+        .clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
@@ -2335,46 +2331,51 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
   }
 
-  /// 按真实组件位置把横向列表尽量推到左侧起点。
+  /// 按真实组件位置把横向列表推到指定左安全区。
   ///
   /// 线路按钮宽度差异比较大，单纯按平均宽度估算会偏得很厉害，
-  /// 这里改成读取真实渲染位置，保证切回上次线路时能稳定贴前。
-  void _animateHorizontalListTargetNearLeadingEdge({
+  /// 这里改成读取真实渲染位置，确保首项能回到默认 36px 安全区，
+  /// 横向浏览时也能只保留一小段防裁切留白。
+  bool _animateHorizontalListTargetToLeadingInset({
     required ScrollController controller,
     required GlobalKey targetKey,
+    required double leadingInset,
   }) {
     if (!controller.hasClients) {
-      return;
+      return false;
     }
     final targetRect = _globalRectForKey(targetKey);
     if (targetRect == null) {
-      return;
+      return false;
     }
 
     final listContext = controller.position.context.notificationContext;
     if (listContext == null || !listContext.mounted) {
-      return;
+      return false;
     }
     final listRect = _globalRectForContext(listContext);
     if (listRect == null) {
-      return;
+      return false;
     }
 
     final position = controller.position;
-    final deltaToLeadingEdge =
-        targetRect.left - listRect.left - _detailHorizontalFocusSafePadding;
+    final deltaToLeadingEdge = targetRect.left -
+        listRect.left -
+        leadingInset -
+        _detailListLeadingBias;
     final targetOffset = (position.pixels + deltaToLeadingEdge).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
     );
     if ((position.pixels - targetOffset).abs() < 1) {
-      return;
+      return true;
     }
     position.animateTo(
       targetOffset.toDouble(),
       duration: TvFocusScroll.duration,
       curve: TvFocusScroll.curve,
     );
+    return true;
   }
 
   /// 使用真实组件上下文微调横向列表，让目标项稳定落在可视窗口内。
@@ -2386,6 +2387,44 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     TvFocusScroll.ensureVisible(
       targetContext,
       horizontalTriggerFraction: _tvDetailOptionScrollTriggerFraction,
+    );
+  }
+
+  /// 构建详情页全屏宽度横向列表视口。
+  ///
+  /// 仅横向列表使用这个容器：标题和播放器仍沿用页面 36px 内容边距，
+  /// 列表本身则向左右各扩出 36px，使滚动内容可以直接贴到屏幕边缘。
+  Widget _buildFlushHorizontalViewport({
+    required double height,
+    required Widget child,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return SizedBox(
+            height: height,
+            child: child,
+          );
+        }
+
+        final width =
+            constraints.maxWidth + (_detailHorizontalListOverflow * 2);
+        return SizedBox(
+          height: height,
+          child: OverflowBox(
+            alignment: Alignment.centerLeft,
+            minWidth: width,
+            maxWidth: width,
+            minHeight: height,
+            maxHeight: height,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -2444,22 +2483,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       }
     }
     return null;
-  }
-
-  /// 获取当前线路行优先回到的播放源。
-  ///
-  /// 当用户从下方选集或推荐区回到线路行时，优先回最近一次停留的线路；
-  /// 没有历史时再回到当前播放线路。
-  SearchResult? _preferredSourceForSourceRow() {
-    final rememberedFocusKey = _lastFocusedSourceKey;
-    if (rememberedFocusKey != null) {
-      for (final source in _cachedSourcesByEpisodeCountDesc) {
-        if (_sourceFocusKey(source) == rememberedFocusKey) {
-          return source;
-        }
-      }
-    }
-    return _currentDetail;
   }
 
   /// 获取当前线路或最近停留线路对应的可见焦点节点。
@@ -2810,12 +2833,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: TvLayout.pageHorizontalPadding,
+                        // horizontal: TvLayout.pageHorizontalPadding,
                       ),
                       child: Column(
                         children: [
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(0, 20, 0, 15),
+                            padding: const EdgeInsets.fromLTRB(_detailHorizontalListSafePadding, 20, _detailHorizontalListSafePadding, 15),
                             child: _buildPageGuide(),
                           ),
                           Expanded(
@@ -2956,7 +2979,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   Widget _buildHeroArea() {
     final detail = _currentDetail;
     return Padding(
-      padding: const EdgeInsets.only(left: _detailSectionLeadingInset),
+      padding: const EdgeInsets.symmetric(horizontal: _detailHorizontalListSafePadding),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final useVerticalLayout = constraints.maxWidth < 980;
@@ -3230,13 +3253,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       contentHorizontalInset: _detailSectionLeadingInset,
       child: sources.isEmpty
           ? _buildEmptyText('暂无可用源')
-          : SizedBox(
+          : _buildFlushHorizontalViewport(
               height: _detailChoiceChipMinHeight,
               child: ListView.separated(
                 key: const ValueKey('tv-detail-source-list'),
                 controller: _sourceListScrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: _detailHorizontalFocusSafePadding,
+                padding: const EdgeInsets.only(
+                  left: _detailHorizontalListSafePadding,
+                  right: _detailHorizontalListSafePadding * 3,
                 ),
                 scrollDirection: Axis.horizontal,
                 clipBehavior: Clip.none,
@@ -3272,9 +3296,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               _focusNearestHeroControlFrom(chipContext),
                           onArrowDown: _focusPreferredEpisodeInCurrentGroup,
                           onFocus: () {
-                            // 线路获焦后同时记住位置，并尽量把当前线路贴到列表左侧。
+                            // 任意线路获焦时都保留 36px 左安全区：首项与标题对齐，
+                            // 滚到最左侧获焦时焦点描边也不会被屏幕裁掉。
                             _rememberFocusedSource(source);
-                            _schedulePinSourceNearLeadingEdge(source);
+                            _scheduleHorizontalTargetToLeadingInset(
+                              controller: _sourceListScrollController,
+                              targetKey: _sourceTargetKeyFor(source),
+                              leadingInset: _detailHorizontalListSafePadding,
+                            );
                           },
                           onPressed: () => _switchSource(source),
                         ),
@@ -3309,13 +3338,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
+                _buildFlushHorizontalViewport(
                   height: episodeListHeight,
                   child: ListView.separated(
                     key: const ValueKey('tv-detail-episode-list'),
                     controller: _episodeListScrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: _detailHorizontalFocusSafePadding,
+                    padding: const EdgeInsets.only(
+                      left: _detailHorizontalListSafePadding,
+                      right: _detailHorizontalListSafePadding * 3,
                     ),
                     scrollDirection: Axis.horizontal,
                     clipBehavior: Clip.none,
@@ -3351,9 +3381,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                             onArrowUp: _focusSelectedSourceFromBelow,
                             onArrowDown: _focusPreferredEpisodeDownTarget,
                             onFocus: () {
-                              // 选集获焦后同步更新记忆，并把当前集尽量推到最左侧。
+                              // 任意选集获焦时都保留 36px 左安全区，滚到最左侧也不裁焦点框。
+                              // 复用按真实渲染位置定位的方案，避免选集宽度估算误差把焦点
+                              // 推过安全区，和线路/分组/推荐保持一致的贴边手感。
                               _rememberFocusedEpisode(index);
-                              _schedulePinEpisodeNearLeadingEdge(index);
+                              _scheduleHorizontalTargetToLeadingInset(
+                                controller: _episodeListScrollController,
+                                targetKey: _episodeTargetKeyFor(index),
+                                leadingInset: _detailHorizontalListSafePadding,
+                              );
                             },
                             onPressed: () => _switchEpisode(index),
                           ),
@@ -3364,13 +3400,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 ),
                 if (groupCount > 1) ...[
                   const SizedBox(height: 12),
-                  SizedBox(
+                  _buildFlushHorizontalViewport(
                     height: 40,
                     child: ListView.separated(
                       key: const ValueKey('tv-detail-episode-group-list'),
                       controller: _episodeGroupListScrollController,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: _detailHorizontalFocusSafePadding,
+                        horizontal: _detailHorizontalListSafePadding,
                       ),
                       scrollDirection: Axis.horizontal,
                       clipBehavior: Clip.none,
@@ -3402,8 +3438,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                   _focusEpisodeOptionForGroup(index),
                               onArrowDown: _focusPreferredRecommend,
                               onFocus: () {
-                                // 分组获焦即切换上方选集页，不再等待确认键。
+                                // 任意分组获焦时都保留 36px 左安全区，滚到最左侧也不裁焦点框。
                                 _rememberFocusedEpisodeGroup(index);
+                                _scheduleHorizontalTargetToLeadingInset(
+                                  controller: _episodeGroupListScrollController,
+                                  targetKey: _episodeGroupTargetKeyFor(index),
+                                  leadingInset:
+                                      _detailHorizontalListSafePadding,
+                                );
                                 _switchEpisodeGroup(index);
                               },
                               onPressed: () => _switchEpisodeGroup(index),
@@ -3425,66 +3467,72 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return _TvDetailSection(
       title: '相关推荐',
       contentHorizontalInset: _detailSectionLeadingInset,
-      child: SizedBox(
+      child: _buildFlushHorizontalViewport(
         height: TvVideoCard.height + 28,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: _detailRecommendFocusSafePadding,
+        child: ListView.separated(
+          key: const ValueKey('tv-detail-recommend-list'),
+          controller: _recommendListScrollController,
+          padding: const EdgeInsets.only(
+            left: _detailHorizontalListSafePadding,
+            right: _detailHorizontalListSafePadding * 3,
           ),
-          child: Transform.translate(
-            offset: const Offset(-_detailRecommendFocusSafePadding, 0),
-            child: ListView.separated(
-              key: const ValueKey('tv-detail-recommend-list'),
-              padding: const EdgeInsets.only(
-                right: _detailRecommendFocusSafePadding * 2,
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          itemCount: _recommends.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 18),
+          itemBuilder: (context, index) {
+            final videoInfo = _recommends[index];
+            final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+            final isFirstItem = index == 0;
+            final isLastItem = index == _recommends.length - 1;
+            final scaleAlignment = isFirstItem
+                ? Alignment.centerLeft
+                : isLastItem
+                    ? Alignment.centerRight
+                    : Alignment.center;
+            return TvEdgeShake(
+              key: edgeShakeKey,
+              child: KeyedSubtree(
+                key: _recommendTargetKeyFor(videoInfo),
+                child: TvVideoCard(
+                  videoInfo: videoInfo,
+                  focusNode: _recommendFocusNodeFor(videoInfo),
+                  focusMemoryGroupKey: 'tv-detail-recommend-list',
+                  scaleAlignment: scaleAlignment,
+                  onArrowLeft: isFirstItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.left)
+                      : null,
+                  onArrowRight: isLastItem
+                      ? () =>
+                          edgeShakeKey.currentState?.shake(AxisDirection.right)
+                      : null,
+                  onArrowUp: _focusRecommendationUpTarget,
+                  onArrowDown: _focusBottomAction,
+                  onFocusChanged: (hasFocus) {
+                    if (hasFocus) {
+                      // 任意推荐卡片获焦时都保留 36px 左安全区，和首页继续观看一致，
+                      // 滚到最左侧获焦时海报放大描边也不会被屏幕裁掉。
+                      _rememberFocusedRecommend(videoInfo);
+                      _scheduleHorizontalTargetToLeadingInset(
+                        controller: _recommendListScrollController,
+                        targetKey: _recommendTargetKeyFor(videoInfo),
+                        leadingInset: _detailHorizontalListSafePadding,
+                      );
+                    }
+                  },
+                  onPressed: () {
+                    TvRoute.pushReplacement<void, void>(
+                      context,
+                      TvVideoDetailScreen(
+                        videoInfo: videoInfo,
+                      ),
+                    );
+                  },
+                ),
               ),
-              scrollDirection: Axis.horizontal,
-              clipBehavior: Clip.none,
-              itemCount: _recommends.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 18),
-              itemBuilder: (context, index) {
-                final videoInfo = _recommends[index];
-                final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
-                final isFirstItem = index == 0;
-                final isLastItem = index == _recommends.length - 1;
-                return TvEdgeShake(
-                  key: edgeShakeKey,
-                  child: KeyedSubtree(
-                    key: _recommendTargetKeyFor(videoInfo),
-                    child: TvVideoCard(
-                      videoInfo: videoInfo,
-                      focusNode: _recommendFocusNodeFor(videoInfo),
-                      focusMemoryGroupKey: 'tv-detail-recommend-list',
-                      scaleAlignment: Alignment.center,
-                      onArrowLeft: isFirstItem
-                          ? () => edgeShakeKey.currentState
-                              ?.shake(AxisDirection.left)
-                          : null,
-                      onArrowRight: isLastItem
-                          ? () => edgeShakeKey.currentState
-                              ?.shake(AxisDirection.right)
-                          : null,
-                      onArrowUp: _focusRecommendationUpTarget,
-                      onArrowDown: _focusBottomAction,
-                      onFocusChanged: (hasFocus) {
-                        if (hasFocus) {
-                          _rememberFocusedRecommend(videoInfo);
-                        }
-                      },
-                      onPressed: () {
-                        TvRoute.pushReplacement<void, void>(
-                          context,
-                          TvVideoDetailScreen(
-                            videoInfo: videoInfo,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
