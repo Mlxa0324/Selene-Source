@@ -6,7 +6,8 @@ import 'package:selene/tv_app/widgets/tv_route.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  testWidgets('TV route page keeps zero-duration transitions', (tester) async {
+  testWidgets('TV route page uses lightweight non-zero transitions',
+      (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
 
     late BuildContext pageContext;
@@ -26,8 +27,35 @@ void main() {
       child: const SizedBox.shrink(),
     );
 
-    expect(route.transitionDuration, Duration.zero);
-    expect(route.reverseTransitionDuration, Duration.zero);
+    expect(
+      route.transitionDuration,
+      const Duration(milliseconds: 180),
+    );
+    expect(
+      route.reverseTransitionDuration,
+      const Duration(milliseconds: 180),
+    );
+
+    final transition = route.buildTransitions(
+      pageContext,
+      const AlwaysStoppedAnimation<double>(0.5),
+      const AlwaysStoppedAnimation<double>(0.0),
+      const SizedBox(key: ValueKey('tv-route-transition-child')),
+    );
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: transition,
+      ),
+    );
+
+    expect(find.byType(FadeTransition), findsOneWidget);
+    expect(find.byType(SlideTransition), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('tv-route-transition-child')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('TV route push keeps theme scope and design canvas',

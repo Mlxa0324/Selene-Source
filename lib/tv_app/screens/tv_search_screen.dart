@@ -545,6 +545,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 左侧清空按钮焦点节点。
   final FocusNode _leftClearActionFocusNode = FocusNode();
 
+  /// 左侧搜索按钮焦点节点。
+  final FocusNode _leftSearchActionFocusNode = FocusNode();
+
   /// 左侧删除按钮焦点节点。
   final FocusNode _leftDeleteActionFocusNode = FocusNode();
 
@@ -640,6 +643,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       focusNode.dispose();
     }
     _leftClearActionFocusNode.dispose();
+    _leftSearchActionFocusNode.dispose();
     _leftDeleteActionFocusNode.dispose();
     _keyboardBridgeLFocusNode.dispose();
     _keyboardBridgeRFocusNode.dispose();
@@ -701,10 +705,17 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 处理搜索页返回动作。
   ///
-  /// 当右侧正处于联想态或搜索结果态时，先回到搜索主页；
+  /// 当右侧正处于联想态、联想词编辑态或搜索结果态时，先回到搜索主页；
   /// 只有已经回到主页时，才继续执行页面级返回。
   Future<bool> _handleBackPressed() async {
     if (_shouldShowSearchResultPanel && _canRestoreSuggestionPanel) {
+      _restoreSuggestionPanel();
+      return true;
+    }
+    if (!_shouldShowSuggestionPanel &&
+        !_shouldShowSearchResultPanel &&
+        _query.isNotEmpty &&
+        _canRestoreSuggestionPanel) {
       _restoreSuggestionPanel();
       return true;
     }
@@ -803,6 +814,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
+                key: const ValueKey('tv-search-page-title'),
                 '搜索',
                 style: FontUtils.poppins(
                   fontSize: 28,
@@ -930,7 +942,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     );
   }
 
-  /// 构建清空和删除按钮。
+  /// 构建清空、搜索和删除按钮。
   Widget _buildActionRow() {
     return Row(
       children: [
@@ -941,10 +953,21 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             focusNode: _leftClearActionFocusNode,
             onPressed: () => _updateQuery(''),
             onArrowUp: _moveBottomActionFocusToKeyboardBottomRow,
-            onArrowDown: _moveLeftClearActionFocusToTopKeyboardRow,
+            onArrowDown: _moveActionFocusToTopKeyboardRow,
           ),
         ),
-        const SizedBox(width: 68),
+        const SizedBox(width: 18),
+        Expanded(
+          child: _buildActionButton(
+            label: '搜索',
+            containerKey: const ValueKey('tv-search-left-submit-button'),
+            focusNode: _leftSearchActionFocusNode,
+            onPressed: () => unawaited(_searchCurrentQuery()),
+            onArrowUp: _moveBottomActionFocusToKeyboardBottomRow,
+            onArrowDown: _moveActionFocusToTopKeyboardRow,
+          ),
+        ),
+        const SizedBox(width: 18),
         Expanded(
           child: _buildActionButton(
             label: '删除',
@@ -953,7 +976,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             onPressed: _deleteLastQueryChar,
             enableRightPanelArrow: true,
             onArrowUp: _moveBottomActionFocusToKeyboardBottomRow,
-            onArrowDown: _moveLeftDeleteActionFocusToTopKeyboardRow,
+            onArrowDown: _moveActionFocusToTopKeyboardRow,
           ),
         ),
       ],
@@ -1323,10 +1346,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           onFocus?.call();
         }
       },
-      onPressed: () => _performSearch(
-        word,
-        preserveSuggestionContext: true,
-      ),
+      onPressed: () => _applySuggestionQuery(word),
       builder: (context, hasFocus) {
         return AnimatedContainer(
           key: ValueKey('tv-search-suggestion-tile-$word'),
@@ -1846,9 +1866,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             ],
           ),
         ),
-        words.isEmpty
-            ? const SizedBox(height: _wordSectionTitleBottomSpacing)
-            : const SizedBox(),
+        const SizedBox(height: _wordSectionTitleBottomSpacing),
         Padding(
           padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
           child: words.isEmpty
@@ -2246,12 +2264,37 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 追加搜索输入字符。
   void _appendQuery(String value) {
-    _updateQuery('$_query$value');
+    _updateQuery(
+      '$_query$value',
+      preserveSuggestionContext:
+          _query.isNotEmpty && _canRestoreSuggestionPanel,
+    );
   }
 
   /// 设置搜索词。
   void _setQuery(String value) {
     _updateQuery(value);
+  }
+
+  /// 把联想词回填到输入框。
+  ///
+  /// 先记住当前首字母联想上下文，方便后续手动搜索后仍可通过返回键回到联想页继续筛词。
+  void _applySuggestionQuery(String value) {
+    _suggestionQueryBeforeSearch = _query;
+    _suggestionsBeforeSearch = List<String>.from(_suggestions);
+    _updateQuery(value, preserveSuggestionContext: true);
+  }
+
+  /// 执行当前输入框里的搜索词。
+  ///
+  /// 纯首字母联想态和“联想词回填后的编辑态”都要保留原联想上下文，
+  /// 这样结果页返回时还能回到之前那组联想词继续改。
+  Future<void> _searchCurrentQuery() async {
+    await _performSearch(
+      _query,
+      preserveSuggestionContext:
+          _shouldShowSuggestionPanel || _canRestoreSuggestionPanel,
+    );
   }
 
   /// 判断字母键盘是否处于所在行最右侧。
@@ -2265,55 +2308,24 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     return isFullRowRightEdge || isLastItemInShortRow;
   }
 
-  /// 把字母键盘首行上方向环到底部就近按钮。
+  /// 按当前焦点的水平位置，选择最近的候选节点。
   ///
-  /// 让首行按上时直接落到“清空/删除”，避免焦点卡在左上角出不去。
-  void _moveKeyboardTopRowToBottomActions() {
-    final focusedContext = FocusManager.instance.primaryFocus?.context;
-    final focusedRect =
-        focusedContext == null ? null : _globalRectForContext(focusedContext);
-    final clearRect = _globalRectForFocusNode(_leftClearActionFocusNode);
-    final deleteRect = _globalRectForFocusNode(_leftDeleteActionFocusNode);
-    if (focusedRect == null || clearRect == null || deleteRect == null) {
-      _leftClearActionFocusNode.requestFocus();
-      return;
-    }
-
-    final focusedCenterX = focusedRect.center.dx;
-    final clearDistance = (focusedCenterX - clearRect.center.dx).abs();
-    final deleteDistance = (focusedCenterX - deleteRect.center.dx).abs();
-    if (clearDistance <= deleteDistance) {
-      _leftClearActionFocusNode.requestFocus();
-      return;
-    }
-    _leftDeleteActionFocusNode.requestFocus();
-  }
-
-  /// 左侧清空按钮向下回到字母首行。
-  void _moveLeftClearActionFocusToTopKeyboardRow() {
-    _keyboardTopRowFocusNodes.first.requestFocus();
-  }
-
-  /// 左侧删除按钮向下回到字母首行右侧。
-  void _moveLeftDeleteActionFocusToTopKeyboardRow() {
-    _keyboardTopRowFocusNodes.last.requestFocus();
-  }
-
-  /// 左侧操作按钮向上回到底部字母数字区。
-  ///
-  /// 形成“顶行 -> 操作按钮 -> 底行”的完整纵向焦点闭环，避免在清空/删除处卡住。
-  void _moveBottomActionFocusToKeyboardBottomRow() {
+  /// 左侧键盘与操作按钮之间需要保持“就近回环”，因此统一按中心点横向距离选目标。
+  void _requestNearestFocusNodeByCenterX({
+    required List<FocusNode> candidateNodes,
+    required FocusNode fallbackNode,
+  }) {
     final focusedContext = FocusManager.instance.primaryFocus?.context;
     final focusedRect =
         focusedContext == null ? null : _globalRectForContext(focusedContext);
     if (focusedRect == null) {
-      _keyboardBottomRowFocusNodes.first.requestFocus();
+      fallbackNode.requestFocus();
       return;
     }
 
     FocusNode? targetNode;
     double? minDistance;
-    for (final focusNode in _keyboardBottomRowFocusNodes) {
+    for (final focusNode in candidateNodes) {
       final keyRect = _globalRectForFocusNode(focusNode);
       if (keyRect == null) {
         continue;
@@ -2325,7 +2337,41 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       }
     }
 
-    (targetNode ?? _keyboardBottomRowFocusNodes.first).requestFocus();
+    (targetNode ?? fallbackNode).requestFocus();
+  }
+
+  /// 把字母键盘首行上方向环到底部就近按钮。
+  ///
+  /// 让首行按上时直接落到“清空/搜索/删除”，避免焦点卡在左上角出不去。
+  void _moveKeyboardTopRowToBottomActions() {
+    _requestNearestFocusNodeByCenterX(
+      candidateNodes: <FocusNode>[
+        _leftClearActionFocusNode,
+        _leftSearchActionFocusNode,
+        _leftDeleteActionFocusNode,
+      ],
+      fallbackNode: _leftClearActionFocusNode,
+    );
+  }
+
+  /// 左侧操作按钮向下回到字母首行。
+  ///
+  /// 清空、搜索、删除三种操作都按视觉就近回到首行，避免新增按钮后纵向路径跳列。
+  void _moveActionFocusToTopKeyboardRow() {
+    _requestNearestFocusNodeByCenterX(
+      candidateNodes: _keyboardTopRowFocusNodes,
+      fallbackNode: _keyboardTopRowFocusNodes.first,
+    );
+  }
+
+  /// 左侧操作按钮向上回到底部字母数字区。
+  ///
+  /// 形成“顶行 -> 操作按钮 -> 底行”的完整纵向焦点闭环，避免在清空/搜索/删除处卡住。
+  void _moveBottomActionFocusToKeyboardBottomRow() {
+    _requestNearestFocusNodeByCenterX(
+      candidateNodes: _keyboardBottomRowFocusNodes,
+      fallbackNode: _keyboardBottomRowFocusNodes.first,
+    );
   }
 
   /// 吞掉右边界方向键，避免焦点跳出右侧内容区。
@@ -2368,7 +2414,8 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 搜索主页默认展示搜索历史、热词和推荐区。这里按当前左侧键位的垂直位置，
   /// 优先回到视觉上最近的右侧分区首项或该分区最近一次停留位置。
   void _moveLeftPanelFocusToDefaultRightPanel() {
-    final candidates = <({Object groupKey, FocusNode fallbackNode, Rect rect})>[];
+    final candidates =
+        <({Object groupKey, FocusNode fallbackNode, Rect rect})>[];
 
     void addCandidate({
       required Object groupKey,
@@ -2606,14 +2653,22 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     if (_query.isEmpty) {
       return;
     }
-    _updateQuery(_query.substring(0, _query.length - 1));
+    final updatedQuery = _query.substring(0, _query.length - 1);
+    _updateQuery(
+      updatedQuery,
+      preserveSuggestionContext:
+          updatedQuery.isNotEmpty && _canRestoreSuggestionPanel,
+    );
   }
 
   /// 更新当前搜索输入并触发联想查询。
   ///
   /// TV 搜索页的右侧联想区完全由 [_query] 驱动：
   /// 输入为空时恢复默认内容区，输入非空时切到联想结果模式。
-  void _updateQuery(String value) {
+  void _updateQuery(
+    String value, {
+    bool preserveSuggestionContext = false,
+  }) {
     final normalizedQuery = value.trim().toUpperCase();
     if (_query == normalizedQuery) {
       return;
@@ -2624,7 +2679,9 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     setState(() {
       _query = normalizedQuery;
       _resetSearchResultState(isSearchResultLoading: false);
-      _clearSuggestionSearchContext();
+      if (!preserveSuggestionContext) {
+        _clearSuggestionSearchContext();
+      }
       if (!_shouldShowSuggestionPanel) {
         _suggestions = <String>[];
         _isSuggestionLoading = false;
@@ -2674,7 +2731,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 执行真正的搜索。
   ///
-  /// 联想词确认后立即发起搜索，并让右侧切换成结果 Grid。
+  /// 手动确认后立即发起搜索，并让右侧切换成结果 Grid。
   Future<void> _performSearch(
     String query, {
     bool preserveSuggestionContext = false,
@@ -2688,8 +2745,10 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _resetSearchResultFocusState();
     setState(() {
       if (preserveSuggestionContext) {
-        _suggestionQueryBeforeSearch = _query;
-        _suggestionsBeforeSearch = List<String>.from(_suggestions);
+        if (!_canRestoreSuggestionPanel) {
+          _suggestionQueryBeforeSearch = _query;
+          _suggestionsBeforeSearch = List<String>.from(_suggestions);
+        }
       } else {
         _clearSuggestionSearchContext();
       }

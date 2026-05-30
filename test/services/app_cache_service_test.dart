@@ -31,6 +31,19 @@ void main() {
     expect(await service.shouldUseImageDiskCache(), isTrue);
   });
 
+  test('loads storage summary with total and available space', () async {
+    final service = AppCacheService(
+      availableStorageLoader: () async => 300 * 1024 * 1024,
+      totalStorageLoader: () async => 64 * 1024 * 1024 * 1024,
+    );
+
+    final summary = await service.loadStorageSummary();
+
+    expect(summary?.availableBytes, 300 * 1024 * 1024);
+    expect(summary?.totalBytes, 64 * 1024 * 1024 * 1024);
+    expect(summary?.isLowStorage, isTrue);
+  });
+
   test('calculates cache size from injected cache directories', () async {
     final tempDir = await Directory.systemTemp.createTemp('selene_cache_test_');
     final nestedDir = Directory('${tempDir.path}/nested');

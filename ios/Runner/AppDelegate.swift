@@ -6,6 +6,7 @@ import AVFoundation
 @objc class AppDelegate: FlutterAppDelegate {
   private let orientationChannelName = "selene/orientation"
   private let physicalOrientationChannelName = "selene/physical_orientation"
+  private let storageChannelName = "selene/storage"
   private var physicalOrientationStreamHandler: PhysicalOrientationStreamHandler?
 
   override func application(
@@ -37,6 +38,21 @@ import AVFoundation
       let streamHandler = PhysicalOrientationStreamHandler()
       physicalOrientationStreamHandler = streamHandler
       physicalOrientationChannel.setStreamHandler(streamHandler)
+
+      let storageChannel = FlutterMethodChannel(
+        name: storageChannelName,
+        binaryMessenger: controller.binaryMessenger
+      )
+      storageChannel.setMethodCallHandler { [weak self] call, result in
+        switch call.method {
+        case "getAvailableStorageBytes":
+          result(self?.loadStorageBytes(forKey: .systemFreeSize))
+        case "getTotalStorageBytes":
+          result(self?.loadStorageBytes(forKey: .systemSize))
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
     }
     
     // 配置音频会话以支持后台播放和 PiP
@@ -74,6 +90,24 @@ import AVFoundation
     default:
       return "unknown"
     }
+  }
+
+  /// 读取当前 App 沙盒所在文件系统的存储容量。
+  ///
+  /// - Parameter key: 需要读取的文件系统容量字段。
+  /// - Returns: 字节数，读取失败时为空。
+  private func loadStorageBytes(forKey key: FileAttributeKey) -> Int64? {
+    do {
+      let attributes = try FileManager.default.attributesOfFileSystem(
+        forPath: NSHomeDirectory()
+      )
+      if let value = attributes[key] as? NSNumber {
+        return value.int64Value
+      }
+    } catch {
+      print("Failed to read storage attributes: \(error)")
+    }
+    return nil
   }
 }
 

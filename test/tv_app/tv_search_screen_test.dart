@@ -376,17 +376,17 @@ void main() {
     expect(suggestionTileLeft, recommendTitleLeft);
   });
 
-  testWidgets('pressing a suggestion starts search and shows result grid',
+  testWidgets('pressing a suggestion fills query without starting search',
       (tester) async {
     final searchedQueries = <String>[];
 
     await tester.pumpWidget(
       MaterialApp(
         home: TvSearchScreen(
-          loadSearchData: (_) async => const TvSearchData(
-            searchHistory: [],
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['庆余年'],
             hotWords: [],
-            recommends: [],
+            recommends: [_videoInfo('recommend_1', '推荐影片')],
           ),
           loadSuggestions: (_) async => const ['世界的主人', '时间的证人'],
           loadSearchResults: (query) async {
@@ -408,32 +408,87 @@ void main() {
       ),
     );
 
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'S',
+      suggestion: '世界的主人',
+    );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('S'));
-    await tester.pumpAndSettle();
-    expect(find.text('世界的主人'), findsOneWidget);
-
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-世界的主人')));
-    await tester.pump();
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const ValueKey('tv-search-result-grid-panel')),
-        findsOneWidget);
-    expect(searchedQueries, ['世界的主人']);
-    expect(find.byKey(const ValueKey('tv-search-result-grid-panel')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('tv-video-grid')), findsOneWidget);
+    expect(searchedQueries, isEmpty);
     expect(
-        find.byKey(const ValueKey('tv-search-result-header')), findsOneWidget);
-    expect(find.text('1个影片'), findsOneWidget);
+      find.byKey(const ValueKey('tv-search-result-grid-panel')),
+      findsNothing,
+    );
+    expect(find.text('搜索历史'), findsOneWidget);
+    expect(find.text('影片推荐'), findsOneWidget);
     expect(
-        find.byKey(const ValueKey('tv-search-suggestion-panel')), findsNothing);
+      find.byKey(const ValueKey('tv-search-suggestion-panel')),
+      findsNothing,
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('tv-search-input')),
         matching: find.text('世界的主人'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('search button starts search with edited suggestion query',
+      (tester) async {
+    final searchedQueries = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => const TvSearchData(
+            searchHistory: [],
+            hotWords: [],
+            recommends: [],
+          ),
+          loadSuggestions: (_) async => const ['世界的主人'],
+          loadSearchResults: (query) async {
+            searchedQueries.add(query);
+            return <SearchResult>[
+              SearchResult(
+                id: 'video_$query',
+                title: query,
+                poster: '',
+                episodes: const ['episode-1'],
+                episodesTitles: const ['第1集'],
+                source: 'test',
+                sourceName: '测试源',
+                year: '2026',
+              ),
+            ];
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'S',
+      suggestion: '世界的主人',
+    );
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    await _tapSearchButton(tester);
+    await tester.pumpAndSettle();
+
+    expect(searchedQueries, ['世界的主']);
+    expect(
+      find.byKey(const ValueKey('tv-search-result-grid-panel')),
+      findsOneWidget,
+    );
+    expect(find.text('1个影片'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-search-input')),
+        matching: find.text('世界的主'),
       ),
       findsOneWidget,
     );
@@ -880,10 +935,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final resultGridFinder = find.byKey(const ValueKey('tv-video-grid'));
@@ -1008,10 +1065,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pump();
     await tester.pumpAndSettle();
 
@@ -1053,10 +1112,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final headerLeft = tester.getTopLeft(find.text('搜索结果')).dx;
@@ -1102,10 +1163,12 @@ void main() {
             find.byKey(const ValueKey('tv-video-card-focus-recommend_1')))
         .dx;
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final searchResultHeaderLeft = tester.getTopLeft(find.text('搜索结果')).dx;
@@ -1149,10 +1212,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final headerBottom = tester
@@ -1193,10 +1258,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final headerSize =
@@ -1233,10 +1300,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final screenBottom =
@@ -1306,10 +1375,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pump();
 
     expect(
@@ -1363,10 +1434,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final resultGrid = tester.widget<TvVideoGrid>(
@@ -1408,10 +1481,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     expect(_videoGridRenderedChildCount(tester), 80);
@@ -1476,10 +1551,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await _pumpUntilFound(
       tester,
       find.byKey(const ValueKey('tv-search-result-grid-panel')),
@@ -1532,10 +1609,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final firstResultNode = _focusNodeForText(tester, '结果0');
@@ -1583,10 +1662,12 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     expect(_focusNodeForText(tester, '结果0').hasFocus, isTrue);
@@ -1621,10 +1702,12 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final firstResultNode = _focusNodeForText(tester, '结果0');
@@ -1673,10 +1756,12 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final firstResultNode = _focusNodeForText(tester, '结果0');
@@ -1734,10 +1819,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('J'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-剑来')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'J',
+      suggestion: '剑来',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     for (var index = 0; index < 4; index++) {
@@ -2064,25 +2151,29 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final aFocusNode = _focusNodeForText(tester, 'A');
-    aFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(aFocusNode.hasFocus, isTrue);
+    const candidateActionKeys = <Key>[
+      ValueKey('tv-search-left-clear-button'),
+      ValueKey('tv-search-left-submit-button'),
+      ValueKey('tv-search-left-delete-button'),
+    ];
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
+    for (final keyLabel in const ['A', 'D', 'F']) {
+      final focusNode = _focusNodeForText(tester, keyLabel);
+      focusNode.requestFocus();
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isTrue);
 
-    expect(_focusNodeForText(tester, '清空').hasFocus, isTrue);
+      final expectedActionKey = _nearestActionKeyByCenterX(
+        tester,
+        sourceLabel: keyLabel,
+        candidateKeys: candidateActionKeys,
+      );
 
-    final fFocusNode = _focusNodeForText(tester, 'F');
-    fFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(fFocusNode.hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-
-    expect(_focusNodeForText(tester, '删除').hasFocus, isTrue);
+      expect(_focusNodeForKey(tester, expectedActionKey).hasFocus, isTrue);
+    }
   });
 
   testWidgets('action buttons move focus down to top keyboard row',
@@ -2101,23 +2192,28 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final clearFocusNode = _focusNodeForText(tester, '清空');
-    clearFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(clearFocusNode.hasFocus, isTrue);
+    const actionKeys = <Key>[
+      ValueKey('tv-search-left-clear-button'),
+      ValueKey('tv-search-left-submit-button'),
+      ValueKey('tv-search-left-delete-button'),
+    ];
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    expect(_focusNodeForText(tester, 'A').hasFocus, isTrue);
+    for (final actionKey in actionKeys) {
+      final focusNode = _focusNodeForKey(tester, actionKey);
+      focusNode.requestFocus();
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isTrue);
 
-    final deleteFocusNode = _focusNodeForText(tester, '删除');
-    deleteFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(deleteFocusNode.hasFocus, isTrue);
+      final expectedKeyLabel = _nearestLabelByCenterX(
+        tester,
+        sourceKey: actionKey,
+        candidateLabels: const ['A', 'B', 'C', 'D', 'E', 'F'],
+      );
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pumpAndSettle();
-    expect(_focusNodeForText(tester, 'F').hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pumpAndSettle();
+      expect(_focusNodeForText(tester, expectedKeyLabel).hasFocus, isTrue);
+    }
   });
 
   testWidgets('action buttons wrap up to bottom keyboard row', (tester) async {
@@ -2135,23 +2231,28 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final clearFocusNode = _focusNodeForText(tester, '清空');
-    clearFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(clearFocusNode.hasFocus, isTrue);
+    const actionKeys = <Key>[
+      ValueKey('tv-search-left-clear-button'),
+      ValueKey('tv-search-left-submit-button'),
+      ValueKey('tv-search-left-delete-button'),
+    ];
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    expect(_focusNodeForText(tester, '6').hasFocus, isTrue);
+    for (final actionKey in actionKeys) {
+      final focusNode = _focusNodeForKey(tester, actionKey);
+      focusNode.requestFocus();
+      await tester.pumpAndSettle();
+      expect(focusNode.hasFocus, isTrue);
 
-    final deleteFocusNode = _focusNodeForText(tester, '删除');
-    deleteFocusNode.requestFocus();
-    await tester.pumpAndSettle();
-    expect(deleteFocusNode.hasFocus, isTrue);
+      final expectedKeyLabel = _nearestLabelByCenterX(
+        tester,
+        sourceKey: actionKey,
+        candidateLabels: const ['5', '6', '7', '8', '9', '0'],
+      );
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    expect(_focusNodeForText(tester, '9').hasFocus, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(_focusNodeForText(tester, expectedKeyLabel).hasFocus, isTrue);
+    }
   });
 
   testWidgets('history clear button moves down to first history item',
@@ -2722,7 +2823,9 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final leftTop = tester.getTopLeft(find.text('搜索')).dy;
+    final leftTop = tester
+        .getTopLeft(find.byKey(const ValueKey('tv-search-page-title')))
+        .dy;
     final historyTop = tester.getTopLeft(find.text('搜索历史')).dy;
     expect(leftTop, lessThanOrEqualTo(64));
     expect(historyTop, lessThanOrEqualTo(64));
@@ -2744,7 +2847,9 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final titleText = tester.widget<Text>(find.text('搜索'));
+    final titleText = tester.widget<Text>(
+      find.byKey(const ValueKey('tv-search-page-title')),
+    );
     final hintText = tester.widget<Text>(find.text('按返回键可退出本页面'));
     final keyboardGrid = tester.widget<GridView>(
       find.byKey(const ValueKey('tv-search-keyboard')),
@@ -2753,12 +2858,7 @@ void main() {
       find.byKey(const ValueKey('tv-search-input')),
     );
     final clearButton = tester.widget<AnimatedContainer>(
-      find
-          .ancestor(
-            of: find.text('清空'),
-            matching: find.byType(AnimatedContainer),
-          )
-          .first,
+      find.byKey(const ValueKey('tv-search-left-clear-button')),
     );
 
     final keyboardDelegate =
@@ -2805,8 +2905,8 @@ void main() {
     );
 
     expect(safeArea.top, isFalse);
-    expect(scaffold.backgroundColor, const Color(0xFF10131D));
-    expect(rootColoredBox.color, const Color(0xFF10131D));
+    expect(scaffold.backgroundColor, TvThemeBackground.deepBlue.color);
+    expect(rootColoredBox.color, TvThemeBackground.deepBlue.color);
   });
 
   testWidgets('search result header follows global TV background color',
@@ -2871,10 +2971,12 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.text('R'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-人世间')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'R',
+      suggestion: '人世间',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     final header = tester.widget<Container>(
@@ -3172,10 +3274,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('L'));
-    await tester.pumpAndSettle();
-    await tester
-        .tap(find.byKey(const ValueKey('tv-search-suggestion-tile-拉布拉多警长')));
+    await _fillQueryFromSuggestion(
+      tester,
+      keyLabel: 'L',
+      suggestion: '拉布拉多警长',
+    );
+    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('搜索结果'), findsOneWidget);
@@ -3356,6 +3460,31 @@ void main() {
   });
 }
 
+Future<void> _fillQueryFromSuggestion(
+  WidgetTester tester, {
+  required String keyLabel,
+  required String suggestion,
+}) async {
+  await tester.tap(
+    find
+        .descendant(
+          of: find.byKey(const ValueKey('tv-search-keyboard')),
+          matching: find.text(keyLabel),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(
+    find.byKey(ValueKey('tv-search-suggestion-tile-$suggestion')),
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapSearchButton(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('tv-search-left-submit-button')));
+  await tester.pump();
+}
+
 FocusNode _focusNodeForText(WidgetTester tester, String label) {
   final focusFinder = find.ancestor(
     of: find.text(label),
@@ -3380,6 +3509,46 @@ FocusNode _focusNodeForKey(WidgetTester tester, Key key) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+Key _nearestActionKeyByCenterX(
+  WidgetTester tester, {
+  required String sourceLabel,
+  required List<Key> candidateKeys,
+}) {
+  final sourceCenterX = tester.getRect(find.text(sourceLabel)).center.dx;
+  Key? nearestKey;
+  double? minDistance;
+  for (final candidateKey in candidateKeys) {
+    final distance =
+        (sourceCenterX - tester.getRect(find.byKey(candidateKey)).center.dx)
+            .abs();
+    if (minDistance == null || distance < minDistance) {
+      minDistance = distance;
+      nearestKey = candidateKey;
+    }
+  }
+  return nearestKey!;
+}
+
+String _nearestLabelByCenterX(
+  WidgetTester tester, {
+  required Key sourceKey,
+  required List<String> candidateLabels,
+}) {
+  final sourceCenterX = tester.getRect(find.byKey(sourceKey)).center.dx;
+  String? nearestLabel;
+  double? minDistance;
+  for (final candidateLabel in candidateLabels) {
+    final distance =
+        (sourceCenterX - tester.getRect(find.text(candidateLabel)).center.dx)
+            .abs();
+    if (minDistance == null || distance < minDistance) {
+      minDistance = distance;
+      nearestLabel = candidateLabel;
+    }
+  }
+  return nearestLabel!;
 }
 
 Future<void> _pumpUntilFound(

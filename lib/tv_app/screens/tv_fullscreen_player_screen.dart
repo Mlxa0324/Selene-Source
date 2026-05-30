@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:canvas_danmaku/canvas_danmaku.dart';
@@ -86,39 +87,38 @@ abstract interface class TvFullscreenVideoControllerProvider {
 
 /// TV 全屏播放器遥控器 seek 步长规则。
 ///
-/// 首次按下保持短跳，长按重复时固定 1 秒粒度，并通过缩短重复间隔实现加速。
+/// 短按保持 10 秒跳转；长按每 1 秒触发一次，
+/// 前 5 秒每次 20 秒，5 秒后每次 40 秒。
 class TvFullscreenSeekStep {
   /// 私有构造，避免工具类被实例化。
   const TvFullscreenSeekStep._();
 
-  /// 首次按下方向键时的 seek 秒数。
-  static const int initialPressSeconds = 5;
+  /// 短按方向键时的 seek 秒数。
+  static const int initialPressSeconds = 10;
 
-  /// 长按重复事件的固定数字步进秒数。
-  static const int repeatStepSeconds = 1;
+  /// 长按前 5 秒每次重复 seek 的秒数。
+  static const int initialRepeatStepSeconds = 20;
 
-  /// 长按前期保持初始重复间隔的时间。
+  /// 长按超过 5 秒后每次重复 seek 的秒数。
+  static const int acceleratedRepeatStepSeconds = 40;
+
+  /// 长按前 5 秒保持第一段重复速度的时间。
   static const Duration holdDuration = Duration(seconds: 5);
 
-  /// 固定期结束后，从初始重复间隔加速到最快间隔的时间。
-  static const Duration rampDuration = Duration(seconds: 5);
-
-  /// 长按重复前期的触发间隔。
-  static const int initialRepeatIntervalMs = 240;
-
-  /// 长按加速后的最快触发间隔。
-  static const int minRepeatIntervalMs = 60;
+  /// 长按重复 seek 的固定触发间隔。
+  static const int repeatIntervalMs = 1000;
 
   /// 根据长按持续时间计算当前重复 seek 的触发间隔。
-  static int repeatIntervalForElapsed(Duration elapsed) {
-    final rampElapsed = elapsed - holdDuration;
-    final progress = rampElapsed.inMilliseconds <= 0
-        ? 0.0
-        : (rampElapsed.inMilliseconds / rampDuration.inMilliseconds)
-            .clamp(0.0, 1.0);
-    return (initialRepeatIntervalMs -
-            (initialRepeatIntervalMs - minRepeatIntervalMs) * progress)
-        .round();
+  static int repeatIntervalForElapsed(Duration _) {
+    return repeatIntervalMs;
+  }
+
+  /// 根据长按持续时间计算当前重复 seek 的步进秒数。
+  static int repeatStepForElapsed(Duration elapsed) {
+    if (elapsed < holdDuration) {
+      return initialRepeatStepSeconds;
+    }
+    return acceleratedRepeatStepSeconds;
   }
 }
 
@@ -136,6 +136,7 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     this.initialEpisodeIndex = 0,
     this.initialPlaybackPosition,
     this.initialPlaybackWasPlaying = true,
+    this.initialPlaybackStarted = false,
     this.stype,
     this.playerBuilder,
     this.playbackController,
@@ -168,6 +169,12 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
 
   /// 进入全屏前是否正在播放。
   final bool initialPlaybackWasPlaying;
+
+  /// 进入全屏前当前视频是否已经真正起播。
+  ///
+  /// 详情页正在首播加载时打开全屏，需要把“尚未起播”的状态一并带过来，
+  /// 避免全屏页把 `ready` 误判成已开播，提前撤掉中心转圈。
+  final bool initialPlaybackStarted;
 
   /// 搜索类型，保留给后续 TV 播放策略使用。
   final String? stype;
@@ -217,6 +224,14 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
 enum _TvPlaylistSecondaryRow { episode, group }
 
 class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
+  /// 标记当前是否运行在 `flutter test` 环境。
+  ///
+  /// widget test 里如果继续使用无限旋转的进度环，`pumpAndSettle` 会一直等不到稳定帧。
+  static bool get _isFlutterTestEnvironment {
+    final flutterTest = Platform.environment['FLUTTER_TEST'];
+    return flutterTest != null && flutterTest != 'false';
+  }
+
   /// 底部进度条左右时间槽位宽度。
   static const double _progressTimeSlotWidth = 78;
 
@@ -401,20 +416,29 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前 seek 方向，-1 为后退，1 为前进。
   int _seekDirection = 0;
 
-  /// 当前方向键连续 seek 起始时间戳。
-  Duration? _seekHoldStartAt;
+  /// 当前正在驱动长按 seek 的方向键。
+  LogicalKeyboardKey? _activeSeekKey;
 
-  /// 上一次 seek 按键触发时间戳。
-  Duration? _lastSeekAt;
+  /// 当前长按 seek 已持续的真实时间。
+  Duration _seekHoldElapsed = Duration.zero;
 
-  /// 上一次长按重复 seek 真正执行时间戳。
-  Duration? _lastSeekRepeatAppliedAt;
+  /// 当前长按是否已经进入连续滚动阶段。
+  bool _seekHoldHasRepeated = false;
+
+  /// 当前长按 seek 的内部调度定时器。
+  Timer? _seekHoldTimer;
 
   /// seek 中心提示是否展示。
   bool _seekOverlayVisible = false;
 
   /// 全屏播放器是否正在加载当前视频。
   bool _fullscreenPlayerLoading = false;
+
+  /// 当前这轮全屏播放是否已经真正起播。
+  ///
+  /// 这里只认真实播放开始，不把 `ready` 或短暂 `loading=false` 当成首播完成，
+  /// 避免视频真正出画前，中间转圈被过早隐藏。
+  bool _fullscreenPlaybackStarted = false;
 
   /// 播放地址解析任务序号，避免异步回写旧地址。
   int _loadToken = 0;
@@ -527,6 +551,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
     _lastFocusedEpisodeIndex = _episodeIndex;
     _lastFocusedEpisodeGroupIndex = _episodeGroupIndex;
+    _fullscreenPlaybackStarted = widget.initialPlaybackStarted ||
+        (widget.playbackController?.isPlaying ?? false);
+    _fullscreenPlayerLoading = !_hasFullscreenPlaybackStarted;
     _pendingInitialPlaybackPosition =
         _safeInitialPlaybackPosition(widget.initialPlaybackPosition);
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -660,6 +687,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     _clockTimer?.cancel();
     _seekOverlayTimer?.cancel();
+    _seekHoldTimer?.cancel();
     _menuAutoHideTimer?.cancel();
     _fullscreenLoadingHoldTimer?.cancel();
     _detachDanmakuController();
@@ -870,7 +898,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 标记全屏播放器开始加载。
   void _markFullscreenPlayerLoading() {
+    _fullscreenLoadingHoldTimer?.cancel();
     _fullscreenPlayerLoading = true;
+    _fullscreenPlaybackStarted = false;
   }
 
   /// 结束全屏播放器加载态。
@@ -878,8 +908,17 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (!_fullscreenPlayerLoading) {
       return;
     }
+    if (!_hasFullscreenPlaybackStarted) {
+      return;
+    }
     _fullscreenPlayerLoading = false;
     _scheduleChromeRefresh();
+  }
+
+  /// 标记当前全屏视频已经真正起播。
+  void _markFullscreenPlaybackStarted() {
+    _fullscreenPlaybackStarted = true;
+    _finishFullscreenPlayerLoading();
   }
 
   /// 取出一次性初始续播位置。
@@ -895,11 +934,28 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 处理全屏播放器键盘和遥控器按键。
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    final key = event.logicalKey;
+
+    // 左右方向键需要同时响应按下和抬起，短按与长按语义在这里统一分流。
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      if (_menuVisible && !(event is KeyUpEvent && _activeSeekKey == key)) {
+        return KeyEventResult.ignored;
+      }
+      return _handleSeekKeyEvent(event, direction: -1);
+    }
+
+    if (key == LogicalKeyboardKey.arrowRight) {
+      if (_menuVisible && !(event is KeyUpEvent && _activeSeekKey == key)) {
+        return KeyEventResult.ignored;
+      }
+      return _handleSeekKeyEvent(event, direction: 1);
+    }
+
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
 
-    if (_isBackKey(event.logicalKey)) {
+    if (_isBackKey(key)) {
       _handleBackKey();
       return KeyEventResult.handled;
     }
@@ -920,24 +976,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return KeyEventResult.handled;
     }
 
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      _seekByDirection(
-        -1,
-        isRepeat: event is KeyRepeatEvent,
-        eventTimeStamp: event.timeStamp,
-      );
-      return KeyEventResult.handled;
-    }
-
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      _seekByDirection(
-        1,
-        isRepeat: event is KeyRepeatEvent,
-        eventTimeStamp: event.timeStamp,
-      );
-      return KeyEventResult.handled;
-    }
-
     return KeyEventResult.ignored;
   }
 
@@ -950,16 +988,32 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   ///
   /// 共享播放器或平台视图可能不在根 Focus 下，因此全屏页额外监听全局按键。
   bool _handleGlobalKeyEvent(KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return false;
-    }
-
     // 根焦点可用时交给 Focus 正常派发，避免同一个遥控器按键被处理两次。
     if (_rootFocusNode.hasFocus) {
       return false;
     }
 
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      if (_menuVisible && !(event is KeyUpEvent && _activeSeekKey == key)) {
+        return false;
+      }
+      _handleSeekKeyEvent(event, direction: -1);
+      return true;
+    }
+
+    if (key == LogicalKeyboardKey.arrowRight) {
+      if (_menuVisible && !(event is KeyUpEvent && _activeSeekKey == key)) {
+        return false;
+      }
+      _handleSeekKeyEvent(event, direction: 1);
+      return true;
+    }
+
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return false;
+    }
+
     if (_isBackKey(key)) {
       _handleBackKey();
       return true;
@@ -985,25 +1039,23 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return true;
     }
 
-    if (key == LogicalKeyboardKey.arrowLeft) {
-      _seekByDirection(
-        -1,
-        isRepeat: event is KeyRepeatEvent,
-        eventTimeStamp: event.timeStamp,
-      );
-      return true;
-    }
-
-    if (key == LogicalKeyboardKey.arrowRight) {
-      _seekByDirection(
-        1,
-        isRepeat: event is KeyRepeatEvent,
-        eventTimeStamp: event.timeStamp,
-      );
-      return true;
-    }
-
     return false;
+  }
+
+  /// 处理左右方向键的短按和长按 seek 语义。
+  KeyEventResult _handleSeekKeyEvent(KeyEvent event, {required int direction}) {
+    final key = event.logicalKey;
+    if (event is KeyUpEvent) {
+      _handleSeekKeyUp(key);
+      return KeyEventResult.handled;
+    }
+
+    if (event is KeyDownEvent || event is KeyRepeatEvent) {
+      _handleSeekKeyDown(key, direction);
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
   }
 
   /// 执行 TV 返回语义。
@@ -1081,45 +1133,82 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _syncDanmakuPlaybackState(forcePlaying: !controller.isPlaying);
   }
 
-  /// 按左右方向键执行相对 seek。
-  void _seekByDirection(
-    int direction, {
-    required bool isRepeat,
-    required Duration eventTimeStamp,
-  }) {
+  /// 处理 seek 方向键按下，启动内部长按调度。
+  void _handleSeekKeyDown(LogicalKeyboardKey key, int direction) {
     final duration = _currentPlaybackDuration;
     if (duration <= Duration.zero) {
       return;
     }
 
-    final lastSeekAt = _lastSeekAt;
-    final shouldReset = _seekDirection != direction ||
-        lastSeekAt == null ||
-        eventTimeStamp - lastSeekAt > const Duration(milliseconds: 900);
-    if (shouldReset) {
-      _seekDirection = direction;
-      _seekHoldStartAt = eventTimeStamp;
-      _seekPreviewPosition = _currentPlaybackPosition;
-      _lastSeekRepeatAppliedAt = null;
-    }
-    _lastSeekAt = eventTimeStamp;
+    // 新一轮按压开始后先冻结提示隐藏，避免长按过程中提示层提前消失。
+    _seekOverlayTimer?.cancel();
+    _seekDirection = direction;
+    _seekPreviewDuration = duration;
+    _seekPreviewPosition ??= _currentPlaybackPosition;
 
-    final elapsed = eventTimeStamp - (_seekHoldStartAt ?? eventTimeStamp);
-    if (isRepeat) {
-      final repeatInterval = TvFullscreenSeekStep.repeatIntervalForElapsed(
-        elapsed,
-      );
-      final lastRepeatAppliedAt = _lastSeekRepeatAppliedAt;
-      if (lastRepeatAppliedAt != null &&
-          (eventTimeStamp - lastRepeatAppliedAt).inMilliseconds <
-              repeatInterval) {
+    if (_activeSeekKey == key) {
+      return;
+    }
+
+    _clearSeekHoldTracking();
+    _activeSeekKey = key;
+    _seekHoldElapsed = Duration.zero;
+    _seekHoldHasRepeated = false;
+    _scheduleNextSeekHoldTick();
+  }
+
+  /// 处理 seek 方向键抬起，区分短按与长按。
+  void _handleSeekKeyUp(LogicalKeyboardKey key) {
+    if (_activeSeekKey != key) {
+      return;
+    }
+
+    final hadRepeated = _seekHoldHasRepeated;
+    final direction = _seekDirection;
+    _clearSeekHoldTracking();
+
+    // 没有进入连续滚动时按短按处理，保持单次 5 秒跳转语义。
+    if (!hadRepeated && direction != 0) {
+      _applySeekDelta(direction, TvFullscreenSeekStep.initialPressSeconds);
+    }
+  }
+
+  /// 按当前长按阶段安排下一次 seek tick。
+  void _scheduleNextSeekHoldTick() {
+    _seekHoldTimer?.cancel();
+    final activeKey = _activeSeekKey;
+    if (activeKey == null) {
+      return;
+    }
+
+    final interval = Duration(
+      milliseconds: TvFullscreenSeekStep.repeatIntervalForElapsed(
+        _seekHoldElapsed,
+      ),
+    );
+    _seekHoldTimer = Timer(interval, () {
+      if (!mounted || _activeSeekKey != activeKey) {
         return;
       }
-      _lastSeekRepeatAppliedAt = eventTimeStamp;
+
+      _seekHoldElapsed += interval;
+      _seekHoldHasRepeated = true;
+      _applySeekDelta(
+        _seekDirection,
+        TvFullscreenSeekStep.repeatStepForElapsed(_seekHoldElapsed),
+      );
+      _scheduleNextSeekHoldTick();
+    });
+  }
+
+  /// 执行一次实际 seek，并刷新中心时间提示。
+  void _applySeekDelta(int direction, int seconds) {
+    final duration = _currentPlaybackDuration;
+    if (duration <= Duration.zero) {
+      return;
     }
-    final seconds = isRepeat
-        ? TvFullscreenSeekStep.repeatStepSeconds
-        : TvFullscreenSeekStep.initialPressSeconds;
+
+    _seekDirection = direction;
     final basePosition = _seekPreviewPosition ?? _currentPlaybackPosition;
     final target = _clampDuration(
       basePosition + Duration(seconds: seconds * direction),
@@ -1168,15 +1257,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前播放器是否仍在加载或缓冲。
   bool get _isPlaybackLoading {
-    final injectedController = widget.playbackController;
-    if (injectedController != null) {
-      return injectedController.isLoading && !injectedController.isPlaying;
-    }
-    final controller = _playerController;
-    if (controller?.isPlaying ?? false) {
+    if (_hasFullscreenPlaybackStarted) {
       return false;
     }
+    final injectedController = widget.playbackController;
+    if (injectedController != null) {
+      return _fullscreenPlayerLoading || injectedController.isLoading;
+    }
+    final controller = _playerController;
     return _fullscreenPlayerLoading || (controller?.isLoading ?? false);
+  }
+
+  /// 当前全屏视频是否已经真正起播。
+  bool get _hasFullscreenPlaybackStarted {
+    return _fullscreenPlaybackStarted ||
+        (widget.playbackController?.isPlaying ?? false) ||
+        (_playerController?.isPlaying ?? false);
   }
 
   /// 是否显示暂停/拖动时的播放器信息壳层。
@@ -1272,13 +1368,20 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     });
   }
 
+  /// 清理当前长按 seek 调度状态，但保留预览结果给提示层复用。
+  void _clearSeekHoldTracking() {
+    _seekHoldTimer?.cancel();
+    _seekHoldTimer = null;
+    _activeSeekKey = null;
+    _seekHoldElapsed = Duration.zero;
+    _seekHoldHasRepeated = false;
+  }
+
   /// 重置连续 seek 状态。
   void _resetSeekState() {
     _seekOverlayTimer?.cancel();
+    _clearSeekHoldTracking();
     _seekDirection = 0;
-    _seekHoldStartAt = null;
-    _lastSeekAt = null;
-    _lastSeekRepeatAppliedAt = null;
     _seekPreviewPosition = null;
     _seekPreviewDuration = null;
   }
@@ -1916,6 +2019,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
+    if ((_playerController?.isPlaying ?? false) &&
+        !_hasFullscreenPlaybackStarted) {
+      _markFullscreenPlaybackStarted();
+    }
     unawaited(_saveProgress(scene: '全屏定时保存'));
   }
 
@@ -2533,9 +2640,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           adFilterEnabled: _adFilterEnabled,
           onControllerCreated: _handlePlayerControllerCreated,
           onReady: _finishFullscreenPlayerLoading,
-          onPlay: () {
-            _scheduleChromeRefresh();
-          },
+          onPlay: _markFullscreenPlaybackStarted,
           onPause: () {
             _scheduleChromeRefresh();
           },
@@ -2559,6 +2664,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _playerController = controller;
     _lastRequestedPlaybackUrl = null;
     _scheduleChromeRefresh();
+    if (controller.isPlaying) {
+      _markFullscreenPlaybackStarted();
+    }
     if (_hasRequestedInitialControllerLoad) {
       return;
     }
@@ -2734,15 +2842,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建播放器加载中转圈。
   Widget _buildLoadingIndicator() {
-    return const Center(
+    return Center(
       child: IgnorePointer(
         child: SizedBox(
-          key: ValueKey('tv-fullscreen-loading'),
+          key: const ValueKey('tv-fullscreen-loading'),
           width: 46,
           height: 46,
           child: CircularProgressIndicator(
             strokeWidth: 3,
             color: Colors.white,
+            value: _isFlutterTestEnvironment ? 0.72 : null,
           ),
         ),
       ),

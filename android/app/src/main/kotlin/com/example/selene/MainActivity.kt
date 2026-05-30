@@ -160,6 +160,11 @@ class MainActivity : FlutterActivity() {
                         result.success(statFs.availableBytes)
                     }
 
+                    "getTotalStorageBytes" -> {
+                        val statFs = StatFs(cacheDir.path)
+                        result.success(statFs.totalBytes)
+                    }
+
                     else -> result.notImplemented()
                 }
             }

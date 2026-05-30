@@ -21,6 +21,9 @@ typedef AppCacheDirectoriesLoader = Future<List<Directory>> Function();
 /// 可用存储空间加载函数。
 typedef AppAvailableStorageLoader = Future<int?> Function();
 
+/// 总存储空间加载函数。
+typedef AppTotalStorageLoader = Future<int?> Function();
+
 /// 缓存清理函数。
 typedef AppCacheClearer = Future<void> Function();
 
@@ -33,12 +36,14 @@ class AppCacheService {
   AppCacheService({
     AppCacheDirectoriesLoader? cacheDirectoriesLoader,
     AppAvailableStorageLoader? availableStorageLoader,
+    AppTotalStorageLoader? totalStorageLoader,
     AppCacheClearer? businessCacheClearer,
     AppCacheClearer? imageDiskCacheClearer,
   })  : _cacheDirectoriesLoader =
             cacheDirectoriesLoader ?? _defaultCacheDirectories,
         _availableStorageLoader =
             availableStorageLoader ?? _loadAvailableStorageBytes,
+        _totalStorageLoader = totalStorageLoader ?? _loadTotalStorageBytes,
         _businessCacheClearer = businessCacheClearer ?? _clearBusinessCaches,
         _imageDiskCacheClearer = imageDiskCacheClearer ?? _clearImageDiskCache;
 
@@ -53,6 +58,9 @@ class AppCacheService {
 
   /// 可用存储空间加载函数。
   final AppAvailableStorageLoader _availableStorageLoader;
+
+  /// 总存储空间加载函数。
+  final AppTotalStorageLoader _totalStorageLoader;
 
   /// 业务缓存清理函数。
   final AppCacheClearer _businessCacheClearer;
@@ -89,6 +97,21 @@ class AppCacheService {
         availableBytes == null || availableBytes >= lowStorageThresholdBytes;
     _cachedUseImageDiskCache = useDiskCache;
     return useDiskCache;
+  }
+
+  /// 读取系统存储空间摘要。
+  Future<AppStorageSummary?> loadStorageSummary() async {
+    final availableBytes = await _availableStorageLoader();
+    final totalBytes = await _totalStorageLoader();
+    if (availableBytes == null && totalBytes == null) {
+      return null;
+    }
+
+    return AppStorageSummary(
+      availableBytes: availableBytes,
+      totalBytes: totalBytes,
+      lowStorageThresholdBytes: lowStorageThresholdBytes,
+    );
   }
 
   /// 计算当前缓存目录占用大小。
@@ -161,6 +184,20 @@ class AppCacheService {
     }
   }
 
+  /// 读取系统总存储空间。
+  static Future<int?> _loadTotalStorageBytes() async {
+    try {
+      return await _storageChannel.invokeMethod<int>('getTotalStorageBytes');
+    } on MissingPluginException {
+      return null;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('读取总存储空间失败: $e');
+      }
+      return null;
+    }
+  }
+
   /// 清理默认业务运行缓存。
   static Future<void> _clearBusinessCaches() async {
     LiveService.clearAllCache();
@@ -212,4 +249,27 @@ class AppCacheService {
       }
     }
   }
+}
+
+/// 系统存储空间摘要。
+class AppStorageSummary {
+  /// 创建系统存储空间摘要。
+  const AppStorageSummary({
+    required this.availableBytes,
+    required this.totalBytes,
+    required this.lowStorageThresholdBytes,
+  });
+
+  /// 剩余可用空间，无法读取时为空。
+  final int? availableBytes;
+
+  /// 系统总空间，无法读取时为空。
+  final int? totalBytes;
+
+  /// 低空间告警阈值。
+  final int lowStorageThresholdBytes;
+
+  /// 是否已经低于安全剩余空间。
+  bool get isLowStorage =>
+      availableBytes != null && availableBytes! < lowStorageThresholdBytes;
 }

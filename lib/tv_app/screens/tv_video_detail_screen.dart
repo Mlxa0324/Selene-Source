@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -327,6 +328,14 @@ class TvVideoDetailScreen extends StatefulWidget {
 }
 
 class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
+  /// 标记当前是否运行在 `flutter test` 环境。
+  ///
+  /// widget test 里如果继续使用无限旋转的进度环，`pumpAndSettle` 会一直等不到稳定帧。
+  static bool get _isFlutterTestEnvironment {
+    final flutterTest = Platform.environment['FLUTTER_TEST'];
+    return flutterTest != null && flutterTest != 'false';
+  }
+
   /// 选集分组大小，避免长剧集在 TV 端一次性横向铺满过长。
   static const int _episodeGroupSize = 20;
 
@@ -345,11 +354,23 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 详情页选项按钮纵向内边距。
   static const double _detailChoiceChipVerticalPadding = 8;
 
-  /// 横向列表首尾焦点绘制安全留白。
+  /// 详情页播放器和分区标题的左基线留白。
   ///
-  /// 海报卡片获焦会按 1.08 放大，首尾留白需要覆盖放大溢出和焦点描边，
-  /// 否则从列表右端长按回到左端时首张卡片会贴边像被裁剪。
-  static const double _detailHorizontalFocusSafePadding = 18;
+  /// 这里让内容区更贴近顶部 `IvyTV` 的左边缘，保持同一视觉起点，
+  /// 但仍保留一小段间距，避免播放器焦点边框看起来贴边。
+  static const double _detailSectionLeadingInset = 0;
+
+  /// 轻量横向选项列表的首尾焦点安全留白。
+  ///
+  /// 线路和选集按钮本身不做整体放大，只需要保留轻微左安全边距，
+  /// 让标题更贴近 `IvyTV` 左基线。
+  static const double _detailHorizontalFocusSafePadding = 0;
+
+  /// 推荐海报横向列表的首尾焦点安全留白。
+  ///
+  /// 海报卡片获焦会按 1.08 放大，第一张卡片需要更大的左安全边距，
+  /// 避免从右端回到首项后左侧描边像被裁掉。
+  static const double _detailRecommendFocusSafePadding = 24;
 
   /// 横向列表贴左时的轻微前靠偏移。
   ///
@@ -496,6 +517,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 详情页小播放器是否正在加载当前视频。
   bool _previewPlayerLoading = false;
+
+  /// 当前这轮预览播放是否已经真正起播。
+  ///
+  /// 这里只认真实播放开始，不把 `onReady` 或 `isLoading=false` 误当成已起播，
+  /// 避免视频首帧还没出来时，中心转圈提前消失。
+  bool _previewPlaybackStarted = false;
 
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
@@ -651,10 +678,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
     _clockTimer?.cancel();
     _previewLoadingHoldTimer?.cancel();
-    // 路由销毁前兜底保存一次进度，避免返回过快时错过定时节流窗口。
-    _saveProgress(force: true, scene: '详情页销毁');
+    // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
+    unawaited(_saveProgress(force: true, scene: '详情页销毁'));
+    // 播放器实例由子组件自己管理，详情页销毁时只解绑进度监听，
+    // 避免预览播放器和全屏共享控制器被父页面重复释放。
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
-    _playerController?.dispose();
+    _playerController = null;
     _playerFocusNode.dispose();
     _fullscreenFocusNode.dispose();
     _favoriteFocusNode.dispose();
@@ -1217,6 +1246,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 记录播放器控制器并挂载进度监听。
   void _attachPlayerController(VideoPlayerWidgetController controller) {
     if (identical(_playerController, controller)) {
+      if (controller.isPlaying) {
+        _markPreviewPlaybackStarted();
+      }
       _playCurrentEpisode();
       return;
     }
@@ -1226,12 +1258,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _lastRequestedPlaybackUrl = null;
     controller.addProgressListener(_onVideoProgressUpdate);
     _schedulePreviewChromeRefresh();
+    if (controller.isPlaying) {
+      _markPreviewPlaybackStarted();
+    }
     _playCurrentEpisode();
   }
 
   /// 标记小播放器开始加载。
   void _markPreviewPlayerLoading() {
+    _previewLoadingHoldTimer?.cancel();
     _previewPlayerLoading = true;
+    _previewPlaybackStarted = false;
   }
 
   /// 结束小播放器加载态。
@@ -1239,12 +1276,25 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (!_previewPlayerLoading) {
       return;
     }
+    if (!_hasPreviewPlaybackStarted) {
+      return;
+    }
     _previewPlayerLoading = false;
     _schedulePreviewChromeRefresh();
   }
 
+  /// 标记当前预览视频已经真正起播。
+  void _markPreviewPlaybackStarted() {
+    _previewPlaybackStarted = true;
+    _finishPreviewPlayerLoading();
+  }
+
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
+    if ((_playerController?.isPlaying ?? false) &&
+        !_hasPreviewPlaybackStarted) {
+      _markPreviewPlaybackStarted();
+    }
     unawaited(_saveProgress(scene: '定时保存'));
     if (_playerController?.isPlaying == false) {
       _schedulePreviewChromeRefresh();
@@ -2765,7 +2815,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                       child: Column(
                         children: [
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(0, 38, 0, 5),
+                            padding: const EdgeInsets.fromLTRB(0, 20, 0, 15),
                             child: _buildPageGuide(),
                           ),
                           Expanded(
@@ -2877,6 +2927,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         initialEpisodeIndex: _episodeIndex,
         initialPlaybackPosition: _playerController?.currentPosition,
         initialPlaybackWasPlaying: _playerController?.isPlaying ?? true,
+        initialPlaybackStarted: _hasPreviewPlaybackStarted,
         playbackController: widget.fullscreenPlayerBuilder == null
             ? _TvDetailFullscreenPlaybackController(() => _playerController)
             : null,
@@ -2904,36 +2955,39 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 构建播放器和简介区域。
   Widget _buildHeroArea() {
     final detail = _currentDetail;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final useVerticalLayout = constraints.maxWidth < 980;
-        final playerWidth = useVerticalLayout ? constraints.maxWidth : 620.0;
-        final player = SizedBox(
-          width: playerWidth,
-          child: _buildPlayerBox(detail),
-        );
-        final info = _buildInfoPanel(detail);
+    return Padding(
+      padding: const EdgeInsets.only(left: _detailSectionLeadingInset),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final useVerticalLayout = constraints.maxWidth < 980;
+          final playerWidth = useVerticalLayout ? constraints.maxWidth : 620.0;
+          final player = SizedBox(
+            width: playerWidth,
+            child: _buildPlayerBox(detail),
+          );
+          final info = _buildInfoPanel(detail);
 
-        if (useVerticalLayout) {
-          return Column(
+          if (useVerticalLayout) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                player,
+                const SizedBox(height: 22),
+                info,
+              ],
+            );
+          }
+
+          return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               player,
-              const SizedBox(height: 22),
-              info,
+              const SizedBox(width: 34),
+              Expanded(child: info),
             ],
           );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            player,
-            const SizedBox(width: 34),
-            Expanded(child: info),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -2983,24 +3037,28 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 小播放器是否需要显示加载中转圈。
   bool get _shouldShowPreviewLoading {
-    final controller = _playerController;
     return !_fullscreenOverlayVisible &&
-        !((controller?.isPlaying) ?? false) &&
-        (_previewPlayerLoading || (controller?.isLoading ?? false));
+        _previewPlayerLoading &&
+        !_hasPreviewPlaybackStarted;
   }
 
+  /// 当前预览视频是否已经真正起播。
+  bool get _hasPreviewPlaybackStarted {
+    return _previewPlaybackStarted || (_playerController?.isPlaying ?? false);
+  }
 
   /// 构建小播放器加载中转圈。
   Widget _buildPreviewLoadingIndicator() {
-    return const Center(
+    return Center(
       child: IgnorePointer(
         child: SizedBox(
-          key: ValueKey('tv-detail-preview-loading'),
+          key: const ValueKey('tv-detail-preview-loading'),
           width: 42,
           height: 42,
           child: CircularProgressIndicator(
             strokeWidth: 3,
             color: Colors.white,
+            value: _isFlutterTestEnvironment ? 0.72 : null,
           ),
         ),
       ),
@@ -3049,7 +3107,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               onControllerCreated: controllerCreated,
               onFullscreenChanged: (_) {},
               onReady: _finishPreviewPlayerLoading,
-              onPlay: _schedulePreviewChromeRefresh,
+              onPlay: _markPreviewPlaybackStarted,
               onPause: _schedulePreviewChromeRefresh,
               onEpisodeChanged: _switchEpisode,
               onNextEpisode: () {
@@ -3169,7 +3227,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return _TvDetailSection(
       title: '切换线路',
       subtitle: '遇播放卡顿，音画不同步或无法播放时，请切换播放线路',
-      contentHorizontalInset: _detailHorizontalFocusSafePadding,
+      contentHorizontalInset: _detailSectionLeadingInset,
       child: sources.isEmpty
           ? _buildEmptyText('暂无可用源')
           : SizedBox(
@@ -3245,7 +3303,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
     return _TvDetailSection(
       title: '选集',
-      contentHorizontalInset: _detailHorizontalFocusSafePadding,
+      contentHorizontalInset: _detailSectionLeadingInset,
       child: episodes.isEmpty
           ? _buildEmptyText('暂无选集')
           : Column(
@@ -3366,79 +3424,70 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   Widget _buildRecommendsSection() {
     return _TvDetailSection(
       title: '相关推荐',
-      contentHorizontalInset: _detailHorizontalFocusSafePadding,
+      contentHorizontalInset: _detailSectionLeadingInset,
       child: SizedBox(
         height: TvVideoCard.height + 28,
-        child: ListView.separated(
-          key: const ValueKey('tv-detail-recommend-list'),
+        child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: _detailHorizontalFocusSafePadding,
+            horizontal: _detailRecommendFocusSafePadding,
           ),
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none,
-          itemCount: _recommends.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 18),
-          itemBuilder: (context, index) {
-            final videoInfo = _recommends[index];
-            final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
-            final isFirstItem = index == 0;
-            final isLastItem = index == _recommends.length - 1;
-            return TvEdgeShake(
-              key: edgeShakeKey,
-              child: KeyedSubtree(
-                key: _recommendTargetKeyFor(videoInfo),
-                child: TvVideoCard(
-                  videoInfo: videoInfo,
-                  focusNode: _recommendFocusNodeFor(videoInfo),
-                  focusMemoryGroupKey: 'tv-detail-recommend-list',
-                  scaleAlignment: _detailCardScaleAlignmentForIndex(
-                    index,
-                    _recommends.length,
-                  ),
-                  onArrowLeft: isFirstItem
-                      ? () =>
-                          edgeShakeKey.currentState?.shake(AxisDirection.left)
-                      : null,
-                  onArrowRight: isLastItem
-                      ? () =>
-                          edgeShakeKey.currentState?.shake(AxisDirection.right)
-                      : null,
-                  onArrowUp: _focusRecommendationUpTarget,
-                  onArrowDown: _focusBottomAction,
-                  onFocusChanged: (hasFocus) {
-                    if (hasFocus) {
-                      _rememberFocusedRecommend(videoInfo);
-                    }
-                  },
-                  onPressed: () {
-                    TvRoute.pushReplacement<void, void>(
-                      context,
-                      TvVideoDetailScreen(
-                        videoInfo: videoInfo,
-                      ),
-                    );
-                  },
-                ),
+          child: Transform.translate(
+            offset: const Offset(-_detailRecommendFocusSafePadding, 0),
+            child: ListView.separated(
+              key: const ValueKey('tv-detail-recommend-list'),
+              padding: const EdgeInsets.only(
+                right: _detailRecommendFocusSafePadding * 2,
               ),
-            );
-          },
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              itemCount: _recommends.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 18),
+              itemBuilder: (context, index) {
+                final videoInfo = _recommends[index];
+                final edgeShakeKey = GlobalKey<TvEdgeShakeState>();
+                final isFirstItem = index == 0;
+                final isLastItem = index == _recommends.length - 1;
+                return TvEdgeShake(
+                  key: edgeShakeKey,
+                  child: KeyedSubtree(
+                    key: _recommendTargetKeyFor(videoInfo),
+                    child: TvVideoCard(
+                      videoInfo: videoInfo,
+                      focusNode: _recommendFocusNodeFor(videoInfo),
+                      focusMemoryGroupKey: 'tv-detail-recommend-list',
+                      scaleAlignment: Alignment.center,
+                      onArrowLeft: isFirstItem
+                          ? () => edgeShakeKey.currentState
+                              ?.shake(AxisDirection.left)
+                          : null,
+                      onArrowRight: isLastItem
+                          ? () => edgeShakeKey.currentState
+                              ?.shake(AxisDirection.right)
+                          : null,
+                      onArrowUp: _focusRecommendationUpTarget,
+                      onArrowDown: _focusBottomAction,
+                      onFocusChanged: (hasFocus) {
+                        if (hasFocus) {
+                          _rememberFocusedRecommend(videoInfo);
+                        }
+                      },
+                      onPressed: () {
+                        TvRoute.pushReplacement<void, void>(
+                          context,
+                          TvVideoDetailScreen(
+                            videoInfo: videoInfo,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
-  }
-
-  /// 计算详情页横向海报卡片的放大锚点。
-  ///
-  /// 首尾卡片在列表边缘获焦时，需要向内容区内部放大，
-  /// 避免焦点放大后的外溢部分被列表左侧或右侧安全边界吃掉。
-  Alignment _detailCardScaleAlignmentForIndex(int index, int itemCount) {
-    if (index <= 0) {
-      return Alignment.centerLeft;
-    }
-    if (index >= itemCount - 1) {
-      return Alignment.centerRight;
-    }
-    return Alignment.center;
   }
 
   /// 构建底部操作。

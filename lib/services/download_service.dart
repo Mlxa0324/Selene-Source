@@ -382,18 +382,42 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<void> deleteTask(String id) async {
-    final index = _tasks.indexWhere((t) => t.id == id);
-    if (index != -1) {
-      _cancelTokens[id]?.cancel("User deleted");
-      final task = _tasks[index];
-      _tasks.removeAt(index);
-      await _saveTasks();
-      notifyListeners();
-      _retryCounts.remove(id);
-      _syncBackgroundService();
-      _checkQueue(); // 删除后也检查队列
+    await deleteTasks([id]);
+  }
 
-      // 删除本地文件
+  /// 批量删除下载任务，统一处理状态刷新、持久化和本地文件清理。
+  Future<void> deleteTasks(Iterable<String> ids) async {
+    final targetIds = ids.toSet();
+    if (targetIds.isEmpty) {
+      return;
+    }
+
+    final deletedTasks = <DownloadTask>[];
+    _tasks.removeWhere((task) {
+      final shouldDelete = targetIds.contains(task.id);
+      if (shouldDelete) {
+        _cancelTokens[task.id]?.cancel("User deleted");
+        deletedTasks.add(task);
+      }
+      return shouldDelete;
+    });
+
+    if (deletedTasks.isEmpty) {
+      return;
+    }
+
+    await _saveTasks();
+    notifyListeners();
+
+    for (final task in deletedTasks) {
+      _retryCounts.remove(task.id);
+      _cancelTokens.remove(task.id);
+    }
+
+    _syncBackgroundService();
+    _checkQueue(); // 删除后也检查队列
+
+    for (final task in deletedTasks) {
       try {
         final dir = Directory(task.savePath);
         if (await dir.exists()) {
