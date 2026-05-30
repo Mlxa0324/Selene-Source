@@ -745,22 +745,22 @@ git commit -m "feat(re-android): 接入webview兜底与内核切换"
 - 修改：`/Volumes/My2TDrive/StudioProjects/Selene-Source/re-android/README.md`
 - 修改：`/Volumes/My2TDrive/StudioProjects/Selene-Source/docs/superpowers/plans/2026-05-30-re-android-tv-native-player.md`
 
-- [ ] **步骤 1：运行 JVM 单测**
+- [x] **步骤 1：运行 JVM 单测**
 
 运行：`./gradlew testDebugUnitTest`
 预期：PASS。
 
-- [ ] **步骤 2：运行播放器与菜单 Android 测试**
+- [x] **步骤 2：运行播放器与菜单 Android 测试**
 
 运行：`./gradlew :feature-tv-player:connectedDebugAndroidTest`
 预期：PASS。
 
-- [ ] **步骤 3：执行静态检查**
+- [x] **步骤 3：执行静态检查**
 
 运行：`./gradlew lintDebug`
 预期：PASS。
 
-- [ ] **步骤 4：执行 diff 检查**
+- [x] **步骤 4：执行 diff 检查**
 
 运行：`git diff --check -- re-android docs/superpowers/plans/2026-05-30-re-android-tv-native-player.md`
 预期：无输出。
@@ -772,3 +772,27 @@ git add re-android docs/superpowers/plans/2026-05-30-re-android-tv-native-player
 git commit -m "feat(re-android): 完成tv原生重建首期"
 ```
 
+## 当前完成状态
+
+截至 `2026-05-30`，任务 1 到任务 7 已全部完成，核心产物如下：
+
+- 已完成 `app-tv + core-* + feature-tv-*` 多模块原生 TV 工程重建
+- 已完成 `ExoPlayer` 主内核、`WebView` 兜底内核与统一播放器协议
+- 已完成全屏底部菜单 `其它 -> 内核切换` 单击切换与播放快照恢复
+- 已完成首页、搜索、详情、播放历史、收藏夹、设置和直播占位页主链路
+- 已完成线程调度拆分，避免播放控制、网络与状态恢复阻塞主线程
+- 已补充 JVM 单测、Compose Android 测试与 lint 校验链路
+
+已确认通过的验证命令：
+
+```bash
+./gradlew testDebugUnitTest
+./gradlew :feature-tv-player:connectedDebugAndroidTest
+./gradlew lintDebug
+```
+
+补充说明：
+
+- `AndroidManifest.xml` 已补齐 TV 入口所需 `banner`、`icon` 与 `android.hardware.touchscreen=false`
+- `core-benchmark` 当前仅提供记录器占位，后续如需真机对比可继续扩展
+- `直播 / DLNA / 本地离线` 仍不在本期范围内

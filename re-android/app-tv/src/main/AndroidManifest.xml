@@ -5,9 +5,16 @@
         android:name="android.software.leanback"
         android:required="false" />
 
+    <!-- TV 设备不应强依赖触摸屏，否则会被商店和 lint 判定为不兼容。 -->
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <application
         android:name=".SeleneTvApplication"
         android:allowBackup="true"
+        android:banner="@drawable/tv_banner"
+        android:icon="@drawable/tv_icon"
         android:label="Selene TV"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
