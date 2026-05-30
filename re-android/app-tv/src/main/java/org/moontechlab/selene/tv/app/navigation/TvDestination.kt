@@ -48,7 +48,7 @@ sealed class TvDestination(
         /**
          * 播放器路由参数名。
          */
-        const val videoIdArg: String = playerVideoIdArg
+        const val videoIdArg: String = PLAYER_VIDEO_ID_ARG
 
         /**
          * 根据视频 ID 构造可安全传递的播放器路由。
@@ -62,20 +62,25 @@ sealed class TvDestination(
                 videoId,
                 StandardCharsets.UTF_8.toString(),
             ).replace("+", "%20")
-            return "player/$encodedVideoId"
+            return "$playerPathPrefix/$encodedVideoId"
         }
     }
 
     companion object {
         /**
-         * 播放器路由参数名常量源。
+         * 播放器路由参数名单一源。
          */
-        private const val playerVideoIdArg = "videoId"
+        private const val PLAYER_VIDEO_ID_ARG = "videoId"
 
         /**
-         * 播放器路由模板常量源。
+         * 播放器路径前缀单一源。
          */
-        private const val playerRoutePattern = "player/{videoId}"
+        private const val playerPathPrefix = "player"
+
+        /**
+         * 播放器路由模板单一源。
+         */
+        private const val playerRoutePattern = "$playerPathPrefix/{$PLAYER_VIDEO_ID_ARG}"
 
         /**
          * 左侧主菜单仅承载首页与直播入口。

@@ -29,9 +29,7 @@ class TvDestinationTest {
      */
     @Test
     fun fullscreen_player_route_is_hidden_from_top_level_tabs() {
-        assertThat(TvDestination.Player.route).isEqualTo(
-            "player/{${TvDestination.Player.videoIdArg}}",
-        )
+        assertThat(TvDestination.Player.route).isEqualTo("player/{videoId}")
         assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.Player)
     }
 
