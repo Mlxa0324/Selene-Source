@@ -148,7 +148,7 @@ build_android() {
     fi
 
     # 构建前先输出当前签名模式，避免误拿调试签名包发布
-    check_android_signing()
+    check_android_signing
     
     # 确保安卓构建目录存在
     mkdir -p build/android
