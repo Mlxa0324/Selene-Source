@@ -52,13 +52,15 @@ fun TvNavGraph(
         composable(
             route = TvDestination.Player.route,
             arguments = listOf(
-                navArgument("videoId") {
+                navArgument(TvDestination.Player.videoIdArg) {
                     // 播放器路由先保留基础参数契约，后续再接真实视频信息。
                     type = NavType.StringType
                 },
             ),
         ) { backStackEntry ->
-            val videoId = backStackEntry.arguments?.getString("videoId").orEmpty()
+            val videoId = backStackEntry.arguments
+                ?.getString(TvDestination.Player.videoIdArg)
+                .orEmpty()
             TvPlaceholderScreen(label = "Player: $videoId")
         }
     }

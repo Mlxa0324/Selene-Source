@@ -44,11 +44,11 @@ sealed class TvDestination(
     /**
      * 全屏播放器路由。
      */
-    data object Player : TvDestination("player/{videoId}") {
+    data object Player : TvDestination(playerRoutePattern) {
         /**
          * 播放器路由参数名。
          */
-        const val videoIdArg = "videoId"
+        const val videoIdArg: String = playerVideoIdArg
 
         /**
          * 根据视频 ID 构造可安全传递的播放器路由。
@@ -67,6 +67,16 @@ sealed class TvDestination(
     }
 
     companion object {
+        /**
+         * 播放器路由参数名常量源。
+         */
+        private const val playerVideoIdArg = "videoId"
+
+        /**
+         * 播放器路由模板常量源。
+         */
+        private const val playerRoutePattern = "player/{videoId}"
+
         /**
          * 左侧主菜单仅承载首页与直播入口。
          */
