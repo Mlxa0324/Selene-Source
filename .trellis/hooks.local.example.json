@@ -1,0 +1,6 @@
+{
+  "wecom": {
+    "webhook": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=替换为企业微信机器人KEY",
+    "messageType": "text"
+  }
+}
