@@ -1607,7 +1607,7 @@ void main() {
     );
     expect(
       (categoryNavDecoration.decoration as BoxDecoration).color,
-      const Color(0xD00B0D0E),
+      TvThemeBackground.deepBlue.color,
     );
     expect(find.text('电影 0'), findsOneWidget);
 
@@ -1994,6 +1994,59 @@ void main() {
       _focusedChipLabelInRow(tester, '类型'),
       isNot('全部'),
     );
+  });
+
+  testWidgets('category filter adjacent row uses visual nearest chip',
+      (tester) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF0B0D0E),
+          body: TvCategoryFilterPanel(
+            kind: TvCategoryFilterKind.movie,
+            selectedOptions: {
+              '分类': TvCategoryFilterOption(label: '全部', value: '全部'),
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    const currentLabel = '传记';
+    final typeScrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('tv-filter-row-scroll-类型')),
+    );
+    typeScrollView.controller!.jumpTo(900);
+    await tester.pump();
+    _focusNodeForChipInRow(tester, '类型', currentLabel).requestFocus();
+    await tester.pumpAndSettle();
+
+    final visualNearestLabel = _nearestChipLabelByCenterX(
+      tester,
+      currentRowTitle: '类型',
+      currentLabel: currentLabel,
+      targetRowTitle: '地区',
+    );
+    final sameIndexRegionLabel = _optionLabels(
+      TvCategoryFilterKind.movie,
+      '地区',
+      category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+    )[14];
+
+    expect(visualNearestLabel, isNot(sameIndexRegionLabel));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusedChipLabelInRow(tester, '地区'), visualNearestLabel);
+    expect(_focusedChipLabelInRow(tester, '地区'), isNot(sameIndexRegionLabel));
   });
 
   testWidgets('category filter reveals rightmost chip inside row viewport',
@@ -3302,6 +3355,53 @@ String? _focusedChipLabelInRow(WidgetTester tester, String rowTitle) {
     }
   }
   return null;
+}
+
+String _nearestChipLabelByCenterX(
+  WidgetTester tester, {
+  required String currentRowTitle,
+  required String currentLabel,
+  required String targetRowTitle,
+}) {
+  final currentCenter = tester
+      .getRect(
+        find.descendant(
+          of: find.byKey(ValueKey('tv-filter-row-$currentRowTitle')),
+          matching: find.byKey(ValueKey('tv-filter-chip-$currentLabel')),
+        ),
+      )
+      .center
+      .dx;
+  final targetViewportRect = tester.getRect(
+    find.byKey(ValueKey('tv-filter-row-scroll-$targetRowTitle')),
+  );
+  final referenceCenter = currentCenter.clamp(
+    targetViewportRect.left,
+    targetViewportRect.right,
+  );
+  final labels = _optionLabels(
+    TvCategoryFilterKind.movie,
+    targetRowTitle,
+    category: const TvCategoryFilterOption(label: '全部', value: '全部'),
+  );
+  String? nearestLabel;
+  var nearestDistance = double.infinity;
+  for (final label in labels) {
+    final finder = find.descendant(
+      of: find.byKey(ValueKey('tv-filter-row-$targetRowTitle')),
+      matching: find.byKey(ValueKey('tv-filter-chip-$label')),
+    );
+    final rect = tester.getRect(finder);
+    if (!rect.overlaps(targetViewportRect)) {
+      continue;
+    }
+    final distance = (rect.center.dx - referenceCenter).abs();
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestLabel = label;
+    }
+  }
+  return nearestLabel!;
 }
 
 FocusNode _focusNodeForFocusableKey(WidgetTester tester, Key key) {

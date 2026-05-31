@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "用 widget test 覆盖分类筛选方向键焦点回归。"}
+{"file": ".trellis/spec/frontend/tv-mode.md", "reason": "复核 TV 方向键和焦点行为没有破坏既有边界交互。"}

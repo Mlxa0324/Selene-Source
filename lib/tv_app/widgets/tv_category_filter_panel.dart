@@ -292,26 +292,27 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
 
   /// 在筛选行之间按上/下键切换焦点。
   ///
-  /// 优先回到目标行上一次停留的位置，没有记录时再按当前横向位置就近落点。
+  /// 相邻行移动遵循遥控器的视觉就近习惯：优先找目标行当前视口内
+  /// 与当前焦点中心 X 最近的筛选项，避免长行第 N 项机械跳到下一行第 N 项。
   void _moveFocusBetweenRows({
     required TvCategoryFilterRowData currentRow,
     required TvCategoryFilterOption currentOption,
     required TvCategoryFilterRowData targetRow,
   }) {
-    final rememberedValue = _lastFocusedOptionValues[targetRow.title];
-    if (rememberedValue != null) {
-      final rememberedIndex = targetRow.options.indexWhere(
-        (item) => item.value == rememberedValue,
-      );
-      if (rememberedIndex >= 0) {
-        _optionFocusNodeFor(
-          targetRow.title,
-          targetRow.options[rememberedIndex].value,
-        ).requestFocus();
-        return;
-      }
+    final currentNode = _optionFocusNodeFor(
+      currentRow.title,
+      currentOption.value,
+    );
+    final nearestOption = _nearestVisibleOptionByCenterX(
+      currentNode: currentNode,
+      targetRow: targetRow,
+    );
+    if (nearestOption != null) {
+      _optionFocusNodeFor(targetRow.title, nearestOption.value).requestFocus();
+      return;
     }
 
+    // 极端测试或首帧布局尚未完成时，退回到序号兜底，保证方向键不落空。
     final currentIndex = currentRow.options.indexWhere(
       (item) => item.value == currentOption.value,
     );
@@ -322,6 +323,91 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
       targetRow.title,
       targetRow.options[targetIndex].value,
     ).requestFocus();
+  }
+
+  /// 按当前焦点中心 X 查找目标行当前视口内最近的筛选项。
+  TvCategoryFilterOption? _nearestVisibleOptionByCenterX({
+    required FocusNode currentNode,
+    required TvCategoryFilterRowData targetRow,
+  }) {
+    final currentRect = _globalRectForFocusNode(currentNode);
+    if (currentRect == null || targetRow.options.isEmpty) {
+      return null;
+    }
+
+    final viewportRect = _rowViewportRectFor(targetRow.title);
+    final referenceCenterX = viewportRect == null
+        ? currentRect.center.dx
+        : currentRect.center.dx.clamp(viewportRect.left, viewportRect.right);
+    TvCategoryFilterOption? nearestOption;
+    var nearestDistance = double.infinity;
+
+    for (final option in targetRow.options) {
+      final node = _optionFocusNodeFor(targetRow.title, option.value);
+      final optionRect = _globalRectForFocusNode(node);
+      if (optionRect == null) {
+        continue;
+      }
+      if (viewportRect != null && !optionRect.overlaps(viewportRect)) {
+        continue;
+      }
+      final distance = (optionRect.center.dx - referenceCenterX).abs();
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestOption = option;
+      }
+    }
+
+    if (nearestOption != null || viewportRect == null) {
+      return nearestOption;
+    }
+
+    // 目标行暂时没有可见候选时，再放宽到整行候选，避免快速滚动中焦点丢失。
+    for (final option in targetRow.options) {
+      final node = _optionFocusNodeFor(targetRow.title, option.value);
+      final optionRect = _globalRectForFocusNode(node);
+      if (optionRect == null) {
+        continue;
+      }
+      final distance = (optionRect.center.dx - referenceCenterX).abs();
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestOption = option;
+      }
+    }
+    return nearestOption;
+  }
+
+  /// 获取筛选行当前横向视口的全局矩形。
+  Rect? _rowViewportRectFor(String rowTitle) {
+    final controller = _rowScrollControllerFor(rowTitle);
+    if (!controller.hasClients) {
+      return null;
+    }
+    final viewportContext = controller.position.context.notificationContext;
+    if (viewportContext == null) {
+      return null;
+    }
+    final renderObject = viewportContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) {
+      return null;
+    }
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & renderObject.size;
+  }
+
+  /// 获取焦点节点对应控件的全局矩形。
+  Rect? _globalRectForFocusNode(FocusNode node) {
+    final nodeContext = node.context;
+    if (nodeContext == null || !node.canRequestFocus) {
+      return null;
+    }
+    final renderObject = nodeContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) {
+      return null;
+    }
+    final topLeft = renderObject.localToGlobal(Offset.zero);
+    return topLeft & renderObject.size;
   }
 
   @override
