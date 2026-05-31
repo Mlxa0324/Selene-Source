@@ -1,16 +1,35 @@
-# Frontend Spec Index
+# Frontend Development Guidelines
 
-本目录记录 Flutter 前端实现规格。新增 TV 端功能前，优先阅读相关规格，确认组件边界、数据流和测试要求。
+> Guidelines for Selene Flutter UI across phone, desktop, and TV modes.
+
+## Overview
+
+Read these files before editing `lib/screens/`, `lib/widgets/`, `lib/tv_app/`, UI-facing helpers, or widget tests. The app uses Flutter with Provider, Material widgets, media playback widgets, and a separate TV UI surface.
+
+## Guidelines Index
+
+| Guide | Description | Status |
+|-------|-------------|--------|
+| [Directory Structure](./directory-structure.md) | Flutter screen/widget/TV organization | Filled |
+| [Component Guidelines](./component-guidelines.md) | Widget patterns, constructor props, composition, interaction | Filled |
+| [Hook Guidelines](./hook-guidelines.md) | Flutter equivalents for reusable stateful logic | Filled |
+| [State Management](./state-management.md) | Local state, Provider state, persisted state, TV focus state | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Linting, widget tests, review checklist | Filled |
+| [Type Safety](./type-safety.md) | Dart model, enum, callback, and JSON type rules | Filled |
+| [TV Mode](./tv-mode.md) | TV-specific screens, focus, launch, and validation rules | Filled |
 
 ## Pre-Development Checklist
 
-1. 阅读 [TV 模式前端实现规格](tv-mode.md)。
-2. 确认改动是否属于 TV 专属模块，优先放入 `lib/tv_app/`。
-3. 确认是否会影响普通端启动、登录、首页或播放器。
-4. 新增交互必须补充对应 widget test 或 service test。
-5. 结束前至少运行相关 `flutter test`、针对性 `flutter analyze` 和 `git diff --check`。
-6. 遇到首帧慢、首播慢、滚动掉帧、焦点卡顿或骨架/图片加载拖累时，优先阅读 `.agents/skills/flutter-performance-optimization/` 下的 skill 和 playbook。
+Before changing frontend code:
 
-## Specs
+1. Read the guide matching the layer you will touch.
+2. Read [TV Mode](./tv-mode.md) for any Android TV, BlueStacks, focus, remote-control, or TV route change.
+3. Search for existing widgets/helpers/tests before adding new abstractions.
+4. Keep service/storage/API concerns out of widgets.
+5. Add or update focused widget/unit tests for changed behavior.
+6. Run `flutter analyze` and relevant `flutter test` targets when feasible.
+7. For first-frame, first-playback, scroll jank, focus lag, skeleton loading, or image-loading performance issues, read `.agents/skills/flutter-performance-optimization/` before changing UI behavior.
 
-- [TV 模式前端实现规格](tv-mode.md)
+## Language
+
+Project code comments are commonly Chinese and concise. Trellis spec files are maintained in English so platform agents can consume them consistently.
