@@ -307,6 +307,73 @@ fun TvLiveRoute(
 rg "后续接入|临时占位|占位|正在开发|后续|placeholder|TODO|骨架" re-android --glob '!**/build/**'
 ```
 
+### 3.8 原生 TV 本地后台网关配置
+
+```properties
+# re-android/local.gateway.properties
+SELENE_TV_BASE_URL=http://127.0.0.1:3000
+SELENE_TV_USERNAME=your_username
+SELENE_TV_PASSWORD=your_password
+```
+
+```kotlin
+data class TvLocalGatewayConfig(
+    val baseUrl: String,
+    val username: String,
+    val password: String,
+)
+
+interface SeleneTvAuthApi {
+    @POST("api/login")
+    suspend fun login(
+        @Body request: SeleneTvLoginRequest,
+    ): Response<ResponseBody>
+}
+
+data class SeleneTvLoginRequest(
+    val username: String,
+    val password: String,
+)
+```
+
+实现要求：
+
+- 真实配置文件固定为 `re-android/local.gateway.properties`，必须被 `.gitignore` 忽略。
+- 仓库只提交 `re-android/local.gateway.properties.example`，不得提交真实地址、用户名、密码、Cookie。
+- `app-tv` Gradle 负责读取本地配置并注入 `BuildConfig.SELENE_TV_BASE_URL / SELENE_TV_USERNAME / SELENE_TV_PASSWORD`。
+- 本地配置缺失时 BuildConfig 字段保持空字符串，TV 首页必须进入错误态，不得崩溃。
+- `core-network` 负责 baseUrl 标准化、Retrofit/OkHttp 创建、`POST /api/login`、`Set-Cookie` 解析和 Cookie header 注入。
+- `core-data` 只消费 `SeleneTvApi`，不得读取本地 properties 或 BuildConfig。
+- `feature-tv-*` 页面仍保持状态和回调驱动，不直接读取本地配置或网络客户端。
+
+测试要求：
+
+- `SeleneTvNetworkFactoryTest` 必须覆盖 baseUrl 标准化、空地址拒绝和 Cookie 解析。
+- `SeleneTvNetworkClientTest` 必须覆盖登录成功保存会话和 401 错误文案。
+- `TvAppContainerTest` 必须覆盖缺配置错误态和完整配置下“先登录再加载 dashboard”。
+- 提交前必须执行：
+
+```bash
+git check-ignore -v re-android/local.gateway.properties
+./re-android/gradlew -p re-android :core-network:testDebugUnitTest :app-tv:testDebugUnitTest
+```
+
+错误示例：
+
+```kotlin
+// 错误：feature 页面直接读取 BuildConfig 或 properties，破坏 UI 和数据层边界。
+val password = BuildConfig.SELENE_TV_PASSWORD
+```
+
+正确示例：
+
+```kotlin
+// 正确：app-tv 容器读取本地配置，feature 页面只消费 ViewModel 状态。
+val container = TvAppContainer(
+    gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
+)
+```
+
 测试要求：
 
 - `SessionCookieStoreTest.saveSession_persists_base_url_account_and_cookie` 必须覆盖服务器地址、账号和 Cookie 的保存读取。
