@@ -23,6 +23,7 @@ data class TvSearchResultGroup(
  * @property searchHistory 搜索历史。
  * @property resultGroups 搜索结果分组。
  * @property isLoading 是否正在搜索。
+ * @property errorMessage 搜索失败文案。
  */
 data class TvSearchUiState(
     val query: String = "",
@@ -30,6 +31,7 @@ data class TvSearchUiState(
     val hotQueries: List<String> = DEFAULT_HOT_QUERIES,
     val resultGroups: List<TvSearchResultGroup> = emptyList(),
     val isLoading: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 /**
@@ -61,13 +63,30 @@ class TvSearchViewModel(
         mutableState.value = mutableState.value.copy(
             query = normalizedQuery,
             isLoading = true,
+            errorMessage = null,
         )
-        val payload = search(normalizedQuery)
-        mutableState.value = mutableState.value.copy(
-            searchHistory = listOf(normalizedQuery) + mutableState.value.searchHistory.filterNot { it == normalizedQuery },
-            resultGroups = listOf(TvSearchResultGroup(title = SEARCH_RESULT_GROUP_TITLE, videos = payload.results)),
-            isLoading = false,
-        )
+        runCatching { search(normalizedQuery) }
+            .onSuccess { payload ->
+                mutableState.value = mutableState.value.copy(
+                    searchHistory = listOf(normalizedQuery) +
+                        mutableState.value.searchHistory.filterNot { it == normalizedQuery },
+                    resultGroups = listOf(
+                        TvSearchResultGroup(
+                            title = SEARCH_RESULT_GROUP_TITLE,
+                            videos = payload.results,
+                        ),
+                    ),
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            .onFailure { throwable ->
+                // 搜索失败必须显式暴露给页面，不能退化成“暂无结果”。
+                mutableState.value = mutableState.value.copy(
+                    isLoading = false,
+                    errorMessage = throwable.message ?: "搜索失败",
+                )
+            }
     }
 
     private companion object {

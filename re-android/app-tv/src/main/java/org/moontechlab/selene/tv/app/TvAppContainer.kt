@@ -1,12 +1,20 @@
 package org.moontechlab.selene.tv.app
 
+import org.moontechlab.selene.tv.core.data.model.TvHomePayload
+import org.moontechlab.selene.tv.core.data.repository.TvFavoritesRepository
 import org.moontechlab.selene.tv.core.data.repository.TvHomeRepository
 import org.moontechlab.selene.tv.core.data.repository.TvPlaybackRepository
-import org.moontechlab.selene.tv.core.data.model.TvHomePayload
+import org.moontechlab.selene.tv.core.data.repository.TvSearchRepository
+import org.moontechlab.selene.tv.core.data.repository.TvVideoLibraryRepository
 import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
 import org.moontechlab.selene.tv.core.network.SeleneTvNetworkFactory
 import org.moontechlab.selene.tv.core.network.SessionCookieStore
+import org.moontechlab.selene.tv.feature.favorites.TvFavoritesViewModel
+import org.moontechlab.selene.tv.feature.history.TvHistoryViewModel
 import org.moontechlab.selene.tv.feature.home.TvHomeViewModel
+import org.moontechlab.selene.tv.feature.home.TvVideoLibraryUiState
+import org.moontechlab.selene.tv.feature.home.TvVideoLibraryViewModel
+import org.moontechlab.selene.tv.feature.search.TvSearchViewModel
 import org.moontechlab.selene.tv.feature.settings.TvSettingsUiState
 import org.moontechlab.selene.tv.feature.settings.TvSettingsViewModel
 
@@ -48,7 +56,6 @@ data class TvLocalGatewayConfig(
  * @property gatewayConfig 本地后台网关配置。
  * @property sessionCookieStore 会话存储。
  * @property gatewayClientFactory 后台客户端工厂。
- * @property playbackRepository 播放记录仓库。
  */
 class TvAppContainer(
     private val gatewayConfig: TvLocalGatewayConfig,
@@ -59,7 +66,6 @@ class TvAppContainer(
             sessionCookieStore = store,
         )
     },
-    private val playbackRepository: TvPlaybackRepository = TvPlaybackRepository(),
 ) {
     /** 后台客户端按需创建，避免缺配置时启动阶段直接抛错。 */
     private val gatewayClient: SeleneTvGatewayClient? by lazy {
@@ -77,6 +83,96 @@ class TvAppContainer(
      */
     fun createHomeViewModel(): TvHomeViewModel {
         return TvHomeViewModel(loadHome = ::loadHome)
+    }
+
+    /**
+     * 创建搜索 ViewModel。
+     *
+     * @return 搜索 ViewModel。
+     */
+    fun createSearchViewModel(): TvSearchViewModel {
+        return TvSearchViewModel(
+            search = { query ->
+                ensureSession()
+                TvSearchRepository(requireGatewayClient().tvApi).search(query)
+            },
+        )
+    }
+
+    /**
+     * 创建分类视频库 ViewModel。
+     *
+     * @param categoryKey 分类标识。
+     * @return 分类视频库 ViewModel。
+     */
+    fun createVideoLibraryViewModel(categoryKey: String): TvVideoLibraryViewModel {
+        return TvVideoLibraryViewModel(
+            categoryKey = categoryKey,
+            loadCategory = ::loadVideoLibraryState,
+        )
+    }
+
+    /**
+     * 创建播放历史 ViewModel。
+     *
+     * @return 播放历史 ViewModel。
+     */
+    fun createHistoryViewModel(): TvHistoryViewModel {
+        return TvHistoryViewModel(
+            loadHistory = {
+                ensureSession()
+                TvPlaybackRepository(api = requireGatewayClient().tvApi)
+                    .readContinueWatching()
+            },
+            deleteHistoryItem = { videoId ->
+                ensureSession()
+                TvPlaybackRepository(api = requireGatewayClient().tvApi)
+                    .deletePlayRecordByKey(videoId)
+            },
+            clearHistory = {
+                ensureSession()
+                TvPlaybackRepository(api = requireGatewayClient().tvApi)
+                    .clearPlayRecords()
+            },
+        )
+    }
+
+    /**
+     * 创建收藏夹 ViewModel。
+     *
+     * @return 收藏夹 ViewModel。
+     */
+    fun createFavoritesViewModel(): TvFavoritesViewModel {
+        return TvFavoritesViewModel(
+            loadFavorites = {
+                ensureSession()
+                TvFavoritesRepository(requireGatewayClient().tvApi).readFavorites()
+            },
+            deleteFavoriteItem = { videoId ->
+                ensureSession()
+                TvFavoritesRepository(requireGatewayClient().tvApi)
+                    .deleteFavoriteByKey(videoId)
+            },
+            clearFavorites = {
+                ensureSession()
+                TvFavoritesRepository(requireGatewayClient().tvApi).clearFavorites()
+            },
+        )
+    }
+
+    /**
+     * 加载分类视频库状态。
+     *
+     * @param categoryKey 分类标识。
+     * @return 已带远端视频列表的分类状态。
+     */
+    suspend fun loadVideoLibraryState(categoryKey: String): TvVideoLibraryUiState {
+        ensureSession()
+        val baseState = TvVideoLibraryUiState.forCategory(categoryKey)
+        return baseState.copy(
+            videos = TvVideoLibraryRepository(requireGatewayClient().tvApi)
+                .loadCategory(categoryKey),
+        )
     }
 
     /**
@@ -100,7 +196,7 @@ class TvAppContainer(
         ensureSession()
         return TvHomeRepository(
             api = requireGatewayClient().tvApi,
-            playbackRepository = playbackRepository,
+            playbackRepository = TvPlaybackRepository(api = requireGatewayClient().tvApi),
         ).loadHome()
     }
 

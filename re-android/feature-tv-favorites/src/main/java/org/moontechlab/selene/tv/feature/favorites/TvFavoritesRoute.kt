@@ -8,6 +8,8 @@ import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageStatChipData
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
+import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
+import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 
 /**
  * TV 收藏夹路由。
@@ -28,6 +30,24 @@ fun TvFavoritesRoute(
         ),
         modifier = Modifier.fillMaxSize(),
     ) {
+        if (state.isLoading) {
+            TvStatePanel(
+                kind = TvStatePanelKind.Loading,
+                title = "收藏夹加载中",
+                message = "正在读取收藏内容。",
+            )
+            return@TvPageScaffold
+        }
+
+        if (!state.errorMessage.isNullOrBlank()) {
+            TvStatePanel(
+                kind = TvStatePanelKind.Error,
+                title = "收藏夹加载失败",
+                message = state.errorMessage,
+            )
+            return@TvPageScaffold
+        }
+
         if (state.videos.isEmpty()) {
             TvEmptyStatePanel(
                 title = "收藏夹还没有内容",

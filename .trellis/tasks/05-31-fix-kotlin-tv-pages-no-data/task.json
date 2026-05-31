@@ -1,0 +1,30 @@
+{
+  "id": "fix-kotlin-tv-pages-no-data",
+  "name": "fix-kotlin-tv-pages-no-data",
+  "title": "修复 Kotlin TV 页面接口无数据",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-05-31",
+  "completedAt": "2026-05-31",
+  "branch": null,
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "05-31-kotlin-tv-network-repositories",
+    "05-31-kotlin-tv-list-search-data",
+    "05-31-kotlin-tv-history-favorites-data"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

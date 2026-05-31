@@ -267,6 +267,48 @@ class TvHomeViewModel(
     }
 }
 
+/**
+ * TV 分类视频库 ViewModel。
+ *
+ * @property categoryKey 分类标识。
+ * @property loadCategory 分类数据加载函数。
+ */
+class TvVideoLibraryViewModel(
+    categoryKey: String,
+    private val loadCategory: suspend (categoryKey: String) -> TvVideoLibraryUiState,
+) {
+    /** 分类内部状态。 */
+    private val mutableState = MutableStateFlow(TvVideoLibraryUiState.forCategory(categoryKey))
+
+    /** 分类公开状态。 */
+    val state: StateFlow<TvVideoLibraryUiState> = mutableState
+
+    /**
+     * 加载分类数据。
+     */
+    suspend fun load() {
+        val categoryKey = mutableState.value.categoryKey
+        mutableState.value = mutableState.value.copy(
+            isLoading = true,
+            errorMessage = null,
+        )
+        runCatching { loadCategory(categoryKey) }
+            .onSuccess { payload ->
+                mutableState.value = payload.copy(
+                    isLoading = false,
+                    errorMessage = null,
+                )
+            }
+            .onFailure { throwable ->
+                // 分类接口失败必须展示错误态，避免误判为空分类。
+                mutableState.value = TvVideoLibraryUiState.forCategory(categoryKey).copy(
+                    isLoading = false,
+                    errorMessage = throwable.message ?: "分类内容加载失败",
+                )
+            }
+    }
+}
+
 /** 首页主菜单标识。 */
 const val HOME_TAB_KEY = "home"
 

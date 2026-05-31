@@ -6,8 +6,12 @@ import org.junit.Test
 import org.moontechlab.selene.tv.core.network.SeleneTvApi
 import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
 import org.moontechlab.selene.tv.core.network.SessionPayload
+import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeSectionResponse
+import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
+import org.moontechlab.selene.tv.core.network.model.TvSearchResourceResponse
+import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
 import org.moontechlab.selene.tv.core.network.model.TvVideoCardResponse
 
 /**
@@ -113,6 +117,43 @@ private class FakeGatewayClient : SeleneTvGatewayClient {
                     ),
                 ),
             )
+        }
+
+        /** 返回测试播放历史。 */
+        override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+            return emptyMap()
+        }
+
+        /** 记录测试播放历史删除。 */
+        override suspend fun deletePlayRecord(key: String) = Unit
+
+        /** 记录测试播放历史清空。 */
+        override suspend fun clearPlayRecords() = Unit
+
+        /** 返回测试收藏夹。 */
+        override suspend fun getFavorites(): Map<String, TvFavoriteResponse> {
+            return emptyMap()
+        }
+
+        /** 记录测试收藏删除。 */
+        override suspend fun deleteFavorite(key: String) = Unit
+
+        /** 记录测试收藏清空。 */
+        override suspend fun clearFavorites() = Unit
+
+        /** 返回测试搜索历史。 */
+        override suspend fun getSearchHistory(): List<String> {
+            return emptyList()
+        }
+
+        /** 返回测试搜索资源。 */
+        override suspend fun getSearchResources(): List<TvSearchResourceResponse> {
+            return emptyList()
+        }
+
+        /** 返回测试搜索响应。 */
+        override suspend fun search(query: String): TvSearchResponse {
+            return TvSearchResponse(results = emptyList())
         }
     }
 

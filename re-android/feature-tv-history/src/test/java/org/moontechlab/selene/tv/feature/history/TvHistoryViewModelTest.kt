@@ -23,6 +23,7 @@ class TvHistoryViewModelTest {
         viewModel.load()
 
         assertThat(viewModel.state.value.videos.map { it.id }).containsExactly("video-1")
+        assertThat(viewModel.state.value.errorMessage).isNull()
     }
 
     /**
@@ -34,7 +35,7 @@ class TvHistoryViewModelTest {
         val viewModel = TvHistoryViewModel(
             loadHistory = {
                 listOf(
-                    TvVideoCard(id = "video-1", title = "第一集", posterUrl = ""),
+                    TvVideoCard(id = "video-1", source = "source-a", title = "第一集", posterUrl = ""),
                     TvVideoCard(id = "video-2", title = "第二集", posterUrl = ""),
                 )
             },
@@ -44,7 +45,7 @@ class TvHistoryViewModelTest {
         viewModel.load()
         viewModel.deleteVideo("video-1")
 
-        assertThat(deletedIds).containsExactly("video-1")
+        assertThat(deletedIds).containsExactly("source-a+video-1")
         assertThat(viewModel.state.value.videos.map { it.id }).containsExactly("video-2")
     }
 
@@ -66,5 +67,23 @@ class TvHistoryViewModelTest {
 
         assertThat(cleared).isTrue()
         assertThat(viewModel.state.value.videos).isEmpty()
+    }
+
+    /**
+     * 加载失败时应进入错误态，不能静默显示空列表。
+     */
+    @Test
+    fun load_exposes_failure_message() = runTest {
+        val viewModel = TvHistoryViewModel(
+            loadHistory = {
+                error("历史接口失败")
+            },
+        )
+
+        viewModel.load()
+
+        assertThat(viewModel.state.value.videos).isEmpty()
+        assertThat(viewModel.state.value.isLoading).isFalse()
+        assertThat(viewModel.state.value.errorMessage).contains("历史接口失败")
     }
 }

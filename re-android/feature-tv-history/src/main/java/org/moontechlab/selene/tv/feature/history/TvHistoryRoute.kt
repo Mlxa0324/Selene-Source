@@ -8,6 +8,8 @@ import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageStatChipData
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
+import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
+import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 
 /**
  * TV 播放历史路由。
@@ -28,6 +30,24 @@ fun TvHistoryRoute(
         ),
         modifier = Modifier.fillMaxSize(),
     ) {
+        if (state.isLoading) {
+            TvStatePanel(
+                kind = TvStatePanelKind.Loading,
+                title = "历史加载中",
+                message = "正在读取最近播放记录。",
+            )
+            return@TvPageScaffold
+        }
+
+        if (!state.errorMessage.isNullOrBlank()) {
+            TvStatePanel(
+                kind = TvStatePanelKind.Error,
+                title = "历史加载失败",
+                message = state.errorMessage,
+            )
+            return@TvPageScaffold
+        }
+
         if (state.videos.isEmpty()) {
             TvEmptyStatePanel(
                 title = "历史列表为空",

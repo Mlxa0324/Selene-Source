@@ -30,6 +30,7 @@ class TvSearchViewModelTest {
 
         assertThat(viewModel.state.value.searchHistory).contains("剑来")
         assertThat(viewModel.state.value.resultGroups).isNotEmpty()
+        assertThat(viewModel.state.value.errorMessage).isNull()
     }
 
     /**
@@ -61,5 +62,41 @@ class TvSearchViewModelTest {
         viewModel.submitQuery("  剑来  ")
 
         assertThat(viewModel.state.value.searchHistory).containsExactly("剑来")
+    }
+
+    /**
+     * 搜索成功但无结果时应展示空结果分组而非错误态。
+     */
+    @Test
+    fun submitQuery_keeps_empty_result_as_success_state() = runTest {
+        val viewModel = TvSearchViewModel(
+            search = { query ->
+                TvSearchPayload(query = query, results = emptyList())
+            },
+        )
+
+        viewModel.submitQuery("不存在")
+
+        assertThat(viewModel.state.value.isLoading).isFalse()
+        assertThat(viewModel.state.value.errorMessage).isNull()
+        assertThat(viewModel.state.value.resultGroups.single().videos).isEmpty()
+    }
+
+    /**
+     * 搜索失败时应展示错误态，不能静默显示空列表。
+     */
+    @Test
+    fun submitQuery_exposes_failure_message() = runTest {
+        val viewModel = TvSearchViewModel(
+            search = {
+                error("搜索接口失败")
+            },
+        )
+
+        viewModel.submitQuery("剑来")
+
+        assertThat(viewModel.state.value.isLoading).isFalse()
+        assertThat(viewModel.state.value.errorMessage).contains("搜索接口失败")
+        assertThat(viewModel.state.value.resultGroups).isEmpty()
     }
 }

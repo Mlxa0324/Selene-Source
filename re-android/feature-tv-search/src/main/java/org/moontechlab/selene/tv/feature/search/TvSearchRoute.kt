@@ -10,6 +10,8 @@ import org.moontechlab.selene.tv.core.design.layout.TvPageStatChipData
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
+import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
+import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 
 /**
  * TV 搜索路由。
@@ -108,12 +110,20 @@ fun TvSearchRoute(
         if (state.resultGroups.isEmpty()) {
             TvPageSection(
                 title = "搜索结果",
-                hint = "确认关键词开始搜索",
+                hint = state.errorMessage ?: "确认关键词开始搜索",
             ) {
-                TvEmptyStatePanel(
-                    title = "暂无搜索结果",
-                    message = "选择历史或热词，也可以在搜索入口输入片名。",
-                )
+                if (!state.errorMessage.isNullOrBlank()) {
+                    TvStatePanel(
+                        kind = TvStatePanelKind.Error,
+                        title = "搜索失败",
+                        message = state.errorMessage,
+                    )
+                } else {
+                    TvEmptyStatePanel(
+                        title = "暂无搜索结果",
+                        message = "选择历史或热词，也可以在搜索入口输入片名。",
+                    )
+                }
             }
         } else {
             state.resultGroups.forEach { group ->

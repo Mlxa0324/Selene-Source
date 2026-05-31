@@ -6,19 +6,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.app.TvAppContainer
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
 import org.moontechlab.selene.tv.feature.detail.TvDetailRoute
 import org.moontechlab.selene.tv.feature.home.TvHomeRoute
 import org.moontechlab.selene.tv.feature.home.TvVideoLibraryRoute
-import org.moontechlab.selene.tv.feature.home.TvVideoLibraryUiState
 import org.moontechlab.selene.tv.feature.live.TvLiveRoute
 import org.moontechlab.selene.tv.feature.player.TvPlayerRoute
 import org.moontechlab.selene.tv.feature.search.TvSearchRoute
@@ -52,33 +53,72 @@ fun TvNavGraph(
             TvHomeRoute(state = homeState)
         }
         composable(TvDestination.Movie.route) {
-            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("movie"))
+            TvRemoteVideoLibraryRoute(
+                categoryKey = "movie",
+                appContainer = appContainer,
+            )
         }
         composable(TvDestination.Tv.route) {
-            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("tv"))
+            TvRemoteVideoLibraryRoute(
+                categoryKey = "tv",
+                appContainer = appContainer,
+            )
         }
         composable(TvDestination.Anime.route) {
-            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("anime"))
+            TvRemoteVideoLibraryRoute(
+                categoryKey = "anime",
+                appContainer = appContainer,
+            )
         }
         composable(TvDestination.Show.route) {
-            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("show"))
+            TvRemoteVideoLibraryRoute(
+                categoryKey = "show",
+                appContainer = appContainer,
+            )
         }
         composable(TvDestination.Search.route) {
+            val searchViewModel = remember(appContainer) {
+                appContainer.createSearchViewModel()
+            }
+            val searchState by searchViewModel.state.collectAsState()
+            val searchScope = rememberCoroutineScope()
             TvSearchRoute(
+                state = searchState,
+                onQuerySelected = { query ->
+                    searchScope.launch {
+                        searchViewModel.submitQuery(query)
+                    }
+                },
                 onVideoClick = { videoId ->
                     navController.navigate(TvDestination.Detail.createRoute(videoId))
                 },
             )
         }
         composable(TvDestination.History.route) {
+            val historyViewModel = remember(appContainer) {
+                appContainer.createHistoryViewModel()
+            }
+            val historyState by historyViewModel.state.collectAsState()
+            LaunchedEffect(historyViewModel) {
+                historyViewModel.load()
+            }
             TvHistoryRoute(
+                state = historyState,
                 onVideoClick = { videoId ->
                     navController.navigate(TvDestination.Detail.createRoute(videoId))
                 },
             )
         }
         composable(TvDestination.Favorites.route) {
+            val favoritesViewModel = remember(appContainer) {
+                appContainer.createFavoritesViewModel()
+            }
+            val favoritesState by favoritesViewModel.state.collectAsState()
+            LaunchedEffect(favoritesViewModel) {
+                favoritesViewModel.load()
+            }
             TvFavoritesRoute(
+                state = favoritesState,
                 onVideoClick = { videoId ->
                     navController.navigate(TvDestination.Detail.createRoute(videoId))
                 },
@@ -125,4 +165,25 @@ fun TvNavGraph(
             TvPlayerRoute()
         }
     }
+}
+
+/**
+ * 远端分类视频库路由。
+ *
+ * @param categoryKey 分类标识。
+ * @param appContainer 应用依赖容器。
+ */
+@Composable
+private fun TvRemoteVideoLibraryRoute(
+    categoryKey: String,
+    appContainer: TvAppContainer,
+) {
+    val viewModel = remember(categoryKey, appContainer) {
+        appContainer.createVideoLibraryViewModel(categoryKey)
+    }
+    val state by viewModel.state.collectAsState()
+    LaunchedEffect(categoryKey, appContainer) {
+        viewModel.load()
+    }
+    TvVideoLibraryRoute(state = state)
 }

@@ -8,9 +8,13 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
  * TV 收藏夹界面状态。
  *
  * @property videos 收藏视频列表。
+ * @property isLoading 是否正在加载。
+ * @property errorMessage 加载失败文案。
  */
 data class TvFavoritesUiState(
     val videos: List<TvVideoCard> = emptyList(),
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 /**
@@ -33,8 +37,22 @@ class TvFavoritesViewModel(
 
     /** 加载收藏夹。 */
     suspend fun load() {
-        // 收藏页保持独立页面语义，不复用首页内嵌 tab 状态。
-        mutableState.value = TvFavoritesUiState(videos = loadFavorites())
+        mutableState.value = mutableState.value.copy(
+            isLoading = true,
+            errorMessage = null,
+        )
+        runCatching { loadFavorites() }
+            .onSuccess { videos ->
+                // 收藏页保持独立页面语义，不复用首页内嵌 tab 状态。
+                mutableState.value = TvFavoritesUiState(videos = videos)
+            }
+            .onFailure { throwable ->
+                mutableState.value = mutableState.value.copy(
+                    videos = emptyList(),
+                    isLoading = false,
+                    errorMessage = throwable.message ?: "收藏夹加载失败",
+                )
+            }
     }
 
     /**
@@ -44,7 +62,8 @@ class TvFavoritesViewModel(
      */
     suspend fun deleteVideo(videoId: String) {
         // 单条删除成功后只移除当前卡片，避免整页重新请求打断焦点。
-        deleteFavoriteItem(videoId)
+        val target = mutableState.value.videos.firstOrNull { video -> video.id == videoId }
+        deleteFavoriteItem(target?.recordKey ?: videoId)
         mutableState.value = mutableState.value.copy(
             videos = mutableState.value.videos.filterNot { it.id == videoId },
         )
@@ -57,3 +76,7 @@ class TvFavoritesViewModel(
         mutableState.value = TvFavoritesUiState()
     }
 }
+
+/** 后端收藏删除 key。 */
+private val TvVideoCard.recordKey: String
+    get() = if (source.isBlank()) id else "$source+$id"

@@ -8,9 +8,13 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
  * TV 播放历史界面状态。
  *
  * @property videos 历史视频列表。
+ * @property isLoading 是否正在加载。
+ * @property errorMessage 加载失败文案。
  */
 data class TvHistoryUiState(
     val videos: List<TvVideoCard> = emptyList(),
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 /**
@@ -33,8 +37,22 @@ class TvHistoryViewModel(
 
     /** 加载播放历史。 */
     suspend fun load() {
-        // 历史页保持独立页面语义，不影响首页当前焦点状态。
-        mutableState.value = TvHistoryUiState(videos = loadHistory())
+        mutableState.value = mutableState.value.copy(
+            isLoading = true,
+            errorMessage = null,
+        )
+        runCatching { loadHistory() }
+            .onSuccess { videos ->
+                // 历史页保持独立页面语义，不影响首页当前焦点状态。
+                mutableState.value = TvHistoryUiState(videos = videos)
+            }
+            .onFailure { throwable ->
+                mutableState.value = mutableState.value.copy(
+                    videos = emptyList(),
+                    isLoading = false,
+                    errorMessage = throwable.message ?: "播放历史加载失败",
+                )
+            }
     }
 
     /**
@@ -44,7 +62,8 @@ class TvHistoryViewModel(
      */
     suspend fun deleteVideo(videoId: String) {
         // 先调用外部删除逻辑，成功后再更新当前页面列表。
-        deleteHistoryItem(videoId)
+        val target = mutableState.value.videos.firstOrNull { video -> video.id == videoId }
+        deleteHistoryItem(target?.recordKey ?: videoId)
         mutableState.value = mutableState.value.copy(
             videos = mutableState.value.videos.filterNot { it.id == videoId },
         )
@@ -57,3 +76,7 @@ class TvHistoryViewModel(
         mutableState.value = TvHistoryUiState()
     }
 }
+
+/** 后端播放记录删除 key。 */
+private val TvVideoCard.recordKey: String
+    get() = if (source.isBlank()) id else "$source+$id"
