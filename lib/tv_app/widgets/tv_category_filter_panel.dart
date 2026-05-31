@@ -130,7 +130,7 @@ class _TvCategoryFilterPanelState extends State<TvCategoryFilterPanel> {
   static const double _expandedRightPadding = 0;
 
   /// 展开态顶部留白。
-  static const double _expandedTopPadding = 6;
+  static const double _expandedTopPadding = 16;
 
   /// 展开态底部留白。
   static const double _expandedBottomPadding = 14;

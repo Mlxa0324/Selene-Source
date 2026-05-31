@@ -779,7 +779,7 @@ class UserDataService {
   // 获取豆瓣图片源设置（返回key值）
   static Future<String> getDoubanImageSourceKey() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_doubanImageSourceKey) ?? 'direct';
+    return prefs.getString(_doubanImageSourceKey) ?? 'official_cdn';
   }
 
   // 获取豆瓣图片源显示名称
@@ -832,7 +832,7 @@ class UserDataService {
       case 'cdn_aliyun':
         return '豆瓣 CDN By CMLiussss（阿里云）';
       default:
-        return '直连';
+        return '豆瓣官方精品 CDN';
     }
   }
 

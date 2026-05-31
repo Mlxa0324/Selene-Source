@@ -35,6 +35,15 @@ void main() {
         await TvThemeService.loadSavedThemeKey(), TvThemePalette.netflixRedKey);
   });
 
+  test('TV theme service uses Netflix red as default theme key', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    expect(
+      await TvThemeService.loadSavedThemeKey(),
+      TvThemePalette.netflixRedKey,
+    );
+  });
+
   test('TV theme service persists selected background key', () async {
     SharedPreferences.setMockInitialValues({});
 
@@ -53,6 +62,16 @@ void main() {
       TvFocusEffectMode.magnifier.key,
     );
 
+    expect(
+      await TvThemeService.loadSavedFocusEffectModeKey(),
+      TvFocusEffectMode.magnifier.key,
+    );
+  });
+
+  test('TV focus effect defaults to magnifier and lists it first', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    expect(TvFocusEffectMode.values.first, TvFocusEffectMode.magnifier);
     expect(
       await TvThemeService.loadSavedFocusEffectModeKey(),
       TvFocusEffectMode.magnifier.key,

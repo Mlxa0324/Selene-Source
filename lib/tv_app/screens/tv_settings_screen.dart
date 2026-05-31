@@ -82,9 +82,9 @@ class TvSettingsData {
     required this.serverUrl,
     required this.username,
     required this.password,
-    this.themeKey = TvThemePalette.ivyGreenKey,
+    this.themeKey = TvThemePalette.netflixRedKey,
     this.backgroundKey = TvThemeBackground.deepBlueKey,
-    this.focusEffectModeKey = TvFocusEffectMode.smoothFrameKey,
+    this.focusEffectModeKey = TvFocusEffectMode.magnifierKey,
     required this.adFilterEnabled,
     required this.doubanImageSource,
     required this.danmakuBaseApi,
@@ -127,11 +127,11 @@ class TvSettingsData {
       serverUrl: '',
       username: '',
       password: '',
-      themeKey: TvThemePalette.ivyGreenKey,
+      themeKey: TvThemePalette.netflixRedKey,
       backgroundKey: TvThemeBackground.deepBlueKey,
-      focusEffectModeKey: TvFocusEffectMode.smoothFrameKey,
+      focusEffectModeKey: TvFocusEffectMode.magnifierKey,
       adFilterEnabled: true,
-      doubanImageSource: '直连',
+      doubanImageSource: '豆瓣官方精品 CDN',
       danmakuBaseApi: '',
       danmakuSettings: DanmakuSettings(),
     );
@@ -379,13 +379,13 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   DanmakuSettings _danmakuSettings = const DanmakuSettings();
 
   /// 当前豆瓣图片代理。
-  String _doubanImageSource = '直连';
+  String _doubanImageSource = '豆瓣官方精品 CDN';
 
   /// 当前是否开启自动去广告。
   bool _adFilterEnabled = true;
 
   /// 当前 TV 主题色标识。
-  String _themeKey = TvThemePalette.ivyGreen.key;
+  String _themeKey = TvThemePalette.defaultPalette.key;
 
   /// 当前 TV 页面背景色标识。
   String _backgroundKey = TvThemeBackground.deepBlue.key;

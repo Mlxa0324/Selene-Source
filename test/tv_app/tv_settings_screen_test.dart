@@ -36,6 +36,31 @@ void main() {
     expect(_countWidgetsByRuntimeTypeName('_TvOptionRow'), 0);
   });
 
+  testWidgets('renders optimized TV defaults without saved settings',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final selectedChipTexts = _selectedSettingsChipTexts(tester);
+    expect(
+        selectedChipTexts,
+        containsAll(<String>[
+          '奈飞红',
+          '放大镜',
+          '豆瓣官方精品 CDN',
+        ]));
+    expect(TvFocusEffectMode.values.first, TvFocusEffectMode.magnifier);
+  });
+
   testWidgets('renders TV server account and danmaku settings', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -778,21 +803,21 @@ void main() {
     );
     expect(
       initialAdFilterSwitch.activeThumbColor,
-      TvThemePalette.ivyGreen.accent,
+      TvThemePalette.netflixRed.accent,
     );
 
-    await tester.ensureVisible(find.text('奈飞红'));
-    await tester.tap(find.text('奈飞红'));
+    await tester.ensureVisible(find.text('Ivy 绿'));
+    await tester.tap(find.text('Ivy 绿'));
     await tester.pumpAndSettle();
 
-    expect(themeService.themeKey, TvThemePalette.netflixRedKey);
+    expect(themeService.themeKey, TvThemePalette.ivyGreenKey);
 
     final updatedAdFilterSwitch = tester.widget<Switch>(
       find.byKey(const ValueKey('tv-settings-ad-filter-switch')),
     );
     expect(
       updatedAdFilterSwitch.activeThumbColor,
-      TvThemePalette.netflixRed.accent,
+      TvThemePalette.ivyGreen.accent,
     );
   });
 
@@ -1188,4 +1213,36 @@ int _countWidgetsByRuntimeTypeName(String typeName) {
       )
       .evaluate()
       .length;
+}
+
+Set<String> _selectedSettingsChipTexts(WidgetTester tester) {
+  final selectedTexts = <String>{};
+  final decoratedChipFinders = find.byWidgetPredicate(
+    (widget) {
+      if (widget is! AnimatedContainer) {
+        return false;
+      }
+      final decoration = widget.decoration;
+      if (decoration is! BoxDecoration) {
+        return false;
+      }
+      return decoration.color == TvThemePalette.netflixRed.accent ||
+          decoration.color == TvThemePalette.ivyGreen.accent ||
+          decoration.color == TvThemePalette.softBlue.accent;
+    },
+  );
+
+  for (final element in decoratedChipFinders.evaluate()) {
+    final chipText = find.descendant(
+      of: find.byElementPredicate((candidate) => candidate == element),
+      matching: find.byType(Text),
+    );
+    for (final textElement in chipText.evaluate()) {
+      final textWidget = textElement.widget;
+      if (textWidget is Text && textWidget.data != null) {
+        selectedTexts.add(textWidget.data!);
+      }
+    }
+  }
+  return selectedTexts;
 }

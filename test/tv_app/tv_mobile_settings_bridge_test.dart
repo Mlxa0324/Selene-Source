@@ -6,6 +6,16 @@ import 'package:http/http.dart' as http;
 import 'package:selene/tv_app/services/tv_mobile_settings_bridge.dart';
 
 void main() {
+  test('empty mobile settings draft uses official Douban CDN by default', () {
+    final draft = TvMobileSettingsDraft.empty();
+
+    expect(draft.doubanImageSource, '豆瓣官方精品 CDN');
+    expect(
+      TvMobileSettingsDraft.availableDoubanImageSources.first,
+      '豆瓣官方精品 CDN',
+    );
+  });
+
   test('accepts mobile settings draft from local network form page', () async {
     final appliedDraftCompleter = Completer<TvMobileSettingsDraft>();
     final session = await TvMobileSettingsBridge.startSession(

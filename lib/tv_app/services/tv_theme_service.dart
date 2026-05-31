@@ -82,16 +82,19 @@ class TvThemePalette {
 
   /// 所有可选 TV 主题色。
   static const List<TvThemePalette> values = [
-    ivyGreen,
     netflixRed,
+    ivyGreen,
     softBlue,
   ];
+
+  /// 默认 TV 主题色。
+  static const TvThemePalette defaultPalette = netflixRed;
 
   /// 根据存储标识解析主题色。
   static TvThemePalette fromKey(String key) {
     return values.firstWhere(
       (palette) => palette.key == key,
-      orElse: () => ivyGreen,
+      orElse: () => defaultPalette,
     );
   }
 }
@@ -169,16 +172,16 @@ class TvThemeBackground {
 ///
 /// 用于控制首页横向列表和纵向 Grid 的卡片焦点表现，两个效果互斥。
 enum TvFocusEffectMode {
-  /// 平滑移动的共享外边框。
-  smoothFrame(
-    key: 'smooth_frame',
-    label: '平滑外框',
-  ),
-
   /// 仅保留当前卡片自身放大和焦点边框。
   magnifier(
     key: 'magnifier',
     label: '放大镜',
+  ),
+
+  /// 平滑移动的共享外边框。
+  smoothFrame(
+    key: 'smooth_frame',
+    label: '平滑外框',
   );
 
   /// 创建 TV 卡片焦点效果模式。
@@ -194,7 +197,7 @@ enum TvFocusEffectMode {
   final String label;
 
   /// 默认焦点效果。
-  static const TvFocusEffectMode defaultMode = smoothFrame;
+  static const TvFocusEffectMode defaultMode = magnifier;
 
   /// 平滑外框模式标识。
   static const String smoothFrameKey = 'smooth_frame';
@@ -228,7 +231,7 @@ class TvThemeService extends ChangeNotifier {
   static const String focusEffectStorageKey = 'tv_focus_effect_mode_key';
 
   /// 当前主题色。
-  TvThemePalette _palette = TvThemePalette.ivyGreen;
+  TvThemePalette _palette = TvThemePalette.defaultPalette;
 
   /// 当前 TV 页面背景色。
   TvThemeBackground _background = TvThemeBackground.deepBlue;
@@ -299,7 +302,7 @@ class TvThemeService extends ChangeNotifier {
   /// 读取已保存的主题标识。
   static Future<String> loadSavedThemeKey() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(storageKey) ?? TvThemePalette.ivyGreen.key;
+    return prefs.getString(storageKey) ?? TvThemePalette.defaultPalette.key;
   }
 
   /// 读取已保存的背景标识。
@@ -352,13 +355,13 @@ class TvTheme extends InheritedNotifier<TvThemeService> {
     required super.child,
   }) : super(notifier: service);
 
-  /// 获取当前 TV 主题色；没有作用域时回退默认绿。
+  /// 获取当前 TV 主题色；没有作用域时回退默认奈飞红。
   static TvThemePalette of(BuildContext context) {
     return context
             .dependOnInheritedWidgetOfExactType<TvTheme>()
             ?.notifier
             ?.palette ??
-        TvThemePalette.ivyGreen;
+        TvThemePalette.defaultPalette;
   }
 
   /// 获取当前 TV 页面背景配置；没有作用域时回退默认深蓝灰。

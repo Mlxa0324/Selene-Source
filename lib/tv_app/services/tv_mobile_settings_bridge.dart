@@ -20,8 +20,8 @@ class TvMobileSettingsDraft {
 
   /// TV 端支持的图片代理选项。
   static const List<String> availableDoubanImageSources = <String>[
-    '直连',
     '豆瓣官方精品 CDN',
+    '直连',
     '豆瓣 CDN By CMLiussss（腾讯云）',
     '豆瓣 CDN By CMLiussss（阿里云）',
   ];
@@ -32,7 +32,7 @@ class TvMobileSettingsDraft {
       serverUrl: '',
       username: '',
       password: '',
-      doubanImageSource: '直连',
+      doubanImageSource: '豆瓣官方精品 CDN',
       adFilterEnabled: true,
       danmakuBaseApi: '',
     );
@@ -70,14 +70,14 @@ class TvMobileSettingsDraft {
 
   /// 根据手机网页提交的表单字段重建草稿。
   factory TvMobileSettingsDraft.fromFormFields(Map<String, String> fields) {
-    final imageSource = fields['doubanImageSource']?.trim() ?? '直连';
+    final imageSource = fields['doubanImageSource']?.trim() ?? '豆瓣官方精品 CDN';
     return TvMobileSettingsDraft(
       serverUrl: fields['serverUrl']?.trim() ?? '',
       username: fields['username']?.trim() ?? '',
       password: fields['password'] ?? '',
       doubanImageSource: availableDoubanImageSources.contains(imageSource)
           ? imageSource
-          : '直连',
+          : '豆瓣官方精品 CDN',
       adFilterEnabled: _parseBool(fields['adFilterEnabled']),
       danmakuBaseApi: fields['danmakuBaseApi']?.trim() ?? '',
     );
@@ -191,7 +191,8 @@ class TvMobileSettingsBridge {
     required InternetAddress bindAddress,
     required bool allocateNewPort,
   }) async {
-    final preferredPort = allocateNewPort ? _nextPreferredPort + 1 : _nextPreferredPort;
+    final preferredPort =
+        allocateNewPort ? _nextPreferredPort + 1 : _nextPreferredPort;
     var candidatePort = preferredPort;
     while (true) {
       try {
