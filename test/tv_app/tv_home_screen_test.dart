@@ -521,6 +521,59 @@ void main() {
     expect(_focusNodeForVideoCard(tester, 'series_3').hasFocus, isTrue);
   });
 
+  testWidgets('home section up restores the card position left last time',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: const [],
+            hotMovies: List.generate(
+              15,
+              (index) => _videoInfo('movie_$index', '电影 $index'),
+            ),
+            hotTvShows: List.generate(
+              6,
+              (index) => _videoInfo('series_$index', '剧集 $index'),
+            ),
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final firstMovieFocusNode = _focusNodeForVideoCard(tester, 'movie_0');
+    firstMovieFocusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(firstMovieFocusNode.hasFocus, isTrue);
+
+    // 先把热门电影焦点移动到最右侧，模拟用户离开分区前停留在倒数卡片。
+    for (var i = 0; i < 14; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+    }
+
+    final lastMovieFocusNode = _focusNodeForVideoCard(tester, 'movie_14');
+    expect(lastMovieFocusNode.hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForVideoCard(tester, 'series_0').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    // 从下方分区返回热门电影时，应回到离开前的卡片，而不是重置到首卡。
+    expect(lastMovieFocusNode.hasFocus, isTrue);
+    expect(firstMovieFocusNode.hasFocus, isFalse);
+  });
+
   testWidgets(
       'home top nav down initially focuses first item in first non empty section',
       (tester) async {

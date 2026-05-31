@@ -680,7 +680,9 @@ data class PlaybackSnapshot(
 
 ### 6.3 Bad Case
 
-用户在 TV 首页横向列表移动很远后离开分区，返回该分区时列表仍停留在旧位置。该行为不符合 TV 浏览习惯，必须由 `TvHomeSection` 的失焦复位逻辑修正。
+用户在 TV 首页横向列表移动到靠后的卡片后切到下一个分区，再返回时焦点被重置到第一个卡片。该行为会打断用户浏览上下文，必须保留分区最近一次停留的卡片位置，并在上下分区返回时恢复。
+
+用户从顶部导航首次进入首页内容区时，焦点直接落回某个历史卡片，而不是当前首个可用卡片。该行为会让冷启动和首次浏览手感混乱，必须只在用户真实浏览过内容区后才恢复分区记忆；首次从顶部导航下探仍然从首个可用卡片开始。
 
 用户在 TV 搜索页「影片推荐」移动到最右侧后继续按右键没有任何反馈，或推荐卡片获焦放大比例小于首页卡片。该行为会让搜索页和首页的遥控器手感不一致，必须复用 `TvEdgeShake` 与 `TvVideoCard.focusedScale`。
 
@@ -842,18 +844,15 @@ ListView.separated(scrollDirection: Axis.horizontal);
 #### Correct
 
 ```dart
-// 分区失去焦点时复位自己的横向列表。
-Focus(
-  onFocusChange: (hasFocus) {
-    if (!hasFocus && controller.hasClients) {
-      controller.jumpTo(0);
-    }
-  },
-  child: ListView.separated(
-    controller: controller,
-    scrollDirection: Axis.horizontal,
-  ),
+// 分区上下切换时保留最近一次停留卡片，首次从顶部导航进入时再显式回到首卡。
+ListView.separated(
+  controller: controller,
+  scrollDirection: Axis.horizontal,
 );
+
+// 顶部导航首次下探内容区时，只重置入口焦点，不清掉分区内部的最近停留位置。
+TvFocusable.resetGroupEntryToFirstFocusable(groupKey);
+TvFocusable.requestRememberedFocusForGroup(groupKey);
 ```
 
 ## 9. Development Notes

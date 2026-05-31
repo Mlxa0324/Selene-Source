@@ -798,6 +798,12 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 避免长按返回键或 `Esc` 时重复弹出多层退出确认。
   bool _exitDialogVisible = false;
 
+  /// 首页根级退出确认武装态。
+  ///
+  /// 第一次返回只回到稳定的根级浏览态，第二次返回才弹退出确认，
+  /// 避免首页首屏已经停在顶部导航时一次误触就直接看到退出弹框。
+  bool _homeExitConfirmArmed = false;
+
   /// 首页横向分区焦点记忆分组。
   static const String _continueWatchingSectionFocusGroup =
       'tv-home-section-继续观看';
@@ -1365,8 +1371,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 构建带收起动画的顶部导航。
   Widget _buildAnimatedTopNav() {
     // 非首页标签页需要和全局 TV 页面背景保持一致，避免顶部区域残留写死底色。
-    final topNavBackgroundColor =
-        _selectedIndex == 0 ? Colors.transparent : TvTheme.backgroundOf(context).color;
+    final topNavBackgroundColor = _selectedIndex == 0
+        ? Colors.transparent
+        : TvTheme.backgroundOf(context).color;
     return AnimatedSwitcher(
       duration: _topNavAnimationDuration,
       switchInCurve: Curves.easeOutCubic,
@@ -1505,7 +1512,6 @@ class _TvHomeScreenState extends State<TvHomeScreen>
                 scrollController: _continueWatchingScrollController,
                 onVideoPressed: _openVideoFromRecord,
                 onVideoLongPressed: _deleteContinueWatchingItem,
-                autofocusFirstItem: true,
                 firstItemFocusNode: _continueWatchingFirstFocusNode,
                 onArrowUpFromAnyItem: _topNavController.requestSelectedFocus,
                 onArrowUpFromFirstItem: _topNavController.requestSelectedFocus,
@@ -2081,6 +2087,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
   /// 首页首次进入时，如果“继续观看”为空，需要显式回退到下一个有内容的分区，
   /// 避免焦点系统按几何距离默认跳到中间列卡片。
   bool _requestFirstAvailableHomeSectionFocus() {
+    _disarmHomeExitConfirm();
     for (final target in _homeSectionFocusTargets()) {
       if (_hasEnteredHomeContentOnce) {
         if (_requestHomeSectionFocus(
@@ -2091,6 +2098,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
         }
         continue;
       }
+      // 首页首次从顶部导航进入内容区时，产品期望从首个可用卡片开始，
+      // 不读取测试预置焦点或重建残留的分区记忆。
+      TvFocusable.resetGroupEntryToFirstFocusable(target.groupKey);
       if (_requestHomeSectionFocus(
         focusGroupKey: target.groupKey,
         fallbackFocusNode: target.firstNode,
@@ -2150,6 +2160,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     required _TvHomeSectionKey currentSection,
     required bool moveForward,
   }) {
+    _disarmHomeExitConfirm();
     final focusTargets = _homeSectionFocusTargets();
     final currentIndex = focusTargets.indexWhere(
       (target) => target.section == currentSection,
@@ -2305,15 +2316,26 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     }
 
     if (_categoryFilterVisible) {
+      _disarmHomeExitConfirm();
       _hideCategoryFilter();
       return;
     }
 
     if (!_topNavController.hasFocus &&
         _topNavController.requestSelectedFocus()) {
+      _homeExitConfirmArmed = true;
       return;
     }
 
+    // 首页根级返回采用“两段式退出”：
+    // 第一次返回只稳定回到根级浏览态，第二次返回才真正弹退出确认。
+    if (!_homeExitConfirmArmed) {
+      _homeExitConfirmArmed = true;
+      _topNavController.requestSelectedFocus();
+      return;
+    }
+
+    _disarmHomeExitConfirm();
     await _showExitConfirmDialog();
   }
 
@@ -2357,6 +2379,9 @@ class _TvHomeScreenState extends State<TvHomeScreen>
     _exitDialogVisible = false;
 
     if (!confirmed || !mounted) {
+      // 用户已经明确看过退出确认但选择取消，仍视为停留在根级退出态，
+      // 下次返回可以直接再次弹框，不必重新经历第一次返回的武装步骤。
+      _homeExitConfirmArmed = true;
       return;
     }
 
@@ -2451,6 +2476,7 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       return;
     }
     setState(() {
+      _homeExitConfirmArmed = false;
       _outgoingTabIndex = _selectedIndex;
       _tabSwitchDirection = index > _selectedIndex ? 1 : -1;
       _selectedIndex = index;
@@ -2459,6 +2485,13 @@ class _TvHomeScreenState extends State<TvHomeScreen>
       _categoryFilterPreferredFocusRowTitle = null;
     });
     _tabSwitchController.forward(from: 0);
+  }
+
+  /// 清理首页根级退出确认武装态。
+  ///
+  /// 用户重新进入内容区、切换标签或关闭弹层后，都应该重新从第一次返回开始计算。
+  void _disarmHomeExitConfirm() {
+    _homeExitConfirmArmed = false;
   }
 
   /// 标签页切换完成后清理旧页面。

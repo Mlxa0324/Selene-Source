@@ -238,7 +238,8 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
 
   /// 当前分区自己的焦点域。
   ///
-  /// 用于判断用户是否已经离开该横向分区，离开后再把横向列表复位到开头。
+  /// 用于判断用户是否已经离开该横向分区，离开后保留横向滚动位置，
+  /// 让上下分区返回时还能恢复到上次停留的卡片。
   final FocusScopeNode _sectionFocusScopeNode = FocusScopeNode(
     debugLabel: 'tv-home-section-scope',
   );
@@ -332,7 +333,9 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
   /// 获取当前分区横向列表的滚动位置。
   ScrollPosition? get _currentScrollPosition {
     final position = _listScrollPosition;
-    if (position == null || !position.hasPixels || !position.hasContentDimensions) {
+    if (position == null ||
+        !position.hasPixels ||
+        !position.hasContentDimensions) {
       final positions = _scrollController.positions;
       if (positions.isEmpty) {
         return null;
@@ -367,7 +370,6 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
           _focusedItemIndex = null;
         });
         _sectionHasFocusedDescendant = false;
-        _resetHorizontalScrollToLeadingEdge();
       });
       return;
     }
@@ -393,18 +395,6 @@ class _TvHomeSectionBodyState extends State<_TvHomeSectionBody> {
       sectionContext,
       alignment: TvFocusScroll.sectionAlignment,
     );
-  }
-
-  /// 当焦点离开整个分区后，把横向列表复位到最左侧。
-  void _resetHorizontalScrollToLeadingEdge() {
-    final position = _currentScrollPosition;
-    if (position == null) {
-      return;
-    }
-    if ((position.pixels - position.minScrollExtent).abs() <= 1) {
-      return;
-    }
-    position.jumpTo(position.minScrollExtent);
   }
 
   /// 当焦点抵达约定卡位后，按卡片步长推动横向列表。
