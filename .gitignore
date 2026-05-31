@@ -127,6 +127,7 @@ test_driver/
 .env
 .env.local
 .env.*.local
+re-android/local.gateway.properties
 
 # IDE specific
 .vscode/

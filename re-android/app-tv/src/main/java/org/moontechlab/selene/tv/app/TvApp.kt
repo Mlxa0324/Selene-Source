@@ -40,6 +40,11 @@ import java.time.format.DateTimeFormatter
 fun TvApp() {
     SeleneTvTheme {
         val navController = rememberNavController()
+        val appContainer = remember {
+            TvAppContainer(
+                gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
+            )
+        }
         val currentBackStackEntry by navController.currentBackStackEntryAsState()
         val currentRoute = currentBackStackEntry?.destination?.route
 
@@ -69,6 +74,7 @@ fun TvApp() {
 
             TvNavGraph(
                 navController = navController,
+                appContainer = appContainer,
                 modifier = Modifier.fillMaxSize(),
             )
         }

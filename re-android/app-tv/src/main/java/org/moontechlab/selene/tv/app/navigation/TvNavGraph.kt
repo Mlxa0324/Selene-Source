@@ -1,13 +1,18 @@
 package org.moontechlab.selene.tv.app.navigation
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import org.moontechlab.selene.tv.app.TvAppContainer
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
 import org.moontechlab.selene.tv.feature.detail.TvDetailRoute
@@ -28,6 +33,7 @@ import org.moontechlab.selene.tv.feature.settings.TvSettingsRoute
 @Composable
 fun TvNavGraph(
     navController: NavHostController,
+    appContainer: TvAppContainer,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
@@ -36,7 +42,14 @@ fun TvNavGraph(
         modifier = modifier,
     ) {
         composable(TvDestination.Home.route) {
-            TvHomeRoute()
+            val homeViewModel = remember(appContainer) {
+                appContainer.createHomeViewModel()
+            }
+            val homeState by homeViewModel.state.collectAsState()
+            LaunchedEffect(homeViewModel) {
+                homeViewModel.load()
+            }
+            TvHomeRoute(state = homeState)
         }
         composable(TvDestination.Movie.route) {
             TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("movie"))

@@ -27,6 +27,7 @@ android {
 dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
     implementation(libs.okhttp)
 
     testImplementation(libs.junit4)

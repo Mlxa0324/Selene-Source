@@ -48,4 +48,18 @@ class SessionCookieStore {
      * @return 当前会话；未配置时返回 null。
      */
     suspend fun readSession(): SessionPayload? = session
+
+    /**
+     * 同步读取当前会话。
+     *
+     * @return 当前会话；未配置时返回 null。
+     */
+    fun readSessionNow(): SessionPayload? = session
+
+    /**
+     * 同步读取当前 Cookie。
+     *
+     * @return 当前 Cookie；未登录时返回 null。
+     */
+    fun currentCookie(): String? = session?.cookie
 }
