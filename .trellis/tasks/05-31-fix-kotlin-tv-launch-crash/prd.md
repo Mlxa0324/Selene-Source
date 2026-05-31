@@ -9,6 +9,7 @@
 - 近期已接入本地后台网关配置，`app-tv` 会读取 `re-android/local.gateway.properties` 中的后台地址、用户名和密码。
 - TV 启动链路会创建应用容器、登录后台并加载首页数据，崩溃可能发生在启动初始化、配置读取、网络客户端创建或首页数据加载阶段。
 - 本地真实网关配置文件必须继续保持 Git 忽略，仅允许提交示例配置与代码修复。
+- 复现日志显示根因是 `OkHttp Dispatcher` 线程抛出 `java.lang.SecurityException: Permission denied (missing INTERNET permission?)`，`app-tv` Manifest 未声明网络权限。
 
 ## Requirements
 
@@ -20,11 +21,12 @@
 
 ## Acceptance Criteria
 
-- [ ] 可以捕获或复现当前打开闪退的错误栈，并记录根因。
-- [ ] 修复后 TV 应用启动不再因为网关配置或后台连接异常闪退。
-- [ ] 相关单元测试、lint 或构建验证通过。
-- [ ] Git 提交只包含本任务相关文件，不包含本地敏感配置。
+- [x] 可以捕获或复现当前打开闪退的错误栈，并记录根因。
+- [x] 修复后 TV 应用启动不再因为网关配置或后台连接异常闪退。
+- [x] 相关单元测试、lint 或构建验证通过。
+- [x] Git 提交只包含本任务相关文件，不包含本地敏感配置。
 
 ## Notes
 
 - 这是轻量崩溃修复任务，当前先保持 PRD-only；若诊断发现需要跨模块重构，再补充 `design.md` 与 `implement.md`。
+- 修复后已重新安装并启动 `org.moontechlab.selene.tv.app/.MainActivity`，日志未再出现 `AndroidRuntime`、`FATAL EXCEPTION`、`missing INTERNET` 或 `Permission denied`。

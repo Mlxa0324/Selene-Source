@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 允许 TV 壳访问本地后台接口。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- 声明当前应用兼容 Android TV 设备。 -->
     <uses-feature
         android:name="android.software.leanback"
@@ -17,7 +20,8 @@
         android:icon="@drawable/tv_icon"
         android:label="Selene TV"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+        android:usesCleartextTraffic="${seleneTvUsesCleartextTraffic}">
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"

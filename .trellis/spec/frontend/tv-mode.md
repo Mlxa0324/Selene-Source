@@ -257,6 +257,8 @@ class TvHomeRepository(
 - 远端分区顺序保持服务端返回顺序，避免原生 TV 首页和 Flutter TV 首页排序不一致。
 - 会话存储至少暴露 `baseUrl / account / cookie` 三个字段；未接入持久化前允许内存实现，但外部调用契约保持不变。
 - 设置仓库保存服务器配置时只保存表单值，不直接触发登录请求，保持 TV 设置页现有语义。
+- `app-tv` Manifest 必须声明 `android.permission.INTERNET`；TV 首页启动会立即登录后台，缺少权限会让 OkHttp 线程抛出 `SecurityException` 并导致打开闪退。
+- 本地后台使用 HTTP 调试时，只允许 debug 包通过 manifest placeholder 开启 `usesCleartextTraffic=true`；release 包默认关闭明文流量。
 
 ### 3.7 原生 TV 功能页路由契约
 

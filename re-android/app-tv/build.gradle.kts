@@ -60,11 +60,21 @@ android {
             "SELENE_TV_PASSWORD",
             (localGatewayProperties.getProperty("SELENE_TV_PASSWORD") ?: "").toBuildConfigString(),
         )
+
+        // Debug 默认服务本地 HTTP 后台；Release 在 buildTypes 中关闭明文流量。
+        manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "true"
     }
 
     buildTypes {
+        debug {
+            // 本地后台常用 HTTP 地址，debug 包允许直连便于 TV 端联调。
+            manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "true"
+        }
+
         release {
+            // Release 默认要求 HTTPS，避免把本地调试策略带到正式包。
             isMinifyEnabled = false
+            manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "false"
         }
     }
 
