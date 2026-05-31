@@ -14,7 +14,7 @@ data class TvServerConfig(
 )
 
 /**
- * TV 偏好存储占位实现。
+ * TV 偏好内存存储实现。
  */
 class TvPreferencesStore {
     /** 当前服务器配置。 */
@@ -32,7 +32,7 @@ class TvPreferencesStore {
         account: String,
         password: String,
     ) {
-        // 首期使用内存存储，后续替换为 DataStore 时保持同名契约。
+        // 首期使用内存存储，替换为 DataStore 时保持同名契约。
         serverConfig = TvServerConfig(
             baseUrl = baseUrl,
             account = account,

@@ -16,7 +16,7 @@ class TvPlaybackRepository(
      * @return 按最近播放排序的影视卡片列表。
      */
     suspend fun readContinueWatching(): List<TvVideoCard> {
-        // 首期先使用内存数据，后续接入播放记录表和进度节流策略。
+        // 首期先使用内存数据，接入播放记录表时保留同一返回契约。
         return continueWatching
     }
 }

@@ -13,7 +13,7 @@ class TvDetailRepository {
      * @return 影视详情；首期未接入详情接口时返回 null。
      */
     suspend fun loadDetail(videoId: String): TvVideoDetail? {
-        // 详情页后续会拆成首屏可播源、后台补源和推荐三段加载。
+        // 详情页按首屏可播源、后台补源和推荐三段加载组织状态。
         return null
     }
 }

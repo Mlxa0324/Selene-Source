@@ -31,4 +31,35 @@ class TvSearchViewModelTest {
         assertThat(viewModel.state.value.searchHistory).contains("剑来")
         assertThat(viewModel.state.value.resultGroups).isNotEmpty()
     }
+
+    /**
+     * 初始状态应提供 TV 搜索热词，保证页面空数据时仍有可选入口。
+     */
+    @Test
+    fun initialState_exposes_hot_queries() {
+        val viewModel = TvSearchViewModel(
+            search = { query ->
+                TvSearchPayload(query = query, results = emptyList())
+            },
+        )
+
+        assertThat(viewModel.state.value.hotQueries).isNotEmpty()
+    }
+
+    /**
+     * 重复搜索同一关键词时历史只保留最新一条。
+     */
+    @Test
+    fun submitQuery_deduplicates_history() = runTest {
+        val viewModel = TvSearchViewModel(
+            search = { query ->
+                TvSearchPayload(query = query, results = emptyList())
+            },
+        )
+
+        viewModel.submitQuery("剑来")
+        viewModel.submitQuery("  剑来  ")
+
+        assertThat(viewModel.state.value.searchHistory).containsExactly("剑来")
+    }
 }

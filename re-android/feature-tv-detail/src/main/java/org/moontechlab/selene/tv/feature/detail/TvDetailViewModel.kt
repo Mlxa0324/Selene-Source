@@ -89,7 +89,7 @@ class TvDetailViewModel(
         )
         val initialResult = runCatching { loadInitialDetail(videoId) }
         val initialDetail = initialResult.getOrElse { throwable ->
-            // 首屏详情失败时直接进入错误态，避免后续补源覆盖真正失败原因。
+            // 首屏详情失败时直接进入错误态，避免后台补源覆盖真正失败原因。
             mutableState.value = TvDetailUiState(
                 isLoading = false,
                 errorMessage = throwable.message ?: "详情加载失败",

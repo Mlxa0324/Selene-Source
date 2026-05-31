@@ -13,7 +13,7 @@ class TvSearchRepository {
      * @return 搜索结果载荷。
      */
     suspend fun search(query: String): TvSearchPayload {
-        // 首期先保留接口契约，后续对齐 Flutter TV 搜索历史、热词和推荐链路。
+        // 首期先保留接口契约，用于对齐 Flutter TV 搜索历史、热词和推荐链路。
         return TvSearchPayload(query = query, results = emptyList())
     }
 }

@@ -27,6 +27,7 @@ data class TvSearchResultGroup(
 data class TvSearchUiState(
     val query: String = "",
     val searchHistory: List<String> = emptyList(),
+    val hotQueries: List<String> = DEFAULT_HOT_QUERIES,
     val resultGroups: List<TvSearchResultGroup> = emptyList(),
     val isLoading: Boolean = false,
 )
@@ -74,3 +75,6 @@ class TvSearchViewModel(
         const val SEARCH_RESULT_GROUP_TITLE = "搜索结果"
     }
 }
+
+/** TV 搜索页默认热词，用于无服务端热词时保持入口可浏览。 */
+private val DEFAULT_HOT_QUERIES = listOf("热门电影", "高分剧集", "动漫新番", "综艺更新")

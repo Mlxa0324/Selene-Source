@@ -51,13 +51,25 @@ fun TvNavGraph(
             TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("show"))
         }
         composable(TvDestination.Search.route) {
-            TvSearchRoute()
+            TvSearchRoute(
+                onVideoClick = { videoId ->
+                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                },
+            )
         }
         composable(TvDestination.History.route) {
-            TvHistoryRoute()
+            TvHistoryRoute(
+                onVideoClick = { videoId ->
+                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                },
+            )
         }
         composable(TvDestination.Favorites.route) {
-            TvFavoritesRoute()
+            TvFavoritesRoute(
+                onVideoClick = { videoId ->
+                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                },
+            )
         }
         composable(TvDestination.Settings.route) {
             TvSettingsRoute()

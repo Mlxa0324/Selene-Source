@@ -10,15 +10,15 @@ Selene Kotlin 原生 Android TV 重建工程。
 - `core-player-api`：统一播放器协议、播放快照、内核枚举与状态模型
 - `core-player-exo`：ExoPlayer 主播放内核
 - `core-player-webview`：WebView 兜底内核与 JS Bridge
-- `feature-tv-*`：首页、搜索、详情、播放历史、收藏夹、设置、直播占位、全屏播放器壳
-- `core-benchmark`：播放器基准记录占位能力
+- `feature-tv-*`：首页、搜索、详情、播放历史、收藏夹、设置、直播、全屏播放器壳
+- `core-benchmark`：播放器基准记录能力
 
 ## 当前交付范围
 
 - 默认使用 `ExoPlayer` 播放
 - 全屏底部菜单支持 `其它 -> 内核切换`
 - 切换到 `WebView` 后会基于播放快照恢复集数、线路与进度
-- `直播` 仍为占位页
+- `直播` 提供频道列表、当前节目和节目单页面状态
 - 暂未接入 `DLNA` 与 `本地离线`
 
 ## 模块结构
@@ -64,4 +64,4 @@ ANDROID_SDK_ROOT=/Users/your-name/Library/Android/sdk \
 ## 说明
 
 - Android TV 清单已补齐 `LEANBACK_LAUNCHER`、`banner`、`icon` 与触摸屏兼容声明
-- 当前 UI 和数据链路已对齐 Flutter TV 端首期行为，但视觉和交互细节仍有继续补齐空间
+- 当前 UI 和数据链路已对齐 Flutter TV 端首期行为，迭代工作按模块验收推进

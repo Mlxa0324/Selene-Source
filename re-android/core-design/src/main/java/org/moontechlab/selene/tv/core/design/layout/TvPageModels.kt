@@ -17,7 +17,7 @@ data class TvPageStatChipData(
  * @property id 海报唯一标识。
  * @property title 海报主标题。
  * @property subtitle 海报副标题。
- * @property posterUrl 海报地址，用于生成占位背景纹理。
+ * @property posterUrl 海报地址，用于生成默认背景纹理。
  */
 data class TvPosterItem(
     val id: String,

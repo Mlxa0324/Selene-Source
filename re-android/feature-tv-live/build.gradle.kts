@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    // 约束 TV 直播占位功能模块的 Android 编译参数。
+    // 约束 TV 直播功能模块的 Android 编译参数。
     namespace = "org.moontechlab.selene.tv.feature.live"
     compileSdk = 35
 
@@ -25,12 +25,13 @@ android {
     }
 
     buildFeatures {
-        // 直播占位页 Route 使用 Compose 实现。
+        // 直播页 Route 使用 Compose 实现。
         compose = true
     }
 }
 
 dependencies {
+    implementation(project(":core-design"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)

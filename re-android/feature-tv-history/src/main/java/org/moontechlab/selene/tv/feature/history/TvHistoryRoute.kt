@@ -1,33 +1,51 @@
 package org.moontechlab.selene.tv.feature.history
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import org.moontechlab.selene.tv.core.design.layout.TvEmptyStatePanel
+import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
+import org.moontechlab.selene.tv.core.design.layout.TvPageStatChipData
+import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
+import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 
 /**
  * TV 播放历史路由。
  *
  * @param state 播放历史界面状态。
+ * @param onVideoClick 视频卡片点击回调。
  */
 @Composable
 fun TvHistoryRoute(
     state: TvHistoryUiState = TvHistoryUiState(),
+    onVideoClick: (String) -> Unit = {},
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(36.dp),
-        contentAlignment = Alignment.Center,
+    TvPageScaffold(
+        title = "播放历史",
+        subtitle = "继续观看 / 最近播放 / 遥控器网格",
+        stats = listOf(
+            TvPageStatChipData("数量", state.videos.size.toString()),
+        ),
+        modifier = Modifier.fillMaxSize(),
     ) {
-        Text(
-            text = "播放历史 (${state.videos.size})",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        if (state.videos.isEmpty()) {
+            TvEmptyStatePanel(
+                title = "历史列表为空",
+                message = "这里会展示最近播放过的内容，方便从上次离开的地方继续。",
+            )
+        } else {
+            TvPosterGrid(
+                items = state.videos.map { video ->
+                    TvPosterItem(
+                        id = video.id,
+                        title = video.title,
+                        subtitle = "继续观看",
+                        posterUrl = video.posterUrl,
+                    )
+                },
+                columns = 5,
+                onItemClick = { item -> onVideoClick(item.id) },
+            )
+        }
     }
 }

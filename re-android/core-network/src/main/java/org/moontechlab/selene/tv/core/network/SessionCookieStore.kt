@@ -34,7 +34,7 @@ class SessionCookieStore {
         account: String,
         cookie: String,
     ) {
-        // 首期先提供可测试内存实现，后续由持久化存储替换。
+        // 首期先提供可测试内存实现，持久化存储替换时保持同一接口。
         session = SessionPayload(
             baseUrl = baseUrl,
             account = account,

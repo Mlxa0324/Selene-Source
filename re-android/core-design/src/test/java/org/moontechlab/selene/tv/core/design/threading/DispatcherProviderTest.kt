@@ -11,7 +11,7 @@ import org.junit.Test
 class DispatcherProviderTest {
 
     /**
-     * 验证四类调度器必须是不同实例，避免后续把播放与数据任务压到同一线程。
+     * 验证四类调度器必须是不同实例，避免把播放与数据任务压到同一线程。
      */
     @Test
     fun provider_exposes_distinct_dispatchers_for_ui_playback_io_and_default() {

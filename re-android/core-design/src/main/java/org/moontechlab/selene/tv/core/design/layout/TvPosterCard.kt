@@ -136,7 +136,7 @@ private fun posterBrushColors(seed1: String, seed2: String): List<Color> {
  */
 private fun posterCaption(posterUrl: String): String {
     if (posterUrl.isBlank()) {
-        return "海报占位"
+        return "默认海报"
     }
     val host = runCatching {
         java.net.URI(posterUrl).host

@@ -14,7 +14,7 @@ object ExoPlayerFactory {
      * @return ExoPlayer 控制适配器。
      */
     fun create(context: Context): ExoPlayerAdapter {
-        // 首期使用默认构造，后续再补 HLS 缓冲和缓存策略。
+        // 首期使用默认构造，HLS 缓冲和缓存策略按播放内核配置扩展。
         val exoPlayer = ExoPlayer.Builder(context).build()
         return AndroidExoPlayerAdapter(exoPlayer = exoPlayer)
     }

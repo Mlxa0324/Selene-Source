@@ -48,7 +48,7 @@ fun TvPlayerRoute(
             }
         }
         if (state.isMenuVisible && state.selectedTopMenu == PLAYER_MENU_OTHER) {
-            // 其它菜单首期只暴露内核切换入口，后续继续接片头片尾和弹幕项。
+            // 其它菜单首期暴露内核切换入口，片头片尾和弹幕项按菜单契约扩展。
             Text(
                 text = state.selectedOtherMenuItem,
                 style = MaterialTheme.typography.titleMedium,

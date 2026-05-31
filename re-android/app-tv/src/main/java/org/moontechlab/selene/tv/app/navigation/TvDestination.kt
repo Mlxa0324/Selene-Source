@@ -59,7 +59,7 @@ sealed class TvDestination(
     data object Settings : TvDestination("settings", "设置")
 
     /**
-     * 直播占位页路由。
+     * 直播页路由。
      */
     data object Live : TvDestination("live", "直播")
 

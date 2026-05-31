@@ -26,7 +26,7 @@ class PlayerBenchmarkRecorder {
      * @param event benchmark 事件。
      */
     fun record(event: PlayerBenchmarkEvent) {
-        // 记录 seek、切源、切内核耗时，为后续缩减 WebView 使用范围提供依据。
+        // 记录 seek、切源、切内核耗时，为评估 WebView 使用范围提供依据。
         events += event
     }
 
