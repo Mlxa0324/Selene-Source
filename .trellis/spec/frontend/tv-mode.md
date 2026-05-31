@@ -258,6 +258,55 @@ class TvHomeRepository(
 - 会话存储至少暴露 `baseUrl / account / cookie` 三个字段；未接入持久化前允许内存实现，但外部调用契约保持不变。
 - 设置仓库保存服务器配置时只保存表单值，不直接触发登录请求，保持 TV 设置页现有语义。
 
+### 3.7 原生 TV 功能页路由契约
+
+```kotlin
+@Composable
+fun TvSearchRoute(
+    state: TvSearchUiState = TvSearchUiState(),
+    onQuerySelected: (String) -> Unit = {},
+    onVideoClick: (String) -> Unit = {},
+)
+
+@Composable
+fun TvHistoryRoute(
+    state: TvHistoryUiState = TvHistoryUiState(),
+    onVideoClick: (String) -> Unit = {},
+)
+
+@Composable
+fun TvFavoritesRoute(
+    state: TvFavoritesUiState = TvFavoritesUiState(),
+    onVideoClick: (String) -> Unit = {},
+)
+
+@Composable
+fun TvSettingsRoute(
+    state: TvSettingsUiState = TvSettingsUiState(),
+    onDanmakuMatchClick: () -> Unit = {},
+)
+
+@Composable
+fun TvLiveRoute(
+    state: TvLiveUiState = TvLiveUiState(),
+    onChannelClick: (String) -> Unit = {},
+)
+```
+
+实现要求：
+
+- `feature-tv-*` 页面只接收 UI 状态和业务回调，不直接持有 `NavController`。
+- `app-tv` 的 `TvNavGraph` 负责把视频卡片点击统一跳转到 `TvDestination.Detail.createRoute(videoId)`。
+- 搜索页必须至少提供搜索入口、搜索历史、搜索热词和结果区；无结果时显示正式空态，不使用开发计划文案。
+- 历史和收藏 ViewModel 必须暴露 `load / deleteVideo / clear` 三类状态动作，并在删除成功后同步当前列表。
+- 设置页必须展示服务器配置、弹幕匹配、播放媒体、外观焦点四组入口；弹幕手动匹配必须通过显式回调暴露给宿主。
+- 直播页必须建模频道、当前节目和节目单；无频道或节目单时使用正式空态，不展示“开发中/占位”文案。
+- 全仓 TV 用户可见 placeholder 扫描命令固定为：
+
+```bash
+rg "后续接入|临时占位|占位|正在开发|后续|placeholder|TODO|骨架" re-android --glob '!**/build/**'
+```
+
 测试要求：
 
 - `SessionCookieStoreTest.saveSession_persists_base_url_account_and_cookie` 必须覆盖服务器地址、账号和 Cookie 的保存读取。

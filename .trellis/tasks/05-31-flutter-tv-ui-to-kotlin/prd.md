@@ -17,8 +17,8 @@
 - Flutter TV 关键组件包括 `TvDesignCanvas`、`TvTopNav`、`TvFocusable`、`TvVideoCard`、`TvVideoGrid`、`TvHomeSection`、`TvBackHandler`、`TvEdgeShake`、TV 确认弹窗与弹幕 overlay。
 - Flutter TV 规格已记录在 `.trellis/spec/frontend/tv-mode.md`，包含设计视口、顶部导航、焦点、详情页分段加载、播放记录、设置桥接等契约。
 - Kotlin 工程位于 `re-android/`，当前已有多模块骨架：`app-tv`、`core-design`、`core-data`、`core-network`、`core-player-*`、`feature-tv-*`。
-- Kotlin README 明确当前 UI 和数据链路仅对齐首期行为，视觉和交互细节仍有补齐空间。
-- Kotlin 当前 `TvNavGraph` 的播放器路由仍是 `TvPlayerPlaceholder`，详情页和部分页面仍存在骨架/占位文案。
+- Kotlin README 明确当前 UI 和数据链路已对齐 Flutter TV 端首期行为，迭代工作按模块验收推进。
+- Kotlin 当前 `TvNavGraph` 已接入真实详情、播放器和功能页路由，TV 页面已清理用户可见占位文案。
 - 工作区已有大量 `re-android/` 未提交改动，本任务实施时必须先识别并保护这些既有改动。
 
 ## Requirements
@@ -55,17 +55,17 @@
 
 ## Acceptance Criteria
 
-- [ ] 四个子任务均完成并归档。
-- [ ] `re-android/` 中不再存在面向最终用户的 TV 页面骨架占位文案，例如“后续再接”“占位”“骨架已接入”等。
-- [ ] Kotlin TV 首页具备 Flutter TV 同等顶部导航、快捷入口、时间展示、分区 rail、继续观看、热门、历史、收藏和空/加载/错误状态。
-- [ ] Kotlin TV 详情页具备 Flutter TV 同等左侧预览/播放器入口、标题信息、线路切换、选集、推荐、首源快速起播、后台补源和错误/加载状态。
-- [ ] Kotlin TV 搜索、视频库、历史、收藏、设置、直播页面与 Flutter TV 对应页面的信息架构和焦点行为一致。
-- [ ] Kotlin TV 全屏播放器壳接入真实 player route，不再使用导航占位；核心菜单和播放快照恢复行为对齐 Flutter TV/现有 Kotlin player 设计。
-- [ ] `core-design` 提供 Flutter TV 关键通用组件的 Compose 等价物，feature 页面不得重复手写同类布局。
-- [ ] 遥控器确认键短按、长按、KeyRepeat、防重复 push、上下左右焦点记忆和自动滚动行为有测试覆盖。
-- [ ] 关键 Kotlin 单元测试通过，至少包括受影响模块的 `testDebugUnitTest`。
-- [ ] Android lint/编译验证在可用环境中通过；如因环境限制无法运行，记录具体失败原因。
-- [ ] 最终提交只包含本任务相关文件，不混入已有无关 dirty 改动。
+- [x] 四个子任务均完成并归档。
+- [x] `re-android/` 中不再存在面向最终用户的 TV 页面骨架占位文案，例如“后续再接”“占位”“骨架已接入”等。
+- [x] Kotlin TV 首页具备 Flutter TV 同等顶部导航、快捷入口、时间展示、分区 rail、继续观看、热门、历史、收藏和空/加载/错误状态。
+- [x] Kotlin TV 详情页具备 Flutter TV 同等左侧预览/播放器入口、标题信息、线路切换、选集、推荐、首源快速起播、后台补源和错误/加载状态。
+- [x] Kotlin TV 搜索、视频库、历史、收藏、设置、直播页面与 Flutter TV 对应页面的信息架构和焦点行为一致。
+- [x] Kotlin TV 全屏播放器壳接入真实 player route，不再使用导航占位；核心菜单和播放快照恢复行为对齐 Flutter TV/现有 Kotlin player 设计。
+- [x] `core-design` 提供 Flutter TV 关键通用组件的 Compose 等价物，feature 页面不得重复手写同类布局。
+- [x] 遥控器确认键短按、长按、KeyRepeat、防重复 push、上下左右焦点记忆和自动滚动行为有测试覆盖。
+- [x] 关键 Kotlin 单元测试通过，至少包括受影响模块的 `testDebugUnitTest`。
+- [x] Android lint/编译验证在可用环境中通过；如因环境限制无法运行，记录具体失败原因。
+- [x] 最终提交只包含本任务相关文件，不混入已有无关 dirty 改动。
 
 ## Out of Scope
 
