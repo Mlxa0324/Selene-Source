@@ -1,21 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/video_info.dart';
+import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('vertical grid moves a shared focus frame between cards',
       (tester) async {
+    final themeService = TvThemeService();
+    await themeService.setFocusEffectModeKey(TvFocusEffectMode.smoothFrame.key);
+
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0B0D0E),
-          body: TvVideoGrid(
-            title: '电影',
-            crossAxisCount: 3,
-            videos: List.generate(
-              6,
-              (index) => _videoInfo('grid_$index', '电影 $index'),
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: TvVideoGrid(
+              title: '电影',
+              crossAxisCount: 3,
+              videos: List.generate(
+                6,
+                (index) => _videoInfo('grid_$index', '电影 $index'),
+              ),
             ),
           ),
         ),
@@ -44,19 +57,25 @@ void main() {
 
   testWidgets('vertical grid keeps shared focus frame aligned while scrolling',
       (tester) async {
+    final themeService = TvThemeService();
+    await themeService.setFocusEffectModeKey(TvFocusEffectMode.smoothFrame.key);
+
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0B0D0E),
-          body: SizedBox(
-            height: 520,
-            child: TvVideoGrid(
-              title: '电影',
-              showTitle: false,
-              crossAxisCount: 3,
-              videos: List.generate(
-                18,
-                (index) => _videoInfo('grid_$index', '电影 $index'),
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: SizedBox(
+              height: 320,
+              child: TvVideoGrid(
+                title: '电影',
+                showTitle: false,
+                crossAxisCount: 3,
+                videos: List.generate(
+                  18,
+                  (index) => _videoInfo('grid_$index', '电影 $index'),
+                ),
               ),
             ),
           ),
@@ -65,26 +84,41 @@ void main() {
     );
 
     await tester.pump();
-    _focusNodeForVideoCard(tester, 'grid_4').requestFocus();
+    _focusNodeForVideoCard(tester, 'grid_1').requestFocus();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
 
     final focusFrame = find.byKey(const ValueKey('tv-video-grid-focus-frame'));
-    final firstCoverTop = tester.getTopLeft(_coverFinder(tester, 'grid_4')).dy;
 
-    await tester.drag(
-      find.byKey(const ValueKey('tv-video-grid-scroll')),
-      const Offset(0, -120),
-    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pump();
+
+    expect(_focusNodeForVideoCard(tester, 'grid_4').hasFocus, isTrue);
+
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
 
-    final coverTopLeft = tester.getTopLeft(_coverFinder(tester, 'grid_4'));
-    final frameTopLeft = tester.getTopLeft(focusFrame);
-    expect(coverTopLeft.dy, lessThan(firstCoverTop));
-    expect(frameTopLeft.dx, closeTo(coverTopLeft.dx - 5, 0.1));
-    expect(frameTopLeft.dy, closeTo(coverTopLeft.dy - 5, 0.1));
+    final settledCoverTopLeft =
+        tester.getTopLeft(_coverFinder(tester, 'grid_4'));
+    final settledFrameTopLeft = tester.getTopLeft(focusFrame);
+    expect(
+      tester
+          .state<ScrollableState>(
+            find.byType(Scrollable).first,
+          )
+          .position
+          .pixels,
+      greaterThan(0),
+    );
+    expect(
+      settledFrameTopLeft.dx,
+      closeTo(settledCoverTopLeft.dx - 5, 0.1),
+    );
+    expect(
+      settledFrameTopLeft.dy,
+      closeTo(settledCoverTopLeft.dy - 5, 0.1),
+    );
   });
 }
 

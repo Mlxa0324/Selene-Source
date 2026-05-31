@@ -175,6 +175,13 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   final ValueNotifier<Rect?> _focusedCoverRectNotifier =
       ValueNotifier<Rect?>(null);
 
+  /// 共享焦点框当前移动时长。
+  ///
+  /// 平滑外框在卡片之间切换时保留位移动画；滚动导致封面位置变化时改为立即跟随，
+  /// 避免外框因为追逐滚动中的卡片而短暂扫到标题副标题区域。
+  final ValueNotifier<Duration> _focusFrameDurationNotifier =
+      ValueNotifier<Duration>(_TvVideoGridFocusFrame.duration);
+
   /// 当前获焦卡片的封面定位 Key。
   GlobalKey? _focusedCoverKey;
 
@@ -195,6 +202,11 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   /// Grid 滚动控制器。
   final ScrollController _scrollController = ScrollController();
 
+  /// 当前共享外框跟随序号。
+  ///
+  /// 焦点驱动滚动时，短时间内持续跟踪封面位置，避免共享外框掉在旧坐标。
+  int _focusFrameFollowSerial = 0;
+
   @override
   void initState() {
     super.initState();
@@ -206,6 +218,7 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   void dispose() {
     _scrollController.removeListener(_handleGridScrollChange);
     _scrollController.dispose();
+    _focusFrameDurationNotifier.dispose();
     _focusedCoverRectNotifier.dispose();
     super.dispose();
   }
@@ -240,7 +253,10 @@ class _TvVideoGridState extends State<TvVideoGrid> {
     if (_focusedCoverKey == null) {
       return;
     }
-    _updateFocusFrameForKey(_focusedCoverKey!);
+    _updateFocusFrameForKey(
+      _focusedCoverKey!,
+      duration: Duration.zero,
+    );
   }
 
   /// 记录当前获焦卡片并刷新共享焦点框位置。
@@ -253,10 +269,16 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   }) {
     if (!hasFocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || FocusManager.instance.primaryFocus?.context == null) {
+        if (!mounted) {
           return;
         }
-        final focusedContext = FocusManager.instance.primaryFocus!.context!;
+        final focusedContext = FocusManager.instance.primaryFocus?.context;
+        if (focusedContext == null) {
+          // 焦点切换到下一张卡片的过程中，primaryFocus 可能会短暂为空。
+          // 这里先保留当前外框，等下一帧真正拿到新焦点后再更新，
+          // 避免平滑外框闪回到默认位置或扫过标题副标题区域。
+          return;
+        }
         final stillInsideGrid = _stackKey.currentContext != null &&
             _isDescendantOfGrid(focusedContext);
         if (stillInsideGrid) {
@@ -271,7 +293,11 @@ class _TvVideoGridState extends State<TvVideoGrid> {
 
     if (usesSmoothFrame) {
       _focusedCoverKey = coverKey;
-      _updateFocusFrameForKey(coverKey);
+      _updateFocusFrameForKey(
+        coverKey,
+        duration: _TvVideoGridFocusFrame.duration,
+      );
+      _scheduleFocusFrameFollow(coverKey);
     }
     _maybeExtendVisibleItems(index, crossAxisCount);
     _tryTriggerLoadMore(index, crossAxisCount);
@@ -292,29 +318,93 @@ class _TvVideoGridState extends State<TvVideoGrid> {
   }
 
   /// 根据封面 Key 更新共享焦点框局部区域。
-  void _updateFocusFrameForKey(GlobalKey coverKey) {
+  void _updateFocusFrameForKey(
+    GlobalKey coverKey, {
+    required Duration duration,
+  }) {
+    if (_tryUpdateFocusFrameForKey(
+      coverKey,
+      duration: duration,
+    )) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      final stackContext = _stackKey.currentContext;
-      final coverContext = coverKey.currentContext;
-      if (stackContext == null || coverContext == null) {
-        return;
-      }
-      final stackBox = stackContext.findRenderObject() as RenderBox?;
-      final coverBox = coverContext.findRenderObject() as RenderBox?;
-      if (stackBox == null || coverBox == null || !coverBox.hasSize) {
-        return;
-      }
-      final globalTopLeft = coverBox.localToGlobal(Offset.zero);
-      final localTopLeft = stackBox.globalToLocal(globalTopLeft);
-      final nextRect = localTopLeft & coverBox.size;
-      if (_focusedCoverRectNotifier.value == nextRect) {
-        return;
-      }
-      _focusedCoverRectNotifier.value = nextRect;
+      _tryUpdateFocusFrameForKey(
+        coverKey,
+        duration: duration,
+      );
     });
+  }
+
+  /// 尝试立即用当前渲染树更新共享焦点框。
+  ///
+  /// 焦点切换和滚动中的封面坐标如果已经可读，就直接同步到外框，
+  /// 减少额外等待一帧带来的拖影和扫到文字区域的错觉。
+  bool _tryUpdateFocusFrameForKey(
+    GlobalKey coverKey, {
+    required Duration duration,
+  }) {
+    if (!mounted) {
+      return false;
+    }
+    final stackContext = _stackKey.currentContext;
+    final coverContext = coverKey.currentContext;
+    if (stackContext == null || coverContext == null) {
+      return false;
+    }
+    final stackBox = stackContext.findRenderObject() as RenderBox?;
+    final coverBox = coverContext.findRenderObject() as RenderBox?;
+    if (stackBox == null ||
+        coverBox == null ||
+        !stackBox.attached ||
+        !coverBox.attached ||
+        !coverBox.hasSize) {
+      return false;
+    }
+    final globalTopLeft = coverBox.localToGlobal(Offset.zero);
+    final localTopLeft = stackBox.globalToLocal(globalTopLeft);
+    final nextRect = localTopLeft & coverBox.size;
+    final currentRect = _focusedCoverRectNotifier.value;
+    final shouldSnapToNextRow = duration != Duration.zero &&
+        currentRect != null &&
+        (nextRect.top - currentRect.top).abs() > 1;
+    final effectiveDuration = shouldSnapToNextRow ? Duration.zero : duration;
+    if (_focusFrameDurationNotifier.value != effectiveDuration) {
+      _focusFrameDurationNotifier.value = effectiveDuration;
+    }
+    if (_focusedCoverRectNotifier.value == nextRect) {
+      return true;
+    }
+    _focusedCoverRectNotifier.value = nextRect;
+    return true;
+  }
+
+  /// 在焦点切换后的短窗口内持续跟踪封面位置。
+  ///
+  /// `Scrollable.ensureVisible` 的滚动动画会持续若干帧，这里补一段短跟随，
+  /// 确保平滑外框不会因为滚动通知滞后而停留在旧行位置。
+  void _scheduleFocusFrameFollow(GlobalKey coverKey) {
+    final followSerial = ++_focusFrameFollowSerial;
+
+    void followNextFrame(int remainingFrames) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            followSerial != _focusFrameFollowSerial ||
+            _focusedCoverKey != coverKey) {
+          return;
+        }
+        _tryUpdateFocusFrameForKey(
+          coverKey,
+          duration: Duration.zero,
+        );
+        if (remainingFrames <= 0) {
+          return;
+        }
+        followNextFrame(remainingFrames - 1);
+      });
+    }
+
+    followNextFrame(24);
   }
 
   /// 计算首批应该开放的卡片数量。
@@ -416,7 +506,9 @@ class _TvVideoGridState extends State<TvVideoGrid> {
               ),
               if (usesSmoothFrame)
                 _TvVideoGridFocusFrame(
-                    rectListenable: _focusedCoverRectNotifier),
+                  rectListenable: _focusedCoverRectNotifier,
+                  durationListenable: _focusFrameDurationNotifier,
+                ),
             ],
           );
         },
@@ -675,10 +767,16 @@ class _TvVideoGridState extends State<TvVideoGrid> {
 /// TV 纵向 Grid 共享焦点框。
 class _TvVideoGridFocusFrame extends StatelessWidget {
   /// 创建 TV 纵向 Grid 共享焦点框。
-  const _TvVideoGridFocusFrame({required this.rectListenable});
+  const _TvVideoGridFocusFrame({
+    required this.rectListenable,
+    required this.durationListenable,
+  });
 
   /// 当前获焦封面在 Grid 组件内的区域通知器。
   final ValueListenable<Rect?> rectListenable;
+
+  /// 当前共享焦点框移动时长通知器。
+  final ValueListenable<Duration> durationListenable;
 
   /// 焦点框尺寸相对封面的外扩距离。
   static const double outset = 5.0;
@@ -691,43 +789,49 @@ class _TvVideoGridFocusFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<Rect?>(
-      valueListenable: rectListenable,
-      builder: (context, targetRect, child) {
-        final left = targetRect == null ? 0.0 : targetRect.left - outset;
-        final top = targetRect == null ? 0.0 : targetRect.top - outset;
+    return ValueListenableBuilder<Duration>(
+      valueListenable: durationListenable,
+      builder: (context, currentDuration, child) {
+        return ValueListenableBuilder<Rect?>(
+          valueListenable: rectListenable,
+          builder: (context, targetRect, child) {
+            final left = targetRect == null ? 0.0 : targetRect.left - outset;
+            final top = targetRect == null ? 0.0 : targetRect.top - outset;
 
-        return AnimatedPositioned(
-          key: const ValueKey('tv-video-grid-focus-frame'),
-          left: left,
-          top: top,
-          width: (targetRect?.width ?? TvVideoCard.width) + outset * 2,
-          height: (targetRect?.height ?? TvVideoCard.coverHeight) + outset * 2,
-          duration: duration,
-          curve: Curves.easeOutCubic,
-          child: IgnorePointer(
-            child: AnimatedOpacity(
-              opacity: targetRect == null ? 0 : 1,
-              duration: const Duration(milliseconds: 90),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(11),
-                  border: Border.all(
-                    color: const Color(0xFFE2E6EA),
-                    width: 3,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: neutralShadowColor,
-                      blurRadius: 24,
-                      spreadRadius: 1,
-                      offset: Offset(0, 10),
+            return AnimatedPositioned(
+              key: const ValueKey('tv-video-grid-focus-frame'),
+              left: left,
+              top: top,
+              width: (targetRect?.width ?? TvVideoCard.width) + outset * 2,
+              height:
+                  (targetRect?.height ?? TvVideoCard.coverHeight) + outset * 2,
+              duration: currentDuration,
+              curve: Curves.easeOutCubic,
+              child: IgnorePointer(
+                child: AnimatedOpacity(
+                  opacity: targetRect == null ? 0 : 1,
+                  duration: const Duration(milliseconds: 90),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: const Color(0xFFE2E6EA),
+                        width: 3,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: neutralShadowColor,
+                          blurRadius: 24,
+                          spreadRadius: 1,
+                          offset: Offset(0, 10),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
