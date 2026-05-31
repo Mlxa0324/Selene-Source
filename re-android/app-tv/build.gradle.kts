@@ -47,6 +47,7 @@ dependencies {
     implementation(project(":feature-tv-favorites"))
     implementation(project(":feature-tv-settings"))
     implementation(project(":feature-tv-live"))
+    implementation(project(":feature-tv-detail"))
     implementation(project(":feature-tv-player"))
     implementation(project(":core-design"))
 

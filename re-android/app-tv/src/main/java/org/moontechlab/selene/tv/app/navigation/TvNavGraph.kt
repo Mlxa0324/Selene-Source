@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
+import org.moontechlab.selene.tv.feature.detail.TvDetailRoute
 import org.moontechlab.selene.tv.feature.home.TvHomeRoute
 import org.moontechlab.selene.tv.feature.home.TvVideoLibraryRoute
 import org.moontechlab.selene.tv.feature.home.TvVideoLibraryUiState
@@ -63,6 +64,24 @@ fun TvNavGraph(
         }
         composable(TvDestination.Live.route) {
             TvLiveRoute()
+        }
+        composable(
+            route = TvDestination.Detail.route,
+            arguments = listOf(
+                navArgument(TvDestination.Detail.videoIdArg) {
+                    // 详情路由参数用于首页和搜索结果传递视频身份。
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val videoId = backStackEntry.arguments
+                ?.getString(TvDestination.Detail.videoIdArg)
+                .orEmpty()
+            TvDetailRoute(
+                onPlayPressed = {
+                    navController.navigate(TvDestination.Player.createRoute(videoId))
+                },
+            )
         }
         composable(
             route = TvDestination.Player.route,

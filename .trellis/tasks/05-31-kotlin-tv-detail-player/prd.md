@@ -18,10 +18,10 @@ Parent task: `.trellis/tasks/05-31-flutter-tv-ui-to-kotlin`
 
 ## Acceptance Criteria
 
-- [ ] Kotlin detail route 不再展示骨架占位文案。
-- [ ] Player route 是真实播放器壳，不是 placeholder text。
-- [ ] 详情 staged loading 和播放源去重有测试覆盖。
-- [ ] 播放器快照恢复/内核切换现有测试继续通过。
+- [x] Kotlin detail route 不再展示骨架占位文案。
+- [x] Player route 是真实播放器壳，不是 placeholder text。
+- [x] 详情 staged loading 和播放源去重有测试覆盖。
+- [x] 播放器快照恢复/内核切换现有测试继续通过。
 
 ## Dependencies
 
