@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
-import org.moontechlab.selene.tv.core.network.SeleneTvApi
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeSectionResponse
 
@@ -18,7 +17,7 @@ class TvHomeRepositoryTest {
     @Test
     fun loadHome_aggregates_continue_watching_and_hot_sections() = runTest {
         val repository = TvHomeRepository(
-            api = FakeSeleneTvApi(),
+            api = FakeHomeApi(),
             playbackRepository = TvPlaybackRepository(
                 continueWatching = listOf(TvVideoCard(id = "resume-1", title = "续看", posterUrl = "")),
             ),
@@ -39,7 +38,7 @@ class TvHomeRepositoryTest {
 /**
  * 首页接口测试替身。
  */
-private class FakeSeleneTvApi : SeleneTvApi {
+private class FakeHomeApi : FakeSeleneTvApi() {
     override suspend fun getDashboard(): TvHomeResponse {
         return TvHomeResponse(
             sections = listOf(

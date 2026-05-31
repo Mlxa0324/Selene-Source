@@ -5,7 +5,6 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Test
-import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import retrofit2.Response
 
 /**
@@ -67,20 +66,6 @@ class SeleneTvNetworkClientTest {
 
         assertThat(error).isInstanceOf(IllegalStateException::class.java)
         assertThat(error).hasMessageThat().contains("后台账号或密码错误")
-    }
-}
-
-/**
- * 测试用 TV 数据接口。
- */
-private class FakeSeleneTvApi : SeleneTvApi {
-    /**
-     * 获取测试首页响应。
-     *
-     * @return 空首页响应。
-     */
-    override suspend fun getDashboard(): TvHomeResponse {
-        return TvHomeResponse(sections = emptyList())
     }
 }
 
