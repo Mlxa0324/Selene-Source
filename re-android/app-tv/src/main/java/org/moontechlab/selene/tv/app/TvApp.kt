@@ -1,43 +1,56 @@
 package org.moontechlab.selene.tv.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.tv.material3.Button
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import kotlinx.coroutines.delay
 import org.moontechlab.selene.tv.app.navigation.TvDestination
 import org.moontechlab.selene.tv.app.navigation.TvNavGraph
+import org.moontechlab.selene.tv.core.design.SeleneTvTheme
+import org.moontechlab.selene.tv.core.design.TvTokens
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
  * 组装 TV 原生工程的 Compose 根节点。
  */
 @Composable
 fun TvApp() {
-    val navController = rememberNavController()
-    val currentBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = currentBackStackEntry?.destination?.route
+    SeleneTvTheme {
+        val navController = rememberNavController()
+        val currentBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = currentBackStackEntry?.destination?.route
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
         ) {
             if (currentRoute != TvDestination.Player.route) {
                 // 顶级导航只在普通页面展示，播放器页独占全屏。
-                TvTopLevelTabs(
+                TvTopNavigationBar(
                     currentRoute = currentRoute,
                     onNavigate = { destination ->
                         if (destination.route != currentRoute) {
@@ -63,32 +76,52 @@ fun TvApp() {
 }
 
 /**
- * 渲染 TV 顶级导航占位壳。
+ * 渲染对齐 Flutter TV 的顶部导航。
  *
  * @param currentRoute 当前选中的路由。
- * @param onNavigate 顶部标签点击后的跳转回调。
+ * @param onNavigate 顶部入口点击后的跳转回调。
  */
 @Composable
-private fun TvTopLevelTabs(
+private fun TvTopNavigationBar(
     currentRoute: String?,
     onNavigate: (TvDestination) -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(
+                start = TvTokens.PageHorizontalPadding,
+                top = 18.dp,
+                end = TvTokens.PageHorizontalPadding,
+                bottom = 12.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // 左侧区域先表达主菜单结构。
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "IvyTV",
+                style = MaterialTheme.typography.headlineMedium,
+                color = TvTokens.IvyGreen,
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            TvClockText()
+
+            Spacer(modifier = Modifier.width(18.dp))
+
+            TvDestinationGroup(
+                destinations = TvDestination.quickAccessDestinations,
+                currentRoute = currentRoute,
+                onNavigate = onNavigate,
+            )
+        }
+
         TvDestinationGroup(
             destinations = TvDestination.primaryMenuDestinations,
-            currentRoute = currentRoute,
-            onNavigate = onNavigate,
-        )
-
-        // 右侧区域先表达快捷入口结构。
-        TvDestinationGroup(
-            destinations = TvDestination.quickAccessDestinations,
             currentRoute = currentRoute,
             onNavigate = onNavigate,
         )
@@ -110,19 +143,59 @@ private fun TvDestinationGroup(
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         destinations.forEach { destination ->
             val isSelected = destination.route == currentRoute
-            TextButton(
+            Button(
+                modifier = Modifier
+                    .background(
+                        color = if (isSelected) {
+                            TvTokens.IvyGreen.copy(alpha = 0.24f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        shape = RoundedCornerShape(TvTokens.CardRadius),
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isSelected) TvTokens.IvyGreen else TvTokens.Outline,
+                        shape = RoundedCornerShape(TvTokens.CardRadius),
+                    ),
                 onClick = { onNavigate(destination) },
             ) {
-                val label = if (isSelected) {
-                    "[${destination.route}]"
-                } else {
-                    destination.route
-                }
-                Text(text = label)
+                Text(text = destination.label)
             }
         }
     }
+}
+
+/**
+ * TV 顶部当前时间。
+ */
+@Composable
+private fun TvClockText() {
+    var currentTime by remember { mutableStateOf(formatCurrentTime()) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = formatCurrentTime()
+            delay(30_000)
+        }
+    }
+
+    Text(
+        text = currentTime,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * 格式化顶部时间。
+ *
+ * @return HH:mm 格式时间。
+ */
+private fun formatCurrentTime(): String {
+    return LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
 }

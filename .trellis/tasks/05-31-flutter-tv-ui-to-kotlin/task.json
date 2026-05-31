@@ -1,0 +1,31 @@
+{
+  "id": "flutter-tv-ui-to-kotlin",
+  "name": "flutter-tv-ui-to-kotlin",
+  "title": "复刻 Flutter TV UI 到 Kotlin",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-05-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "05-31-kotlin-tv-design-shell",
+    "05-31-kotlin-tv-home-library",
+    "05-31-kotlin-tv-detail-player",
+    "05-31-kotlin-tv-pages-acceptance"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

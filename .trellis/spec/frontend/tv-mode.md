@@ -679,7 +679,38 @@ TvFocusable(
 
 TV 搜索页必须使用 `lib/tv_app/screens/tv_search_screen.dart`，不要直接打开普通端 `SearchScreen`。页面左侧提供搜索输入展示、字母数字遥控器键盘、清空和删除按钮；右侧顶部展示搜索历史纯文字 Grid，下面展示搜索热词纯文字 Grid。搜索页左侧搜索标题和右侧搜索历史标题必须使用统一顶部留白，首屏默认状态不能明显偏下。搜索历史复用 `PageCacheService.getSearchHistory`，搜索热词当前使用本地 mock 列表，后续有接口后再替换。搜索历史和搜索热词的每行最右项按右方向键必须保持当前焦点，不能跳出右侧内容区；右侧内容纵向浏览时必须自动滚动，让当前获焦项尽量停留在屏幕中段。右侧下方可展示影片推荐横向列表，推荐点击进入 `TvVideoDetailScreen`。影片推荐列表的焦点放大比例必须与首页 `TvVideoCard.focusedScale` 一致，到达左右边界时必须复用 `TvEdgeShake` 给出边界抖动反馈。
 
-### 8.4 横向分区滚动复位
+### 8.4 Kotlin 原生 TV 设计系统与根导航
+
+Kotlin 原生 TV 工程必须把 Flutter TV 的设计系统和根导航契约收敛在 `re-android/core-design` 与 `re-android/app-tv`：
+
+- `core-design` 使用 `androidx.tv.material3`，不要在 TV 设计基础组件里混用普通 `androidx.compose.material3.MaterialTheme`。
+- `TvDesignPreset` 必须包含 `AUTO / HD720 / FULL_HD_1080 / QHD_1440`，`TvDesignMetrics` 必须同时暴露 `configuredPreset` 和 `effectivePreset`，用于页面和弹窗继承同一设计视口。
+- 可复用页面组件放在 `core-design/layout/`，包括页面壳、区块、海报卡、横向 rail、纵向 grid、空/加载/错误状态面板。
+- 遥控器确认键策略放在 `core-design/focus/`，短按、长按和重复 KeyDown 去重必须由共享策略处理，避免页面各自实现导致重复跳转。
+- TV 风格确认弹窗放在 `core-design/dialog/`，后续页面只传 title/message/action，不重复写弹窗视觉。
+- `app-tv` 顶部导航必须使用 `TvDestination` 的统一 route/label 契约；主菜单顺序是：首页、电影、剧集、动漫、综艺、直播；快捷入口顺序是：搜索、播放历史、收藏夹、设置。
+- 播放器目的地不属于顶部导航，但 `TvDestination.Player.createRoute(videoId)` 必须保留 URL 编码，防止 `/`、空格和中文破坏导航层级。
+
+#### Wrong
+
+```kotlin
+// 页面里各自硬编码遥控器重复事件处理。
+Modifier.onPreviewKeyEvent {
+    if (it.type == KeyEventType.KeyDown) {
+        onClick()
+    }
+    true
+}
+```
+
+#### Correct
+
+```kotlin
+// 共享策略负责短按、长按和重复事件去重。
+val policy = remember { TvRemotePressPolicy(hasLongPressHandler = onLongPressed != null) }
+```
+
+### 8.5 横向分区滚动复位
 
 #### Wrong
 

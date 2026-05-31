@@ -16,6 +16,10 @@ class TvDestinationTest {
 
         assertThat(routes).containsExactly(
             "home",
+            "library/movie",
+            "library/tv",
+            "library/anime",
+            "library/show",
             "live",
             "search",
             "history",
@@ -53,6 +57,10 @@ class TvDestinationTest {
 
         assertThat(routes).containsExactly(
             "home",
+            "library/movie",
+            "library/tv",
+            "library/anime",
+            "library/show",
             "live",
         ).inOrder()
     }
@@ -69,6 +77,27 @@ class TvDestinationTest {
             "history",
             "favorites",
             "settings",
+        ).inOrder()
+    }
+
+    /**
+     * 确认导航展示文案对齐 Flutter TV 顶部入口。
+     */
+    @Test
+    fun topLevelDestinations_expose_tv_labels() {
+        val labels = TvDestination.topLevelDestinations.map { it.label }
+
+        assertThat(labels).containsExactly(
+            "首页",
+            "电影",
+            "剧集",
+            "动漫",
+            "综艺",
+            "直播",
+            "搜索",
+            "播放历史",
+            "收藏夹",
+            "设置",
         ).inOrder()
     }
 }

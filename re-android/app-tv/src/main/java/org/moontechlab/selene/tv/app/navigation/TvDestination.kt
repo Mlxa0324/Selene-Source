@@ -7,44 +7,66 @@ import java.nio.charset.StandardCharsets
  * 描述 TV 壳当前阶段支持的全部路由。
  *
  * @property route Compose Navigation 使用的路由字符串。
+ * @property label TV UI 展示文案。
  */
 sealed class TvDestination(
     val route: String,
+    val label: String,
 ) {
     /**
      * 首页路由。
      */
-    data object Home : TvDestination("home")
+    data object Home : TvDestination("home", "首页")
+
+    /**
+     * 电影分类页路由。
+     */
+    data object Movie : TvDestination("library/movie", "电影")
+
+    /**
+     * 剧集分类页路由。
+     */
+    data object Tv : TvDestination("library/tv", "剧集")
+
+    /**
+     * 动漫分类页路由。
+     */
+    data object Anime : TvDestination("library/anime", "动漫")
+
+    /**
+     * 综艺分类页路由。
+     */
+    data object Show : TvDestination("library/show", "综艺")
 
     /**
      * 搜索页路由。
      */
-    data object Search : TvDestination("search")
+    data object Search : TvDestination("search", "搜索")
 
     /**
      * 播放历史页路由。
      */
-    data object History : TvDestination("history")
+    data object History : TvDestination("history", "播放历史")
 
     /**
      * 收藏夹页路由。
      */
-    data object Favorites : TvDestination("favorites")
+    data object Favorites : TvDestination("favorites", "收藏夹")
 
     /**
      * 设置页路由。
      */
-    data object Settings : TvDestination("settings")
+    data object Settings : TvDestination("settings", "设置")
 
     /**
      * 直播占位页路由。
      */
-    data object Live : TvDestination("live")
+    data object Live : TvDestination("live", "直播")
 
     /**
      * 全屏播放器路由。
      */
-    data object Player : TvDestination(playerRoutePattern) {
+    data object Player : TvDestination(playerRoutePattern, "播放器") {
         /**
          * 播放器路由参数名。
          */
@@ -83,10 +105,14 @@ sealed class TvDestination(
         private const val playerRoutePattern = "$playerPathPrefix/{$PLAYER_VIDEO_ID_ARG}"
 
         /**
-         * 左侧主菜单仅承载首页与直播入口。
+         * 左侧主菜单承载首页、内容分类与直播入口。
          */
         val primaryMenuDestinations = listOf(
             Home,
+            Movie,
+            Tv,
+            Anime,
+            Show,
             Live,
         )
 
@@ -105,6 +131,10 @@ sealed class TvDestination(
          */
         val topLevelDestinations = listOf(
             Home,
+            Movie,
+            Tv,
+            Anime,
+            Show,
             Live,
             Search,
             History,

@@ -1,13 +1,8 @@
 package org.moontechlab.selene.tv.app.navigation
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -17,6 +12,7 @@ import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
 import org.moontechlab.selene.tv.feature.home.TvHomeRoute
 import org.moontechlab.selene.tv.feature.live.TvLiveRoute
+import org.moontechlab.selene.tv.feature.player.TvPlayerRoute
 import org.moontechlab.selene.tv.feature.search.TvSearchRoute
 import org.moontechlab.selene.tv.feature.settings.TvSettingsRoute
 
@@ -39,6 +35,18 @@ fun TvNavGraph(
         composable(TvDestination.Home.route) {
             TvHomeRoute()
         }
+        composable(TvDestination.Movie.route) {
+            TvHomeRoute()
+        }
+        composable(TvDestination.Tv.route) {
+            TvHomeRoute()
+        }
+        composable(TvDestination.Anime.route) {
+            TvHomeRoute()
+        }
+        composable(TvDestination.Show.route) {
+            TvHomeRoute()
+        }
         composable(TvDestination.Search.route) {
             TvSearchRoute()
         }
@@ -58,34 +66,13 @@ fun TvNavGraph(
             route = TvDestination.Player.route,
             arguments = listOf(
                 navArgument(TvDestination.Player.videoIdArg) {
-                    // 播放器路由先保留基础参数契约，后续再接真实视频信息。
+                    // 播放器路由参数用于详情页传递当前视频身份。
                     type = NavType.StringType
                 },
             ),
-        ) { backStackEntry ->
-            val videoId = backStackEntry.arguments
-                ?.getString(TvDestination.Player.videoIdArg)
-                .orEmpty()
-            TvPlayerPlaceholder(videoId = videoId)
+        ) {
+            // 当前播放器模块先由自身 ViewModel 承载状态，路由参数契约保留给详情页接入。
+            TvPlayerRoute()
         }
-    }
-}
-
-/**
- * 展示全屏播放器的临时占位内容。
- *
- * @param videoId 当前视频 ID。
- */
-@Composable
-private fun TvPlayerPlaceholder(videoId: String) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        // 播放器主壳会在详情和全屏任务中接入，这里先保留路由参数通路。
-        Text(
-            text = "Player: $videoId",
-            modifier = Modifier.padding(horizontal = 24.dp),
-        )
     }
 }

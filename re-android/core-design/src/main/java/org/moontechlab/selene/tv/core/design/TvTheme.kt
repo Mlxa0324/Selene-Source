@@ -1,9 +1,9 @@
 package org.moontechlab.selene.tv.core.design
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.darkColorScheme
 
 /**
  * TV 端统一主题入口。
@@ -14,11 +14,15 @@ object TvTheme {
      */
     val DarkColors = darkColorScheme(
         primary = TvTokens.IvyGreen,
-        background = TvTokens.Background,
-        surface = Color(0xFF111418),
         onPrimary = Color.Black,
+        background = TvTokens.Background,
+        surface = TvTokens.Surface,
         onBackground = TvTokens.TextPrimary,
         onSurface = TvTokens.TextPrimary,
+        surfaceVariant = TvTokens.SurfaceElevated,
+        onSurfaceVariant = TvTokens.TextSecondary,
+        secondary = TvTokens.TextSecondary,
+        onSecondary = Color.White,
     )
 }
 

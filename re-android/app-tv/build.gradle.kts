@@ -47,6 +47,8 @@ dependencies {
     implementation(project(":feature-tv-favorites"))
     implementation(project(":feature-tv-settings"))
     implementation(project(":feature-tv-live"))
+    implementation(project(":feature-tv-player"))
+    implementation(project(":core-design"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -55,6 +57,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.tv.material)
     implementation(libs.androidx.navigation.compose)
 
     testImplementation(libs.junit4)

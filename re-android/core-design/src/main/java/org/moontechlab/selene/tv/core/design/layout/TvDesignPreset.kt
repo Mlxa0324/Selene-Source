@@ -11,6 +11,11 @@ enum class TvDesignPreset(
     val designHeight: Int,
 ) {
     /**
+     * 根据当前视口自动选择设计稿预设。
+     */
+    AUTO(0, 0),
+
+    /**
      * 720P 设计稿预设。
      */
     HD720(1280, 720),
@@ -19,4 +24,9 @@ enum class TvDesignPreset(
      * 1080P 设计稿预设。
      */
     FULL_HD_1080(1920, 1080),
+
+    /**
+     * 1440P 设计稿预设。
+     */
+    QHD_1440(2560, 1440),
 }
