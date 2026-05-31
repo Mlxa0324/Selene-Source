@@ -1,7 +1,7 @@
 {
-  "id": "kotlin-tv-design-shell",
-  "name": "kotlin-tv-design-shell",
-  "title": "Kotlin TV 设计系统与根导航复刻",
+  "id": "flutter-tv-ui-to-kotlin",
+  "name": "flutter-tv-ui-to-kotlin",
+  "title": "复刻 Flutter TV UI 到 Kotlin",
   "description": "",
   "status": "completed",
   "dev_type": null,
@@ -18,8 +18,13 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
-  "parent": "05-31-flutter-tv-ui-to-kotlin",
+  "children": [
+    "05-31-kotlin-tv-design-shell",
+    "05-31-kotlin-tv-home-library",
+    "05-31-kotlin-tv-detail-player",
+    "05-31-kotlin-tv-pages-acceptance"
+  ],
+  "parent": null,
   "relatedFiles": [],
   "notes": "",
   "meta": {}

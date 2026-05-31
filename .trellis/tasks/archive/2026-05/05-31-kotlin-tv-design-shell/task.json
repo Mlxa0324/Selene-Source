@@ -1,7 +1,7 @@
 {
-  "id": "kotlin-tv-home-library",
-  "name": "kotlin-tv-home-library",
-  "title": "Kotlin TV 首页与视频库复刻",
+  "id": "kotlin-tv-design-shell",
+  "name": "kotlin-tv-design-shell",
+  "title": "Kotlin TV 设计系统与根导航复刻",
   "description": "",
   "status": "completed",
   "dev_type": null,
