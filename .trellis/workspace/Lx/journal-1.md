@@ -147,3 +147,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 修复 TV 分类筛选与焦点记忆
+
+**Date**: 2026-06-01
+**Task**: 修复 TV 分类筛选与焦点记忆
+**Branch**: `tvtv`
+
+### Summary
+
+完成分类筛选视觉就近焦点，以及详情页和全屏播放页横向列表焦点记忆修复
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9599a94` | (see git log) |
+| `c29e979` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
