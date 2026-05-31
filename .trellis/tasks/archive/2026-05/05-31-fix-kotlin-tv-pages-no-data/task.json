@@ -1,7 +1,7 @@
 {
-  "id": "fix-tv-continue-watch-saved-time",
-  "name": "fix-tv-continue-watch-saved-time",
-  "title": "排查 Flutter TV 继续观看未按保存时间续播",
+  "id": "fix-kotlin-tv-pages-no-data",
+  "name": "fix-kotlin-tv-pages-no-data",
+  "title": "修复 Kotlin TV 页面接口无数据",
   "description": "",
   "status": "completed",
   "dev_type": null,
@@ -18,7 +18,11 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "05-31-kotlin-tv-network-repositories",
+    "05-31-kotlin-tv-list-search-data",
+    "05-31-kotlin-tv-history-favorites-data"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

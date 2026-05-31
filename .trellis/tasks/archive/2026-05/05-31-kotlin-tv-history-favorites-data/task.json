@@ -1,7 +1,7 @@
 {
-  "id": "fix-kotlin-tv-pages-no-data",
-  "name": "fix-kotlin-tv-pages-no-data",
-  "title": "修复 Kotlin TV 页面接口无数据",
+  "id": "kotlin-tv-history-favorites-data",
+  "name": "kotlin-tv-history-favorites-data",
+  "title": "接入 Kotlin TV 历史和收藏数据",
   "description": "",
   "status": "completed",
   "dev_type": null,
@@ -18,12 +18,8 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "05-31-kotlin-tv-network-repositories",
-    "05-31-kotlin-tv-list-search-data",
-    "05-31-kotlin-tv-history-favorites-data"
-  ],
-  "parent": null,
+  "children": [],
+  "parent": "05-31-fix-kotlin-tv-pages-no-data",
   "relatedFiles": [],
   "notes": "",
   "meta": {}

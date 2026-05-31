@@ -1,7 +1,7 @@
 {
-  "id": "kotlin-tv-history-favorites-data",
-  "name": "kotlin-tv-history-favorites-data",
-  "title": "接入 Kotlin TV 历史和收藏数据",
+  "id": "optimize-tv-settings-player-focus",
+  "name": "optimize-tv-settings-player-focus",
+  "title": "优化 Flutter TV 设置默认值和播放焦点性能",
   "description": "",
   "status": "completed",
   "dev_type": null,
@@ -19,7 +19,7 @@
   "pr_url": null,
   "subtasks": [],
   "children": [],
-  "parent": "05-31-fix-kotlin-tv-pages-no-data",
+  "parent": null,
   "relatedFiles": [],
   "notes": "",
   "meta": {}

@@ -1,7 +1,7 @@
 {
-  "id": "fix-tv-continue-watch-resume-time",
-  "name": "fix-tv-continue-watch-resume-time",
-  "title": "修复 Flutter TV 继续观看续播时间失效",
+  "id": "fix-tv-continue-watch-saved-time",
+  "name": "fix-tv-continue-watch-saved-time",
+  "title": "排查 Flutter TV 继续观看未按保存时间续播",
   "description": "",
   "status": "completed",
   "dev_type": null,

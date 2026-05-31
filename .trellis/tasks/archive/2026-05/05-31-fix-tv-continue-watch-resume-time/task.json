@@ -1,7 +1,7 @@
 {
-  "id": "fix-tv-source-count-filter-margin",
-  "name": "fix-tv-source-count-filter-margin",
-  "title": "修复 Flutter TV 继续观看源集数刷新和分类弹层边距",
+  "id": "fix-tv-continue-watch-resume-time",
+  "name": "fix-tv-continue-watch-resume-time",
+  "title": "修复 Flutter TV 继续观看续播时间失效",
   "description": "",
   "status": "completed",
   "dev_type": null,
