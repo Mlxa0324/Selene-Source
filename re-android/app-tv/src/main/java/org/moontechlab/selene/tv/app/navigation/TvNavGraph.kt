@@ -11,6 +11,8 @@ import androidx.navigation.navArgument
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
 import org.moontechlab.selene.tv.feature.home.TvHomeRoute
+import org.moontechlab.selene.tv.feature.home.TvVideoLibraryRoute
+import org.moontechlab.selene.tv.feature.home.TvVideoLibraryUiState
 import org.moontechlab.selene.tv.feature.live.TvLiveRoute
 import org.moontechlab.selene.tv.feature.player.TvPlayerRoute
 import org.moontechlab.selene.tv.feature.search.TvSearchRoute
@@ -36,16 +38,16 @@ fun TvNavGraph(
             TvHomeRoute()
         }
         composable(TvDestination.Movie.route) {
-            TvHomeRoute()
+            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("movie"))
         }
         composable(TvDestination.Tv.route) {
-            TvHomeRoute()
+            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("tv"))
         }
         composable(TvDestination.Anime.route) {
-            TvHomeRoute()
+            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("anime"))
         }
         composable(TvDestination.Show.route) {
-            TvHomeRoute()
+            TvVideoLibraryRoute(state = TvVideoLibraryUiState.forCategory("show"))
         }
         composable(TvDestination.Search.route) {
             TvSearchRoute()

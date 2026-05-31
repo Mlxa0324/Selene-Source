@@ -18,10 +18,10 @@ Parent task: `.trellis/tasks/05-31-flutter-tv-ui-to-kotlin`
 
 ## Acceptance Criteria
 
-- [ ] `feature-tv-home` 不再展示“骨架/后续再接”类用户可见占位。
-- [ ] 首页 ViewModel 能输出所有 Flutter TV 首页分区状态。
-- [ ] 分类/视频库列表具备可测试的 filter/grid/focus 行为。
-- [ ] 首页和库页关键状态有测试覆盖。
+- [x] `feature-tv-home` 不再展示“骨架/后续再接”类用户可见占位。
+- [x] 首页 ViewModel 能输出所有 Flutter TV 首页分区状态。
+- [x] 分类/视频库列表具备可测试的 filter/grid/focus 行为。
+- [x] 首页和库页关键状态有测试覆盖。
 
 ## Dependencies
 
