@@ -85,7 +85,11 @@ fun TvNavGraph(
             )
         }
         composable(TvDestination.Settings.route) {
-            TvSettingsRoute()
+            val settingsViewModel = remember(appContainer) {
+                appContainer.createSettingsViewModel()
+            }
+            val settingsState by settingsViewModel.state.collectAsState()
+            TvSettingsRoute(state = settingsState)
         }
         composable(TvDestination.Live.route) {
             TvLiveRoute()

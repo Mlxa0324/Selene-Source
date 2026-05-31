@@ -34,10 +34,14 @@ data class TvSettingsUiState(
 
 /**
  * TV 设置 ViewModel。
+ *
+ * @param initialState 设置页初始状态。
  */
-class TvSettingsViewModel {
+class TvSettingsViewModel(
+    initialState: TvSettingsUiState = TvSettingsUiState(),
+) {
     /** 设置内部状态。 */
-    private val mutableState = MutableStateFlow(TvSettingsUiState())
+    private val mutableState = MutableStateFlow(initialState)
 
     /** 设置公开状态。 */
     val state: StateFlow<TvSettingsUiState> = mutableState

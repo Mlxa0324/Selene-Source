@@ -8,6 +8,25 @@ import org.junit.Test
  */
 class TvSettingsViewModelTest {
     /**
+     * 初始状态应直接展示外部注入的服务器配置。
+     */
+    @Test
+    fun init_prefills_server_config() {
+        val viewModel = TvSettingsViewModel(
+            initialState = TvSettingsUiState(
+                serverUrl = "http://127.0.0.1:3000",
+                account = "demo",
+                password = "secret",
+            ),
+        )
+
+        val state = viewModel.state.value
+        assertThat(state.serverUrl).isEqualTo("http://127.0.0.1:3000")
+        assertThat(state.account).isEqualTo("demo")
+        assertThat(state.password).isEqualTo("secret")
+    }
+
+    /**
      * 更新服务器表单时不应改动密码和弹幕状态。
      */
     @Test

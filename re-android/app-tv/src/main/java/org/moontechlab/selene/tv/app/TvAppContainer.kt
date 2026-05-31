@@ -7,6 +7,8 @@ import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
 import org.moontechlab.selene.tv.core.network.SeleneTvNetworkFactory
 import org.moontechlab.selene.tv.core.network.SessionCookieStore
 import org.moontechlab.selene.tv.feature.home.TvHomeViewModel
+import org.moontechlab.selene.tv.feature.settings.TvSettingsUiState
+import org.moontechlab.selene.tv.feature.settings.TvSettingsViewModel
 
 /**
  * TV 本地后台网关配置。
@@ -78,6 +80,17 @@ class TvAppContainer(
     }
 
     /**
+     * 创建设置页 ViewModel。
+     *
+     * @return 已带入本地后台配置的设置页 ViewModel。
+     */
+    fun createSettingsViewModel(): TvSettingsViewModel {
+        return TvSettingsViewModel(
+            initialState = gatewayConfig.toSettingsUiState(),
+        )
+    }
+
+    /**
      * 加载真实后台首页数据。
      *
      * @return 首页聚合数据。
@@ -119,4 +132,17 @@ class TvAppContainer(
         const val LOCAL_CONFIG_MISSING_MESSAGE =
             "请填写 re-android/local.gateway.properties 后重新构建 TV 应用"
     }
+}
+
+/**
+ * 转换为设置页展示状态。
+ *
+ * @return 设置页初始状态。
+ */
+private fun TvLocalGatewayConfig.toSettingsUiState(): TvSettingsUiState {
+    return TvSettingsUiState(
+        serverUrl = baseUrl,
+        account = username,
+        password = password,
+    )
 }

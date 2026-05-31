@@ -15,6 +15,26 @@ import org.moontechlab.selene.tv.core.network.model.TvVideoCardResponse
  */
 class TvAppContainerTest {
     /**
+     * 本地配置完整时设置页应直接展示地址、账号和密码。
+     */
+    @Test
+    fun createSettingsViewModel_prefills_local_gateway_config() {
+        val container = TvAppContainer(
+            gatewayConfig = TvLocalGatewayConfig(
+                baseUrl = "http://127.0.0.1:3000",
+                username = "demo",
+                password = "secret",
+            ),
+        )
+        val viewModel = container.createSettingsViewModel()
+
+        val state = viewModel.state.value
+        assertThat(state.serverUrl).isEqualTo("http://127.0.0.1:3000")
+        assertThat(state.account).isEqualTo("demo")
+        assertThat(state.password).isEqualTo("secret")
+    }
+
+    /**
      * 缺少本地配置时首页应进入错误态。
      */
     @Test

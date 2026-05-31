@@ -31,6 +31,68 @@ The repository uses `flutter_lints` from `analysis_options.yaml`. Service and mo
 - Cache/file services: test expiration, clear behavior, and malformed data fallback.
 - TV services: test both mobile settings bridge behavior and TV-specific defaults under `test/tv_app/`.
 
+## Scenario: Native Android TV Local Gateway Config
+
+### 1. Scope / Trigger
+
+- Trigger: native Android TV code reads local secret/env-style config and passes it into app, data, or feature UI layers.
+- Applies to `re-android/local.gateway.properties`, Gradle `BuildConfig` fields, `TvAppContainer`, and settings/home feature ViewModels.
+
+### 2. Signatures
+
+- Gradle loader: `loadLocalGatewayProperties(): Properties`
+- Config factory: `TvLocalGatewayConfig.fromBuildConfig(): TvLocalGatewayConfig`
+- Container factory: `TvAppContainer.createSettingsViewModel(): TvSettingsViewModel`
+- Feature state injection: `TvSettingsViewModel(initialState: TvSettingsUiState = TvSettingsUiState())`
+
+### 3. Contracts
+
+- `SELENE_TV_BASE_URL`: optional string; empty means no local gateway is configured.
+- `SELENE_TV_USERNAME`: optional string; empty means login cannot be auto-attempted.
+- `SELENE_TV_PASSWORD`: optional string; empty means login cannot be auto-attempted.
+- `TvLocalGatewayConfig.isComplete` is true only when all three fields are non-blank.
+- Settings UI must receive the same local gateway values that home/login uses; do not let route defaults hide populated BuildConfig values.
+
+### 4. Validation & Error Matrix
+
+- Missing file -> BuildConfig fields are empty -> home shows the existing local config missing error.
+- Partial file -> `isComplete == false` -> gateway client is not created.
+- Complete file -> settings state shows address, account, and password; home login uses the same values.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `TvNavGraph` obtains settings state from `TvAppContainer.createSettingsViewModel()`.
+- Base: feature tests can instantiate `TvSettingsViewModel()` with default empty state.
+- Bad: `TvSettingsRoute()` is called with `TvSettingsUiState()` in app navigation while BuildConfig contains populated values.
+
+### 6. Tests Required
+
+- App container test asserts complete local gateway config pre-fills settings state.
+- Feature ViewModel test asserts constructor-injected initial state is exposed unchanged.
+- Existing missing-config home test must continue to assert the local config error path.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```kotlin
+composable(TvDestination.Settings.route) {
+    TvSettingsRoute()
+}
+```
+
+#### Correct
+
+```kotlin
+composable(TvDestination.Settings.route) {
+    val settingsViewModel = remember(appContainer) {
+        appContainer.createSettingsViewModel()
+    }
+    val settingsState by settingsViewModel.state.collectAsState()
+    TvSettingsRoute(state = settingsState)
+}
+```
+
 Useful existing tests:
 
 - `test/services/user_data_service_preload_test.dart`
