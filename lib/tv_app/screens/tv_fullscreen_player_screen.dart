@@ -508,6 +508,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 避免视频真正出画前，中间转圈被过早隐藏。
   bool _fullscreenPlaybackStarted = false;
 
+  /// 当前全屏播放器是否收到过播放进度信号。
+  bool _fullscreenProgressSignalReceived = false;
+
   /// 播放地址解析任务序号，避免异步回写旧地址。
   int _loadToken = 0;
 
@@ -939,6 +942,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _markFullscreenPlayerLoading();
     _scheduleChromeRefresh();
     await _effectiveVideoController?.updateDataSource(url, startAt: startAt);
+    await _seekToInitialPlaybackPositionIfNeeded(startAt);
     _fullscreenLoadingHoldTimer?.cancel();
     _fullscreenLoadingHoldTimer = Timer(_initialFullscreenLoadingHold, () {
       if (mounted &&
@@ -949,6 +953,26 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     });
     if (_danmakuEnabled) {
       unawaited(_loadDanmakuForCurrentEpisode(force: false));
+    }
+  }
+
+  /// 在底层播放器忽略 `startAt` 时补一次 seek，和手机端 ready 后 seek 兜底一致。
+  Future<void> _seekToInitialPlaybackPositionIfNeeded(Duration? startAt) async {
+    if (startAt == null || startAt <= Duration.zero) {
+      return;
+    }
+
+    final currentPosition = _effectiveVideoController?.currentPosition;
+    final alreadyAtResumePosition = currentPosition != null &&
+        (currentPosition - startAt).abs() <= const Duration(seconds: 1);
+    if (alreadyAtResumePosition) {
+      return;
+    }
+
+    try {
+      await _seekTo(startAt);
+    } catch (error) {
+      debugPrint('TV 全屏续播 seek 兜底失败: $error');
     }
   }
 
@@ -969,6 +993,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _fullscreenLoadingHoldTimer?.cancel();
     _fullscreenPlayerLoading = true;
     _fullscreenPlaybackStarted = false;
+    _fullscreenProgressSignalReceived = false;
   }
 
   /// 结束全屏播放器加载态。
@@ -976,7 +1001,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (!_fullscreenPlayerLoading) {
       return;
     }
-    if (!_hasFullscreenPlaybackStarted) {
+    if (!_canFinishFullscreenPlayerLoading) {
       return;
     }
     _fullscreenPlayerLoading = false;
@@ -986,6 +1011,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 标记当前全屏视频已经真正起播。
   void _markFullscreenPlaybackStarted() {
     _fullscreenPlaybackStarted = true;
+    _finishFullscreenPlayerLoading();
+  }
+
+  /// 标记全屏播放器已经收到可用于展示的播放信号。
+  void _markFullscreenProgressSignalReceived() {
+    _fullscreenProgressSignalReceived = true;
     _finishFullscreenPlayerLoading();
   }
 
@@ -1032,7 +1063,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return KeyEventResult.ignored;
     }
 
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+    if (_isOpenMenuKey(key)) {
       _showMenu();
       return KeyEventResult.handled;
     }
@@ -1050,6 +1081,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 判断是否为返回类按键。
   bool _isBackKey(LogicalKeyboardKey key) {
     return TvBackIntent.isBackKey(key);
+  }
+
+  /// 判断是否为打开底部菜单的遥控器按键。
+  bool _isOpenMenuKey(LogicalKeyboardKey key) {
+    return key == LogicalKeyboardKey.arrowDown ||
+        key == LogicalKeyboardKey.contextMenu ||
+        key == LogicalKeyboardKey.mediaTopMenu;
   }
 
   /// 处理全局遥控器按键。
@@ -1095,7 +1133,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return false;
     }
 
-    if (key == LogicalKeyboardKey.arrowDown) {
+    if (_isOpenMenuKey(key)) {
       _showMenu();
       return true;
     }
@@ -1366,7 +1404,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前播放器是否仍在加载或缓冲。
   bool get _isPlaybackLoading {
-    if (_hasFullscreenPlaybackStarted) {
+    if (_canFinishFullscreenPlayerLoading) {
       return false;
     }
     final injectedController = widget.playbackController;
@@ -1382,6 +1420,24 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     return _fullscreenPlaybackStarted ||
         (widget.playbackController?.isPlaying ?? false) ||
         (_playerController?.isPlaying ?? false);
+  }
+
+  /// 全屏播放器加载态是否可以安全退出。
+  bool get _canFinishFullscreenPlayerLoading {
+    return _hasFullscreenPlaybackStarted ||
+        _isFullscreenPlaybackReadyForDisplay;
+  }
+
+  /// 全屏播放器是否已经有可展示的播放状态。
+  bool get _isFullscreenPlaybackReadyForDisplay {
+    final loading = widget.playbackController?.isLoading ??
+        _playerController?.isLoading ??
+        false;
+    if (loading || !_fullscreenProgressSignalReceived) {
+      return false;
+    }
+    return _currentPlaybackPosition > Duration.zero ||
+        _currentPlaybackDuration > Duration.zero;
   }
 
   /// 是否显示暂停/拖动时的播放器信息壳层。
@@ -1411,9 +1467,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final injectedController = widget.playbackController;
     if (injectedController != null) {
       await injectedController.seekTo(position);
+      _markFullscreenProgressSignalReceived();
       return;
     }
     await _playerController?.seekTo(position);
+    _markFullscreenProgressSignalReceived();
   }
 
   /// 限制时间在合法播放区间内。
@@ -2130,6 +2188,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
+    _markFullscreenProgressSignalReceived();
     if ((_playerController?.isPlaying ?? false) &&
         !_hasFullscreenPlaybackStarted) {
       _markFullscreenPlaybackStarted();
@@ -3170,28 +3229,31 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       left: 0,
       right: 0,
       bottom: 0,
-      child: Container(
-        key: const ValueKey('tv-fullscreen-menu'),
-        constraints: const BoxConstraints(minHeight: 230),
-        padding: const EdgeInsets.fromLTRB(32, 28, 32, 30),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              const Color(0xFF111822).withValues(alpha: 0.72),
-              const Color(0xFF060A10).withValues(alpha: 0.78),
+      child: RepaintBoundary(
+        key: const ValueKey('tv-fullscreen-menu-repaint-boundary'),
+        child: Container(
+          key: const ValueKey('tv-fullscreen-menu'),
+          constraints: const BoxConstraints(minHeight: 230),
+          padding: const EdgeInsets.fromLTRB(32, 28, 32, 30),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0xFF111822).withValues(alpha: 0.72),
+                const Color(0xFF060A10).withValues(alpha: 0.78),
+              ],
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildSecondaryMenu(),
+              const SizedBox(height: 30),
+              _buildPrimaryMenu(),
             ],
           ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildSecondaryMenu(),
-            const SizedBox(height: 30),
-            _buildPrimaryMenu(),
-          ],
         ),
       ),
     );
@@ -3926,7 +3988,7 @@ class _TvPlayerMenuButton extends StatelessWidget {
       },
       builder: (context, hasFocus) {
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
+          duration: Duration.zero,
           constraints: BoxConstraints(
             minWidth: minWidth,
             maxWidth: maxWidth,

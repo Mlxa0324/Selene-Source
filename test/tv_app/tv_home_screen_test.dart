@@ -15,6 +15,7 @@ import 'package:selene/tv_app/widgets/tv_category_filter_panel.dart';
 import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() {
@@ -22,6 +23,7 @@ void main() {
     final binding = TestWidgetsFlutterBinding.instance;
     binding.window.physicalSizeTestValue = const Size(1920, 1080);
     binding.window.devicePixelRatioTestValue = 1;
+    SharedPreferences.setMockInitialValues({});
   });
 
   tearDown(() {
@@ -40,7 +42,8 @@ void main() {
     expect(TvLayout.gridCrossAxisCount, 7);
   });
 
-  testWidgets('non home tabs follow global TV background color', (tester) async {
+  testWidgets('non home tabs follow global TV background color',
+      (tester) async {
     final themeService = TvThemeService();
     await themeService.setBackgroundKey(TvThemeBackground.deepBlack.key);
 
@@ -78,7 +81,8 @@ void main() {
     expect(topNavDecoration.color, expectedColor);
   });
 
-  testWidgets('switching from home to movie tab does not throw controller assertion',
+  testWidgets(
+      'switching from home to movie tab does not throw controller assertion',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -1666,7 +1670,7 @@ void main() {
             find.byKey(const ValueKey('tv-category-filter-panel')),
           )
           .color,
-      const Color(0xD00B0D0E),
+      TvThemeBackground.deepBlue.color.withAlpha(0xD0),
     );
     expect(find.text('分类:'), findsOneWidget);
     expect(find.text('排序:'), findsNothing);
@@ -2432,6 +2436,27 @@ void main() {
     );
   });
 
+  testWidgets('category filter panel keeps extra top inset', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          backgroundColor: Color(0xFF0B0D0E),
+          body: TvCategoryFilterPanel(kind: TvCategoryFilterKind.movie),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final panel = tester.widget<Container>(
+      find.byKey(const ValueKey('tv-category-filter-panel')),
+    );
+    expect(
+      panel.padding,
+      const EdgeInsets.fromLTRB(TvLayout.pageHorizontalPadding, 16, 0, 14),
+    );
+  });
+
   testWidgets('category filter chips use faster directional repeat throttle',
       (tester) async {
     await tester.pumpWidget(
@@ -2566,6 +2591,47 @@ void main() {
     await tester.tap(find.text('继续观看影片'), warnIfMissed: false);
     await tester.pumpAndSettle();
 
+    expect(find.text('TV 详情页已打开'), findsOneWidget);
+  });
+
+  testWidgets('continue watching opens detail with resume fields preserved',
+      (tester) async {
+    late VideoInfo openedVideo;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvHomeScreen(
+          loadHomeData: (_) async => TvHomeData(
+            continueWatching: [
+              _videoInfo(
+                'continue_1',
+                '继续观看影片',
+                index: 7,
+                playTime: 497,
+                totalTime: 3600,
+              ),
+            ],
+            hotMovies: const [],
+            hotTvShows: const [],
+            bangumiCalendar: const [],
+            hotShows: const [],
+            history: const [],
+            favorites: const [],
+          ),
+          buildDetailPage: (videoInfo, __) {
+            openedVideo = videoInfo;
+            return const Scaffold(body: Text('TV 详情页已打开'));
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('继续观看影片'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(openedVideo.index, 7);
+    expect(openedVideo.playTime, 497);
+    expect(openedVideo.totalTime, 3600);
     expect(find.text('TV 详情页已打开'), findsOneWidget);
   });
 
@@ -3195,7 +3261,13 @@ FocusNode _focusNodeForFocusableKey(WidgetTester tester, Key key) {
   return tester.widget<Focus>(focusFinder.first).focusNode!;
 }
 
-VideoInfo _videoInfo(String id, String title) {
+VideoInfo _videoInfo(
+  String id,
+  String title, {
+  int index = 1,
+  int playTime = 0,
+  int totalTime = 0,
+}) {
   return VideoInfo(
     id: id,
     source: 'test',
@@ -3203,10 +3275,10 @@ VideoInfo _videoInfo(String id, String title) {
     sourceName: '测试源',
     year: '2026',
     cover: '',
-    index: 1,
+    index: index,
     totalEpisodes: 1,
-    playTime: 0,
-    totalTime: 0,
+    playTime: playTime,
+    totalTime: totalTime,
     saveTime: 0,
     searchTitle: title,
   );

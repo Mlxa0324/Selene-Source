@@ -56,6 +56,38 @@ void main() {
     expect(find.text('内核'), findsNothing);
   });
 
+  testWidgets('opens TV player menu with remote menu keys', (tester) async {
+    for (final menuKey in <LogicalKeyboardKey>[
+      LogicalKeyboardKey.contextMenu,
+    ]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TvFullscreenPlayerScreen(
+            videoInfo: _videoInfo(),
+            currentDetail: _searchResult('source_a', '主线路'),
+            sources: [
+              _searchResult('source_a', '主线路'),
+            ],
+            playerBuilder: (_, __) => const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsNothing);
+
+      await tester.sendKeyEvent(menuKey);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets('menu keeps top decorations visible', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -148,6 +180,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('tv-fullscreen-menu')), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('tv-fullscreen-menu')),
+        matching:
+            find.byKey(const ValueKey('tv-fullscreen-menu-repaint-boundary')),
+      ),
+      findsOneWidget,
+    );
     expect(playerBuildCount, settledPlayerBuildCount);
 
     _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
@@ -1837,6 +1877,50 @@ void main() {
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
   });
 
+  testWidgets(
+      'fullscreen spinner hides after seek completes without play event',
+      (tester) async {
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: false,
+      loading: true,
+      clearLoadingOnSeek: true,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          initialPlaybackStarted: false,
+          playbackController: playback,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.pump();
+
+    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+    expect(find.byKey(const ValueKey('tv-fullscreen-center-play')),
+        findsOneWidget);
+  });
+
   testWidgets('brief arrow key holds seek by ten seconds instead of long press',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
@@ -2549,6 +2633,64 @@ void main() {
     );
   });
 
+  testWidgets('initial playback position seeks after source update fallback',
+      (tester) async {
+    final seekPositions = <Duration>[];
+    Duration? startPosition;
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            id: 'detail_source_a',
+            index: 2,
+            totalEpisodes: 3,
+            playTime: 88,
+            totalTime: 1000,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult('source_a', '主线路', episodeCount: 3),
+          ],
+          initialEpisodeIndex: 1,
+          initialPlaybackPosition: const Duration(seconds: 88),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 1000),
+                  onUpdateDataSource: (_, {startAt, headers}) async {
+                    startPosition = startAt;
+                  },
+                  onSeekTo: (position) async {
+                    seekPositions.add(position);
+                  },
+                ),
+              );
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(startPosition, const Duration(seconds: 88));
+    expect(seekPositions, [const Duration(seconds: 88)]);
+  });
+
   test(
       'TV fullscreen seek long press uses one-second ticks at 60x and 120x rates',
       () {
@@ -2733,12 +2875,14 @@ class _FakeTvFullscreenPlaybackController
     required this.duration,
     required this.playing,
     this.loading = false,
+    this.clearLoadingOnSeek = false,
   });
 
   Duration position;
   Duration duration;
   bool playing;
   bool loading;
+  bool clearLoadingOnSeek;
   int playCount = 0;
   int pauseCount = 0;
   final List<Duration> seekPositions = [];
@@ -2770,6 +2914,9 @@ class _FakeTvFullscreenPlaybackController
   @override
   Future<void> seekTo(Duration position) async {
     this.position = position;
+    if (clearLoadingOnSeek) {
+      loading = false;
+    }
     seekPositions.add(position);
   }
 }

@@ -219,7 +219,9 @@ class TvPlayRecordService {
 实现要求：
 
 - TV 详情页和 TV 全屏播放器都必须复用 `TvPlayRecordService` 构建 `PlayRecord`。
-- 继续观看入口使用 `VideoInfo.index` 换算初始集数下标，使用 `VideoInfo.playTime` 作为首次 `updateDataSource(startAt)`。
+- 继续观看入口必须先按手机端播放器逻辑重新读取最新 `PlayRecord`，用 `source + id` 命中记录后再换算续播状态；缓存或首页传入的 `VideoInfo.index/playTime` 只能作为兜底，避免入口卡片字段过期导致从 0 秒起播。
+- 继续观看首播使用最终续播记录的 `index` 换算初始集数下标，使用最终续播记录的 `playTime` 作为首次 `updateDataSource(startAt)`。
+- 详情页小播放器和全屏播放器在 `updateDataSource(startAt)` 后，若底层控制器当前位置仍未到达 `startAt` 附近，必须补一次 `seekTo(startAt)`；这是对齐手机端 `PlayerScreen._resumeStartAt -> _onVideoPlayerReady -> seekToProgress` 的兜底。
 - 播放进度上报沿用手机端节流：播放位置小于 1 秒不保存，10 秒内重复进度不重复保存。
 - 换源时必须先保存新源 `PlayRecord`，保存失败不得清理旧源记录；保存成功后才清理同一影片其它源记录，避免网络抖动造成继续观看丢失。
 
@@ -645,7 +647,7 @@ data class PlaybackSnapshot(
 | 纵向滚动页焦点移动没有平滑滚动 | `TvFocusable` 获焦后调用 `TvFocusScroll`，首页分区使用更明显的区块滚动对齐 | `tv_focusable_test.dart`, `tv_home_section_test.dart` |
 | TV 卡片缺少继续观看进度 | 多集徽章和封面底部播放进度条复用 `VideoInfo` 进度字段 | `tv_video_card_test.dart` |
 | TV 卡片缺少继续观看秒数和源名 | 继续观看卡片副标题展示当前集、播放时间和源名 | `tv_video_card_test.dart` |
-| TV 详情页继续观看从第 1 集起播 | 详情页把 `VideoInfo.index/playTime` 转成 `updateDataSource(startAt)` | `tv_video_detail_screen_test.dart` |
+| TV 详情页继续观看从第 1 集起播 | 详情页重新读取最新 `PlayRecord`，把最终 `index/playTime` 转成 `updateDataSource(startAt)`，并在底层未吃到 `startAt` 时补 `seekTo(startAt)` | `tv_video_detail_screen_test.dart` |
 | TV 详情页或全屏页播放不更新记录 | 播放器控制器进度监听调用 `TvPlayRecordService.saveRecord` | `tv_video_detail_screen_test.dart`, `tv_fullscreen_player_screen_test.dart` |
 | TV 换源后旧记录被误删 | 换源先保存新源记录，失败时跳过清理，成功后才删除同影片其它源记录 | `tv_video_detail_screen_test.dart`, `tv_fullscreen_player_screen_test.dart` |
 | 顶部导航需要按确认才切换 | 菜单项获得焦点时触发 `onChanged` | `tv_top_nav_test.dart` |
