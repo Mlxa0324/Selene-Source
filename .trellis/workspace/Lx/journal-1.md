@@ -19,7 +19,10 @@
 
 ### Main Changes
 
-(Add details)
+- 给 `app-tv` Manifest 补充 `android.permission.INTERNET`。
+- 通过 manifest placeholder 让 debug 包允许本地 HTTP 后台，release 包默认关闭明文流量。
+- 更新 TV 网络层规格，记录原生 TV 启动依赖 Manifest 网络权限。
+- 归档 `05-31-fix-kotlin-tv-launch-crash` 任务。
 
 ### Git Commits
 
@@ -30,7 +33,11 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `./re-android/gradlew -p re-android :app-tv:testDebugUnitTest :app-tv:lintDebug`
+- [OK] `./re-android/gradlew -p re-android :app-tv:processReleaseManifest`
+- [OK] `./re-android/gradlew -p re-android :app-tv:installDebug`
+- [OK] `adb shell am start -n org.moontechlab.selene.tv.app/.MainActivity`
+- [OK] 启动后 `adb logcat` 未出现 `AndroidRuntime`、`FATAL EXCEPTION`、`missing INTERNET` 或 `Permission denied`。
 
 ### Status
 
@@ -95,6 +102,39 @@
 |------|---------|
 | `19f5599` | (see git log) |
 | `df990a5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 4: 修复 Kotlin TV 启动闪退
+
+**Date**: 2026-05-31
+**Task**: 修复 Kotlin TV 启动闪退
+**Branch**: `tvtv`
+
+### Summary
+
+定位 TV 壳启动闪退为缺少 INTERNET 权限导致 OkHttp 线程 SecurityException；补充网络权限、debug 本地 HTTP 明文策略、release 关闭明文，并完成单测、lint、安装启动验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `efdad40` | (see git log) |
 
 ### Testing
 
