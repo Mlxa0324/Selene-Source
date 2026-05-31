@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/tv-mode.md", "reason": "遵循 TV 遥控器焦点、方向键和横向列表交互约束。"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "确认焦点记忆和滚动抑制状态保持在页面局部状态内。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用现有 TV 焦点组件和列表滚动逻辑，避免新增重复实现。"}

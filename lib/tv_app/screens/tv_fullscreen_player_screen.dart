@@ -406,6 +406,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 播放列表最近一次获焦的分组下标。
   int? _lastFocusedEpisodeGroupIndex;
 
+  /// 下次选集获焦时是否跳过横向贴左动画。
+  bool _suppressNextEpisodeFocusPin = false;
+
+  /// 下次分组获焦时是否跳过横向贴左动画。
+  bool _suppressNextEpisodeGroupFocusPin = false;
+
   /// 当前画面比例。
   VideoFitType _fitType = VideoFitType.contain;
 
@@ -1607,6 +1613,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _scheduleMenuAutoHide();
     _lastFocusedPlaylistRow = _TvPlaylistSecondaryRow.episode;
     _lastFocusedEpisodeIndex = index;
+    if (_suppressNextEpisodeFocusPin) {
+      _suppressNextEpisodeFocusPin = false;
+      return;
+    }
     _schedulePinEpisodeNearLeadingEdge(index);
   }
 
@@ -1619,6 +1629,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         _lastFocusedPlaylistRow == _TvPlaylistSecondaryRow.group;
     _lastFocusedPlaylistRow = _TvPlaylistSecondaryRow.group;
     _lastFocusedEpisodeGroupIndex = index;
+    if (_suppressNextEpisodeGroupFocusPin) {
+      _suppressNextEpisodeGroupFocusPin = false;
+      final groupEpisodeIndexes = _episodeIndexesForGroup(
+        _episodes.length,
+        index,
+      );
+      final hasRememberedEpisodeInGroup = _lastFocusedEpisodeIndex != null &&
+          _episodeBelongsToGroup(_lastFocusedEpisodeIndex!, index);
+      if (!hasRememberedEpisodeInGroup && groupEpisodeIndexes.isNotEmpty) {
+        _lastFocusedEpisodeIndex = groupEpisodeIndexes.first;
+      }
+      if (_episodeGroupIndex != index) {
+        setState(() => _episodeGroupIndex = index);
+      }
+      return;
+    }
     if (cameFromGroupRow) {
       _schedulePinEpisodeGroupNearLeadingEdge(index);
     }
@@ -1735,9 +1761,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     // 分组行上键只回到当前分组内的第一集，避免旧分组焦点节点抢焦点。
     for (final index in visibleIndexes) {
+      _suppressNextEpisodeFocusPin = true;
       if (_requestFocusIfMounted(_secondaryFocusNodeFor('episode', index))) {
         return true;
       }
+      _suppressNextEpisodeFocusPin = false;
     }
     return false;
   }
@@ -1749,9 +1777,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return false;
     }
     final normalizedGroupIndex = groupIndex.clamp(0, groupCount - 1).toInt();
-    return _requestFocusIfMounted(
+    _suppressNextEpisodeGroupFocusPin = true;
+    final focused = _requestFocusIfMounted(
       _episodeGroupFocusNodeFor(normalizedGroupIndex),
     );
+    if (!focused) {
+      _suppressNextEpisodeGroupFocusPin = false;
+    }
+    return focused;
   }
 
   /// 选集行下键优先进入当前集数所属分组，没有分组时回到底部一级菜单。
@@ -2181,9 +2214,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         !_episodeBelongsToGroup(episodeIndex, groupIndex)) {
       return false;
     }
-    return _requestFocusIfMounted(
+    _suppressNextEpisodeFocusPin = true;
+    final focused = _requestFocusIfMounted(
       _secondaryFocusNodeFor('episode', episodeIndex),
     );
+    if (!focused) {
+      _suppressNextEpisodeFocusPin = false;
+    }
+    return focused;
   }
 
   /// 播放进度变化时按手机端节流策略保存。

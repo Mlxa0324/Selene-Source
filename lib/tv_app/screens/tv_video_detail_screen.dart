@@ -425,6 +425,19 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 因此这里统一预留一小段上下安全距离，避免看起来像被页面裁掉。
   static const double _detailVerticalFocusVisibleInset = 12;
 
+  /// 详情页线路横向焦点记忆分组。
+  static const String _sourceFocusGroupKey = 'tv-detail-source-list';
+
+  /// 详情页选集横向焦点记忆分组。
+  static const String _episodeFocusGroupKey = 'tv-detail-episode-list';
+
+  /// 详情页选集分组横向焦点记忆分组。
+  static const String _episodeGroupFocusGroupKey =
+      'tv-detail-episode-group-list';
+
+  /// 详情页推荐横向焦点记忆分组。
+  static const String _recommendFocusGroupKey = 'tv-detail-recommend-list';
+
   /// 选集分组获焦后的延迟提交时间。
   ///
   /// 遥控器快速左右移动时，先让焦点和文字高亮即时响应，选集列表刷新延后合并，
@@ -658,6 +671,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 最近一次获焦的推荐稳定标识。
   String? _lastFocusedRecommendKey;
+
+  /// 下一次获焦时跳过横向归位的分组。
+  ///
+  /// 仅用于上下跨列表恢复焦点：焦点回到上次停留项即可，横向滚动位置保持用户离开时
+  /// 的状态，避免上下移动时列表又被程序主动贴回左侧。
+  final Set<String> _suppressedHorizontalRevealGroups = <String>{};
 
   /// 播放进度保存间隔，对齐手机端节流策略。
   static const Duration _saveProgressInterval = Duration(seconds: 10);
@@ -1572,6 +1591,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (alreadyAtResumePosition) {
       return;
     }
+    if (currentPosition != null &&
+        currentPosition > Duration.zero &&
+        currentPosition > startAt) {
+      // 播放器已推进到续播点之后时保留真实进度，避免初始化兜底把进度回拉到旧记录。
+      return;
+    }
 
     try {
       await controller.seekTo(startAt);
@@ -1723,17 +1748,30 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   }
 
   /// 切换选集分组。
-  void _switchEpisodeGroup(int index, {bool defer = false}) {
+  void _switchEpisodeGroup(
+    int index, {
+    bool defer = false,
+    bool pinCurrentWhenUnchanged = true,
+  }) {
     if (defer) {
-      _scheduleEpisodeGroupFocusCommit(index);
+      _scheduleEpisodeGroupFocusCommit(
+        index,
+        pinCurrentWhenUnchanged: pinCurrentWhenUnchanged,
+      );
       return;
     }
     _cancelPendingEpisodeGroupFocusCommit();
-    _commitEpisodeGroupSwitch(index);
+    _commitEpisodeGroupSwitch(
+      index,
+      pinCurrentWhenUnchanged: pinCurrentWhenUnchanged,
+    );
   }
 
   /// 延迟提交选集分组切换。
-  void _scheduleEpisodeGroupFocusCommit(int index) {
+  void _scheduleEpisodeGroupFocusCommit(
+    int index, {
+    required bool pinCurrentWhenUnchanged,
+  }) {
     _pendingEpisodeGroupFocusIndex = index;
     _episodeGroupFocusCommitTimer?.cancel();
     _episodeGroupFocusCommitTimer = Timer(
@@ -1745,7 +1783,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         if (!mounted || pendingIndex == null) {
           return;
         }
-        _commitEpisodeGroupSwitch(pendingIndex);
+        _commitEpisodeGroupSwitch(
+          pendingIndex,
+          pinCurrentWhenUnchanged: pinCurrentWhenUnchanged,
+        );
       },
     );
   }
@@ -1758,9 +1799,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   }
 
   /// 提交选集分组切换并刷新可见选集。
-  void _commitEpisodeGroupSwitch(int index) {
+  void _commitEpisodeGroupSwitch(
+    int index, {
+    bool pinCurrentWhenUnchanged = true,
+  }) {
     if (_episodeGroupIndex == index) {
-      _pinEpisodeGroupAndEpisodeNearLeadingEdge(index, _episodeIndex);
+      if (pinCurrentWhenUnchanged) {
+        _pinEpisodeGroupAndEpisodeNearLeadingEdge(index, _episodeIndex);
+      }
       return;
     }
     setState(() => _episodeGroupIndex = index);
@@ -1895,6 +1941,32 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _lastFocusedRecommendKey = _recommendFocusKey(videoInfo);
   }
 
+  /// 标记指定横向列表本次只恢复焦点，不自动修正横向滚动位置。
+  void _suppressNextHorizontalReveal(String groupKey) {
+    _suppressedHorizontalRevealGroups.add(groupKey);
+  }
+
+  /// 若本次获焦来自纵向焦点恢复，则消费跳过标记。
+  bool _consumeHorizontalRevealSuppression(String groupKey) {
+    return _suppressedHorizontalRevealGroups.remove(groupKey);
+  }
+
+  /// 纵向恢复焦点时保留横向 offset，普通左右移动时仍按安全区滚动。
+  bool _scheduleHorizontalTargetRevealIfNeeded({
+    required String groupKey,
+    required ScrollController controller,
+    required GlobalKey targetKey,
+  }) {
+    if (_consumeHorizontalRevealSuppression(groupKey)) {
+      return false;
+    }
+    _scheduleHorizontalTargetToSafeLeadingInset(
+      controller: controller,
+      targetKey: targetKey,
+    );
+    return true;
+  }
+
   /// 在条目真正获焦后，再按安全留白把目标推到屏幕左边。
   void _scheduleHorizontalTargetToSafeLeadingInset({
     required ScrollController controller,
@@ -1994,6 +2066,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (targetNode == null) {
       return;
     }
+    _suppressNextHorizontalReveal(_sourceFocusGroupKey);
     targetNode.requestFocus();
     _ensureFocusedNodeVisible(
       targetNode,
@@ -2007,6 +2080,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (targetNode == null) {
       return;
     }
+    _suppressNextHorizontalReveal(_sourceFocusGroupKey);
     targetNode.requestFocus();
     _ensureFocusedNodeVisible(
       targetNode,
@@ -2025,6 +2099,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (node == null) {
       return;
     }
+    _suppressNextHorizontalReveal(_episodeFocusGroupKey);
     node.requestFocus();
     _ensureFocusedNodeVisible(
       node,
@@ -2039,6 +2114,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (groupCount > 1) {
       final node = _preferredVisibleEpisodeGroupFocusNode();
       if (node != null) {
+        _suppressNextHorizontalReveal(_episodeGroupFocusGroupKey);
         node.requestFocus();
         _ensureFocusedNodeVisible(
           node,
@@ -2132,6 +2208,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return false;
     }
     _rememberFocusedEpisode(episodeIndex);
+    _suppressNextHorizontalReveal(_episodeFocusGroupKey);
     node.requestFocus();
     _ensureFocusedNodeVisible(
       node,
@@ -2170,6 +2247,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _focusBottomAction();
       return;
     }
+    _suppressNextHorizontalReveal(_recommendFocusGroupKey);
     targetNode.requestFocus();
     _ensureFocusedNodeVisible(
       targetNode,
@@ -2196,6 +2274,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (groupCount > 1) {
       final groupNode = _preferredVisibleEpisodeGroupFocusNode();
       if (groupNode != null) {
+        _suppressNextHorizontalReveal(_episodeGroupFocusGroupKey);
         groupNode.requestFocus();
         _ensureFocusedNodeVisible(groupNode);
         return;
@@ -2203,6 +2282,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
     final episodeNode = _preferredVisibleEpisodeFocusNode();
     if (episodeNode != null) {
+      _suppressNextHorizontalReveal(_episodeFocusGroupKey);
       episodeNode.requestFocus();
       _ensureFocusedNodeVisible(episodeNode);
       return;
@@ -3543,7 +3623,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                           trailingText: '（${source.episodes.length}）',
                           selected: selected,
                           focusNode: _sourceFocusNodeFor(source),
-                          focusMemoryGroupKey: 'tv-detail-source-list',
+                          focusMemoryGroupKey: _sourceFocusGroupKey,
                           onArrowLeft: isFirstItem
                               ? () => edgeShakeKey.currentState
                                   ?.shake(AxisDirection.left)
@@ -3559,7 +3639,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                             // 任意线路获焦时都保留 36px 左安全区：首项与标题对齐，
                             // 滚到最左侧获焦时焦点描边也不会被屏幕裁掉。
                             _rememberFocusedSource(source);
-                            _scheduleHorizontalTargetToSafeLeadingInset(
+                            _scheduleHorizontalTargetRevealIfNeeded(
+                              groupKey: _sourceFocusGroupKey,
                               controller: _sourceListScrollController,
                               targetKey: _sourceTargetKeyFor(source),
                             );
@@ -3624,7 +3705,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                             label: title.isEmpty ? '${index + 1}' : title,
                             selected: index == _episodeIndex,
                             focusNode: _episodeFocusNodeFor(index),
-                            focusMemoryGroupKey: 'tv-detail-episode-list',
+                            focusMemoryGroupKey: _episodeFocusGroupKey,
                             allowMultiline: true,
                             onArrowLeft: isFirstItem
                                 ? () => edgeShakeKey.currentState
@@ -3641,7 +3722,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               // 复用按真实渲染位置定位的方案，避免选集宽度估算误差把焦点
                               // 推过安全区，和线路/分组/推荐保持一致的贴边手感。
                               _rememberFocusedEpisode(index);
-                              _scheduleHorizontalTargetToSafeLeadingInset(
+                              _scheduleHorizontalTargetRevealIfNeeded(
+                                groupKey: _episodeFocusGroupKey,
                                 controller: _episodeListScrollController,
                                 targetKey: _episodeTargetKeyFor(index),
                               );
@@ -3679,8 +3761,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               label: _episodeGroupLabel(index, episodes.length),
                               selected: index == groupIndex,
                               focusNode: _episodeGroupFocusNodeFor(index),
-                              focusMemoryGroupKey:
-                                  'tv-detail-episode-group-list',
+                              focusMemoryGroupKey: _episodeGroupFocusGroupKey,
                               onArrowLeft: isFirstItem
                                   ? () => edgeShakeKey.currentState
                                       ?.shake(AxisDirection.left)
@@ -3695,11 +3776,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               onFocus: () {
                                 // 任意分组获焦时都保留 36px 左安全区，滚到最左侧也不裁焦点框。
                                 _rememberFocusedEpisodeGroup(index);
-                                _scheduleHorizontalTargetToSafeLeadingInset(
+                                final shouldReveal =
+                                    _scheduleHorizontalTargetRevealIfNeeded(
+                                  groupKey: _episodeGroupFocusGroupKey,
                                   controller: _episodeGroupListScrollController,
                                   targetKey: _episodeGroupTargetKeyFor(index),
                                 );
-                                _switchEpisodeGroup(index, defer: true);
+                                _switchEpisodeGroup(
+                                  index,
+                                  defer: true,
+                                  pinCurrentWhenUnchanged: shouldReveal,
+                                );
                               },
                               onPressed: () => _switchEpisodeGroup(index),
                               throttleGroupKey: 'tv-detail-episode-group-list',
@@ -3742,7 +3829,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 child: TvVideoCard(
                   videoInfo: videoInfo,
                   focusNode: _recommendFocusNodeFor(videoInfo),
-                  focusMemoryGroupKey: 'tv-detail-recommend-list',
+                  focusMemoryGroupKey: _recommendFocusGroupKey,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -3758,7 +3845,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                       // 任意推荐卡片获焦时都保留 36px 左安全区，和首页继续观看一致，
                       // 滚到最左侧获焦时海报放大描边也不会被屏幕裁掉。
                       _rememberFocusedRecommend(videoInfo);
-                      _scheduleHorizontalTargetToSafeLeadingInset(
+                      _scheduleHorizontalTargetRevealIfNeeded(
+                        groupKey: _recommendFocusGroupKey,
                         controller: _recommendListScrollController,
                         targetKey: _recommendTargetKeyFor(videoInfo),
                       );

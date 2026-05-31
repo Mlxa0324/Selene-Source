@@ -897,6 +897,58 @@ void main() {
     expect(groupController.offset, moreOrLessEquals(shiftedOffset));
   });
 
+  testWidgets('episode row keeps scroll position on vertical focus moves',
+      (tester) async {
+    final detail = _searchResult(
+      'source_a',
+      '主线路',
+      episodeCount: 120,
+      selectedEpisodeIndex: 20,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            index: 21,
+            totalEpisodes: 120,
+          ),
+          currentDetail: detail,
+          sources: [detail],
+          initialEpisodeIndex: 20,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第21集').requestFocus();
+    await tester.pumpAndSettle();
+
+    final episodeScrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('tv-fullscreen-episode-list')),
+    );
+    final episodeController = episodeScrollView.controller!;
+    final shiftedOffset = (episodeController.offset + 40)
+        .clamp(0.0, episodeController.position.maxScrollExtent);
+    episodeController.jumpTo(shiftedOffset);
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+    expect(episodeController.offset, moreOrLessEquals(shiftedOffset));
+  });
+
   testWidgets('play list splits long episodes into grouped pages',
       (tester) async {
     await tester.pumpWidget(

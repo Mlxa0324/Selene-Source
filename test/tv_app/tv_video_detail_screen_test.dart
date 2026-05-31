@@ -2646,6 +2646,62 @@ void main() {
     );
   });
 
+  testWidgets(
+      'detail episode row keeps scroll position on vertical focus moves',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 45),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('第6集'))).requestFocus();
+    await tester.pumpAndSettle();
+
+    final episodeScrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-detail-episode-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    final shiftedOffset = (episodeScrollable.position.pixels + 40)
+        .clamp(0.0, episodeScrollable.position.maxScrollExtent);
+    episodeScrollable.position.jumpTo(shiftedOffset);
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    _expectFocused(tester, find.text('第6集'));
+    expect(episodeScrollable.position.pixels, moreOrLessEquals(shiftedOffset));
+  });
+
   testWidgets('switches visible episode range when group label gets focus',
       (tester) async {
     await _setTvSurfaceSize(tester);
