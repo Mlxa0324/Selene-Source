@@ -4345,6 +4345,80 @@ void main() {
   });
 
   testWidgets(
+      'continue watching retries seek when first seek is ignored before progress',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    late _FakeVideoPlayerWidgetController controller;
+    Duration? startPosition;
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'detail_source_a',
+            '主影片',
+            source: 'source_a',
+            sourceName: '主源',
+            index: 2,
+            totalEpisodes: 3,
+            playTime: 88,
+            totalTime: 3600,
+          ),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 3,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 3),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                currentPosition: Duration.zero,
+                duration: const Duration(seconds: 3600),
+                onUpdateDataSource: (url, {startAt, headers}) {
+                  startPosition = startAt;
+                },
+              );
+              onControllerCreated(controller);
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(startPosition, const Duration(seconds: 88));
+    expect(controller.seekPositions, [const Duration(seconds: 88)]);
+
+    // 模拟低端 Android 播放器吞掉 ready 前 seek，真实进度事件仍从 0 秒回来。
+    controller.currentPosition = Duration.zero;
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(controller.seekPositions, [
+      const Duration(seconds: 88),
+      const Duration(seconds: 88),
+    ]);
+  });
+
+  testWidgets(
       'reloads saved play record when entry video has stale resume time',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

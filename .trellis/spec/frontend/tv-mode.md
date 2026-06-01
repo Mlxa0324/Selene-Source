@@ -222,6 +222,7 @@ class TvPlayRecordService {
 - 继续观看入口必须先按手机端播放器逻辑重新读取最新 `PlayRecord`，用 `source + id` 命中记录后再换算续播状态；缓存或首页传入的 `VideoInfo.index/playTime` 只能作为兜底，避免入口卡片字段过期导致从 0 秒起播。
 - 继续观看首播使用最终续播记录的 `index` 换算初始集数下标，使用最终续播记录的 `playTime` 作为首次 `updateDataSource(startAt)`。
 - 详情页小播放器和全屏播放器在 `updateDataSource(startAt)` 后，若底层控制器当前位置仍未到达 `startAt` 附近，必须补一次 `seekTo(startAt)`；这是对齐手机端 `PlayerScreen._resumeStartAt -> _onVideoPlayerReady -> seekToProgress` 的兜底。
+- 详情页小播放器和全屏播放器不能只相信首次 `seekTo(startAt)` 调用成功；低端 Android WebView 可能在真实可 seek 前吞掉 seek。首次续播 seek 后必须等真实播放进度信号确认，如果当前位置仍在续播点之前，需要限次补偿 seek，避免继续观看从 0 秒起播。
 - 播放进度上报沿用手机端节流：播放位置小于 1 秒不保存，10 秒内重复进度不重复保存。
 - 换源时必须先保存新源 `PlayRecord`，保存失败不得清理旧源记录；保存成功后才清理同一影片其它源记录，避免网络抖动造成继续观看丢失。
 

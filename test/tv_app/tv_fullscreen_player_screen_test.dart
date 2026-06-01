@@ -2743,6 +2743,75 @@ void main() {
     expect(seekPositions, [const Duration(seconds: 88)]);
   });
 
+  testWidgets(
+      'initial playback position retries seek when first seek is ignored before progress',
+      (tester) async {
+    final seekPositions = <Duration>[];
+    Duration? startPosition;
+    late _FakeVideoPlayerWidgetController controller;
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            id: 'detail_source_a',
+            index: 2,
+            totalEpisodes: 3,
+            playTime: 88,
+            totalTime: 1000,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult('source_a', '主线路', episodeCount: 3),
+          ],
+          initialEpisodeIndex: 1,
+          initialPlaybackPosition: const Duration(seconds: 88),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                currentPosition: Duration.zero,
+                duration: const Duration(seconds: 1000),
+                onUpdateDataSource: (_, {startAt, headers}) async {
+                  startPosition = startAt;
+                },
+                onSeekTo: (position) async {
+                  seekPositions.add(position);
+                },
+              );
+              onControllerCreated(controller);
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(startPosition, const Duration(seconds: 88));
+    expect(seekPositions, [const Duration(seconds: 88)]);
+
+    // 模拟低端 Android 播放器吞掉 ready 前 seek，真实进度事件仍从 0 秒回来。
+    controller.currentPosition = Duration.zero;
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(seekPositions, [
+      const Duration(seconds: 88),
+      const Duration(seconds: 88),
+    ]);
+  });
+
   test(
       'TV fullscreen seek long press uses one-second ticks at 60x and 120x rates',
       () {
@@ -2988,7 +3057,7 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   final bool isPlaying;
 
   @override
-  final Duration? currentPosition;
+  Duration? currentPosition;
 
   @override
   final Duration? duration;
@@ -3044,6 +3113,7 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   Future<void> seekTo(Duration position) async {
+    currentPosition = position;
     await onSeekTo?.call(position);
   }
 

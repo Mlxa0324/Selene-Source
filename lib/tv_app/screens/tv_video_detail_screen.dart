@@ -567,6 +567,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 初始续播时间，仅首次起播消费。
   Duration? _pendingInitialPlaybackPosition;
 
+  /// 等待真实进度信号确认的续播 seek 位置。
+  Duration? _pendingResumeSeekPosition;
+
+  /// 当前续播 seek 已重试次数。
+  int _pendingResumeSeekRetryCount = 0;
+
   /// 入口续播时间快照，供全屏在小播放器进度未回传时兜底。
   Duration? _initialResumePlaybackPositionSnapshot;
 
@@ -684,6 +690,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 进入详情页后短暂保护加载态，避免播放器初始 `playing=false` 被误判为暂停。
   static const Duration _initialPreviewLoadingHold =
       Duration(milliseconds: 500);
+
+  /// 低端 Android 播放器 ready 前可能吞掉 seek，限制补偿次数避免高频打扰播放。
+  static const int _pendingResumeSeekRetryLimit = 5;
 
   /// 安全刷新小播放器暂停控制层。
   ///
@@ -1313,6 +1322,61 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return position;
   }
 
+  /// 记录需要用真实进度信号确认的续播 seek。
+  void _rememberPendingResumeSeek(Duration? position) {
+    if (position == null || position <= Duration.zero) {
+      _clearPendingResumeSeek();
+      return;
+    }
+    _pendingResumeSeekPosition = position;
+    _pendingResumeSeekRetryCount = 0;
+  }
+
+  /// 清理已确认或已放弃的续播 seek。
+  void _clearPendingResumeSeek() {
+    _pendingResumeSeekPosition = null;
+    _pendingResumeSeekRetryCount = 0;
+  }
+
+  /// 判断播放器真实进度是否已经到达续播点附近。
+  bool _isAtResumePosition(Duration currentPosition, Duration resumePosition) {
+    return currentPosition + const Duration(seconds: 1) >= resumePosition;
+  }
+
+  /// 真实进度仍停在续播点之前时，补一次 seek。
+  ///
+  /// 部分低端 Android WebView 会在 `loadedmetadata` 之前吞掉首个 seek，
+  /// 这里等进度事件确认后再补偿，避免 Flutter 侧的乐观进度误判为已经续播成功。
+  Future<void> _retryPendingResumeSeekAfterProgress() async {
+    final resumePosition = _pendingResumeSeekPosition;
+    final controller = _playerController;
+    if (resumePosition == null || controller == null) {
+      return;
+    }
+
+    final currentPosition = controller.currentPosition;
+    if (currentPosition != null &&
+        _isAtResumePosition(currentPosition, resumePosition)) {
+      _clearPendingResumeSeek();
+      return;
+    }
+
+    if (_pendingResumeSeekRetryCount >= _pendingResumeSeekRetryLimit) {
+      debugPrint(
+        'TV 详情页续播 seek 重试达到上限: ${resumePosition.inSeconds}s',
+      );
+      _clearPendingResumeSeek();
+      return;
+    }
+
+    _pendingResumeSeekRetryCount++;
+    try {
+      await controller.seekTo(resumePosition);
+    } catch (error) {
+      debugPrint('TV 详情页续播 seek 重试失败: $error');
+    }
+  }
+
   /// 计算当前分组选集列表的动态高度。
   ///
   /// 选集标题可能比线路名长很多，这里按当前分组里最长标题实时测量文本高度，
@@ -1445,6 +1509,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (_isPreviewPlaybackReadyForDisplay && !_hasPreviewPlaybackStarted) {
       _markPreviewPlaybackStarted();
     }
+    unawaited(_retryPendingResumeSeekAfterProgress());
     unawaited(_saveProgress(scene: '定时保存'));
     if (_playerController?.isPlaying == false) {
       _schedulePreviewChromeRefresh();
@@ -1557,6 +1622,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     _lastRequestedPlaybackUrl = url;
+    _rememberPendingResumeSeek(startAt);
     _markPreviewPlayerLoading();
     _schedulePreviewChromeRefresh();
     final playbackRequest = controller.updateDataSource(url, startAt: startAt);

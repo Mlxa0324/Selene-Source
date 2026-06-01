@@ -532,6 +532,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 初次加载全屏播放器时需要使用的续播位置。
   Duration? _pendingInitialPlaybackPosition;
 
+  /// 等待真实进度信号确认的续播 seek 位置。
+  Duration? _pendingResumeSeekPosition;
+
+  /// 当前续播 seek 已重试次数。
+  int _pendingResumeSeekRetryCount = 0;
+
   /// 是否已经应用过初始续播位置。
   bool _hasAppliedInitialPlaybackPosition = false;
 
@@ -575,6 +581,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 进入播放器后短暂保护加载态，避免初始 `playing=false` 被误判为暂停。
   static const Duration _initialFullscreenLoadingHold =
       Duration(milliseconds: 500);
+
+  /// 低端 Android 播放器 ready 前可能吞掉 seek，限制补偿次数避免高频打扰播放。
+  static const int _pendingResumeSeekRetryLimit = 5;
 
   /// 底部菜单空闲自动隐藏时长。
   static const Duration _menuAutoHideDuration = Duration(seconds: 5);
@@ -943,6 +952,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return;
     }
     _lastRequestedPlaybackUrl = url;
+    _rememberPendingResumeSeek(startAt);
 
     _clearDanmakuState(clearList: true);
     _markFullscreenPlayerLoading();
@@ -1035,6 +1045,61 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final position = _pendingInitialPlaybackPosition;
     _pendingInitialPlaybackPosition = null;
     return position;
+  }
+
+  /// 记录需要用真实进度信号确认的续播 seek。
+  void _rememberPendingResumeSeek(Duration? position) {
+    if (position == null || position <= Duration.zero) {
+      _clearPendingResumeSeek();
+      return;
+    }
+    _pendingResumeSeekPosition = position;
+    _pendingResumeSeekRetryCount = 0;
+  }
+
+  /// 清理已确认或已放弃的续播 seek。
+  void _clearPendingResumeSeek() {
+    _pendingResumeSeekPosition = null;
+    _pendingResumeSeekRetryCount = 0;
+  }
+
+  /// 判断播放器真实进度是否已经到达续播点附近。
+  bool _isAtResumePosition(Duration currentPosition, Duration resumePosition) {
+    return currentPosition + const Duration(seconds: 1) >= resumePosition;
+  }
+
+  /// 真实进度仍停在续播点之前时，补一次 seek。
+  ///
+  /// 部分低端 Android WebView 会在 `loadedmetadata` 之前吞掉首个 seek，
+  /// 这里等进度事件确认后再补偿，避免 Flutter 侧的乐观进度误判为已经续播成功。
+  Future<void> _retryPendingResumeSeekAfterProgress() async {
+    final resumePosition = _pendingResumeSeekPosition;
+    final controller = _effectiveVideoController;
+    if (resumePosition == null || controller == null) {
+      return;
+    }
+
+    final currentPosition = controller.currentPosition;
+    if (currentPosition != null &&
+        _isAtResumePosition(currentPosition, resumePosition)) {
+      _clearPendingResumeSeek();
+      return;
+    }
+
+    if (_pendingResumeSeekRetryCount >= _pendingResumeSeekRetryLimit) {
+      debugPrint(
+        'TV 全屏续播 seek 重试达到上限: ${resumePosition.inSeconds}s',
+      );
+      _clearPendingResumeSeek();
+      return;
+    }
+
+    _pendingResumeSeekRetryCount++;
+    try {
+      await _seekTo(resumePosition);
+    } catch (error) {
+      debugPrint('TV 全屏续播 seek 重试失败: $error');
+    }
   }
 
   /// 处理全屏播放器键盘和遥控器按键。
@@ -2231,6 +2296,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         !_hasFullscreenPlaybackStarted) {
       _markFullscreenPlaybackStarted();
     }
+    unawaited(_retryPendingResumeSeekAfterProgress());
     unawaited(_saveProgress(scene: '全屏定时保存'));
   }
 
