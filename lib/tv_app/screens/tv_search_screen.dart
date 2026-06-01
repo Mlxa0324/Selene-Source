@@ -1346,7 +1346,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           onFocus?.call();
         }
       },
-      onPressed: () => _applySuggestionQuery(word),
+      onPressed: () => unawaited(_submitSuggestionQuery(word)),
       builder: (context, hasFocus) {
         return AnimatedContainer(
           key: ValueKey('tv-search-suggestion-tile-$word'),
@@ -1507,7 +1507,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       padding: const EdgeInsets.fromLTRB(
         _rightPanelContentLeftInset,
         _recommendListTopSafePadding,
-        70 + _rightPanelContentLeftInset,
+        TvVideoGrid.focusSafePadding,
         _recommendListBottomSafePadding,
       ),
       itemBuilder: (context, index) {
@@ -1568,7 +1568,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       padding: const EdgeInsets.fromLTRB(
         _rightPanelContentLeftInset,
         _recommendListTopSafePadding,
-        70 + _rightPanelContentLeftInset,
+        TvVideoGrid.focusSafePadding,
         _recommendListBottomSafePadding,
       ),
       itemBuilder: (context, index) {
@@ -2276,13 +2276,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     _updateQuery(value);
   }
 
-  /// 把联想词回填到输入框。
+  /// 选中联想词后直接发起搜索。
   ///
-  /// 先记住当前首字母联想上下文，方便后续手动搜索后仍可通过返回键回到联想页继续筛词。
-  void _applySuggestionQuery(String value) {
-    _suggestionQueryBeforeSearch = _query;
-    _suggestionsBeforeSearch = List<String>.from(_suggestions);
-    _updateQuery(value, preserveSuggestionContext: true);
+  /// 先保留当前首字母联想上下文，结果页返回时可继续从原联想列表筛词。
+  Future<void> _submitSuggestionQuery(String value) async {
+    await _performSearch(value, preserveSuggestionContext: true);
   }
 
   /// 执行当前输入框里的搜索词。

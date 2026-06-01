@@ -376,7 +376,7 @@ void main() {
     expect(suggestionTileLeft, recommendTitleLeft);
   });
 
-  testWidgets('pressing a suggestion fills query without starting search',
+  testWidgets('pressing a suggestion starts search with suggestion query',
       (tester) async {
     final searchedQueries = <String>[];
 
@@ -415,13 +415,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(searchedQueries, isEmpty);
+    expect(searchedQueries, ['世界的主人']);
     expect(
       find.byKey(const ValueKey('tv-search-result-grid-panel')),
-      findsNothing,
+      findsOneWidget,
     );
-    expect(find.text('搜索历史'), findsOneWidget);
-    expect(find.text('影片推荐'), findsOneWidget);
+    expect(find.text('1个影片'), findsOneWidget);
+    expect(find.text('搜索结果'), findsOneWidget);
+    expect(find.text('搜索历史'), findsNothing);
+    expect(find.text('影片推荐'), findsNothing);
     expect(
       find.byKey(const ValueKey('tv-search-suggestion-panel')),
       findsNothing,
@@ -473,13 +475,14 @@ void main() {
       keyLabel: 'S',
       suggestion: '世界的主人',
     );
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
-    expect(searchedQueries, ['世界的主']);
+    expect(searchedQueries, ['世界的主人', '世界的主']);
     expect(
       find.byKey(const ValueKey('tv-search-result-grid-panel')),
       findsOneWidget,
@@ -1556,7 +1559,6 @@ void main() {
       keyLabel: 'J',
       suggestion: '剑来',
     );
-    await _tapSearchButton(tester);
     await _pumpUntilFound(
       tester,
       find.byKey(const ValueKey('tv-search-result-grid-panel')),
@@ -2765,14 +2767,14 @@ void main() {
     fourthCardFocusNode.requestFocus();
     await tester.pumpAndSettle();
 
-    expect(controller.offset, closeTo(cardStride * 2, 0.01));
+    expect(controller.offset, closeTo(322.0, 0.01));
     expect(
       tester
           .getTopLeft(
             find.byKey(const ValueKey('tv-video-card-focus-recommend_3')),
           )
           .dx,
-      closeTo(secondSlotLeft, 0.01),
+      closeTo(622.0, 0.01),
     );
   });
 
@@ -3022,7 +3024,7 @@ void main() {
     expect(historyDelegate.crossAxisSpacing, 16);
     expect(historyDelegate.mainAxisSpacing, 14);
     expect(historyTileText.style?.fontSize, 17);
-    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 118, 18));
+    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 12, 18));
     expect(recommendList.clipBehavior, Clip.hardEdge);
   });
 
@@ -3279,7 +3281,6 @@ void main() {
       keyLabel: 'L',
       suggestion: '拉布拉多警长',
     );
-    await _tapSearchButton(tester);
     await tester.pumpAndSettle();
 
     expect(find.text('搜索结果'), findsOneWidget);
