@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/app_cache_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
@@ -641,6 +642,40 @@ class _TvCoverImageState extends State<_TvCoverImage> {
         Scrollable.recommendDeferredLoadingForContext(context);
   }
 
+  /// 判断当前卡片是否在滚动容器的可见区域内。
+  ///
+  /// 用于快速跨页滚动时只对当前视口内的卡片解禁图片请求，
+  /// 不可见卡片保持骨架态等滑入后再加载。
+  /// 非滚动容器内或无法获取 viewport 时安全回退到允许加载。
+  bool _isInViewport(BuildContext context) {
+    final renderObject = context.findRenderObject() as RenderBox?;
+    if (renderObject == null ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
+      return false;
+    }
+
+    final scrollable = Scrollable.maybeOf(context);
+    if (scrollable == null) {
+      return true; // 非滚动容器内，正常加载
+    }
+
+    final viewport = RenderAbstractViewport.of(renderObject);
+
+    final position = scrollable.position;
+    final viewportHeight = position.viewportDimension;
+    if (viewportHeight <= 0) {
+      return true; // viewport 尺寸异常，安全回退
+    }
+
+    final scrollOffset = position.pixels;
+    final revealedOffset = viewport.getOffsetToReveal(renderObject, 0);
+    final cardTop = revealedOffset.offset - scrollOffset;
+    final cardBottom = cardTop + renderObject.size.height;
+
+    return cardBottom > 0 && cardTop < viewportHeight;
+  }
+
   /// 为滚动中的卡片安排下一次可加载判断。
   void _scheduleDeferredLoadingRetry() {
     if (_deferredLoadingRetryTimer != null) {
@@ -680,6 +715,12 @@ class _TvCoverImageState extends State<_TvCoverImage> {
     }
 
     if (_shouldDeferLoading(context)) {
+      _scheduleDeferredLoadingRetry();
+      return false;
+    }
+
+    // 滚动停止后，仅对当前视口内可见的卡片解禁图片请求。
+    if (!_isInViewport(context)) {
       _scheduleDeferredLoadingRetry();
       return false;
     }
