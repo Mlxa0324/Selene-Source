@@ -139,7 +139,7 @@ class TvVideoCard extends StatelessWidget {
   static const double width = 158.0;
 
   /// TV 卡片固定高度。
-  static const double height = 298.0;
+  static const double height = 300.0;
 
   /// TV 卡片封面固定高度。
   static const double coverHeight = 237.0;
@@ -151,7 +151,7 @@ class TvVideoCard extends StatelessWidget {
   static const double titleFontSize = 16.0;
 
   /// TV 卡片副标题字号。
-  static const double subtitleFontSize = 13.0;
+  static const double subtitleFontSize = 14.0;
 
   /// TV 焦点雨刷光带起点。
   ///

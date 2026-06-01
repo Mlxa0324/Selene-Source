@@ -8,7 +8,7 @@ import 'package:selene/tv_app/widgets/tv_video_card.dart';
 void main() {
   test('TV video card keeps compact poster proportions', () {
     expect(TvVideoCard.width, 158);
-    expect(TvVideoCard.height, 298);
+    expect(TvVideoCard.height, 300);
     expect(TvVideoCard.coverHeight, 237);
     expect(TvVideoCard.focusedScale, 1.08);
     expect(TvVideoCard.shimmerBegin, const Alignment(-1.2, 0));
@@ -101,7 +101,7 @@ void main() {
     final subtitle = tester.widget<Text>(find.text('2026 · 8.8 分'));
 
     expect(title.style?.fontSize, 16);
-    expect(subtitle.style?.fontSize, 13);
+    expect(subtitle.style?.fontSize, 14);
   });
 
   testWidgets('TV video card shows cover skeleton while image is loading',
@@ -185,6 +185,75 @@ void main() {
     await _pumpFrames(tester, count: 6);
 
     expect(startedRequests, const ['https://example.com/poster.jpg']);
+  });
+
+  testWidgets(
+      'TV video card only starts image requests after entering viewport',
+      (tester) async {
+    final startedRequests = <String>[];
+    final scrollController = ScrollController();
+
+    VideoInfo buildVideoInfo(int index) {
+      return VideoInfo(
+        id: 'tv_card_$index',
+        source: 'test',
+        title: '测试影片 $index',
+        sourceName: '测试源',
+        year: '2026',
+        cover: 'https://example.com/poster_$index.jpg',
+        index: 1,
+        totalEpisodes: 1,
+        playTime: 0,
+        totalTime: 0,
+        saveTime: 0,
+        searchTitle: '测试影片 $index',
+        rate: '8.8',
+      );
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 650,
+            child: SingleChildScrollView(
+              controller: scrollController,
+              child: Column(
+                children: List<Widget>.generate(
+                  6,
+                  (index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TvVideoCard(
+                      videoInfo: buildVideoInfo(index),
+                      deferredLoadingDecider: (_) => false,
+                      deferredLoadingRetryDelay:
+                          const Duration(milliseconds: 10),
+                      onCoverImageRequestStarted: startedRequests.add,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await _pumpFrames(tester, count: 6);
+
+    expect(startedRequests, contains('https://example.com/poster_0.jpg'));
+    expect(startedRequests, contains('https://example.com/poster_1.jpg'));
+    expect(
+        startedRequests, isNot(contains('https://example.com/poster_5.jpg')));
+
+    scrollController.jumpTo((TvVideoCard.height + 12) * 4);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 12));
+    await _pumpFrames(tester, count: 6);
+
+    expect(startedRequests, contains('https://example.com/poster_5.jpg'));
+
+    scrollController.dispose();
   });
 
   testWidgets(
