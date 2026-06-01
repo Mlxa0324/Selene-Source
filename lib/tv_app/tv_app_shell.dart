@@ -23,6 +23,7 @@ class _TvAppShellState extends State<TvAppShell> {
   void initState() {
     super.initState();
     _themeService.load();
+    PaintingBinding.instance.imageCache.maximumSizeBytes = 30 * 1024 * 1024;
   }
 
   @override

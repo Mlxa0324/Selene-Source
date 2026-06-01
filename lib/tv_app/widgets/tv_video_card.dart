@@ -735,6 +735,7 @@ class _TvCoverImageState extends State<_TvCoverImage> {
                 fit: BoxFit.cover,
                 cacheKey: coverUrl,
                 httpHeaders: headers,
+                memCacheHeight: TvVideoCard.coverHeight.toInt(),
                 placeholder: (_, __) => const TvCoverLoadingSkeleton(),
                 errorWidget: (_, __, ___) => const _TvCoverFallback(),
                 fadeInDuration: const Duration(milliseconds: 160),
@@ -747,6 +748,7 @@ class _TvCoverImageState extends State<_TvCoverImage> {
               key: const ValueKey('tv-cover-network-image'),
               fit: BoxFit.cover,
               headers: headers,
+              cacheHeight: TvVideoCard.coverHeight.toInt(),
               loadingBuilder: (context, child, loadingProgress) {
                 if (loadingProgress == null) {
                   return child;

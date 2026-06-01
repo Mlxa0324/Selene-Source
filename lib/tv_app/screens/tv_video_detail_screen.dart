@@ -105,6 +105,16 @@ class TvVideoDetailData {
 ///
 /// TV 卡片点击后先进入该页面，再从页面内进行播放、换源、选集和推荐跳转。
 class TvVideoDetailScreen extends StatefulWidget {
+  /// 视频开始播放后延迟多久再加载相关推荐。
+  ///
+  /// 推荐 API 和首播流同时走网络时会互相争抢带宽。
+  /// 设为 Duration.zero 表示播放开始后立即加载推荐；
+  /// 设为正数表示等 N 秒后再加载，给首播流留出缓冲余量。
+  /// 可根据实际体验随时调整，测试中可置零。
+  // ignore: non_constant_identifier_names
+  @visibleForTesting
+  static Duration recommendsDelayAfterPlayback = const Duration(seconds: 2);
+
   /// 创建 TV 影视详情页。
   const TvVideoDetailScreen({
     super.key,
@@ -176,14 +186,14 @@ class TvVideoDetailScreen extends StatefulWidget {
     _addUniqueSources(sources, searched);
 
     final currentDetail = sources.isNotEmpty ? sources.first : null;
-    // 静态加载函数没有 State.mounted，可取消时由 FutureBuilder 丢弃页面结果。
-    // ignore: use_build_context_synchronously
-    final recommends = await _loadRecommends(context, videoInfo, currentDetail);
+    // 推荐不再阻塞默认加载路径。
+    // 推荐数据由 _markPreviewPlaybackStarted 在播放开始后异步加载，
+    // 避免 Douban API 和首播流争抢网速。
 
     return TvVideoDetailData(
       currentDetail: currentDetail,
       sources: sources,
-      recommends: recommends,
+      recommends: const <VideoInfo>[],
     );
   }
 
@@ -651,6 +661,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 选集分组获焦后的延迟提交计时器。
   Timer? _episodeGroupFocusCommitTimer;
 
+  /// 推荐加载延迟计时器。
+  ///
+  /// 播放开始后按 [_recommendsDelayAfterPlayback] 延迟触发推荐加载，
+  /// 避免推荐 API 和首播流争抢网速。
+  Timer? _recommendsLoadTimer;
+
   /// 等待提交的选集分组下标。
   int? _pendingEpisodeGroupFocusIndex;
 
@@ -765,6 +781,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _clockTimer?.cancel();
     _previewLoadingHoldTimer?.cancel();
     _episodeGroupFocusCommitTimer?.cancel();
+    _recommendsLoadTimer?.cancel();
     // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
     unawaited(_saveProgress(force: true, scene: '详情页销毁'));
     // 播放器实例由子组件自己管理，详情页销毁时只解绑进度监听，
@@ -1001,7 +1018,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         _isInitialDetailLoading = false;
         _initialSourcesLoaded = true;
         _moreSourcesLoaded = true;
-        _hasStartedRecommends = true;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _ensureCurrentSelectionsVisible();
@@ -1087,7 +1103,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _initialSourcesLoaded = true;
       _refreshInitialLoadingState();
     });
-    _loadRecommendsIfNeeded();
   }
 
   /// 标记后台补源加载完成。
@@ -1099,9 +1114,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _moreSourcesLoaded = true;
       _refreshInitialLoadingState();
     });
-    _loadRecommendsIfNeeded(
-      forceWhenEmpty: _initialSourcesLoaded && _currentDetail == null,
-    );
   }
 
   /// 合并新播放源并在首次命中时立即起播。
@@ -1501,6 +1513,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _markPreviewPlaybackStarted() {
     _previewPlaybackStarted = true;
     _finishPreviewPlayerLoading();
+    _recommendsLoadTimer?.cancel();
+    _recommendsLoadTimer = Timer(
+      TvVideoDetailScreen.recommendsDelayAfterPlayback,
+      () {
+        if (mounted) {
+          _loadRecommendsIfNeeded();
+        }
+      },
+    );
   }
 
   /// 播放进度变化时按手机端节流策略保存。
@@ -1628,7 +1649,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     final playbackRequest = controller.updateDataSource(url, startAt: startAt);
     if (!_hasDispatchedInitialPreviewPlayback) {
       _hasDispatchedInitialPreviewPlayback = true;
-      _loadRecommendsIfNeeded();
     }
     await playbackRequest;
     await _seekToInitialPlaybackPositionIfNeeded(controller, startAt);

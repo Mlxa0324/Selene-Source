@@ -465,6 +465,7 @@ void main() {
     recommendsCompleter.complete([
       _videoInfo('recommend_1', '推荐影片'),
     ]);
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     expect(find.text('相关推荐'), findsOneWidget);
@@ -522,35 +523,56 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(events, containsAllInOrder(['play-request', 'recommend-start']));
+    // 首播请求应先于推荐加载，推荐在播放开始后延迟加载
+    expect(events, contains('play-request'));
 
     recommendsCompleter.complete(const <VideoInfo>[]);
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
+
+    expect(events, containsAllInOrder(['play-request', 'recommend-start']));
   });
 
   testWidgets('detail recommends are recorded for TV search page cache',
       (tester) async {
     await _setTvSurfaceSize(tester);
+    final savedDelay = TvVideoDetailScreen.recommendsDelayAfterPlayback;
+    TvVideoDetailScreen.recommendsDelayAfterPlayback = Duration.zero;
+    addTearDown(() {
+      TvVideoDetailScreen.recommendsDelayAfterPlayback = savedDelay;
+    });
+    var controllerCreated = false;
 
     await tester.pumpWidget(
       MaterialApp(
         home: TvVideoDetailScreen(
           videoInfo: _videoInfo('main', '主影片'),
-          loadDetail: (_, __) async => TvVideoDetailData(
-            currentDetail: _searchResult('source_a', '主源'),
-            sources: [
-              _searchResult('source_a', '主源'),
-            ],
-            recommends: const [],
-          ),
+          loadInitialSources: (_, __) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadMoreSources: (_, __, ___) async => [
+            _searchResult('source_a', '主源'),
+          ],
           loadRecommends: (_, __, ___) async => [
             _videoInfo('recommend_1', '缓存推荐 1'),
             _videoInfo('recommend_2', '缓存推荐 2'),
           ],
-          playerBuilder: (_, __) => Container(
-            key: const ValueKey('tv-detail-player-placeholder'),
-            color: Colors.black,
-          ),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 3600),
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
           fullscreenPlayerBuilder: (_, __) => Container(
             key: const ValueKey('tv-fullscreen-player-placeholder'),
             color: Colors.black,
@@ -561,8 +583,8 @@ void main() {
 
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump();
     await tester.pumpAndSettle();
-
     final cachedRecommends =
         await TvSearchRecommendService.loadSearchRecommends(
       fallbackLoader: () async => const <VideoInfo>[],
