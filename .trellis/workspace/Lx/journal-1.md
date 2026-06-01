@@ -60,7 +60,8 @@
 
 ### Main Changes
 
-(Add details)
+- 保留 `4c463ef` 中的 Flutter TV 续播兼容修复：详情页和全屏页在真实进度回调后确认续播 seek 是否生效，并限次补偿。
+- 因投影仪真机无法连接，停止继续采集真机对比日志，将未完成的真机验收项标记为放弃并归档任务。
 
 ### Git Commits
 
@@ -71,7 +72,9 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `flutter test test/tv_app/tv_video_detail_screen_test.dart`
+- [OK] `flutter test test/tv_app/tv_fullscreen_player_screen_test.dart`
+- [OK] `flutter analyze lib/tv_app/screens/tv_video_detail_screen.dart lib/tv_app/screens/tv_fullscreen_player_screen.dart lib/tv_app/services/tv_play_record_service.dart`
 
 ### Status
 
@@ -169,6 +172,39 @@
 |------|---------|
 | `9599a94` | (see git log) |
 | `c29e979` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 6: 投影仪续播调查任务归档
+
+**Date**: 2026-06-01
+**Task**: 投影仪续播调查任务归档
+**Branch**: `tvtv`
+
+### Summary
+
+修复 Flutter TV 续播 seek 在低端 Android WebView 上可能被首次吞掉的问题；因投影仪真机无法连接，停止模拟器与投影仪日志对比并归档任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c463ef` | (see git log) |
 
 ### Testing
 
