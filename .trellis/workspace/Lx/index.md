@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-06-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~252 | Active |
+| `journal-1.md` | ~285 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-06-02 | 分析 Flutter TV 详情页首播卡顿因素 | `d24cccf` | `tvtv` |
 | 7 | 2026-06-02 | 完成搜索页详情复用搜索会话 | `083b58b` | `tvtv` |
 | 6 | 2026-06-01 | 投影仪续播调查任务归档 | `4c463ef` | `tvtv` |
 | 5 | 2026-06-01 | 修复 TV 分类筛选与焦点记忆 | `9599a94`, `c29e979` | `tvtv` |

@@ -250,3 +250,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 分析 Flutter TV 详情页首播卡顿因素
+
+**Date**: 2026-06-02
+**Task**: 分析 Flutter TV 详情页首播卡顿因素
+**Branch**: `tvtv`
+
+### Summary
+
+完成 Flutter TV 详情页进入卡顿因素分析，确认 WebView 首次初始化、异步回调叠加与较重 UI 为主要共因，并把首播门闩与轻量预览占位规则补充到 TV spec。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d24cccf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
