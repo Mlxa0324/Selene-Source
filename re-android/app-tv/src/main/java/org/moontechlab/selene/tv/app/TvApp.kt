@@ -2,12 +2,18 @@ package org.moontechlab.selene.tv.app
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,10 +25,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
@@ -110,20 +117,20 @@ private fun TvTopNavigationBar(
             Text(
                 text = "IvyTV",
                 style = MaterialTheme.typography.headlineMedium,
-                color = TvTokens.IvyGreen,
+                color = Color.White,
             )
 
             Spacer(modifier = Modifier.weight(1f))
-
-            TvClockText()
-
-            Spacer(modifier = Modifier.width(18.dp))
 
             TvDestinationGroup(
                 destinations = TvDestination.quickAccessDestinations,
                 currentRoute = currentRoute,
                 onNavigate = onNavigate,
             )
+
+            Spacer(modifier = Modifier.width(24.dp))
+
+            TvClockText()
         }
 
         TvDestinationGroup(
@@ -148,31 +155,69 @@ private fun TvDestinationGroup(
     onNavigate: (TvDestination) -> Unit,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         destinations.forEach { destination ->
             val isSelected = destination.route == currentRoute
-            Button(
-                modifier = Modifier
-                    .background(
-                        color = if (isSelected) {
-                            TvTokens.IvyGreen.copy(alpha = 0.24f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        shape = RoundedCornerShape(TvTokens.CardRadius),
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = if (isSelected) TvTokens.IvyGreen else TvTokens.Outline,
-                        shape = RoundedCornerShape(TvTokens.CardRadius),
-                    ),
+            TvNavigationPill(
+                label = destination.label,
+                selected = isSelected,
                 onClick = { onNavigate(destination) },
-            ) {
-                Text(text = destination.label)
-            }
+            )
         }
+    }
+}
+
+/**
+ * TV 顶部导航胶囊按钮。
+ *
+ * @param label 按钮文案。
+ * @param selected 是否为当前路由。
+ * @param onClick 点击后的跳转回调。
+ */
+@Composable
+private fun TvNavigationPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(
+        if (selected || isFocused) TvTokens.TopActionRadius else TvTokens.CardRadius,
+    )
+    val backgroundColor = when {
+        selected -> TvTokens.Accent
+        isFocused -> TvTokens.FocusFill
+        else -> TvTokens.Surface
+    }
+
+    Box(
+        modifier = Modifier
+            .height(TvTokens.TopActionHeight)
+            .clip(shape)
+            .background(backgroundColor)
+            .border(
+                width = 2.dp,
+                color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
+                shape = shape,
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // 顶部导航保持纯文本，避免 Kotlin 侧在首轮粗对齐中引入额外图标差异。
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+        )
     }
 }
 

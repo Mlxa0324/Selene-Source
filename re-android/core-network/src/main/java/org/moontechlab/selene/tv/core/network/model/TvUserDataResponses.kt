@@ -30,7 +30,7 @@ data class TvPlayRecordResponse(
     @SerializedName("total_time")
     val totalTime: Int? = null,
     @SerializedName("save_time")
-    val saveTime: Int? = null,
+    val saveTime: Long? = null,
     @SerializedName("search_title")
     val searchTitle: String? = null,
 )
@@ -55,6 +55,6 @@ data class TvFavoriteResponse(
     @SerializedName("total_episodes")
     val totalEpisodes: Int? = null,
     @SerializedName("save_time")
-    val saveTime: Int? = null,
+    val saveTime: Long? = null,
     val origin: String? = null,
 )

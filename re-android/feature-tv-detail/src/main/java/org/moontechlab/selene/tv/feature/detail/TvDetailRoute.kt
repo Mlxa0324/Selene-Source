@@ -28,7 +28,6 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
-import org.moontechlab.selene.tv.core.design.layout.TvPageStatChipData
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
@@ -51,11 +50,6 @@ fun TvDetailRoute(
 ) {
     TvPageScaffold(
         title = state.detail?.title ?: "详情",
-        subtitle = "预览播放、线路、选集和推荐",
-        stats = listOf(
-            TvPageStatChipData("线路", state.currentSource?.name ?: "未选"),
-            TvPageStatChipData("剧集", state.currentEpisode?.title ?: "未选"),
-        ),
     ) {
         when {
             state.isLoading -> {
@@ -87,7 +81,7 @@ fun TvDetailRoute(
 
         TvPageSection(
             title = "播放预览",
-            hint = state.playbackRequest?.url?.takeIf { it.isNotBlank() } ?: "等待播放地址",
+            hint = state.currentSource?.name ?: "等待播放地址",
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -110,12 +104,13 @@ fun TvDetailRoute(
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    val sourceSummary = if (state.isLoadingMoreSources) {
+                        "正在补充更多播放线路"
+                    } else {
+                        "共 ${state.detail.sources.size} 条线路"
+                    }
                     Text(
-                        text = if (state.isLoadingMoreSources) {
-                            "正在补充更多播放线路"
-                        } else {
-                            "共 ${state.detail.sources.size} 条线路"
-                        },
+                        text = sourceSummary,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -302,7 +297,7 @@ private fun TvDetailOptionChip(
     onPressed: () -> Unit,
 ) {
     val background = if (selected) {
-        TvTokens.IvyGreen.copy(alpha = 0.28f)
+        TvTokens.Accent
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
     }
@@ -326,7 +321,7 @@ private fun TvDetailOptionChip(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (selected) TvTokens.TextPrimary else MaterialTheme.colorScheme.onSurface,
             )
             if (!trailing.isNullOrBlank()) {
                 Text(

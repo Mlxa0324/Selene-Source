@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import org.moontechlab.selene.tv.core.design.TvTokens
@@ -21,9 +22,15 @@ fun TvPosterRail(
     modifier: Modifier = Modifier,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
 ) {
+    val listState = rememberLazyListState()
+
     LazyRow(
         modifier = modifier,
-        contentPadding = PaddingValues(end = TvTokens.PageHorizontalPadding),
+        state = listState,
+        contentPadding = PaddingValues(
+            start = TvListLayoutMetrics.RailStartPadding,
+            end = TvListLayoutMetrics.RailEndPadding,
+        ),
         horizontalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
     ) {
         items(items, key = TvPosterItem::id) { item ->

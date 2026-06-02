@@ -41,7 +41,7 @@ fun TvFocusableCard(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val shape = RoundedCornerShape(TvTokens.CardRadius)
-    val borderColor = if (isFocused) TvTokens.IvyGreen else Color.Transparent
+    val borderColor = if (isFocused) TvTokens.FocusBorder else Color.Transparent
     val pressPolicy = remember(onLongPressed) {
         TvRemotePressPolicy(hasLongPressHandler = onLongPressed != null)
     }

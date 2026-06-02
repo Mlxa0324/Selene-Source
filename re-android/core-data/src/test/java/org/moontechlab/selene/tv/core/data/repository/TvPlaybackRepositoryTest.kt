@@ -26,7 +26,7 @@ class TvPlaybackRepositoryTest {
                             totalEpisodes = 12,
                             playTime = 60,
                             totalTime = 1200,
-                            saveTime = 10,
+                            saveTime = 10L,
                             searchTitle = "旧记录",
                         ),
                         "source_a+video_a" to TvPlayRecordResponse(
@@ -37,7 +37,7 @@ class TvPlaybackRepositoryTest {
                             totalEpisodes = 24,
                             playTime = 90,
                             totalTime = 1800,
-                            saveTime = 20,
+                            saveTime = 20L,
                             searchTitle = "新记录",
                         ),
                     )

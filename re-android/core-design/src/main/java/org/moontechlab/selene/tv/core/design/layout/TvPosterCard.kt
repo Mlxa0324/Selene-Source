@@ -61,7 +61,7 @@ fun TvPosterCard(
             .height(TvTokens.PosterHeight)
             .scale(scale)
             .clip(radius)
-            .background(MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(
                 enabled = onClick != null,
                 interactionSource = interactionSource,
@@ -70,7 +70,7 @@ fun TvPosterCard(
             )
             .border(
                 width = if (isFocused) TvTokens.FocusBorderWidth else 1.dp,
-                color = if (isFocused) TvTokens.IvyGreen else TvTokens.Outline,
+                color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
                 shape = radius,
             ),
     ) {

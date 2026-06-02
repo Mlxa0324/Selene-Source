@@ -263,6 +263,7 @@ class TvHomeRepository(
 - `core-data` 可以依赖 `core-network`，并在 Repository 内把接口 DTO 转换为业务模型。
 - 首页仓库必须把本地继续观看分区插入到远端分区前，分区标识固定为 `continue_watching`，标题固定为「继续观看」。
 - 远端分区顺序保持服务端返回顺序，避免原生 TV 首页和 Flutter TV 首页排序不一致。
+- 如果当前后台未提供 `GET admin/dashboard` 或该接口返回失败，原生 TV 首页不得直接进入错误态；必须降级复用分类搜索接口组装首页分区。兜底分区固定为：`hot_movies -> 电影`、`hot_tv_shows -> 剧集`、`bangumi_calendar -> 动漫`、`hot_shows -> 综艺`。继续观看分区仍保持第一位。
 - 会话存储至少暴露 `baseUrl / account / cookie` 三个字段；未接入持久化前允许内存实现，但外部调用契约保持不变。
 - 设置仓库保存服务器配置时只保存表单值，不直接触发登录请求，保持 TV 设置页现有语义。
 - `app-tv` Manifest 必须声明 `android.permission.INTERNET`；TV 首页启动会立即登录后台，缺少权限会让 OkHttp 线程抛出 `SecurityException` 并导致打开闪退。
@@ -388,6 +389,7 @@ val container = TvAppContainer(
 
 - `SessionCookieStoreTest.saveSession_persists_base_url_account_and_cookie` 必须覆盖服务器地址、账号和 Cookie 的保存读取。
 - `TvHomeRepositoryTest.loadHome_aggregates_continue_watching_and_hot_sections` 必须覆盖 `continue_watching / hot_movies / hot_tv_shows / bangumi_calendar / hot_shows` 分区聚合。
+- `TvHomeRepositoryTest.loadHome_fallsBackToCategorySearchWhenDashboardUnavailable` 必须覆盖 dashboard 失败时按「电影、剧集、动漫、综艺」顺序调用搜索接口并返回非空分区。
 
 错误示例：
 
@@ -472,6 +474,8 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 标题行数 | `1` |
 | 焦点边框范围 | 仅封面 |
 | 焦点放大范围 | 整张卡片 |
+| 横向列表首尾安全留白 | `10dp`，只用于获焦放大，不能重复叠加页面 `36dp` 安全边距 |
+| 纵向 Grid 左右安全留白 | `10dp`，页面壳内使用，避免首列二次缩进 |
 | 封面加载骨架 | 图片首次加载和网络加载中展示 |
 | 骨架雨刷方向 | `Alignment.topLeft` 到 `Alignment.bottomRight` |
 | 多集进度徽章 | `totalEpisodes > 1` 且 `index > 0` 时在封面右上角展示 `index/totalEpisodes` |
@@ -671,6 +675,7 @@ data class PlaybackSnapshot(
 | TV 搜索页缺少历史和热词 | 搜索历史使用纯文字 Grid，搜索热词使用本地 mock Grid | `tv_search_screen_test.dart` |
 | TV 搜索页推荐列表无边界反馈或放大不明显 | 推荐列表卡片复用 `TvVideoCard.focusedScale`，首尾方向键复用 `TvEdgeShake` 边界抖动 | `tv_search_screen_test.dart` |
 | 设置输入框移入就弹键盘 | 输入框默认浏览态，确认后进入编辑态 | `tv_settings_screen_test.dart` |
+| TV 设置页 widget test 拉起真实扫码桥接 | `FLUTTER_TEST` 环境下返回无副作用桥接会话，不启动真实 `HttpServer` 和局域网探测 | `tv_settings_screen_test.dart` |
 | TV 封面图无法切换代理 | 设置页复用普通端豆瓣图片源保存逻辑 | `tv_settings_screen_test.dart` |
 | TV 缺少缓存大小和清理入口 | 设置页展示缓存大小并提供 `清除所有缓存` 操作 | `tv_settings_screen_test.dart` |
 | 低空间仍继续写图片磁盘缓存 | `AppCacheService` 低于 500MB 返回不使用图片磁盘缓存 | `app_cache_service_test.dart` |

@@ -23,7 +23,6 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
-import org.moontechlab.selene.tv.core.design.layout.TvPageStatChipData
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
@@ -40,12 +39,6 @@ fun TvHomeRoute(
     state: TvHomeUiState = TvHomeUiState(),
 ) {
     TvPageScaffold(
-        title = "IvyTV",
-        subtitle = "横向分区首页",
-        stats = listOf(
-            TvPageStatChipData("分区", state.sections.size.toString()),
-            TvPageStatChipData("焦点", "TV"),
-        ),
         modifier = Modifier.fillMaxSize(),
     ) {
         if (state.isLoading) {
@@ -80,7 +73,7 @@ fun TvHomeRoute(
         state.sections.forEachIndexed { index, section ->
             TvPageSection(
                 title = section.title,
-                hint = if (index == 0) "继续观看 / 热门 / 历史 / 收藏" else null,
+                hint = if (index == 0) "长按删除" else null,
             ) {
                 TvPosterRail(
                     items = section.videos.map { video ->
@@ -112,11 +105,6 @@ fun TvVideoLibraryRoute(
 ) {
     TvPageScaffold(
         title = state.title,
-        subtitle = "分类筛选与视频网格",
-        stats = listOf(
-            TvPageStatChipData("筛选", state.availableFilters.size.toString()),
-            TvPageStatChipData("影片", state.videos.size.toString()),
-        ),
         modifier = Modifier.fillMaxSize(),
     ) {
         if (state.isLoading) {
@@ -160,7 +148,7 @@ fun TvVideoLibraryRoute(
                 )
             } else {
                 TvPosterGrid(
-                    columns = 5,
+                    columns = 7,
                     items = state.videos.map { video ->
                         TvPosterItem(
                             id = video.id,
@@ -263,8 +251,8 @@ private fun TvLibraryFilterChip(
     onFocused: () -> Unit,
 ) {
     val backgroundColor = when {
-        selected -> TvTokens.IvyGreen.copy(alpha = 0.28f)
-        focused -> TvTokens.SurfaceElevated
+        selected -> TvTokens.Accent
+        focused -> TvTokens.FocusFill
         else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
     }
     TvFocusableCard(
@@ -291,7 +279,7 @@ private fun TvLibraryFilterChip(
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (selected) TvTokens.TextPrimary else MaterialTheme.colorScheme.onSurface,
         )
     }
 }

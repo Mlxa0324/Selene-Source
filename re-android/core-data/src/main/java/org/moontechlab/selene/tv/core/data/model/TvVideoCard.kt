@@ -28,7 +28,7 @@ data class TvVideoCard(
     val episodeIndex: Int = 0,
     val playTime: Int = 0,
     val totalTime: Int = 0,
-    val saveTime: Int = 0,
+    val saveTime: Long = 0L,
     val searchTitle: String = "",
     val origin: String = "",
 )

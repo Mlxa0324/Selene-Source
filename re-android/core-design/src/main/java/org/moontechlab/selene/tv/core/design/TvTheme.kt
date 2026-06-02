@@ -13,8 +13,8 @@ object TvTheme {
      * 深色 TV 色板。
      */
     val DarkColors = darkColorScheme(
-        primary = TvTokens.IvyGreen,
-        onPrimary = Color.Black,
+        primary = TvTokens.Accent,
+        onPrimary = Color.White,
         background = TvTokens.Background,
         surface = TvTokens.Surface,
         onBackground = TvTokens.TextPrimary,

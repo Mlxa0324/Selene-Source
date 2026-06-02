@@ -4,6 +4,8 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
+import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
+import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeSectionResponse
 
@@ -32,6 +34,48 @@ class TvHomeRepositoryTest {
             "bangumi_calendar",
             "hot_shows",
         )
+    }
+
+    /**
+     * 首页聚合接口不可用时，应降级到分类搜索列表。
+     */
+    @Test
+    fun loadHome_fallsBackToCategorySearchWhenDashboardUnavailable() = runTest {
+        val queries = mutableListOf<String>()
+        val repository = TvHomeRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getDashboard(): TvHomeResponse {
+                    throw IllegalStateException("dashboard 404")
+                }
+
+                override suspend fun search(query: String): TvSearchResponse {
+                    queries += query
+                    return TvSearchResponse(
+                        results = listOf(
+                            TvSearchResultResponse(
+                                id = "video-$query",
+                                title = "$query A",
+                                poster = "$query.jpg",
+                                source = "source-a",
+                                episodes = listOf("1.m3u8"),
+                            ),
+                        ),
+                    )
+                }
+            },
+            playbackRepository = TvPlaybackRepository(continueWatching = emptyList()),
+        )
+
+        val payload = repository.loadHome()
+
+        assertThat(queries).containsExactly("电影", "剧集", "动漫", "综艺").inOrder()
+        assertThat(payload.sections.map { it.key }).containsAtLeast(
+            "hot_movies",
+            "hot_tv_shows",
+            "bangumi_calendar",
+            "hot_shows",
+        )
+        assertThat(payload.sections.first { it.key == "hot_movies" }.videos).isNotEmpty()
     }
 }
 

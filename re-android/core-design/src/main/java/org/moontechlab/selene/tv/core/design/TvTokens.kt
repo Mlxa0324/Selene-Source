@@ -8,29 +8,44 @@ import androidx.compose.ui.unit.dp
  */
 object TvTokens {
     /**
-     * TV 默认品牌色。
+     * TV 默认选中主色，贴近 Flutter TV 默认奈飞红。
      */
-    val IvyGreen = Color(0xFF16C784)
+    val IvyGreen = Color(0xFFE50914)
+
+    /**
+     * TV 默认选中主色别名，供新样式语义化调用。
+     */
+    val Accent = IvyGreen
+
+    /**
+     * TV 快捷入口和弱焦点的半透明白色蒙层。
+     */
+    val FocusFill = Color(0x26FFFFFF)
+
+    /**
+     * TV 默认焦点描边色。
+     */
+    val FocusBorder = Color.White
 
     /**
      * TV 页面默认背景色。
      */
-    val Background = Color(0xFF080A0C)
+    val Background = Color(0xFF1A1D29)
 
     /**
      * TV 端页面卡片背景色。
      */
-    val Surface = Color(0xFF111418)
+    val Surface = Color(0xFF272C30)
 
     /**
      * TV 端页面悬浮背景色。
      */
-    val SurfaceElevated = Color(0xFF171C22)
+    val SurfaceElevated = Color(0xFF343946)
 
     /**
      * TV 端分割线与描边颜色。
      */
-    val Outline = Color(0xFF2A3139)
+    val Outline = Color(0xFF4B515C)
 
     /**
      * TV 错误状态颜色。
@@ -45,7 +60,7 @@ object TvTokens {
     /**
      * TV 次级文字颜色。
      */
-    val TextSecondary = Color(0xFFB6BEC8)
+    val TextSecondary = Color(0xFFB6C2BF)
 
     /**
      * TV 焦点描边宽度。
@@ -70,12 +85,12 @@ object TvTokens {
     /**
      * TV 页面区块纵向间距。
      */
-    val SectionSpacing = 24.dp
+    val SectionSpacing = 28.dp
 
     /**
      * TV 页面卡片间距。
      */
-    val CardSpacing = 18.dp
+    val CardSpacing = 22.dp
 
     /**
      * TV 页面纵向内容底部留白。
@@ -85,17 +100,27 @@ object TvTokens {
     /**
      * TV 海报卡片宽度。
      */
-    val PosterWidth = 158.dp
+    val PosterWidth = 168.dp
 
     /**
      * TV 海报卡片高度。
      */
-    val PosterHeight = 298.dp
+    val PosterHeight = 304.dp
 
     /**
      * TV 海报封面高度。
      */
-    val PosterCoverHeight = 236.dp
+    val PosterCoverHeight = 244.dp
+
+    /**
+     * TV 顶部快捷入口高度。
+     */
+    val TopActionHeight = 44.dp
+
+    /**
+     * TV 顶部快捷入口圆角。
+     */
+    val TopActionRadius = 22.dp
 
     /**
      * TV 弹窗水平内边距。

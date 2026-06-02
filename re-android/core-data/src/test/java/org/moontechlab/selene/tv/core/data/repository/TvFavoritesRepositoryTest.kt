@@ -25,12 +25,12 @@ class TvFavoritesRepositoryTest {
                             year = "2026",
                             cover = "a.jpg",
                             totalEpisodes = 10,
-                            saveTime = 30,
+                            saveTime = 30L,
                             origin = "detail",
                         ),
                         "source_b+video_b" to TvFavoriteResponse(
                             title = "收藏 B",
-                            saveTime = 20,
+                            saveTime = 20L,
                         ),
                     )
                 }

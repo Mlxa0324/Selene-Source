@@ -1,14 +1,10 @@
 package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -60,21 +56,7 @@ fun TvPageSection(
             trailing?.invoke()
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(TvTokens.CardRadius),
-                )
-                .border(
-                    width = 1.dp,
-                    color = TvTokens.Outline,
-                    shape = RoundedCornerShape(TvTokens.CardRadius),
-                )
-                .padding(18.dp),
-        ) {
-            content()
-        }
+        // 主体不再包一层面板，避免首页、分类和详情都呈现工程卡片感。
+        content()
     }
 }

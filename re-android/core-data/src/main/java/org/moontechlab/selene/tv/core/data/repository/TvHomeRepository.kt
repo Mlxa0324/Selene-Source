@@ -24,9 +24,46 @@ class TvHomeRepository(
      * @return 包含继续观看和远端热门分区的首页载荷。
      */
     suspend fun loadHome(): TvHomePayload {
-        val remote = api.getDashboard()
         val continueWatching = playbackRepository.readContinueWatching()
-        return remote.toHomePayload(continueWatching = continueWatching)
+        val remote = runCatching { api.getDashboard() }.getOrNull()
+        if (remote != null) {
+            return remote.toHomePayload(continueWatching = continueWatching)
+        }
+
+        // 部分后台版本未提供 dashboard 聚合接口，降级复用分类搜索保证首页有真实列表。
+        return fallbackHomePayload(continueWatching = continueWatching)
+    }
+
+    /**
+     * 使用分类搜索结果组装首页兜底分区。
+     *
+     * @param continueWatching 本地继续观看列表。
+     * @return 可直接供首页展示的兜底首页载荷。
+     */
+    private suspend fun fallbackHomePayload(
+        continueWatching: List<TvVideoCard>,
+    ): TvHomePayload {
+        val libraryRepository = TvVideoLibraryRepository(api)
+        val sections = buildList {
+            add(
+                TvHomeSection(
+                    key = CONTINUE_WATCHING_KEY,
+                    title = CONTINUE_WATCHING_TITLE,
+                    videos = continueWatching,
+                ),
+            )
+            FALLBACK_SECTIONS.forEach { fallbackSection ->
+                // 每个分区沿用分类页搜索契约，避免首页和分类页数据来源不一致。
+                add(
+                    TvHomeSection(
+                        key = fallbackSection.key,
+                        title = fallbackSection.title,
+                        videos = libraryRepository.loadCategory(fallbackSection.categoryKey),
+                    ),
+                )
+            }
+        }
+        return TvHomePayload(sections = sections)
     }
 
     /**
@@ -85,5 +122,42 @@ class TvHomeRepository(
 
         /** 继续观看分区标题。 */
         const val CONTINUE_WATCHING_TITLE = "继续观看"
+
+        /** 首页兜底分区定义。 */
+        val FALLBACK_SECTIONS = listOf(
+            FallbackHomeSection(
+                key = "hot_movies",
+                title = "热门电影",
+                categoryKey = "movie",
+            ),
+            FallbackHomeSection(
+                key = "hot_tv_shows",
+                title = "热门剧集",
+                categoryKey = "tv",
+            ),
+            FallbackHomeSection(
+                key = "bangumi_calendar",
+                title = "新番放送",
+                categoryKey = "anime",
+            ),
+            FallbackHomeSection(
+                key = "hot_shows",
+                title = "热门综艺",
+                categoryKey = "show",
+            ),
+        )
     }
 }
+
+/**
+ * 首页兜底分区配置。
+ *
+ * @property key 首页分区标识。
+ * @property title 首页分区标题。
+ * @property categoryKey 分类搜索标识。
+ */
+private data class FallbackHomeSection(
+    val key: String,
+    val title: String,
+    val categoryKey: String,
+)
