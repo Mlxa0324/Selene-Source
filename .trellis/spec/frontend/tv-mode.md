@@ -167,6 +167,8 @@ class TvVideoDetailData {
 - `recommends` 是相关推荐卡片数据。
 - 详情页可注入 `loadDetail`、`loadInitialSources`、`loadMoreSources`、`loadRecommends` 和 `playerBuilder` 以支持测试。
 - 生产加载必须拆成首屏可播源、后台补源和推荐三段；只有测试旧聚合路径时才使用 `loadDetail` 一次性回填。
+- 详情页首播关键链路只能阻塞“定位首个可播源 + 下发首次 `updateDataSource(startAt)`”；收藏态、广告偏好、代理预热、推荐加载等次要任务不得串行卡住首播。
+- 续播记录如果只用于决定初始集数和 `startAt`，不得阻塞精确源请求本身；最迟只需要在首次 `updateDataSource(startAt)` 前完成对齐。
 - `loadMoreSources` 的 `onIncrementalResults` 一旦回调到首个匹配源，详情页必须立即设置 `currentDetail`、结束首屏转圈并触发内嵌播放器起播，后续完整结果继续去重追加到 `sources`。
 - 从 `TvSearchScreen` 进入 `TvVideoDetailScreen` 时，如果搜索页已经持有同片名候选源或同一轮 SSE 搜索会话，详情页必须优先复用这份快照和后续增量结果，不得再额外发起一次按标题补源的 SSE 搜索。
 - 搜索页进入详情页时，如果共享搜索会话尚未结束，详情页必须继续订阅后续增量结果直到该轮搜索结束；不能只消费进入瞬间的快照后就停住。
@@ -484,12 +486,13 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 顶部说明 | 顶部展示 `IvyTV` 与 `按返回键返回上一页 | 全屏时向下键可进行播放设置（倍数，其它）`，不得出现「内核」相关字样 |
 | 顶部快捷 | 顶部右侧展示搜索按钮和当前系统时间；搜索按钮打开 `TvSearchScreen`，当前时间以 `HH:mm` 格式定时刷新 |
 | 继续观看 | 根据播放记录恢复对应集数与秒数，例如第 497 集从记录秒数继续播 |
+| 首播门闩 | 详情页进入后只允许“首个可播源命中”和“首次 `updateDataSource(startAt)`”留在首播门闩内，其它配置读取和推荐任务不得阻塞 |
 | 进度上报 | 内嵌播放器进度变化时保存当前源、集数、播放秒数和总时长 |
 | 换源 | 切换 `currentDetail`，保留当前集数和播放秒数，保存新源记录成功后再清理旧源记录 |
 | 选集 | 更新 `_episodeIndex` 并刷新内嵌播放器 |
 | 换源布局 | 标题展示为「切换线路」，并补充 `遇播放卡顿，音画不同步或无法播放时，请切换播放线路`；单行横向列表，不使用多行换行布局；线路展示为 `线路名（集数）`，并按集数倒序排列，相同集数保持原始返回顺序；换源卡片按上方向键必须按实际位置就近回到播放器、全屏或收藏按钮；全屏和收藏按钮按下方向键必须优先回到当前选中的播放源，当前源未构建时才回到第一个已构建源，避免依赖几何焦点导致丢焦或跳到非当前源；焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
 | 选集布局 | 单行横向集数列表在上，分组标签在集数列表下方；总集数不超过 20 集时不展示分组，长剧集按固定区间切换；换源、选集、分组和相关推荐之间必须设置明确的上下焦点目标，向下按顺序进入下一块，向上回到就近的上一块；详情页所有横向列表首尾必须按获焦放大尺寸预留安全留白，确保长按到右端再回到首项时焦点框不会贴边或被裁剪；集数列表和分组列表焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
-| 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏 |
+| 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏；无播放 URL 的预览占位态不得提前拉起重型 WebView HTML/JS 初始化 |
 | 全屏 | 详情页内展示 `TvFullscreenPlayerScreen` 覆盖层，携带当前详情、线路列表和集下标；生产路径必须通过同一个 `VideoPlayerWidget`/控制器在预览和全屏之间移动，避免进入全屏时重新起播或黑屏；TV 全屏播放器同样禁用 PiP/小窗最小化 |
 | 收藏 | 使用 `PageCacheService.addFavorite/removeFavorite` |
 | 推荐点击 | `pushReplacement` 到新的 TV 详情页 |
@@ -630,6 +633,8 @@ data class PlaybackSnapshot(
 | 首页横向分区无限展示 | `TvHomeSection.maxVisibleVideos=15`，超出后展示封面高度“查看更多”卡片 | `tv_home_section_test.dart` / `tv_home_screen_test.dart` |
 | 历史或收藏无数据 | 展示空状态 | `tv_home_screen_test.dart` |
 | 详情页共享搜索会话仍在进行中 | 继续复用搜索页 SSE 增量结果，不重复发起标题补源 | `tv_video_detail_screen_test.dart`, `tv_search_screen_test.dart` |
+| 详情页被收藏态/广告偏好/代理预热卡住首播 | 这些任务只允许后台回填，不得阻塞首个可播源起播 | `tv_video_detail_screen_test.dart` 可新增 |
+| 详情页空播放器壳过早初始化重 WebView | 无播放 URL 时只保留轻量占位态，首个可播源到达后才执行重初始化 | `tv_video_detail_screen_test.dart`, `video_player_widget_preload_config_test.dart` 可新增 |
 | 详情页补源完成后仍无可用源 | 展示带图标的“搜索已完成，未找到可播放信息”空态 | `tv_video_detail_screen_test.dart` |
 | 详情页无选集 | 展示「暂无选集」 | `tv_video_detail_screen_test.dart` 可扩展 |
 | 详情页无推荐 | 展示「暂无推荐」 | `tv_video_detail_screen_test.dart` 可扩展 |
