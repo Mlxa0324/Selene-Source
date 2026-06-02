@@ -217,3 +217,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 完成搜索页详情复用搜索会话
+
+**Date**: 2026-06-02
+**Task**: 完成搜索页详情复用搜索会话
+**Branch**: `tvtv`
+
+### Summary
+
+完成 TV 搜索页进入详情页时复用同片名候选源与共享 SSE 搜索会话，避免详情页重复按标题补源，并补充空态与回归测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `083b58b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
