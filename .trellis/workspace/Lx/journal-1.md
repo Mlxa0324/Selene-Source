@@ -283,3 +283,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 粗对齐 Kotlin TV 页面壳样式
+
+**Date**: 2026-06-02
+**Task**: 粗对齐 Kotlin TV 页面壳样式
+**Branch**: `tvtv`
+
+### Summary
+
+完成 Kotlin TV 首页、分类、详情、播放器的第一轮样式粗对齐，统一 token、导航、海报卡片和页面壳；补首页 dashboard 失败兜底与相关单元测试，并通过 Kotlin 相关模块单元测试。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7fedcac` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
