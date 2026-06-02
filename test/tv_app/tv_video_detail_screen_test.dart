@@ -13,6 +13,7 @@ import 'package:selene/services/local_mode_storage_service.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/tv_layout.dart';
+import 'package:selene/tv_app/services/tv_search_result_session.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
@@ -104,6 +105,197 @@ void main() {
     expect(find.byKey(const ValueKey('tv-detail-source-list')), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tv-detail-episode-list')), findsOneWidget);
+  });
+
+  testWidgets('prefetched search sources skip more-sources loader',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    var moreSourcesCalled = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          prefetchedSources: [
+            _searchResult('source_a', '主源'),
+            _searchResult('source_b', '备用源', episodeCount: 5),
+          ],
+          loadInitialSources: (_, __) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadMoreSources: (_, __, ___) async {
+            moreSourcesCalled = true;
+            return [
+              _searchResult('source_c', 'SSE补源'),
+            ];
+          },
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(moreSourcesCalled, isFalse);
+    expect(find.text('主源'), findsOneWidget);
+    expect(find.text('备用源'), findsOneWidget);
+    expect(find.text('SSE补源'), findsNothing);
+  });
+
+  testWidgets(
+      'detail still loads more sources without prefetched search sources',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    var moreSourcesCalled = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadInitialSources: (_, __) async => [
+            _searchResult('source_a', '主源'),
+          ],
+          loadMoreSources: (_, __, ___) async {
+            moreSourcesCalled = true;
+            return [
+              _searchResult('source_c', 'SSE补源'),
+            ];
+          },
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(moreSourcesCalled, isTrue);
+    expect(find.text('SSE补源'), findsOneWidget);
+  });
+
+  testWidgets(
+      'prefetched search session continues receiving incremental sources',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    var moreSourcesCalled = false;
+    final searchSession = TvSearchResultSession(
+      query: '主影片',
+      requestVersion: 1,
+    );
+    searchSession.replaceResults([
+      _searchResult('source_a', '共享源一', episodeCount: 5),
+    ]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          prefetchedSearchSession: searchSession,
+          prefetchedSearchTitleKey:
+              TvVideoDetailScreen.normalizeSearchTitle('主影片'),
+          loadInitialSources: (_, __) async => const [],
+          loadMoreSources: (_, __, ___) async {
+            moreSourcesCalled = true;
+            return const [];
+          },
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(moreSourcesCalled, isFalse);
+    expect(find.text('共享源一'), findsOneWidget);
+    expect(find.text('共享源二'), findsNothing);
+
+    searchSession.replaceResults([
+      _searchResult('source_a', '共享源一', episodeCount: 5),
+      _searchResult('source_b', '共享源二', episodeCount: 8),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('共享源二'), findsOneWidget);
+
+    searchSession.complete([
+      _searchResult('source_a', '共享源一', episodeCount: 5),
+      _searchResult('source_b', '共享源二', episodeCount: 8),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('tv-detail-empty-playback-hint')),
+        findsNothing);
+  });
+
+  testWidgets('shows empty playback hint after shared search session completes',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final searchSession = TvSearchResultSession(
+      query: '主影片',
+      requestVersion: 1,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          prefetchedSearchSession: searchSession,
+          prefetchedSearchTitleKey:
+              TvVideoDetailScreen.normalizeSearchTitle('主影片'),
+          loadInitialSources: (_, __) async => const [],
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-detail-empty-playback-hint')),
+        findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+    searchSession.complete(const <SearchResult>[]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byKey(const ValueKey('tv-detail-empty-playback-hint')),
+        findsOneWidget);
+    expect(find.byIcon(Icons.search_off_rounded), findsOneWidget);
+    expect(find.text('搜索已完成，未找到可播放信息'), findsOneWidget);
+    expect(find.text('暂无可用源'), findsNothing);
   });
 
   testWidgets(

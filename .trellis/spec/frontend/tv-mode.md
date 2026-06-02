@@ -168,6 +168,9 @@ class TvVideoDetailData {
 - 详情页可注入 `loadDetail`、`loadInitialSources`、`loadMoreSources`、`loadRecommends` 和 `playerBuilder` 以支持测试。
 - 生产加载必须拆成首屏可播源、后台补源和推荐三段；只有测试旧聚合路径时才使用 `loadDetail` 一次性回填。
 - `loadMoreSources` 的 `onIncrementalResults` 一旦回调到首个匹配源，详情页必须立即设置 `currentDetail`、结束首屏转圈并触发内嵌播放器起播，后续完整结果继续去重追加到 `sources`。
+- 从 `TvSearchScreen` 进入 `TvVideoDetailScreen` 时，如果搜索页已经持有同片名候选源或同一轮 SSE 搜索会话，详情页必须优先复用这份快照和后续增量结果，不得再额外发起一次按标题补源的 SSE 搜索。
+- 搜索页进入详情页时，如果共享搜索会话尚未结束，详情页必须继续订阅后续增量结果直到该轮搜索结束；不能只消费进入瞬间的快照后就停住。
+- 详情页在首屏精确源和后台补源都结束后仍无任何可播线路时，播放线路区必须展示“搜索已完成，未找到可播放信息”的图标空态，用于区分“还在搜”和“已搜完但无结果”。
 
 ### 3.4 TV 焦点封装
 
@@ -626,7 +629,8 @@ data class PlaybackSnapshot(
 | TV 首页数据加载失败 | 单个分区 catch 后返回空列表 | 首页空数据测试 |
 | 首页横向分区无限展示 | `TvHomeSection.maxVisibleVideos=15`，超出后展示封面高度“查看更多”卡片 | `tv_home_section_test.dart` / `tv_home_screen_test.dart` |
 | 历史或收藏无数据 | 展示空状态 | `tv_home_screen_test.dart` |
-| 详情页无可用源 | 展示「暂无可用源」 | `tv_video_detail_screen_test.dart` 可扩展 |
+| 详情页共享搜索会话仍在进行中 | 继续复用搜索页 SSE 增量结果，不重复发起标题补源 | `tv_video_detail_screen_test.dart`, `tv_search_screen_test.dart` |
+| 详情页补源完成后仍无可用源 | 展示带图标的“搜索已完成，未找到可播放信息”空态 | `tv_video_detail_screen_test.dart` |
 | 详情页无选集 | 展示「暂无选集」 | `tv_video_detail_screen_test.dart` 可扩展 |
 | 详情页无推荐 | 展示「暂无推荐」 | `tv_video_detail_screen_test.dart` 可扩展 |
 | 详情页换源或选集换行 | 使用横向 `ListView`，选集长列表先按分组切换 | `tv_video_detail_screen_test.dart` |

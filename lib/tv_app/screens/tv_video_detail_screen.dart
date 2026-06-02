@@ -16,6 +16,7 @@ import 'package:selene/services/search_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
+import 'package:selene/tv_app/services/tv_search_result_session.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_play_record_service.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
@@ -51,6 +52,9 @@ typedef TvVideoMoreSourcesLoader = Future<List<SearchResult>> Function(
   VideoInfo videoInfo,
   ValueChanged<List<SearchResult>> onIncrementalResults,
 );
+
+/// TV 详情页搜索结果标题归一化函数。
+typedef TvVideoSearchTitleNormalizer = String Function(String title);
 
 /// TV 详情页推荐加载函数。
 typedef TvVideoRecommendsLoader = Future<List<VideoInfo>> Function(
@@ -120,6 +124,9 @@ class TvVideoDetailScreen extends StatefulWidget {
     super.key,
     required this.videoInfo,
     this.stype,
+    this.prefetchedSources = const <SearchResult>[],
+    this.prefetchedSearchSession,
+    this.prefetchedSearchTitleKey = '',
     this.loadDetail,
     this.loadInitialSources,
     this.loadMoreSources,
@@ -136,6 +143,23 @@ class TvVideoDetailScreen extends StatefulWidget {
 
   /// 搜索类型，沿用普通播放器的电影/剧集提示。
   final String? stype;
+
+  /// 从搜索页提前带入的同片名候选资源。
+  ///
+  /// 当该列表非空且没有共享搜索会话时，详情页直接复用这些资源，
+  /// 不再发起标题补源 SSE 搜索。
+  final List<SearchResult> prefetchedSources;
+
+  /// 从搜索页共享过来的同一轮搜索会话。
+  ///
+  /// 当搜索页进入详情页时，如果该轮 SSE 搜索还没有结束，
+  /// 详情页需要继续订阅它的后续增量结果，而不是只消费进入瞬间的快照。
+  final TvSearchResultSession? prefetchedSearchSession;
+
+  /// 共享搜索会话在详情页内对应的标准化片名键。
+  ///
+  /// 搜索页的单次搜索结果里可能同时包含多部影片，这里只消费与当前详情页同片名的那一组。
+  final String prefetchedSearchTitleKey;
 
   /// 详情加载函数，测试时可注入。
   final TvVideoDetailLoader? loadDetail;
@@ -252,6 +276,11 @@ class TvVideoDetailScreen extends StatefulWidget {
         videoInfo.id.isNotEmpty &&
         videoInfo.source != 'douban' &&
         videoInfo.source != 'bangumi';
+  }
+
+  /// 规范化标题，保证搜索页与详情页使用同一套归一化规则。
+  static String normalizeSearchTitle(String title) {
+    return title.replaceAll(RegExp(r'\s+'), '').trim().toLowerCase();
   }
 
   /// 按标题搜索更多源，支持服务器流式增量回调。
@@ -634,6 +663,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 后台补源是否加载完成。
   bool _moreSourcesLoaded = false;
 
+  /// 当前已订阅的共享搜索会话。
+  TvSearchResultSession? _subscribedPrefetchedSearchSession;
+
+  /// 当前共享搜索会话的监听回调。
+  VoidCallback? _prefetchedSearchSessionListener;
+
   /// 是否需要按播放记录优先恢复保存线路。
   bool get _shouldPrioritizeResumeSource {
     return TvPlayRecordService.hasResumeHint(_resumeVideoInfo) &&
@@ -777,6 +812,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   @override
   void dispose() {
     widget.testHooks?.onVideoCompleted = null;
+    _detachPrefetchedSearchSession();
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
     _clockTimer?.cancel();
     _previewLoadingHoldTimer?.cancel();
@@ -962,6 +998,77 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _refreshDisplaySourceCache();
   }
 
+  /// 当前是否带着搜索页共享搜索会话进入详情页。
+  bool get _hasPrefetchedSearchSession {
+    return widget.prefetchedSearchSession != null &&
+        widget.prefetchedSearchTitleKey.isNotEmpty;
+  }
+
+  /// 从共享搜索会话里筛出当前详情页所属的同片名候选资源。
+  List<SearchResult> _prefetchedSearchSessionSources() {
+    final session = widget.prefetchedSearchSession;
+    if (session == null || widget.prefetchedSearchTitleKey.isEmpty) {
+      return const <SearchResult>[];
+    }
+    return session.results
+        .where(
+          (result) =>
+              TvVideoDetailScreen.normalizeSearchTitle(result.title) ==
+              widget.prefetchedSearchTitleKey,
+        )
+        .toList(growable: false);
+  }
+
+  /// 绑定并消费搜索页共享过来的搜索会话。
+  ///
+  /// 详情页进入时先吃掉当前快照；如果该轮搜索还没结束，再继续订阅后续增量。
+  void _attachPrefetchedSearchSession(int serial) {
+    final session = widget.prefetchedSearchSession;
+    if (session == null || widget.prefetchedSearchTitleKey.isEmpty) {
+      _markMoreSourcesLoaded();
+      return;
+    }
+
+    _detachPrefetchedSearchSession();
+
+    void handleSessionChanged() {
+      if (!mounted || serial != _loadSerial) {
+        _detachPrefetchedSearchSession();
+        return;
+      }
+
+      final prefetchedSources = _prefetchedSearchSessionSources();
+      if (prefetchedSources.isNotEmpty) {
+        _mergeSources(
+          prefetchedSources,
+          preferAsCurrent: false,
+          allowResumeFallback: session.isFinished,
+        );
+      }
+
+      if (session.isFinished) {
+        _detachPrefetchedSearchSession();
+        _markMoreSourcesLoaded();
+      }
+    }
+
+    _subscribedPrefetchedSearchSession = session;
+    _prefetchedSearchSessionListener = handleSessionChanged;
+    session.addListener(handleSessionChanged);
+    handleSessionChanged();
+  }
+
+  /// 解绑当前共享搜索会话监听。
+  void _detachPrefetchedSearchSession() {
+    final session = _subscribedPrefetchedSearchSession;
+    final listener = _prefetchedSearchSessionListener;
+    if (session != null && listener != null) {
+      session.removeListener(listener);
+    }
+    _subscribedPrefetchedSearchSession = null;
+    _prefetchedSearchSessionListener = null;
+  }
+
   /// 加载收藏状态。
   Future<void> _loadFavoriteState() async {
     final isFavorite = PageCacheService().isFavoritedSync(
@@ -1038,6 +1145,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 加载入口精确源，优先让详情页有可播数据。
   Future<void> _loadInitialSources(int serial) async {
+    if (_hasPrefetchedSearchSession) {
+      final sessionSources = _prefetchedSearchSessionSources();
+      if (sessionSources.isNotEmpty) {
+        _mergeSources(sessionSources, preferAsCurrent: true);
+      }
+    }
+
+    if (widget.prefetchedSources.isNotEmpty) {
+      _mergeSources(widget.prefetchedSources, preferAsCurrent: true);
+    }
+
     final loader = widget.loadInitialSources ??
         TvVideoDetailScreen.defaultLoadInitialSources;
     try {
@@ -1055,6 +1173,16 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 后台搜索并增量追加其它播放源。
   Future<void> _loadMoreSources(int serial) async {
+    if (_hasPrefetchedSearchSession) {
+      _attachPrefetchedSearchSession(serial);
+      return;
+    }
+
+    if (widget.prefetchedSources.isNotEmpty) {
+      _markMoreSourcesLoaded();
+      return;
+    }
+
     final loader = widget.loadMoreSources ??
         (
           BuildContext context,
@@ -3681,7 +3809,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       subtitle: '遇播放卡顿，音画不同步或无法播放时，请切换播放线路',
       contentHorizontalInset: _detailSectionLeadingInset,
       child: sources.isEmpty
-          ? _buildEmptyText('暂无可用源')
+          ? (_shouldShowEmptyPlaybackHint
+              ? _buildEmptyPlaybackHint()
+              : _buildEmptyText('暂无可用源'))
           : _buildFlushHorizontalViewport(
               height: _detailChoiceChipMinHeight,
               child: ListView.separated(
@@ -3974,6 +4104,48 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             onArrowDown: _keepCurrentFocusAtBoundary,
             onArrowUp: _focusPreferredRecommend,
             onPressed: _scrollToTopAndFocusPlayer,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 当前是否应展示“搜索完成但无播放信息”的空状态。
+  bool get _shouldShowEmptyPlaybackHint {
+    return _sources.isEmpty &&
+        _initialSourcesLoaded &&
+        _moreSourcesLoaded &&
+        !_isInitialDetailLoading;
+  }
+
+  /// 构建“未找到可播放信息”空状态。
+  ///
+  /// 仅在详情页补源完整结束后仍无线路时展示，明确告诉用户当前不是还在搜索。
+  Widget _buildEmptyPlaybackHint() {
+    return Container(
+      key: const ValueKey('tv-detail-empty-playback-hint'),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16191B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2A2F32)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.search_off_rounded,
+            size: 20,
+            color: Color(0xFF98A2A8),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '搜索已完成，未找到可播放信息',
+              style: FontUtils.poppins(
+                fontSize: 16,
+                color: const Color(0xFF98A2A8),
+              ),
+            ),
           ),
         ],
       ),

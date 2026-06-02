@@ -7,6 +7,7 @@ import 'package:selene/models/video_info.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/search_service.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
+import 'package:selene/tv_app/services/tv_search_result_session.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/screens/tv_video_detail_screen.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
@@ -418,6 +419,11 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 用于丢弃较早发出的搜索请求响应，避免旧结果覆盖新搜索。
   int _searchRequestVersion = 0;
 
+  /// 当前搜索结果共享会话。
+  ///
+  /// 搜索页进入详情页时，详情页需要继续复用这一轮 SSE 搜索的快照和后续增量结果。
+  TvSearchResultSession? _activeSearchResultSession;
+
   /// 判断当前查询串是否应该进入首字母联想模式。
   ///
   /// 这里只接管纯英文字母和数字输入，避免历史词、热词或中文片名回填后误切到联想区。
@@ -629,6 +635,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   @override
   void dispose() {
+    _invalidateActiveSearchResultSession();
     _recommendScrollController.dispose();
     _rightPanelScrollController.dispose();
     _historyFirstFocusNode.dispose();
@@ -759,6 +766,15 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   void _invalidateSearchRequests() {
     _suggestionRequestVersion++;
     _searchRequestVersion++;
+    _invalidateActiveSearchResultSession();
+  }
+
+  /// 让当前共享搜索会话立即失效。
+  ///
+  /// 搜索页退出结果态或开启新搜索后，旧会话不应再继续把结果推给详情页。
+  void _invalidateActiveSearchResultSession() {
+    _activeSearchResultSession?.invalidate();
+    _activeSearchResultSession = null;
   }
 
   /// 清理“联想页进入结果页”上下文。
@@ -2114,7 +2130,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 将搜索结果按片名聚合为搜索页卡片。
   ///
-  /// 同片名多来源结果只展示一张卡片，进入详情后再按标题继续补源。
+  /// 同片名多来源结果只展示一张卡片，进入详情后优先复用当前聚合出的来源集合。
   List<VideoInfo> _aggregateSearchResults(List<SearchResult> results) {
     final groupedResults = <String, List<SearchResult>>{};
     final orderedTitles = <String>[];
@@ -2144,7 +2160,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   ///
   /// 搜索页只按片名聚合，这里统一移除空白并折叠大小写差异。
   String _normalizeSearchResultTitle(String title) {
-    return title.replaceAll(RegExp(r'\s+'), '').trim().toLowerCase();
+    return TvVideoDetailScreen.normalizeSearchTitle(title);
   }
 
   /// 根据同片名结果组装搜索页展示卡片。
@@ -2673,6 +2689,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     }
 
     _searchRequestVersion++;
+    _invalidateActiveSearchResultSession();
     _resetSearchResultFocusState();
     setState(() {
       _query = normalizedQuery;
@@ -2739,7 +2756,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       return;
     }
 
+    _invalidateActiveSearchResultSession();
     final requestVersion = ++_searchRequestVersion;
+    final searchResultSession = TvSearchResultSession(
+      query: normalizedQuery,
+      requestVersion: requestVersion,
+    );
+    _activeSearchResultSession = searchResultSession;
     _resetSearchResultFocusState();
     setState(() {
       if (preserveSuggestionContext) {
@@ -2772,6 +2795,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             if (!mounted || requestVersion != _searchRequestVersion) {
               return;
             }
+            searchResultSession.replaceResults(partialResults);
             setState(() {
               _searchResults = partialResults;
               _syncAggregatedSearchVideos();
@@ -2790,6 +2814,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       } else if (widget.loadSearchResults != null) {
         results = await basicLoader(normalizedQuery);
         if (mounted && requestVersion == _searchRequestVersion) {
+          searchResultSession.replaceResults(results);
           setState(() {
             _searchResults = results;
             _syncAggregatedSearchVideos();
@@ -2802,6 +2827,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
             if (!mounted || requestVersion != _searchRequestVersion) {
               return;
             }
+            searchResultSession.replaceResults(partialResults);
             setState(() {
               _searchResults = partialResults;
               _syncAggregatedSearchVideos();
@@ -2835,6 +2861,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
         _searchCompletedResourceCount = _searchTotalResourceCount;
       }
     });
+    searchResultSession.complete(results);
   }
 
   /// 保存搜索历史。
@@ -2971,7 +2998,25 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
 
   /// 打开 TV 详情页。
   void _openVideo(VideoInfo videoInfo) {
-    TvRoute.push<void>(context, TvVideoDetailScreen(videoInfo: videoInfo));
+    final normalizedTitle = _normalizeSearchResultTitle(videoInfo.title);
+    final prefetchedSources = normalizedTitle.isEmpty
+        ? const <SearchResult>[]
+        : _searchResults
+            .where(
+              (result) =>
+                  _normalizeSearchResultTitle(result.title) == normalizedTitle,
+            )
+            .toList(growable: false);
+
+    TvRoute.push<void>(
+      context,
+      TvVideoDetailScreen(
+        videoInfo: videoInfo,
+        prefetchedSources: prefetchedSources,
+        prefetchedSearchSession: _activeSearchResultSession,
+        prefetchedSearchTitleKey: normalizedTitle,
+      ),
+    );
   }
 }
 
