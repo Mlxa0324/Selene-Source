@@ -97,7 +97,9 @@
 
 ### Main Changes
 
-(Add details)
+- Raised the fullscreen episode group label font size from 15 to 17 while keeping normal secondary menu buttons at 16.
+- Added a stable key for the fullscreen bottom total-time slot so widget tests can assert the progress chrome without matching unrelated time text.
+- Updated TV mode spec and task PRD to document the episode-group label exception.
 
 ### Git Commits
 
@@ -108,7 +110,9 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `flutter analyze lib/tv_app/screens/tv_fullscreen_player_screen.dart test/tv_app/tv_fullscreen_player_screen_test.dart`
+- [OK] `flutter test test/tv_app/tv_fullscreen_player_screen_test.dart` (61/61)
+- [OK] `git diff --check`
 
 ### Status
 
@@ -304,6 +308,39 @@
 | Hash | Message |
 |------|---------|
 | `7fedcac` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 10: 放大全屏选集分组文字
+
+**Date**: 2026-06-05
+**Task**: 放大全屏选集分组文字
+**Branch**: `tvtv`
+
+### Summary
+
+将 TV 全屏播放器底部选集分组标签字号提升到 17，保留普通二级菜单 16 号；补充菜单字号与暂停进度槽测试，并同步 TV 模式规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b33df9a` | (see git log) |
 
 ### Testing
 

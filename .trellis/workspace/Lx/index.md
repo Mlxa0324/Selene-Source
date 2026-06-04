@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
-- **Last Active**: 2026-06-02
+- **Total Sessions**: 10
+- **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~318 | Active |
+| `journal-1.md` | ~351 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-06-05 | 放大全屏选集分组文字 | `b33df9a` | `tvtv` |
 | 9 | 2026-06-02 | 粗对齐 Kotlin TV 页面壳样式 | `7fedcac` | `tvtv` |
 | 8 | 2026-06-02 | 分析 Flutter TV 详情页首播卡顿因素 | `d24cccf` | `tvtv` |
 | 7 | 2026-06-02 | 完成搜索页详情复用搜索会话 | `083b58b` | `tvtv` |
