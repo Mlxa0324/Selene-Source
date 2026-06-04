@@ -187,6 +187,44 @@ void main() {
     expect(fitMenuTop, closeTo(episodeMenuTop, 0.5));
   });
 
+  testWidgets('non episode secondary menus keep compact top padding',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+            _searchResult('source_b', '备用线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+    final sourceMenuGap = _menuButtonRect(tester, '主线路').top -
+        tester.getRect(find.byKey(const ValueKey('tv-fullscreen-menu'))).top;
+
+    _focusNodeForMenuLabel(tester, '画面比例').requestFocus();
+    await tester.pumpAndSettle();
+    final fitMenuGap = _menuButtonRect(tester, '适应').top -
+        tester.getRect(find.byKey(const ValueKey('tv-fullscreen-menu'))).top;
+
+    // 非选集二级菜单内容较短时，弹框顶部应跟随内容高度收紧。
+    expect(sourceMenuGap, lessThanOrEqualTo(44));
+    expect(fitMenuGap, lessThanOrEqualTo(44));
+  });
+
   testWidgets('menu interactions do not rebuild fullscreen player layer',
       (tester) async {
     var playerBuildCount = 0;
