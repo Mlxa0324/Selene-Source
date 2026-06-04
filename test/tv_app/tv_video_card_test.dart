@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:selene/models/video_info.dart';
@@ -254,6 +255,41 @@ void main() {
     expect(startedRequests, contains('https://example.com/poster_5.jpg'));
 
     scrollController.dispose();
+  });
+
+  testWidgets(
+      'TV video card falls back when sliver reveal offset is unavailable',
+      (tester) async {
+    final startedRequests = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            height: 400,
+            child: CustomScrollView(
+              slivers: [
+                _NullScrollOffsetSliver(
+                  child: TvVideoCard(
+                    videoInfo: _videoInfo(
+                      cover: 'https://example.com/poster.jpg',
+                    ),
+                    deferredLoadingDecider: (_) => false,
+                    deferredLoadingRetryDelay: const Duration(milliseconds: 10),
+                    onCoverImageRequestStarted: startedRequests.add,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await _pumpFrames(tester, count: 6);
+
+    // Sliver 布局更新期拿不到子节点 scroll offset 时，封面链路应安全回退。
+    expect(tester.takeException(), isNull);
+    expect(startedRequests, const ['https://example.com/poster.jpg']);
   });
 
   testWidgets(
@@ -547,4 +583,27 @@ VideoInfo _videoInfo({
     searchTitle: '测试影片',
     rate: rate,
   );
+}
+
+/// 测试专用 Sliver。
+///
+/// 模拟 Flutter 在 Sliver 子节点刚更新时无法提供 child scroll offset 的场景。
+class _NullScrollOffsetSliver extends SingleChildRenderObjectWidget {
+  /// 创建测试 Sliver。
+  const _NullScrollOffsetSliver({
+    required super.child,
+  });
+
+  @override
+  RenderObject createRenderObject(BuildContext context) {
+    return _RenderNullScrollOffsetSliver();
+  }
+}
+
+/// 返回空 scroll offset 的测试渲染对象。
+class _RenderNullScrollOffsetSliver extends RenderSliverToBoxAdapter {
+  @override
+  double? childScrollOffset(covariant RenderObject child) {
+    return null;
+  }
 }

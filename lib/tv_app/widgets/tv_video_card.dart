@@ -660,16 +660,27 @@ class _TvCoverImageState extends State<_TvCoverImage> {
       return true; // 非滚动容器内，正常加载
     }
 
-    final viewport = RenderAbstractViewport.of(renderObject);
+    final viewport = RenderAbstractViewport.maybeOf(renderObject);
+    if (viewport == null) {
+      return true; // viewport 暂不可用时，回退为允许加载
+    }
 
     final position = scrollable.position;
+    if (!position.hasViewportDimension || !position.hasPixels) {
+      return true; // 滚动位置未完成初始化时，避免构建期读取异常
+    }
     final viewportHeight = position.viewportDimension;
     if (viewportHeight <= 0) {
       return true; // viewport 尺寸异常，安全回退
     }
 
     final scrollOffset = position.pixels;
-    final revealedOffset = viewport.getOffsetToReveal(renderObject, 0);
+    final RevealedOffset revealedOffset;
+    try {
+      revealedOffset = viewport.getOffsetToReveal(renderObject, 0);
+    } catch (_) {
+      return true; // Sliver reveal 链路不稳定时，图片优化不能打断页面构建
+    }
     final cardTop = revealedOffset.offset - scrollOffset;
     final cardBottom = cardTop + renderObject.size.height;
 
