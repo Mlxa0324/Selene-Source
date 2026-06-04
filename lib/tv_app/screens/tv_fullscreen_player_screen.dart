@@ -3355,6 +3355,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
               ),
               const SizedBox(width: 14),
               SizedBox(
+                key: const ValueKey('tv-fullscreen-bottom-total-time-slot'),
                 width: _progressTimeSlotWidth,
                 child: Text(
                   _formatProgressBarDuration(duration),
@@ -4381,7 +4382,7 @@ class _TvPlayerGroupLabel extends StatelessWidget {
         return AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 140),
           style: FontUtils.poppins(
-            fontSize: 15,
+            fontSize: 17,
             fontWeight: active ? FontWeight.w800 : FontWeight.w600,
             color: active ? palette.accent : Colors.white,
           ),

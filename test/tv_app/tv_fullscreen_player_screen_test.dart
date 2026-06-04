@@ -1354,10 +1354,14 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TvFullscreenPlayerScreen(
-          videoInfo: _videoInfo(),
-          currentDetail: _searchResult('source_a', '主线路'),
+          videoInfo: _videoInfo(totalEpisodes: 45),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 45,
+          ),
           sources: [
-            _searchResult('source_a', '主线路'),
+            _searchResult('source_a', '主线路', episodeCount: 45),
           ],
           playerBuilder: (_, __) => const ColoredBox(
             key: ValueKey('tv-fullscreen-player-placeholder'),
@@ -1378,6 +1382,16 @@ void main() {
     final secondaryText = tester.widget<Text>(find.text('第1集'));
     expect(secondaryText.style?.fontSize, 16);
     expect(secondaryText.style?.color, Colors.white);
+
+    final groupStyle = tester.widget<AnimatedDefaultTextStyle>(
+      find
+          .ancestor(
+            of: find.text('01-20'),
+            matching: find.byType(AnimatedDefaultTextStyle),
+          )
+          .first,
+    );
+    expect(groupStyle.style.fontSize, 17);
   });
 
   testWidgets('uses mobile player display mode labels', (tester) async {
@@ -1827,8 +1841,24 @@ void main() {
         findsOneWidget);
     expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
         findsOneWidget);
-    expect(find.text('00:17'), findsOneWidget);
-    expect(find.text('45:28'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('tv-fullscreen-bottom-current-time-slot'),
+        ),
+        matching: find.text('00:17'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('tv-fullscreen-bottom-total-time-slot'),
+        ),
+        matching: find.text('45:28'),
+      ),
+      findsOneWidget,
+    );
     expect(find.textContaining('按【菜单键】或【下键】'), findsOneWidget);
     expect(find.textContaining('提醒：'), findsNothing);
   });
