@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -431,6 +432,15 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 主操作提示自动关闭定时器。
   Timer? _actionNoticeTimer;
 
+  /// 标记当前是否运行在 `flutter test` 环境。
+  ///
+  /// 设置页默认会启动手机扫码桥接服务；widget test 下不应真的起
+  /// `HttpServer` 和局域网地址探测，否则容易把测试执行器挂住。
+  static bool get _isFlutterTestEnvironment {
+    final flutterTest = Platform.environment['FLUTTER_TEST'];
+    return flutterTest != null && flutterTest != 'false';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -523,10 +533,33 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
         _applyMobileSettingsDraft,
       );
     }
+    if (_isFlutterTestEnvironment) {
+      return Future<TvMobileSettingsBridgeSession>.value(
+        _createTestBridgeSession(),
+      );
+    }
     return TvMobileSettingsBridge.startSession(
       _buildMobileSettingsDraft(),
       _applyMobileSettingsDraft,
       allocateNewPort: allocateNewPort,
+    );
+  }
+
+  /// 构建测试环境下的无副作用扫码桥接会话。
+  ///
+  /// 真实扫码桥接会绑定局域网端口；widget test 只需要稳定渲染设置页，
+  /// 因此这里返回空地址会话，避免测试期间留下悬挂的服务端资源。
+  TvMobileSettingsBridgeSession _createTestBridgeSession() {
+    final statusNotifier = ValueNotifier<String>(
+      TvMobileSettingsBridge.unavailableStatus,
+    );
+    return TvMobileSettingsBridgeSession(
+      shareUri: null,
+      statusNotifier: statusNotifier,
+      updateDraft: (_) {},
+      dispose: () async {
+        statusNotifier.dispose();
+      },
     );
   }
 

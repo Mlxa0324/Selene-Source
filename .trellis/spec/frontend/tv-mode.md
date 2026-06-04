@@ -497,6 +497,7 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 换源布局 | 标题展示为「切换线路」，并补充 `遇播放卡顿，音画不同步或无法播放时，请切换播放线路`；单行横向列表，不使用多行换行布局；线路展示为 `线路名（集数）`，并按集数倒序排列，相同集数保持原始返回顺序；换源卡片按上方向键必须按实际位置就近回到播放器、全屏或收藏按钮；全屏和收藏按钮按下方向键必须优先回到当前选中的播放源，当前源未构建时才回到第一个已构建源，避免依赖几何焦点导致丢焦或跳到非当前源；焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
 | 选集布局 | 单行横向集数列表在上，分组标签在集数列表下方；总集数不超过 20 集时不展示分组，长剧集按固定区间切换；换源、选集、分组和相关推荐之间必须设置明确的上下焦点目标，向下按顺序进入下一块，向上回到就近的上一块；详情页所有横向列表首尾必须按获焦放大尺寸预留安全留白，确保长按到右端再回到首项时焦点框不会贴边或被裁剪；集数列表和分组列表焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
 | 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏；无播放 URL 的预览占位态不得提前拉起重型 WebView HTML/JS 初始化 |
+| 预览 loading | 详情页小播放器关闭 `VideoPlayerWidget.showLoadingIndicator` 后，外层必须用 `tv-detail-preview-loading` 承担转圈和网速反馈；已有可播源、控制器晚挂、续播记录未返回导致首播挂起、首帧黑底或缓冲时必须显示；只有当前播放时间点从本轮 loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；网速优先显示播放器控制器的真实下载速度，未知或暂无样本时才回退 `0KB/s`；overlay 必须无背景且 `IgnorePointer`，不得阻断遥控器焦点进入线路、选集或全屏按钮 |
 | 全屏 | 详情页内展示 `TvFullscreenPlayerScreen` 覆盖层，携带当前详情、线路列表和集下标；生产路径必须通过同一个 `VideoPlayerWidget`/控制器在预览和全屏之间移动，避免进入全屏时重新起播或黑屏；TV 全屏播放器同样禁用 PiP/小窗最小化 |
 | 收藏 | 使用 `PageCacheService.addFavorite/removeFavorite` |
 | 推荐点击 | `pushReplacement` 到新的 TV 详情页 |
@@ -536,6 +537,7 @@ TV 详情页加载错误契约：
 | 菜单未弹出时确认键 | 切换播放和暂停，不弹出底部菜单 |
 | 菜单未弹出时左右键 | 执行进度跳转，前 5 秒固定 5 秒步进，之后平滑加速到 19 秒封顶 |
 | 左右键进度提示 | 屏幕中心展示浅灰圆角时间提示，格式为 `当前时间 / 总时长` |
+| seek 后 loading | 短按或长按 seek 后应显示无背景的 `tv-fullscreen-loading` 与网速反馈；长按松手后先收起 seek 中心提示和底部进度壳层；只有当前播放时间点从本轮 seek/loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；复用详情页播放器时全屏壳必须监听真实 `VideoPlayerWidgetController` 的进度事件，避免底层 `isLoading` 滞留或缺少全屏页本地 controller 时转圈永久残留；网速优先复用播放器控制器真实下载速度，未知或暂无样本时才回退 `0KB/s` |
 | 底部提醒 | 菜单未弹出时展示返回键、下键和安全提醒文案 |
 | 返回键 | `Esc`、遥控器返回键和系统返回统一处理；菜单已弹出时先关闭菜单；无菜单时退出全屏回到详情页 |
 
@@ -615,7 +617,7 @@ data class PlaybackSnapshot(
 | 配置保留 | 不清理服务器地址、账号、密码、主题色、弹幕设置和图片代理设置 |
 | 启动清理 | 每次进入 App 前清理非配置类运行缓存和内存图片缓存 |
 | 图片默认缓存 | TV 影视封面默认使用 `CachedNetworkImage` 写入磁盘缓存，减少重复请求 |
-| 低空间策略 | Android 可用空间低于 500MB 时清理图片磁盘缓存，并暂时不再写入新的图片磁盘缓存 |
+| 低空间策略 | Android 可用空间低于 200MB 时清理图片磁盘缓存，并暂时不再写入新的图片磁盘缓存 |
 
 ### 4.8 TV 主题色契约
 
@@ -645,6 +647,7 @@ data class PlaybackSnapshot(
 | 详情页换源或选集换行 | 使用横向 `ListView`，选集长列表先按分组切换 | `tv_video_detail_screen_test.dart` |
 | 详情页显示返回按钮 | 不展示“返回上一级”，保留系统/遥控器返回 | `tv_video_detail_screen_test.dart` |
 | 详情页播放器出现控制按钮组 | `VideoPlayerWidget.showControls=false`，播放器焦点确认只进全屏 | `tv_video_detail_screen_test.dart` / `video_player_widget_preload_config_test.dart` |
+| 详情页播放器黑底首帧无反馈 | 外层 `tv-detail-preview-loading` 在首个可播源到达、控制器晚挂、续播记录未返回导致首播挂起或缓冲时显示无背景转圈和真实网速，未知时才回退 `0KB/s`；只有播放时间点从 loading 锚点前进后才能收起，不依赖内部播放器 loading | `detail preview shows loading overlay while controller attaches late`, `detail preview keeps loading until playback position changes`, `renders first incremental source with preview loading before all sources finish`, `detail starts initial source loading before resume record finishes` |
 | 分类页筛选入口触发错误 | 电影、剧集、动漫、综艺菜单按确认键展示筛选面板；上键统一进入右上快捷入口，内容区上键不直接呼出 | `tv_home_screen_test.dart`, `tv_top_nav_test.dart` |
 | 筛选面板遮挡卡片或顶部导航仍占位 | 顶部导航用收起动画让出空间，筛选面板用尺寸动画下滑展开并顶开 Grid | `tv_home_screen_test.dart` |
 | 筛选项横向滚动盖住行标题或左右边界跳行 | 筛选行 `ListView` 使用视口裁剪，首尾选项复用 `TvEdgeShake` 拦截左右边界方向键 | `tv_home_screen_test.dart` |
@@ -655,6 +658,7 @@ data class PlaybackSnapshot(
 | TV 主题色没有持久化或未覆盖奈飞红 | `TvThemeService` 负责保存主题色并解析调色板 | `tv_theme_service_test.dart` |
 | TV 设置页主题色切换无反馈 | 设置页提供 `主题色` 选项并保存 `netflix_red` | `tv_settings_screen_test.dart` |
 | 图片首次加载空白或闪烁 | 封面加载中显示左上到右下雨刷骨架 | `tv_video_card_test.dart` |
+| TV 卡片封面视口判定构建期崩溃 | 封面延迟加载的 viewport/reveal 计算必须使用 `RenderAbstractViewport.maybeOf`、滚动位置初始化检查和安全回退；`getOffsetToReveal` 失败时允许加载，不能让图片优化打断页面构建 | `TV video card falls back when sliver reveal offset is unavailable` |
 | 横向列表保留旧滚动位置 | 分区失焦时 `jumpTo(0)` | `tv_home_section_test.dart` |
 | 列表边界长按方向键狂抖 | `TvEdgeShake` 使用冷却间隔控制重复触发 | `tv_edge_shake_test.dart` |
 | 横向列表遥控器无法显示首尾留白 | 首尾方向键先滚到真实滚动边界，再触发边界抖动 | `tv_home_section_test.dart` |
@@ -670,6 +674,7 @@ data class PlaybackSnapshot(
 | 从内容区回顶部时误切到就近菜单 | 导航栏外部进入时先请求当前选中项焦点 | `tv_top_nav_test.dart` |
 | TV 顶部缺少快捷入口 | `TvTopNav` 右侧快捷区提供搜索、播放历史、收藏夹、设置四个图标文字按钮 | `tv_home_screen_test.dart`, `tv_top_nav_test.dart` |
 | 全屏播放器菜单未弹出时缺少遥控器播放控制 | 确认键切换播放暂停，左右键按加速步长 seek，并显示中心时间提示 | `tv_fullscreen_player_screen_test.dart` |
+| 全屏长按 seek 松手后转圈残留 | key up 后的 recovery loading 必须在进度/播放恢复后收起；共享详情页播放器可用播放态兜底 stale `isLoading` | `long press seek clears recovery loading when reused controller keeps stale loading` |
 | 全屏播放器底部菜单弹出或切换时卡顿 | 菜单壳层状态不得重建 `VideoPlayerWidget`；播放器画面层需要稳定缓存并用 `RepaintBoundary` 隔离菜单覆盖层重绘 | `tv_fullscreen_player_screen_test.dart` |
 | 详情页进入全屏时播放器重新创建 | 详情页用同页覆盖层和共享播放器 Key 复用当前控制器，注入全屏播放器时才允许走独立 builder | `tv_video_detail_screen_test.dart` |
 | TV 搜索页缺少历史和热词 | 搜索历史使用纯文字 Grid，搜索热词使用本地 mock Grid | `tv_search_screen_test.dart` |
@@ -678,7 +683,7 @@ data class PlaybackSnapshot(
 | TV 设置页 widget test 拉起真实扫码桥接 | `FLUTTER_TEST` 环境下返回无副作用桥接会话，不启动真实 `HttpServer` 和局域网探测 | `tv_settings_screen_test.dart` |
 | TV 封面图无法切换代理 | 设置页复用普通端豆瓣图片源保存逻辑 | `tv_settings_screen_test.dart` |
 | TV 缺少缓存大小和清理入口 | 设置页展示缓存大小并提供 `清除所有缓存` 操作 | `tv_settings_screen_test.dart` |
-| 低空间仍继续写图片磁盘缓存 | `AppCacheService` 低于 500MB 返回不使用图片磁盘缓存 | `app_cache_service_test.dart` |
+| 低空间仍继续写图片磁盘缓存 | `AppCacheService` 低于 200MB 返回不使用图片磁盘缓存 | `app_cache_service_test.dart` |
 | 二级标题固定不动 | `TvVideoGrid` 使用 `CustomScrollView`，标题作为首个 sliver | `tv_home_screen_test.dart` |
 
 ## 6. Good / Base / Bad Cases

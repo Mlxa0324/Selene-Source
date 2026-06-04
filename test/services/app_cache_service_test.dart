@@ -41,7 +41,7 @@ void main() {
 
     expect(summary?.availableBytes, 300 * 1024 * 1024);
     expect(summary?.totalBytes, 64 * 1024 * 1024 * 1024);
-    expect(summary?.isLowStorage, isTrue);
+    expect(summary?.isLowStorage, isFalse);
   });
 
   test('calculates cache size from injected cache directories', () async {

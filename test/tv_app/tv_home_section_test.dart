@@ -8,7 +8,7 @@ import 'package:selene/tv_app/widgets/tv_home_section.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 
 void main() {
-  testWidgets('resets horizontal scroll when section focus moves away',
+  testWidgets('keeps horizontal scroll when section focus moves away',
       (tester) async {
     final firstController = ScrollController();
     final secondController = ScrollController();
@@ -63,7 +63,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(firstController.offset, 0);
+    expect(firstController.offset, 320);
   });
 
   testWidgets('wraps horizontal edge cards with shake feedback',
@@ -86,15 +86,24 @@ void main() {
 
   testWidgets('horizontal row moves a shared focus frame between cards',
       (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TvThemeService.focusEffectStorageKey: TvFocusEffectMode.smoothFrame.key,
+    });
+    final themeService = TvThemeService();
+    await themeService.load();
+
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0B0D0E),
-          body: TvHomeSection(
-            title: '热门电影',
-            videos: List.generate(
-              3,
-              (index) => _videoInfo('movie_$index', '电影 $index'),
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: TvHomeSection(
+              title: '热门电影',
+              videos: List.generate(
+                3,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
             ),
           ),
         ),
@@ -119,32 +128,40 @@ void main() {
   testWidgets(
       'shared focus frame stays stable when controller has multiple positions',
       (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TvThemeService.focusEffectStorageKey: TvFocusEffectMode.smoothFrame.key,
+    });
+    final themeService = TvThemeService();
+    await themeService.load();
     final sharedController = ScrollController();
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0B0D0E),
-          body: SingleChildScrollView(
-            child: Column(
-              children: [
-                TvHomeSection(
-                  title: '热门电影 A',
-                  videos: List.generate(
-                    3,
-                    (index) => _videoInfo('movie_a_$index', '电影 A$index'),
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: SingleChildScrollView(
+              child: Column(
+                children: [
+                  TvHomeSection(
+                    title: '热门电影 A',
+                    videos: List.generate(
+                      3,
+                      (index) => _videoInfo('movie_a_$index', '电影 A$index'),
+                    ),
+                    scrollController: sharedController,
                   ),
-                  scrollController: sharedController,
-                ),
-                TvHomeSection(
-                  title: '热门电影 B',
-                  videos: List.generate(
-                    3,
-                    (index) => _videoInfo('movie_b_$index', '电影 B$index'),
+                  TvHomeSection(
+                    title: '热门电影 B',
+                    videos: List.generate(
+                      3,
+                      (index) => _videoInfo('movie_b_$index', '电影 B$index'),
+                    ),
+                    scrollController: sharedController,
                   ),
-                  scrollController: sharedController,
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -242,17 +259,26 @@ void main() {
 
   testWidgets('more card uses shared row focus frame instead of own glow',
       (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TvThemeService.focusEffectStorageKey: TvFocusEffectMode.smoothFrame.key,
+    });
+    final themeService = TvThemeService();
+    await themeService.load();
+
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0B0D0E),
-          body: TvHomeSection(
-            title: '热门电影',
-            videos: List.generate(
-              16,
-              (index) => _videoInfo('movie_$index', '电影 $index'),
+        home: TvTheme(
+          service: themeService,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0B0D0E),
+            body: TvHomeSection(
+              title: '热门电影',
+              videos: List.generate(
+                16,
+                (index) => _videoInfo('movie_$index', '电影 $index'),
+              ),
+              onMorePressed: () {},
             ),
-            onMorePressed: () {},
           ),
         ),
       ),
@@ -278,7 +304,11 @@ void main() {
 
   testWidgets('smooth frame mode keeps focused card internals unchanged',
       (tester) async {
+    SharedPreferences.setMockInitialValues({
+      TvThemeService.focusEffectStorageKey: TvFocusEffectMode.smoothFrame.key,
+    });
     final themeService = TvThemeService();
+    await themeService.load();
 
     await tester.pumpWidget(
       MaterialApp(

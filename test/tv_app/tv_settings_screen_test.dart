@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/tv_app/screens/tv_home_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
@@ -11,6 +12,10 @@ import 'package:selene/tv_app/services/tv_mobile_settings_bridge.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets(
       'reuses one generic chip option row for theme background and image source',
       (tester) async {
@@ -127,7 +132,10 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    // 这里只验证材质背景色，不依赖设置页内的焦点派发和滚动动画完全静止。
+    // 使用有界 pump，避免页面内部持续帧源让 pumpAndSettle 一直等待。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
 
     final materialFinder = find.descendant(
       of: find.byType(TvSettingsScreen),

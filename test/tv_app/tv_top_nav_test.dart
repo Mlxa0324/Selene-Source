@@ -282,7 +282,7 @@ void main() {
     final container = tester.widget<AnimatedContainer>(searchButton);
     final decoration = container.decoration! as BoxDecoration;
 
-    expect(decoration.borderRadius, BorderRadius.circular(8));
+    expect(decoration.borderRadius, BorderRadius.circular(22));
   });
 
   testWidgets('moves from live tab to quick actions with up key',

@@ -202,6 +202,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   /// 右侧内容区右边距。
   static const double _rightPanelRightPadding = 36;
 
+  /// 右侧文字分区通用右侧留白。
+  ///
+  /// 搜索历史、搜索热词和联想结果保留这一层外边距；
+  /// 影片推荐列表则单独依赖列表内部 padding 处理右侧呼吸空间。
+  static const double _rightPanelWordSectionRightPadding =
+      _rightPanelRightPadding;
+
   /// 搜索词列表列数。
   static const int _wordGridColumnCount = 3;
 
@@ -319,6 +326,13 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   ///
   /// 底部保留少量空间，避免卡片轻微缩放时压到容器裁剪边。
   static const double _recommendListBottomSafePadding = 18;
+
+  /// 推荐横向列表尾部安全留白。
+  ///
+  /// 让最后一张推荐卡获焦停在最右侧时，
+  /// 仍然和屏幕边缘保留一段稳定的视觉距离。
+  static const double _recommendListTrailingSafePadding =
+      _rightPanelWordSectionRightPadding;
 
   /// 左侧搜索操作区焦点记忆分组。
   ///
@@ -1058,49 +1072,55 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
     final initialFocusTarget = _resolveInitialFocusTarget(data, isLoading);
 
     return SingleChildScrollView(
+      key: const ValueKey('tv-search-right-panel-scroll'),
       controller: _rightPanelScrollController,
       padding: const EdgeInsets.fromLTRB(
         _rightPanelLeftPadding,
         _panelTopPadding,
-        _rightPanelRightPadding,
+        0,
         42,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildWordSection(
-            title: '搜索历史',
-            words: data.searchHistory,
-            emptyText: '暂无搜索历史',
-            // 搜索历史保存的是已确认过的关键词，短按后直接进入搜索结果。
-            onWordPressed: (word) => unawaited(_performSearch(word)),
-            firstItemFocusNode: _historyFirstFocusNode,
-            autofocusFirstItem:
-                initialFocusTarget == _TvSearchInitialFocusTarget.history,
-            focusMemoryGroupKey: _historyWordFocusMemoryGroupKey,
-            onItemFocus: _ensureRightPanelFocusCentered,
-            onLastRowArrowDown: data.recommends.isNotEmpty
-                ? _moveWordFocusDownToRecommendations
-                : _keepWordFocusOnArrowDown,
-            onClearPressed:
-                data.searchHistory.isEmpty ? null : () => _clearSearchHistory(),
+          _buildRightPanelWordSection(
+            _buildWordSection(
+              title: '搜索历史',
+              words: data.searchHistory,
+              emptyText: '暂无搜索历史',
+              // 搜索历史保存的是已确认过的关键词，短按后直接进入搜索结果。
+              onWordPressed: (word) => unawaited(_performSearch(word)),
+              firstItemFocusNode: _historyFirstFocusNode,
+              autofocusFirstItem:
+                  initialFocusTarget == _TvSearchInitialFocusTarget.history,
+              focusMemoryGroupKey: _historyWordFocusMemoryGroupKey,
+              onItemFocus: _ensureRightPanelFocusCentered,
+              onLastRowArrowDown: data.recommends.isNotEmpty
+                  ? _moveWordFocusDownToRecommendations
+                  : _keepWordFocusOnArrowDown,
+              onClearPressed: data.searchHistory.isEmpty
+                  ? null
+                  : () => _clearSearchHistory(),
+            ),
           ),
           if (data.hotWords.isNotEmpty) ...[
             const SizedBox(height: 30),
-            _buildWordSection(
-              title: '搜索热词',
-              words: data.hotWords,
-              emptyText: '暂无搜索热词',
-              // 热词暂时保留“回填输入框”语义，便于后续接真实服务端数据时继续沿用。
-              onWordPressed: _setQuery,
-              firstItemFocusNode: _hotWordFirstFocusNode,
-              autofocusFirstItem:
-                  initialFocusTarget == _TvSearchInitialFocusTarget.hotWord,
-              focusMemoryGroupKey: _hotWordFocusMemoryGroupKey,
-              onItemFocus: _ensureRightPanelFocusCentered,
-              onLastRowArrowDown: data.recommends.isEmpty
-                  ? _keepWordFocusOnArrowDown
-                  : _moveWordFocusDownToRecommendations,
+            _buildRightPanelWordSection(
+              _buildWordSection(
+                title: '搜索热词',
+                words: data.hotWords,
+                emptyText: '暂无搜索热词',
+                // 热词暂时保留“回填输入框”语义，便于后续接真实服务端数据时继续沿用。
+                onWordPressed: _setQuery,
+                firstItemFocusNode: _hotWordFirstFocusNode,
+                autofocusFirstItem:
+                    initialFocusTarget == _TvSearchInitialFocusTarget.hotWord,
+                focusMemoryGroupKey: _hotWordFocusMemoryGroupKey,
+                onItemFocus: _ensureRightPanelFocusCentered,
+                onLastRowArrowDown: data.recommends.isEmpty
+                    ? _keepWordFocusOnArrowDown
+                    : _moveWordFocusDownToRecommendations,
+              ),
             ),
           ],
           const SizedBox(height: 34),
@@ -1132,33 +1152,43 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
               );
 
     return SingleChildScrollView(
+      key: const ValueKey('tv-search-right-panel-scroll'),
       controller: _rightPanelScrollController,
       padding: const EdgeInsets.fromLTRB(
         _rightPanelLeftPadding,
         _panelTopPadding,
-        _rightPanelRightPadding,
+        0,
         42,
       ),
       child: Column(
-        key: const ValueKey('tv-search-suggestion-panel'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            key: _suggestionTitleKey,
-            padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
-            child: Text(
-              '联想结果',
-              style: FontUtils.poppins(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
+          _buildRightPanelWordSection(
+            Column(
+              key: const ValueKey('tv-search-suggestion-panel'),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  key: _suggestionTitleKey,
+                  padding:
+                      const EdgeInsets.only(left: _rightPanelContentLeftInset),
+                  child: Text(
+                    '联想结果',
+                    style: FontUtils.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Padding(
+                  padding:
+                      const EdgeInsets.only(left: _rightPanelContentLeftInset),
+                  child: suggestionContent,
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.only(left: _rightPanelContentLeftInset),
-            child: suggestionContent,
           ),
           if (!_isSuggestionLoading && _suggestions.isNotEmpty) ...[
             const SizedBox(height: 34),
@@ -1171,6 +1201,19 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  /// 为右侧文字分区补回统一右侧留白。
+  ///
+  /// 右栏的文字区仍沿用通用外边距，避免标题和词条过于贴近屏幕右侧；
+  /// 影片推荐区则不复用这层外边距，改由列表内部 padding 单独控制最右侧呼吸空间。
+  Widget _buildRightPanelWordSection(Widget child) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        right: _rightPanelWordSectionRightPadding,
+      ),
+      child: child,
     );
   }
 
@@ -1523,7 +1566,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       padding: const EdgeInsets.fromLTRB(
         _rightPanelContentLeftInset,
         _recommendListTopSafePadding,
-        TvVideoGrid.focusSafePadding,
+        _recommendListTrailingSafePadding,
         _recommendListBottomSafePadding,
       ),
       itemBuilder: (context, index) {
@@ -1584,7 +1627,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
       padding: const EdgeInsets.fromLTRB(
         _rightPanelContentLeftInset,
         _recommendListTopSafePadding,
-        TvVideoGrid.focusSafePadding,
+        _recommendListTrailingSafePadding,
         _recommendListBottomSafePadding,
       ),
       itemBuilder: (context, index) {

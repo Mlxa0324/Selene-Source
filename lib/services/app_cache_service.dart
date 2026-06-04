@@ -50,8 +50,8 @@ class AppCacheService {
   /// Android 原生存储空间通道。
   static const MethodChannel _storageChannel = MethodChannel('selene/storage');
 
-  /// 低空间阈值，小于 500MB 时避免继续写入图片磁盘缓存。
-  static const int lowStorageThresholdBytes = 500 * 1024 * 1024;
+  /// 低空间阈值，小于 200MB 时避免继续写入图片磁盘缓存。
+  static const int lowStorageThresholdBytes = 200 * 1024 * 1024;
 
   /// 缓存目录加载函数。
   final AppCacheDirectoriesLoader _cacheDirectoriesLoader;

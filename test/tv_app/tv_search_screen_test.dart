@@ -2767,14 +2767,19 @@ void main() {
     fourthCardFocusNode.requestFocus();
     await tester.pumpAndSettle();
 
-    expect(controller.offset, closeTo(322.0, 0.01));
+    final expectedFourthOffset =
+        (cardStride * 2).clamp(0, controller.position.maxScrollExtent);
+    final expectedFourthLeft =
+        titleLeft + (cardStride * 3) - expectedFourthOffset;
+
+    expect(controller.offset, closeTo(expectedFourthOffset, 0.01));
     expect(
       tester
           .getTopLeft(
             find.byKey(const ValueKey('tv-video-card-focus-recommend_3')),
           )
           .dx,
-      closeTo(622.0, 0.01),
+      closeTo(expectedFourthLeft, 0.01),
     );
   });
 
@@ -3024,8 +3029,46 @@ void main() {
     expect(historyDelegate.crossAxisSpacing, 16);
     expect(historyDelegate.mainAxisSpacing, 14);
     expect(historyTileText.style?.fontSize, 17);
-    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 12, 18));
+    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 36, 18));
     expect(recommendList.clipBehavior, Clip.hardEdge);
+  });
+
+  testWidgets('recommendation list does not share history right inset',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvSearchScreen(
+          loadSearchData: (_) async => TvSearchData(
+            searchHistory: const ['庆余年', '长安的荔枝'],
+            hotWords: const [],
+            recommends: List<VideoInfo>.generate(
+              8,
+              (index) => _videoInfo('recommend_$index', '推荐$index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final rightPanelScrollView = tester.widget<SingleChildScrollView>(
+      find.byKey(const ValueKey('tv-search-right-panel-scroll')),
+    );
+    final historyGridRect = tester.getRect(
+      find.byKey(const ValueKey('tv-search-word-grid-搜索历史')),
+    );
+    final recommendListFinder =
+        find.byKey(const ValueKey('tv-search-recommend-list'));
+    final recommendList = tester.widget<ListView>(recommendListFinder);
+    final recommendListRect = tester.getRect(recommendListFinder);
+
+    expect(
+      rightPanelScrollView.padding,
+      const EdgeInsets.fromLTRB(0, 28, 0, 42),
+    );
+    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 36, 18));
+    expect(recommendListRect.right - historyGridRect.right, closeTo(36, 0.01));
   });
 
   testWidgets('autofocuses first search history item when history exists',
