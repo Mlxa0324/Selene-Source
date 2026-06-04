@@ -2717,6 +2717,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final groupText = tester.widget<Text>(find.text('21-25'));
+    expect(groupText.style?.fontSize, 17);
     expect(groupText.style?.decoration, TextDecoration.underline);
   });
 

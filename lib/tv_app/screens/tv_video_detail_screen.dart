@@ -4610,7 +4610,7 @@ class _TvTextChoice extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: FontUtils.poppins(
-                fontSize: 15,
+                fontSize: 17,
                 fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
                 color: highlight ? palette.accent : const Color(0xFFD9E2E0),
               ).copyWith(
