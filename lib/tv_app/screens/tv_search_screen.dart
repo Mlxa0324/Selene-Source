@@ -187,7 +187,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   static const double _leftPanelWidth = 350;
 
   /// 左侧搜索操作区左边距。
-  static const double _leftPanelLeftPadding = 40;
+  static const double _leftPanelLeftPadding = TvLayout.pageHorizontalPadding;
 
   /// 左侧搜索操作区右边距。
   ///
@@ -200,7 +200,7 @@ class _TvSearchScreenState extends State<TvSearchScreen> {
   static const double _rightPanelLeftPadding = 0;
 
   /// 右侧内容区右边距。
-  static const double _rightPanelRightPadding = 36;
+  static const double _rightPanelRightPadding = TvLayout.pageHorizontalPadding;
 
   /// 右侧文字分区通用右侧留白。
   ///

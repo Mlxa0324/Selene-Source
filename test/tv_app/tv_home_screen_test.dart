@@ -38,7 +38,7 @@ void main() {
   });
 
   test('TV layout uses compact page padding and fixed grid columns', () {
-    expect(TvLayout.pageHorizontalPadding, 36);
+    expect(TvLayout.pageHorizontalPadding, 40);
     expect(TvLayout.gridCrossAxisCount, 7);
   });
 

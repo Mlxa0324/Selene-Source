@@ -11,6 +11,7 @@ import 'package:selene/services/search_service.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
+import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/tv_app/widgets/tv_video_grid.dart';
 
@@ -2811,7 +2812,10 @@ void main() {
     final leadingMaskRect = tester.getRect(leadingMaskFinder);
 
     expect(leadingMaskFinder, findsOneWidget);
-    expect(leadingMaskRect.width, 24);
+    expect(
+      leadingMaskRect.width,
+      TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding - 24,
+    );
   });
 
   testWidgets('places search panels closer to top on first screen',
@@ -3029,7 +3033,15 @@ void main() {
     expect(historyDelegate.crossAxisSpacing, 16);
     expect(historyDelegate.mainAxisSpacing, 14);
     expect(historyTileText.style?.fontSize, 17);
-    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 36, 18));
+    expect(
+      recommendList.padding,
+      const EdgeInsets.fromLTRB(
+        TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
+        12,
+        TvLayout.pageHorizontalPadding,
+        18,
+      ),
+    );
     expect(recommendList.clipBehavior, Clip.hardEdge);
   });
 
@@ -3067,8 +3079,19 @@ void main() {
       rightPanelScrollView.padding,
       const EdgeInsets.fromLTRB(0, 28, 0, 42),
     );
-    expect(recommendList.padding, const EdgeInsets.fromLTRB(48, 12, 36, 18));
-    expect(recommendListRect.right - historyGridRect.right, closeTo(36, 0.01));
+    expect(
+      recommendList.padding,
+      const EdgeInsets.fromLTRB(
+        TvLayout.pageHorizontalPadding + TvVideoGrid.focusSafePadding,
+        12,
+        TvLayout.pageHorizontalPadding,
+        18,
+      ),
+    );
+    expect(
+      recommendListRect.right - historyGridRect.right,
+      closeTo(TvLayout.pageHorizontalPadding, 0.01),
+    );
   });
 
   testWidgets('autofocuses first search history item when history exists',
