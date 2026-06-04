@@ -104,7 +104,7 @@ hooks:
 channel:
   worker_guard:
     idle_timeout: 5m
-    max_live_workers: 6
+    max_live_workers: 5
 
 #-------------------------------------------------------------------------------
 # Codex (dispatch behavior)
