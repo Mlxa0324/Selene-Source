@@ -328,6 +328,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 选集卡片纵向预留空间。
   static const double _episodeCardVerticalPadding = 24;
 
+  /// 底部菜单固定高度。
+  ///
+  /// 一级菜单需要稳定贴在底部，二级菜单切换时只改变上方内容。
+  static const double _bottomMenuHeight = 298;
+
   /// 根焦点节点，用于接收遥控器下键和返回键。
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'tv-fullscreen-root');
 
@@ -3440,7 +3445,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         key: const ValueKey('tv-fullscreen-menu-repaint-boundary'),
         child: Container(
           key: const ValueKey('tv-fullscreen-menu'),
-          constraints: const BoxConstraints(minHeight: 230),
+          height: _bottomMenuHeight,
           padding: const EdgeInsets.fromLTRB(32, 28, 32, 30),
           decoration: BoxDecoration(
             gradient: LinearGradient(
@@ -3453,7 +3458,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             ),
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: MainAxisSize.max,
+            mainAxisAlignment: MainAxisAlignment.end,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildSecondaryMenu(),

@@ -149,6 +149,44 @@ void main() {
     expect(find.text('备用线路'), findsOneWidget);
   });
 
+  testWidgets('primary menu row keeps vertical position across secondary menus',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+            _searchResult('source_b', '备用线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    final episodeMenuTop = _menuButtonRect(tester, '播放列表').top;
+
+    _focusNodeForMenuLabel(tester, '其它').requestFocus();
+    await tester.pumpAndSettle();
+    final otherMenuTop = _menuButtonRect(tester, '播放列表').top;
+
+    _focusNodeForMenuLabel(tester, '画面比例').requestFocus();
+    await tester.pumpAndSettle();
+    final fitMenuTop = _menuButtonRect(tester, '播放列表').top;
+
+    // 二级菜单高度变化时，底部一级菜单行不能上下跳动。
+    expect(otherMenuTop, closeTo(episodeMenuTop, 0.5));
+    expect(fitMenuTop, closeTo(episodeMenuTop, 0.5));
+  });
+
   testWidgets('menu interactions do not rebuild fullscreen player layer',
       (tester) async {
     var playerBuildCount = 0;
@@ -3072,6 +3110,14 @@ FocusNode _focusNodeForMenuLabel(WidgetTester tester, String label) {
     ),
   );
   return tester.widget<Focus>(focusFinder.first).focusNode!;
+}
+
+Rect _menuButtonRect(WidgetTester tester, String label) {
+  final buttonFinder = find.ancestor(
+    of: find.text(label),
+    matching: find.byWidgetPredicate((widget) => widget is AnimatedContainer),
+  );
+  return tester.getRect(buttonFinder.first);
 }
 
 void _expectFinderNearListLeadingEdge(

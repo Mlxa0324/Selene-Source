@@ -1,7 +1,7 @@
 {
-  "id": "optimize-flutter-tv-fullscreen-exit-stall-crash",
-  "name": "optimize-flutter-tv-fullscreen-exit-stall-crash",
-  "title": "优化 Flutter TV 全屏退出卡顿与闪退",
+  "id": "fix-tv-fullscreen-primary-menu-position",
+  "name": "fix-tv-fullscreen-primary-menu-position",
+  "title": "固定 TV 全屏播放器一级菜单位置",
   "description": "",
   "status": "in_progress",
   "dev_type": null,
@@ -10,7 +10,7 @@
   "priority": "P2",
   "creator": "Lx",
   "assignee": "Lx",
-  "createdAt": "2026-06-02",
+  "createdAt": "2026-06-04",
   "completedAt": null,
   "branch": null,
   "base_branch": "tvtv",
@@ -18,11 +18,8 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "06-04-fix-tv-video-card-viewport-null-crash",
-    "06-04-fix-tv-fullscreen-primary-menu-position"
-  ],
-  "parent": null,
+  "children": [],
+  "parent": "06-02-optimize-flutter-tv-fullscreen-exit-stall-crash",
   "relatedFiles": [],
   "notes": "",
   "meta": {}
