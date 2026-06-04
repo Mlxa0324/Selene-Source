@@ -328,6 +328,28 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 选集卡片纵向预留空间。
   static const double _episodeCardVerticalPadding = 24;
 
+  /// 二级菜单卡片缩放比例。
+  ///
+  /// 一级菜单保持原尺寸，二级菜单整体缩小以减少底部遮挡。
+  static const double _secondaryMenuScale = 2 / 3;
+
+  /// 二级菜单文字字号。
+  static const double _secondaryMenuFontSize = 16;
+
+  /// 二级菜单按钮默认高度。
+  static const double _secondaryMenuDefaultHeight = 56 * _secondaryMenuScale;
+
+  /// 二级菜单按钮横向内边距。
+  static const double _secondaryMenuHorizontalInset = 14 * _secondaryMenuScale;
+
+  /// 二级菜单卡片横向内边距总和。
+  static const double _secondaryMenuHorizontalPadding =
+      _episodeCardHorizontalPadding * _secondaryMenuScale;
+
+  /// 二级菜单卡片纵向预留空间。
+  static const double _secondaryMenuVerticalPadding =
+      _episodeCardVerticalPadding * _secondaryMenuScale;
+
   /// 根焦点节点，用于接收遥控器下键和返回键。
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'tv-fullscreen-root');
 
@@ -3547,7 +3569,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         _buildHorizontalChoices(
           key: const ValueKey('tv-fullscreen-episode-list'),
           controller: _episodeListScrollController,
-          height: 104,
+          height: _secondaryMenuSize(_episodeCardBaseMinHeight),
           itemCount: visibleIndexes.length,
           itemBuilder: (itemIndex) {
             final index = visibleIndexes[itemIndex];
@@ -3569,6 +3591,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   minWidth: cardSize.width,
                   maxWidth: cardSize.width,
                   minHeight: cardSize.height,
+                  textFontSize: _secondaryMenuFontSize,
+                  horizontalPadding: _secondaryMenuHorizontalInset,
                   maxLines: 4,
                   textOverflow: TextOverflow.clip,
                   autoScrollOnFocus: false,
@@ -3667,7 +3691,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final sources = _sourcesByEpisodeCountDesc;
     return _buildHorizontalChoices(
       key: const ValueKey('tv-fullscreen-source-list'),
-      height: 88,
+      height: _secondaryMenuSize(88),
       itemCount: sources.length,
       itemBuilder: (index) {
         final source = sources[index];
@@ -3683,9 +3707,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             label: source.sourceName,
             trailingText: '（${source.episodes.length}）',
             selected: selected,
-            minWidth: 190,
-            maxWidth: 260,
-            minHeight: 88,
+            minWidth: _secondaryMenuSize(190),
+            maxWidth: _secondaryMenuSize(260),
+            minHeight: _secondaryMenuSize(88),
+            textFontSize: _secondaryMenuFontSize,
+            horizontalPadding: _secondaryMenuHorizontalInset,
             maxLines: 2,
             textOverflow: TextOverflow.clip,
             onArrowLeft: isFirstItem
@@ -3720,7 +3746,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             focusNode: _secondaryFocusNodeFor('fit', index),
             label: item.$2,
             selected: item.$1 == _fitType,
-            minWidth: 67,
+            minWidth: _secondaryMenuSize(67),
+            minHeight: _secondaryMenuDefaultHeight,
+            textFontSize: _secondaryMenuFontSize,
+            horizontalPadding: _secondaryMenuHorizontalInset,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -3753,7 +3782,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             focusNode: _secondaryFocusNodeFor('speed', index),
             label: '${speed}x',
             selected: (speed - _playbackSpeed).abs() < 0.01,
-            minWidth: 62,
+            minWidth: _secondaryMenuSize(62),
+            minHeight: _secondaryMenuDefaultHeight,
+            textFontSize: _secondaryMenuFontSize,
+            horizontalPadding: _secondaryMenuHorizontalInset,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -3779,7 +3811,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         Text(
           '确认/空格/Enter 设置当前时间，长按清空',
           style: FontUtils.poppins(
-            fontSize: 15,
+            fontSize: 13,
             color: const Color(0xFF98A2A8),
           ),
         ),
@@ -3800,7 +3832,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                     Duration(seconds: _skipIntroSeconds),
                   )}',
                   selected: false,
-                  minWidth: 78,
+                  minWidth: _secondaryMenuSize(78),
+                  minHeight: _secondaryMenuDefaultHeight,
+                  textFontSize: _secondaryMenuFontSize,
+                  horizontalPadding: _secondaryMenuHorizontalInset,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -3826,7 +3861,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                     Duration(seconds: _skipOutroSeconds),
                   )}',
                   selected: false,
-                  minWidth: 78,
+                  minWidth: _secondaryMenuSize(78),
+                  minHeight: _secondaryMenuDefaultHeight,
+                  textFontSize: _secondaryMenuFontSize,
+                  horizontalPadding: _secondaryMenuHorizontalInset,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -3850,7 +3888,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   focusNode: _secondaryFocusNodeFor('other', index),
                   label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
                   selected: _danmakuEnabled,
-                  minWidth: 78,
+                  minWidth: _secondaryMenuSize(78),
+                  minHeight: _secondaryMenuDefaultHeight,
+                  textFontSize: _secondaryMenuFontSize,
+                  horizontalPadding: _secondaryMenuHorizontalInset,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -3874,7 +3915,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 focusNode: _secondaryFocusNodeFor('other', index),
                 label: '手动匹配',
                 selected: false,
-                minWidth: 96,
+                minWidth: _secondaryMenuSize(96),
+                minHeight: _secondaryMenuDefaultHeight,
+                textFontSize: _secondaryMenuFontSize,
+                horizontalPadding: _secondaryMenuHorizontalInset,
                 onArrowLeft: isFirstItem
                     ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                     : null,
@@ -3900,7 +3944,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Widget _buildHorizontalChoices({
     required Key key,
     ScrollController? controller,
-    double height = 56,
+    double height = _secondaryMenuDefaultHeight,
     required int itemCount,
     required Widget Function(int index) itemBuilder,
   }) {
@@ -3924,16 +3968,21 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     );
   }
 
+  /// 按二级菜单比例缩放尺寸。
+  static double _secondaryMenuSize(double value) {
+    return value * _secondaryMenuScale;
+  }
+
   /// 构建空提示。
   Widget _buildHint(String text) {
     return SizedBox(
-      height: 56,
+      height: _secondaryMenuDefaultHeight,
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
           text,
           style: FontUtils.poppins(
-            fontSize: 18,
+            fontSize: _secondaryMenuFontSize,
             color: const Color(0xFF98A2A8),
           ),
         ),
@@ -3952,7 +4001,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     final textStyle = FontUtils.poppins(
-      fontSize: 18,
+      fontSize: _secondaryMenuFontSize,
       fontWeight: FontWeight.w800,
       color: Colors.white,
     );
@@ -3965,10 +4014,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final cardWidth = math
         .max(
-          _episodeCardBaseMinWidth,
+          _secondaryMenuSize(_episodeCardBaseMinWidth),
           math.min(
-            _episodeCardMaxWidth,
-            widthPainter.size.width + _episodeCardHorizontalPadding,
+            _secondaryMenuSize(_episodeCardMaxWidth),
+            widthPainter.size.width + _secondaryMenuHorizontalPadding,
           ),
         )
         .ceilToDouble();
@@ -3981,14 +4030,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     )..layout(
         maxWidth: math.max(
           1,
-          cardWidth - _episodeCardHorizontalPadding,
+          cardWidth - _secondaryMenuHorizontalPadding,
         ),
       );
 
     final cardHeight = math
         .max(
-          _episodeCardBaseMinHeight,
-          heightPainter.height + _episodeCardVerticalPadding,
+          _secondaryMenuSize(_episodeCardBaseMinHeight),
+          heightPainter.height + _secondaryMenuVerticalPadding,
         )
         .ceilToDouble();
 
@@ -4119,6 +4168,8 @@ class _TvPlayerMenuButton extends StatelessWidget {
     this.minWidth = 118,
     this.maxWidth = 147,
     this.minHeight = 56,
+    this.textFontSize = 18,
+    this.horizontalPadding = 14,
     this.maxLines = 1,
     this.textOverflow = TextOverflow.ellipsis,
     this.autoScrollOnFocus = true,
@@ -4166,6 +4217,12 @@ class _TvPlayerMenuButton extends StatelessWidget {
   /// 最小高度。
   final double minHeight;
 
+  /// 文案字号。
+  final double textFontSize;
+
+  /// 横向内边距。
+  final double horizontalPadding;
+
   /// 文案最大行数。
   final int maxLines;
 
@@ -4201,7 +4258,7 @@ class _TvPlayerMenuButton extends StatelessWidget {
             minHeight: minHeight,
           ),
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           decoration: BoxDecoration(
             color: selected ? palette.accent : const Color(0xFF303741),
             borderRadius: BorderRadius.circular(7),
@@ -4219,7 +4276,7 @@ class _TvPlayerMenuButton extends StatelessWidget {
   /// 构建按钮主文案和右侧补充文案。
   Widget _buildLabelText() {
     final style = FontUtils.poppins(
-      fontSize: 18,
+      fontSize: textFontSize,
       fontWeight: FontWeight.w800,
       color: Colors.white,
     );
@@ -4324,7 +4381,7 @@ class _TvPlayerGroupLabel extends StatelessWidget {
         return AnimatedDefaultTextStyle(
           duration: const Duration(milliseconds: 140),
           style: FontUtils.poppins(
-            fontSize: 17,
+            fontSize: 15,
             fontWeight: active ? FontWeight.w800 : FontWeight.w600,
             color: active ? palette.accent : Colors.white,
           ),

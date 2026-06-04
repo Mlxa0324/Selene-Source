@@ -1131,9 +1131,13 @@ void main() {
           .first,
     );
     final secondaryConstraints = secondaryButton.constraints!;
-    expect(secondaryConstraints.minWidth, 190);
-    expect(secondaryConstraints.maxWidth, greaterThanOrEqualTo(190));
-    expect(secondaryConstraints.minHeight, greaterThanOrEqualTo(104));
+    expect(secondaryConstraints.minWidth,
+        closeTo((190 * 2 / 3).ceilToDouble(), 0.1));
+    expect(
+      secondaryConstraints.maxWidth,
+      greaterThanOrEqualTo((190 * 2 / 3).ceilToDouble()),
+    );
+    expect(secondaryConstraints.minHeight, greaterThanOrEqualTo(104 * 2 / 3));
   });
 
   testWidgets('fullscreen episode cards widen with longer titles',
@@ -1206,7 +1210,11 @@ void main() {
       longEpisodeButton.constraints!.maxWidth,
       greaterThan(shortEpisodeButton.constraints!.maxWidth),
     );
-    expect(longEpisodeButton.constraints!.minHeight, 104);
+    expect(
+      longEpisodeButton.constraints!.minHeight,
+      greaterThanOrEqualTo(104 * 2 / 3),
+    );
+    expect(longEpisodeButton.constraints!.minHeight, lessThan(104));
 
     final buttonRect = tester.getRect(longButtonFinder);
     final textRect = tester.getRect(find.text(longEpisodeTitle));
@@ -1267,9 +1275,9 @@ void main() {
         )
         .first;
     final sourceButton = tester.widget<AnimatedContainer>(sourceButtonFinder);
-    expect(sourceButton.constraints!.minWidth, 190);
-    expect(sourceButton.constraints!.maxWidth, 260);
-    expect(sourceButton.constraints!.minHeight, 88);
+    expect(sourceButton.constraints!.minWidth, closeTo(190 * 2 / 3, 0.1));
+    expect(sourceButton.constraints!.maxWidth, closeTo(260 * 2 / 3, 0.1));
+    expect(sourceButton.constraints!.minHeight, closeTo(88 * 2 / 3, 0.1));
 
     final buttonRect = tester.getRect(sourceButtonFinder);
     final nameRect = tester.getRect(find.text('晋江超长线路资源'));
@@ -1363,9 +1371,13 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
-    final text = tester.widget<Text>(find.text('播放列表'));
-    expect(text.style?.fontSize, 18);
-    expect(text.style?.color, Colors.white);
+    final primaryText = tester.widget<Text>(find.text('播放列表'));
+    expect(primaryText.style?.fontSize, 18);
+    expect(primaryText.style?.color, Colors.white);
+
+    final secondaryText = tester.widget<Text>(find.text('第1集'));
+    expect(secondaryText.style?.fontSize, 16);
+    expect(secondaryText.style?.color, Colors.white);
   });
 
   testWidgets('uses mobile player display mode labels', (tester) async {
