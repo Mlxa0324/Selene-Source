@@ -1634,6 +1634,11 @@ void main() {
       duration: const Duration(hours: 1, minutes: 46, seconds: 59),
       playing: true,
     );
+    playback.videoController = _FakeVideoPlayerWidgetController(
+      isPlaying: true,
+      currentPosition: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1643,6 +1648,7 @@ void main() {
           sources: [
             _searchResult('source_a', '主线路'),
           ],
+          initialPlaybackStarted: true,
           playbackController: playback,
           playerBuilder: (_, __) => const ColoredBox(
             key: ValueKey('tv-fullscreen-player-placeholder'),
@@ -1683,6 +1689,7 @@ void main() {
           sources: [
             _searchResult('source_a', '主线路'),
           ],
+          initialPlaybackStarted: true,
           playbackController: playback,
           playerBuilder: (_, __) => const ColoredBox(
             key: ValueKey('tv-fullscreen-player-placeholder'),
@@ -1738,13 +1745,21 @@ void main() {
     expect(find.textContaining('提醒：'), findsNothing);
   });
 
-  testWidgets('loading fullscreen player shows spinner without pause chrome',
+  testWidgets(
+      'loading fullscreen player shows loading overlay without pause chrome',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(seconds: 17),
       duration: const Duration(minutes: 45, seconds: 28),
       playing: false,
       loading: true,
+    );
+    playback.networkSpeedText = '1.5MB/s';
+    playback.videoController = _FakeVideoPlayerWidgetController(
+      isPlaying: false,
+      isLoading: true,
+      currentPosition: const Duration(seconds: 17),
+      duration: const Duration(minutes: 45, seconds: 28),
     );
 
     await tester.pumpWidget(
@@ -1769,20 +1784,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
 
     expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    final loadingOverlay = tester.widget<Container>(
+      find.byKey(const ValueKey('tv-fullscreen-loading')),
+    );
+    expect(loadingOverlay.color, isNull);
+    expect(loadingOverlay.decoration, isNull);
+    expect(find.text('加载中'), findsOneWidget);
+    expect(find.text('1.5MB/s'), findsOneWidget);
+    expect(find.text('0KB/s'), findsNothing);
     expect(
         find.byKey(const ValueKey('tv-fullscreen-center-play')), findsNothing);
     expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
         findsNothing);
   });
 
-  testWidgets('fullscreen spinner hides once playback has started',
+  testWidgets(
+      'fullscreen loading overlay hides only after playback position changes',
       (tester) async {
-    final playback = _FakeTvFullscreenPlaybackController(
-      position: const Duration(seconds: 17),
-      duration: const Duration(minutes: 45, seconds: 28),
-      playing: true,
-      loading: true,
-    );
+    late _FakeVideoPlayerWidgetController controller;
+    var controllerCreated = false;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1792,11 +1812,22 @@ void main() {
           sources: [
             _searchResult('source_a', '主线路'),
           ],
-          playbackController: playback,
-          playerBuilder: (_, __) => const ColoredBox(
-            key: ValueKey('tv-fullscreen-player-placeholder'),
-            color: Colors.black,
-          ),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                isLoading: true,
+                currentPosition: const Duration(seconds: 17),
+                duration: const Duration(minutes: 45, seconds: 28),
+              );
+              onControllerCreated(controller);
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
         ),
       ),
     );
@@ -1804,7 +1835,23 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
 
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    expect(find.text('加载中'), findsOneWidget);
+    expect(find.text('0KB/s'), findsOneWidget);
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    expect(find.text('加载中'), findsOneWidget);
+    expect(find.text('0KB/s'), findsOneWidget);
+
+    controller.currentPosition = const Duration(seconds: 18);
+    controller.emitProgress();
+    await tester.pump();
+
     expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+    expect(find.text('加载中'), findsNothing);
+    expect(find.text('0KB/s'), findsNothing);
     expect(
       find.byKey(const ValueKey('tv-fullscreen-center-play')),
       findsNothing,
@@ -1813,6 +1860,75 @@ void main() {
       find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
       findsNothing,
     );
+  });
+
+  testWidgets(
+      'fullscreen loading overlay hides after progress confirms seek recovery without play event',
+      (tester) async {
+    late _FakeVideoPlayerWidgetController controller;
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          initialPlaybackStarted: false,
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: false,
+                isLoading: true,
+                currentPosition: const Duration(minutes: 35, seconds: 25),
+                duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+              );
+              onControllerCreated(controller);
+            }
+            return const ColoredBox(
+              key: ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      controller.currentPosition,
+      const Duration(minutes: 35, seconds: 35),
+    );
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    expect(find.text('加载中'), findsOneWidget);
+    expect(find.text('0KB/s'), findsOneWidget);
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    expect(find.text('加载中'), findsOneWidget);
+    expect(find.text('0KB/s'), findsOneWidget);
+
+    controller.currentPosition = const Duration(minutes: 35, seconds: 36);
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+    expect(find.text('加载中'), findsNothing);
+    expect(find.text('0KB/s'), findsNothing);
+    expect(find.byKey(const ValueKey('tv-fullscreen-center-play')),
+        findsOneWidget);
   });
 
   testWidgets('places fullscreen top decorations on both top sides',
@@ -1863,6 +1979,11 @@ void main() {
   testWidgets(
       'does not call setState during build when player controller is created',
       (tester) async {
+    final controller = _FakeVideoPlayerWidgetController(
+      isPlaying: false,
+      currentPosition: const Duration(seconds: 3),
+      duration: const Duration(minutes: 1),
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: TvFullscreenPlayerScreen(
@@ -1874,6 +1995,7 @@ void main() {
           playerBuilder: (_, onControllerCreated) {
             return _SynchronousControllerCreatedProbe(
               onControllerCreated: onControllerCreated,
+              controller: controller,
             );
           },
         ),
@@ -1887,9 +2009,16 @@ void main() {
     await tester.pump(_FakeVideoPlayerWidgetController.loadingHoldDuration);
     await tester.pump();
     expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    controller.currentPosition = const Duration(seconds: 4);
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+    expect(find.text('加载中'), findsNothing);
     expect(
       find.byKey(const ValueKey('tv-fullscreen-center-play')),
-      findsNothing,
+      findsOneWidget,
     );
   });
 
@@ -1900,6 +2029,11 @@ void main() {
       duration: const Duration(hours: 1, minutes: 46, seconds: 59),
       playing: true,
     );
+    playback.videoController = _FakeVideoPlayerWidgetController(
+      isPlaying: true,
+      currentPosition: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1909,6 +2043,7 @@ void main() {
           sources: [
             _searchResult('source_a', '主线路'),
           ],
+          initialPlaybackStarted: true,
           playbackController: playback,
           playerBuilder: (_, __) => const ColoredBox(
             key: ValueKey('tv-fullscreen-player-placeholder'),
@@ -1929,50 +2064,6 @@ void main() {
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
   });
 
-  testWidgets(
-      'fullscreen spinner hides after seek completes without play event',
-      (tester) async {
-    final playback = _FakeTvFullscreenPlaybackController(
-      position: const Duration(minutes: 35, seconds: 25),
-      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
-      playing: false,
-      loading: true,
-      clearLoadingOnSeek: true,
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: TvFullscreenPlayerScreen(
-          videoInfo: _videoInfo(),
-          currentDetail: _searchResult('source_a', '主线路'),
-          sources: [
-            _searchResult('source_a', '主线路'),
-          ],
-          initialPlaybackStarted: false,
-          playbackController: playback,
-          playerBuilder: (_, __) => const ColoredBox(
-            key: ValueKey('tv-fullscreen-player-placeholder'),
-            color: Colors.black,
-          ),
-        ),
-      ),
-    );
-
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
-
-    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pump();
-    await tester.pump();
-
-    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
-    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
-    expect(find.byKey(const ValueKey('tv-fullscreen-center-play')),
-        findsOneWidget);
-  });
-
   testWidgets('brief arrow key holds seek by ten seconds instead of long press',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
@@ -1989,6 +2080,7 @@ void main() {
           sources: [
             _searchResult('source_a', '主线路'),
           ],
+          initialPlaybackStarted: true,
           playbackController: playback,
           playerBuilder: (_, __) => const ColoredBox(
             key: ValueKey('tv-fullscreen-player-placeholder'),
@@ -2018,7 +2110,7 @@ void main() {
   });
 
   testWidgets(
-      'long press right seek flips center time every video second at 60x rate',
+      'long press right seek advances overlay with staged 3 second ticks at slower first phase',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
@@ -2046,33 +2138,33 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
-    await tester.pump(const Duration(microseconds: 20000));
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(playback.seekPositions, [
-      const Duration(minutes: 35, seconds: 26),
+      const Duration(minutes: 35, seconds: 28),
     ]);
-    expect(find.text('35:26/1:46:59'), findsOneWidget);
+    expect(find.text('35:28/1:46:59'), findsOneWidget);
 
-    await tester.pump(const Duration(microseconds: 16667));
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(playback.seekPositions, [
-      const Duration(minutes: 35, seconds: 26),
-      const Duration(minutes: 35, seconds: 27),
+      const Duration(minutes: 35, seconds: 28),
+      const Duration(minutes: 35, seconds: 31),
     ]);
-    expect(find.text('35:27/1:46:59'), findsOneWidget);
+    expect(find.text('35:31/1:46:59'), findsOneWidget);
 
     await tester.pump(const Duration(microseconds: 966666));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
-    expect(playback.seekPositions, hasLength(60));
+    expect(playback.seekPositions, hasLength(11));
     expect(
       playback.seekPositions.last,
-      const Duration(minutes: 36, seconds: 25),
+      const Duration(minutes: 35, seconds: 58),
     );
   });
 
-  testWidgets('long press right seek keeps 60 video seconds per real second',
+  testWidgets('long press right seek keeps 30 video seconds per real second',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
@@ -2108,20 +2200,20 @@ void main() {
 
     expect(
       positionAfterOneSecond,
-      const Duration(minutes: 36, seconds: 25),
+      const Duration(minutes: 35, seconds: 55),
     );
     expect(
       playback.seekPositions.last,
-      const Duration(minutes: 37, seconds: 25),
+      const Duration(minutes: 36, seconds: 25),
     );
     expect(
       playback.seekPositions.last.inSeconds - positionAfterOneSecond.inSeconds,
-      60,
+      30,
     );
   });
 
   testWidgets(
-      'long press right seek switches to 120 video seconds per real second after 6 seconds',
+      'long press right seek switches to 120 video seconds per real second after 5 seconds',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
@@ -2149,33 +2241,39 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
-    await tester.pump(const Duration(seconds: 6));
-    final positionAfterSixSeconds = playback.seekPositions.last;
+    await tester.pump(const Duration(seconds: 5));
+    final positionAfterFiveSeconds = playback.seekPositions.last;
     await tester.pump(const Duration(seconds: 1));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(
-      positionAfterSixSeconds,
-      const Duration(minutes: 41, seconds: 25),
+      positionAfterFiveSeconds,
+      const Duration(minutes: 37, seconds: 55),
     );
     expect(
       playback.seekPositions.last,
-      const Duration(minutes: 43, seconds: 25),
+      const Duration(minutes: 39, seconds: 52),
     );
     expect(
-      playback.seekPositions.last.inSeconds - positionAfterSixSeconds.inSeconds,
-      120,
+      playback.seekPositions.last.inSeconds -
+          positionAfterFiveSeconds.inSeconds,
+      117,
     );
   });
 
   testWidgets(
-      'long press seek overlay and bottom progress hide immediately on key up',
+      'long press seek hides chrome and clears recovery loading after key up',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
       duration: const Duration(hours: 1, minutes: 46, seconds: 59),
       playing: true,
+    );
+    playback.videoController = _FakeVideoPlayerWidgetController(
+      isPlaying: true,
+      currentPosition: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
     );
 
     await tester.pumpWidget(
@@ -2186,6 +2284,7 @@ void main() {
           sources: [
             _searchResult('source_a', '主线路'),
           ],
+          initialPlaybackStarted: true,
           playbackController: playback,
           playerBuilder: (_, __) => const ColoredBox(
             key: ValueKey('tv-fullscreen-player-placeholder'),
@@ -2198,7 +2297,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
-    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
         findsOneWidget);
@@ -2212,6 +2311,71 @@ void main() {
         find.byKey(const ValueKey('tv-fullscreen-seek-overlay')), findsNothing);
     expect(find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
         findsNothing);
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+  });
+
+  testWidgets(
+      'long press seek clears recovery loading when reused controller keeps stale loading',
+      (tester) async {
+    final videoController = _FakeVideoPlayerWidgetController(
+      isPlaying: true,
+      isLoading: true,
+      currentPosition: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+    );
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+      loading: true,
+    )..videoController = videoController;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          initialPlaybackStarted: true,
+          playbackController: playback,
+          reuseExistingPlayer: true,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    playback.position = const Duration(minutes: 35, seconds: 36);
+    videoController.currentPosition = const Duration(minutes: 35, seconds: 36);
+    videoController.emitProgress();
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
   });
 
   testWidgets('global remote keys drive fullscreen chrome without root focus',
@@ -2812,40 +2976,39 @@ void main() {
     ]);
   });
 
-  test(
-      'TV fullscreen seek long press uses one-second ticks at 60x and 120x rates',
+  test('TV fullscreen seek long press uses staged ticks at 30x and 120x rates',
       () {
     expect(TvFullscreenSeekStep.initialPressSeconds, 10);
     expect(
       TvFullscreenSeekStep.longPressStartThreshold,
       const Duration(milliseconds: 250),
     );
-    expect(TvFullscreenSeekStep.repeatStepForElapsed(Duration.zero), 1);
+    expect(TvFullscreenSeekStep.repeatStepForElapsed(Duration.zero), 3);
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(
         const Duration(milliseconds: 4900),
       ),
-      1,
+      3,
     );
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(const Duration(seconds: 5)),
-      1,
+      3,
     );
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(const Duration(seconds: 6)),
-      1,
+      6,
     );
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(
         const Duration(milliseconds: 6050),
       ),
-      1,
+      6,
     );
     expect(
       TvFullscreenSeekStep.repeatStepForElapsed(
         const Duration(milliseconds: 7500),
       ),
-      1,
+      6,
     );
     expect(
       TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(Duration.zero),
@@ -2853,7 +3016,7 @@ void main() {
     );
     expect(
       TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(
-        const Duration(seconds: 6),
+        const Duration(seconds: 5),
       ),
       16667,
     );
@@ -2866,29 +3029,29 @@ void main() {
     expect(
       TvFullscreenSeekStep.totalSeekSecondsForElapsed(
           const Duration(seconds: 1)),
-      60,
+      30,
+    );
+    expect(
+      TvFullscreenSeekStep.totalSeekSecondsForElapsed(
+          const Duration(seconds: 5)),
+      150,
     );
     expect(
       TvFullscreenSeekStep.totalSeekSecondsForElapsed(
           const Duration(seconds: 6)),
-      360,
+      270,
     );
     expect(
-      TvFullscreenSeekStep.totalSeekSecondsForElapsed(
-          const Duration(seconds: 7)),
-      480,
-    );
-    expect(
-      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(60),
+      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(30),
       1000000,
     );
     expect(
-      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(360),
-      6000000,
+      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(150),
+      5000000,
     );
     expect(
-      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(480),
-      7000000,
+      TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(270),
+      6000000,
     );
   });
 }
@@ -2990,20 +3153,24 @@ SearchResult _searchResult(
 }
 
 class _FakeTvFullscreenPlaybackController
-    implements TvFullscreenPlaybackController {
+    implements
+        TvFullscreenPlaybackController,
+        TvFullscreenVideoControllerProvider {
   _FakeTvFullscreenPlaybackController({
     required this.position,
     required this.duration,
     required this.playing,
     this.loading = false,
-    this.clearLoadingOnSeek = false,
   });
 
   Duration position;
   Duration duration;
   bool playing;
   bool loading;
-  bool clearLoadingOnSeek;
+  @override
+  String networkSpeedText = '0KB/s';
+  @override
+  VideoPlayerWidgetController? videoController;
   int playCount = 0;
   int pauseCount = 0;
   final List<Duration> seekPositions = [];
@@ -3021,6 +3188,12 @@ class _FakeTvFullscreenPlaybackController
   bool get isLoading => loading;
 
   @override
+  void addNetworkSpeedListener(VoidCallback listener) {}
+
+  @override
+  void removeNetworkSpeedListener(VoidCallback listener) {}
+
+  @override
   Future<void> pause() async {
     pauseCount++;
     playing = false;
@@ -3035,9 +3208,6 @@ class _FakeTvFullscreenPlaybackController
   @override
   Future<void> seekTo(Duration position) async {
     this.position = position;
-    if (clearLoadingOnSeek) {
-      loading = false;
-    }
     seekPositions.add(position);
   }
 }
@@ -3047,6 +3217,7 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     required this.isPlaying,
     required this.currentPosition,
     required this.duration,
+    this.isLoading = false,
     this.onUpdateDataSource,
     this.onSeekTo,
   });
@@ -3063,9 +3234,13 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   final Duration? duration;
 
   @override
-  bool get isLoading => false;
+  bool isLoading;
+
+  @override
+  String networkSpeedText = '0KB/s';
 
   final List<VoidCallback> _progressListeners = [];
+  final List<VoidCallback> _networkSpeedListeners = [];
 
   final Future<void> Function(
     String url, {
@@ -3079,6 +3254,13 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   void addProgressListener(VoidCallback listener) {
     if (!_progressListeners.contains(listener)) {
       _progressListeners.add(listener);
+    }
+  }
+
+  @override
+  void addNetworkSpeedListener(VoidCallback listener) {
+    if (!_networkSpeedListeners.contains(listener)) {
+      _networkSpeedListeners.add(listener);
     }
   }
 
@@ -3109,6 +3291,11 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   @override
   void removeProgressListener(VoidCallback listener) {
     _progressListeners.remove(listener);
+  }
+
+  @override
+  void removeNetworkSpeedListener(VoidCallback listener) {
+    _networkSpeedListeners.remove(listener);
   }
 
   @override
@@ -3145,10 +3332,12 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 class _SynchronousControllerCreatedProbe extends StatefulWidget {
   const _SynchronousControllerCreatedProbe({
     required this.onControllerCreated,
+    this.controller,
   });
 
   final void Function(VideoPlayerWidgetController controller)
       onControllerCreated;
+  final _FakeVideoPlayerWidgetController? controller;
 
   @override
   State<_SynchronousControllerCreatedProbe> createState() =>
@@ -3161,11 +3350,12 @@ class _SynchronousControllerCreatedProbeState
   void initState() {
     super.initState();
     widget.onControllerCreated(
-      _FakeVideoPlayerWidgetController(
-        isPlaying: false,
-        currentPosition: const Duration(seconds: 3),
-        duration: const Duration(minutes: 1),
-      ),
+      widget.controller ??
+          _FakeVideoPlayerWidgetController(
+            isPlaying: false,
+            currentPosition: const Duration(seconds: 3),
+            duration: const Duration(minutes: 1),
+          ),
     );
   }
 

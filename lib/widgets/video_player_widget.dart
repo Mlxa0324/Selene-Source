@@ -90,6 +90,12 @@ class VideoPlayerWidget extends StatefulWidget {
   /// 是否允许系统画中画/小窗最小化。
   final bool enablePip;
 
+  /// 是否显示播放器内部 loading 转圈。
+  final bool showLoadingIndicator;
+
+  /// 播放器画面未就绪时的底色。
+  final Color backgroundColor;
+
   final PlaybackPreloadLevel playbackPreloadLevel;
   final Widget? danmakuLayer;
   final VideoFitType initialFitType;
@@ -150,6 +156,8 @@ class VideoPlayerWidget extends StatefulWidget {
     this.hideCenterControlsWithBars = true,
     this.showControls = true,
     this.enablePip = true,
+    this.showLoadingIndicator = true,
+    this.backgroundColor = Colors.black,
     this.playbackPreloadLevel = PlaybackPreloadLevel.off,
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
@@ -202,6 +210,8 @@ class VideoPlayerWidgetController {
 
   bool get isLoading => _state._isLoadingVideo || _state._isBuffering;
 
+  String get networkSpeedText => _state._networkSpeedText;
+
   Future<void> pause() async {
     await _state._adapter?.pause();
   }
@@ -216,6 +226,14 @@ class VideoPlayerWidgetController {
 
   void removeProgressListener(VoidCallback listener) {
     _state._removeProgressListener(listener);
+  }
+
+  void addNetworkSpeedListener(VoidCallback listener) {
+    _state._addNetworkSpeedListener(listener);
+  }
+
+  void removeNetworkSpeedListener(VoidCallback listener) {
+    _state._removeNetworkSpeedListener(listener);
   }
 
   Future<void> setSpeed(double speed) async {
@@ -268,14 +286,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _isInitialized = false;
   bool _hasCompleted = false;
   bool _isLoadingVideo = false;
+  String _networkSpeedText = '0KB/s';
   String? _currentUrl;
   Map<String, String>? _currentHeaders;
   final List<VoidCallback> _progressListeners = [];
+  final List<VoidCallback> _networkSpeedListeners = [];
   StreamSubscription? _positionSubscription;
   StreamSubscription? _playingSubscription;
   StreamSubscription? _completedSubscription;
   StreamSubscription? _durationSubscription;
   StreamSubscription? _bufferingSubscription;
+  StreamSubscription<int>? _networkSpeedSubscription;
   StreamSubscription<List<PlayerCachedRange>>? _cachedRangesSubscription;
   final ValueNotifier<double> _playbackSpeed = ValueNotifier<double>(1.0);
   bool _playerDisposed = false;
@@ -682,11 +703,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
     _activateCachedRangesMediaKey(url: _currentUrl);
-    _initializePlayer();
-    unawaited(_setupPip());
-    _registerPipObserver();
-    _bindPipControlChannel();
-    unawaited(_pushPipActionsState(reason: 'init_state'));
+    if (_currentUrl != null && _currentUrl!.isNotEmpty) {
+      _initializePlayer();
+      unawaited(_setupPip());
+      _registerPipObserver();
+      _bindPipControlChannel();
+      unawaited(_pushPipActionsState(reason: 'init_state'));
+    } else {
+      // 预览占位态先只回传控制器，避免空 URL 时提前拉起重型 WebView / PiP 初始化。
+      _safeSetState(() {
+        _isInitialized = true;
+      });
+    }
     widget.onControllerCreated?.call(VideoPlayerWidgetController._(this));
   }
 
@@ -717,6 +745,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       unawaited(_recreateMediaKitAdapterForConfigurationChange());
     }
     if (widget.url != oldWidget.url && widget.url != null) {
+      if ((_currentUrl == null || _currentUrl!.isEmpty) && _adapter == null) {
+        unawaited(_setupPip());
+        _registerPipObserver();
+        _bindPipControlChannel();
+        unawaited(_pushPipActionsState(reason: 'first_url_attached'));
+      }
       unawaited(_updateDataSource(widget.url!));
     }
 
@@ -911,6 +945,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
     _bufferingSubscription?.cancel();
+    _networkSpeedSubscription?.cancel();
 
     _positionSubscription = _adapter!.stream.position.listen((_) {
       for (final listener in List<VoidCallback>.from(_progressListeners)) {
@@ -968,6 +1003,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       });
     });
 
+    _updateNetworkSpeedText(
+      _adapter!.state.networkSpeedBytesPerSecond,
+      notify: false,
+    );
+    _networkSpeedSubscription =
+        _adapter!.stream.networkSpeedBytesPerSecond.listen(
+      _updateNetworkSpeedText,
+    );
+
     _setupCachedRangesListener();
 
     // 立即检查一次当前状态 ，防止错过已经准备好的状态
@@ -981,6 +1025,41 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         });
       }
       widget.onReady?.call();
+    }
+  }
+
+  /// 格式化播放器下载速度，供 TV 外层 loading 直接展示。
+  String _formatNetworkSpeedText(int bytesPerSecond) {
+    if (bytesPerSecond <= 0) {
+      return '0KB/s';
+    }
+    if (bytesPerSecond < 1024 * 1024) {
+      final kb = (bytesPerSecond / 1024).round().clamp(1, 1023);
+      return '${kb}KB/s';
+    }
+    final mb = bytesPerSecond / (1024 * 1024);
+    if (mb >= 10) {
+      return '${mb.round()}MB/s';
+    }
+    return '${mb.toStringAsFixed(1)}MB/s';
+  }
+
+  /// 刷新网速文本并通知外层播放器壳重绘。
+  void _updateNetworkSpeedText(int bytesPerSecond, {bool notify = true}) {
+    final nextText = _formatNetworkSpeedText(bytesPerSecond);
+    if (_networkSpeedText == nextText) {
+      return;
+    }
+    _networkSpeedText = nextText;
+    if (!notify) {
+      return;
+    }
+    for (final listener in List<VoidCallback>.from(_networkSpeedListeners)) {
+      try {
+        listener();
+      } catch (error) {
+        debugPrint('VideoPlayerWidget: network speed listener error $error');
+      }
     }
   }
 
@@ -1120,6 +1199,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   void _removeProgressListener(VoidCallback listener) {
     _progressListeners.remove(listener);
+  }
+
+  void _addNetworkSpeedListener(VoidCallback listener) {
+    if (!_networkSpeedListeners.contains(listener)) {
+      _networkSpeedListeners.add(listener);
+    }
+  }
+
+  void _removeNetworkSpeedListener(VoidCallback listener) {
+    _networkSpeedListeners.remove(listener);
   }
 
   void _notifyPlaybackSpeedChanged(double speed, {required String reason}) {
@@ -1294,14 +1383,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _completedSubscription?.cancel();
     _durationSubscription?.cancel();
     _bufferingSubscription?.cancel();
+    _networkSpeedSubscription?.cancel();
     _cachedRangesSubscription?.cancel();
     _positionSubscription = null;
     _playingSubscription = null;
     _completedSubscription = null;
     _durationSubscription = null;
+    _bufferingSubscription = null;
+    _networkSpeedSubscription = null;
     _cachedRangesSubscription = null;
 
     _progressListeners.clear();
+    _networkSpeedListeners.clear();
     _playerDisposed = true;
 
     try {
@@ -1352,10 +1445,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   Widget build(BuildContext context) {
     if (!_isInitialized || _adapter == null) {
       return Container(
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(color: Colors.white),
-        ),
+        color: widget.backgroundColor,
+        child: widget.showLoadingIndicator
+            ? const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              )
+            : null,
       );
     }
 
@@ -1380,7 +1475,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     // 💡 结构优化：视频表面永远保持在同一个 Transform 结构下，防止 Widget 树跳变导致黑屏
     return Container(
-      color: Colors.black,
+      color: widget.backgroundColor,
       child: Stack(
         children: [
           // 1. 视频画面渲染层 (常驻，仅在短剧全屏且滚动时应用位移)
@@ -1468,7 +1563,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             _buildControls(),
 
           // 4. 加载遮罩
-          if ((_isBuffering || _isLoadingVideo) && !_controlsVisible)
+          if (widget.showLoadingIndicator &&
+              (_isBuffering || _isLoadingVideo) &&
+              !_controlsVisible)
             const Center(
               child: CircularProgressIndicator(
                 color: Colors.white,

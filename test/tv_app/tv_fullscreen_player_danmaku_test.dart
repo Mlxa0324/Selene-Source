@@ -128,6 +128,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   @override
   bool get isLoading => false;
 
+  @override
+  String get networkSpeedText => '0KB/s';
+
   final Future<void> Function(
     String url, {
     Duration? startAt,
@@ -136,6 +139,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   void addProgressListener(VoidCallback listener) {}
+
+  @override
+  void addNetworkSpeedListener(VoidCallback listener) {}
 
   @override
   Future<void> dispose() async {}
@@ -157,6 +163,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   void removeProgressListener(VoidCallback listener) {}
+
+  @override
+  void removeNetworkSpeedListener(VoidCallback listener) {}
 
   @override
   Future<void> seekTo(Duration position) async {}

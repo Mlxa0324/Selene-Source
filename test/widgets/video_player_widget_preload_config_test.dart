@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:selene/models/playback_preload.dart';
@@ -24,10 +25,13 @@ void main() {
     const previewWidget = VideoPlayerWidget(
       isShortDrama: false,
       showControls: false,
+      showLoadingIndicator: false,
     );
 
     expect(defaultWidget.showControls, isTrue);
+    expect(defaultWidget.showLoadingIndicator, isTrue);
     expect(previewWidget.showControls, isFalse);
+    expect(previewWidget.showLoadingIndicator, isFalse);
   });
 
   test('video player pip can be disabled for TV playback', () {
@@ -41,6 +45,17 @@ void main() {
     expect(tvWidget.enablePip, isFalse);
   });
 
+  test('video player background stays configurable for TV preview', () {
+    const defaultWidget = VideoPlayerWidget(isShortDrama: false);
+    const previewWidget = VideoPlayerWidget(
+      isShortDrama: false,
+      backgroundColor: Colors.transparent,
+    );
+
+    expect(defaultWidget.backgroundColor, Colors.black);
+    expect(previewWidget.backgroundColor, Colors.transparent);
+  });
+
   test('video player surface key stays stable across source changes', () {
     expect(
       buildVideoSurfaceKey(
@@ -48,7 +63,7 @@ void main() {
         adapterType: WebViewPlayerAdapter,
         fitType: VideoFitType.contain,
       ),
-      'video_desktop_WebViewPlayerAdapter_contain',
+      'video_desktop_WebViewPlayerAdapter',
     );
   });
 
@@ -73,6 +88,44 @@ void main() {
 
     await stream.dispose();
   });
+
+  testWidgets('video player with null url still creates controller eagerly',
+      (tester) async {
+    VideoPlayerWidgetController? controller;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VideoPlayerWidget(
+          isShortDrama: false,
+          url: null,
+          enablePip: false,
+          onControllerCreated: (createdController) {
+            controller = createdController;
+          },
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    expect(controller, isNotNull);
+    expect(controller!.isLoading, isFalse);
+    expect(controller!.currentPosition, isNull);
+  });
+
+  test('web view HLS html installs telemetry loader without ad filtering', () {
+    final html = buildWebViewPlayerHtmlForTest(
+      url: 'https://example.com/video.m3u8',
+      adFilterEnabled: false,
+    );
+
+    expect(html, contains('class CustomHlsJsLoader'));
+    expect(html, contains('config.loader = CustomHlsJsLoader'));
+    expect(html, contains('emitNetworkSpeedFromStats(stats'));
+    expect(html, contains("sendEvent('network_speed'"));
+    expect(html, contains('estimateResponseBytes(response)'));
+    expect(html, contains('if (adFilterEnabled &&'));
+  });
 }
 
 class _FakePlayerAdapterStream implements PlayerAdapterStream {
@@ -84,6 +137,7 @@ class _FakePlayerAdapterStream implements PlayerAdapterStream {
   final volumeController = StreamController<double>.broadcast();
   final rateController = StreamController<double>.broadcast();
   final bufferingController = StreamController<bool>.broadcast();
+  final networkSpeedController = StreamController<int>.broadcast();
   final cachedRangesController =
       StreamController<List<PlayerCachedRange>>.broadcast();
 
@@ -102,6 +156,9 @@ class _FakePlayerAdapterStream implements PlayerAdapterStream {
 
   @override
   Stream<Duration> get duration => durationController.stream;
+
+  @override
+  Stream<int> get networkSpeedBytesPerSecond => networkSpeedController.stream;
 
   @override
   Stream<bool> get playing => playingController.stream;
@@ -124,6 +181,7 @@ class _FakePlayerAdapterStream implements PlayerAdapterStream {
     await volumeController.close();
     await rateController.close();
     await bufferingController.close();
+    await networkSpeedController.close();
     await cachedRangesController.close();
   }
 }
@@ -139,6 +197,9 @@ class _FakePlayerAdapterState implements PlayerAdapterState {
 
   @override
   List<PlayerCachedRange> get cachedRanges => cachedRangesValue;
+
+  @override
+  int get networkSpeedBytesPerSecond => 0;
 
   @override
   Duration get duration => const Duration(minutes: 5);

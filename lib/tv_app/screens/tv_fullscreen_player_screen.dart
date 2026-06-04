@@ -66,6 +66,15 @@ abstract class TvFullscreenPlaybackController {
   /// 当前是否仍在加载或缓冲。
   bool get isLoading;
 
+  /// 当前下载速度文案。
+  String get networkSpeedText;
+
+  /// 监听下载速度变化。
+  void addNetworkSpeedListener(VoidCallback listener);
+
+  /// 移除下载速度监听。
+  void removeNetworkSpeedListener(VoidCallback listener);
+
   /// 播放视频。
   Future<void> play();
 
@@ -87,8 +96,8 @@ abstract interface class TvFullscreenVideoControllerProvider {
 
 /// TV 全屏播放器遥控器 seek 步长规则。
 ///
-/// 短按保持 10 秒跳转；长按前 6 秒保持每真实秒推进 60 秒视频，
-/// 6 秒后切到每真实秒推进 120 秒视频，但仍按 1 秒粒度快速刷新中心时间。
+/// 短按保持 10 秒跳转；长按前 5 秒保持每真实秒推进 30 秒视频，
+/// 5 秒后切到每真实秒推进 120 秒视频，并减少页面刷新次数。
 class TvFullscreenSeekStep {
   /// 私有构造，避免工具类被实例化。
   const TvFullscreenSeekStep._();
@@ -96,17 +105,20 @@ class TvFullscreenSeekStep {
   /// 短按方向键时的 seek 秒数。
   static const int initialPressSeconds = 10;
 
-  /// 长按每个内部 tick 推进的视频秒数。
-  static const int normalRepeatStepSeconds = 1;
+  /// 长按第一档每个内部 tick 推进的视频秒数。
+  static const int normalRepeatStepSeconds = 3;
+
+  /// 长按第二档每个内部 tick 推进的视频秒数。
+  static const int acceleratedRepeatStepSeconds = 6;
 
   /// 长按第一档每真实秒推进的视频秒数。
-  static const int normalSeekSecondsPerSecond = 60;
+  static const int normalSeekSecondsPerSecond = 30;
 
   /// 长按第二档每真实秒推进的视频秒数。
   static const int acceleratedSeekSecondsPerSecond = 120;
 
   /// 长按切入第二段加速的持续时间阈值。
-  static const Duration accelerationThreshold = Duration(seconds: 6);
+  static const Duration accelerationThreshold = Duration(seconds: 5);
 
   /// 短按和长按的分界时间。
   static const Duration longPressStartThreshold = Duration(milliseconds: 250);
@@ -131,8 +143,11 @@ class TvFullscreenSeekStep {
   }
 
   /// 根据长按持续时间计算当前重复 seek 的步进秒数。
-  static int repeatStepForElapsed(Duration _) {
-    return normalRepeatStepSeconds;
+  static int repeatStepForElapsed(Duration elapsed) {
+    if (elapsed <= accelerationThreshold) {
+      return normalRepeatStepSeconds;
+    }
+    return acceleratedRepeatStepSeconds;
   }
 
   /// 根据真实长按时长，换算当前应累计推进的视频秒数。
@@ -288,7 +303,8 @@ enum _TvPlaylistSecondaryRow { episode, group }
 class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 标记当前是否运行在 `flutter test` 环境。
   ///
-  /// widget test 里如果继续使用无限旋转的进度环，`pumpAndSettle` 会一直等不到稳定帧。
+  /// widget test 中的 `pumpAndSettle` 会等待所有动画静止，loading 进度环需改为
+  /// 静态值，避免测试因无限转圈动画超时。
   static bool get _isFlutterTestEnvironment {
     final flutterTest = Platform.environment['FLUTTER_TEST'];
     return flutterTest != null && flutterTest != 'false';
@@ -469,9 +485,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 底部菜单空闲自动隐藏定时器。
   Timer? _menuAutoHideTimer;
 
-  /// 全屏播放器初始加载保护计时器。
-  Timer? _fullscreenLoadingHoldTimer;
-
   /// 顶部右侧当前时间。
   late String _clockText;
 
@@ -508,14 +521,17 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 全屏播放器是否正在加载当前视频。
   bool _fullscreenPlayerLoading = false;
 
-  /// 当前这轮全屏播放是否已经真正起播。
-  ///
-  /// 这里只认真实播放开始，不把 `ready` 或短暂 `loading=false` 当成首播完成，
-  /// 避免视频真正出画前，中间转圈被过早隐藏。
+  /// 当前全屏播放是否已经由真实进度确认起播。
   bool _fullscreenPlaybackStarted = false;
 
-  /// 当前全屏播放器是否收到过播放进度信号。
-  bool _fullscreenProgressSignalReceived = false;
+  /// 本轮全屏 loading 开始时的播放位置。
+  Duration? _fullscreenLoadingAnchorPosition;
+
+  /// 当前已挂载网速监听的注入播放控制器。
+  TvFullscreenPlaybackController? _networkSpeedPlaybackController;
+
+  /// 当前已挂载进度监听的真实播放器控制器。
+  VideoPlayerWidgetController? _observedVideoController;
 
   /// 播放地址解析任务序号，避免异步回写旧地址。
   int _loadToken = 0;
@@ -578,11 +594,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 播放进度保存间隔，对齐手机端节流策略。
   static const Duration _saveProgressInterval = Duration(seconds: 10);
 
-  /// 进入播放器后短暂保护加载态，避免初始 `playing=false` 被误判为暂停。
-  static const Duration _initialFullscreenLoadingHold =
-      Duration(milliseconds: 500);
-
-  /// 低端 Android 播放器 ready 前可能吞掉 seek，限制补偿次数避免高频打扰播放。
+  /// 续播 seek 被底层吞掉后的最大补偿次数。
   static const int _pendingResumeSeekRetryLimit = 5;
 
   /// 底部菜单空闲自动隐藏时长。
@@ -628,6 +640,38 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     setState(() {});
   }
 
+  /// 绑定注入播放控制器的网速监听。
+  void _attachPlaybackControllerNetworkSpeed(
+    TvFullscreenPlaybackController? controller,
+  ) {
+    if (identical(_networkSpeedPlaybackController, controller)) {
+      return;
+    }
+    _networkSpeedPlaybackController
+        ?.removeNetworkSpeedListener(_onFullscreenNetworkSpeedUpdate);
+    _networkSpeedPlaybackController = controller;
+    controller?.addNetworkSpeedListener(_onFullscreenNetworkSpeedUpdate);
+  }
+
+  /// 网速变化时刷新全屏 loading 文案。
+  void _onFullscreenNetworkSpeedUpdate() {
+    _scheduleChromeRefresh();
+  }
+
+  /// 绑定真实播放器控制器的进度与网速监听。
+  void _attachVideoControllerListeners(
+      VideoPlayerWidgetController? controller) {
+    if (identical(_observedVideoController, controller)) {
+      return;
+    }
+    _observedVideoController?.removeProgressListener(_onVideoProgressUpdate);
+    _observedVideoController
+        ?.removeNetworkSpeedListener(_onFullscreenNetworkSpeedUpdate);
+    _observedVideoController = controller;
+    controller?.addProgressListener(_onVideoProgressUpdate);
+    controller?.addNetworkSpeedListener(_onFullscreenNetworkSpeedUpdate);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -637,9 +681,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
     _lastFocusedEpisodeIndex = _episodeIndex;
     _lastFocusedEpisodeGroupIndex = _episodeGroupIndex;
-    _fullscreenPlaybackStarted = widget.initialPlaybackStarted ||
-        (widget.playbackController?.isPlaying ?? false);
+    _fullscreenPlaybackStarted = widget.initialPlaybackStarted;
     _fullscreenPlayerLoading = !_hasFullscreenPlaybackStarted;
+    _fullscreenLoadingAnchorPosition =
+        _fullscreenPlayerLoading ? _currentPlaybackPosition : null;
+    _attachPlaybackControllerNetworkSpeed(widget.playbackController);
+    _attachVideoControllerListeners(_effectiveVideoController);
     _pendingInitialPlaybackPosition =
         _safeInitialPlaybackPosition(widget.initialPlaybackPosition);
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -667,6 +714,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         !identical(oldWidget.playbackController, widget.playbackController) ||
         oldWidget.reuseExistingPlayer != widget.reuseExistingPlayer) {
       _invalidateCachedPlayerLayer();
+    }
+
+    if (!identical(oldWidget.playbackController, widget.playbackController)) {
+      _attachPlaybackControllerNetworkSpeed(widget.playbackController);
+      _attachVideoControllerListeners(_effectiveVideoController);
     }
 
     final sourceChanged =
@@ -775,11 +827,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekOverlayTimer?.cancel();
     _seekHoldTimer?.cancel();
     _menuAutoHideTimer?.cancel();
-    _fullscreenLoadingHoldTimer?.cancel();
     _detachDanmakuController();
     // 播放器壳销毁前兜底保存一次进度，避免系统返回直接销毁时漏记。
     unawaited(_saveProgress(force: true, scene: '全屏页销毁'));
-    _playerController?.removeProgressListener(_onVideoProgressUpdate);
+    _attachVideoControllerListeners(null);
+    _networkSpeedPlaybackController
+        ?.removeNetworkSpeedListener(_onFullscreenNetworkSpeedUpdate);
+    _networkSpeedPlaybackController = null;
     if (!widget.reuseExistingPlayer) {
       _playerController?.dispose();
     }
@@ -952,21 +1006,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return;
     }
     _lastRequestedPlaybackUrl = url;
-    _rememberPendingResumeSeek(startAt);
-
     _clearDanmakuState(clearList: true);
-    _markFullscreenPlayerLoading();
+    _rememberPendingResumeSeek(startAt);
+    _markFullscreenPlayerLoading(anchorPosition: startAt);
     _scheduleChromeRefresh();
     await _effectiveVideoController?.updateDataSource(url, startAt: startAt);
     await _seekToInitialPlaybackPositionIfNeeded(startAt);
-    _fullscreenLoadingHoldTimer?.cancel();
-    _fullscreenLoadingHoldTimer = Timer(_initialFullscreenLoadingHold, () {
-      if (mounted &&
-          token == _loadToken &&
-          !(_effectiveVideoController?.isLoading ?? false)) {
-        _finishFullscreenPlayerLoading();
-      }
-    });
     if (_danmakuEnabled) {
       unawaited(_loadDanmakuForCurrentEpisode(force: false));
     }
@@ -992,62 +1037,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
   }
 
-  /// 解析当前可直接下发给播放器的播放地址。
-  ///
-  /// 代理配置属于增强能力，不反向阻塞全屏首播和换集响应。
-  String _resolvePlaybackUrl(String url) {
-    if (!_hasResolvedM3u8ProxyUrl ||
-        _m3u8ProxyUrl.isEmpty ||
-        !url.startsWith('http')) {
-      return url;
-    }
-    return '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
-  }
-
-  /// 标记全屏播放器开始加载。
-  void _markFullscreenPlayerLoading() {
-    _fullscreenLoadingHoldTimer?.cancel();
-    _fullscreenPlayerLoading = true;
-    _fullscreenPlaybackStarted = false;
-    _fullscreenProgressSignalReceived = false;
-  }
-
-  /// 结束全屏播放器加载态。
-  void _finishFullscreenPlayerLoading() {
-    if (!_fullscreenPlayerLoading) {
-      return;
-    }
-    if (!_canFinishFullscreenPlayerLoading) {
-      return;
-    }
-    _fullscreenPlayerLoading = false;
-    _scheduleChromeRefresh();
-  }
-
-  /// 标记当前全屏视频已经真正起播。
-  void _markFullscreenPlaybackStarted() {
-    _fullscreenPlaybackStarted = true;
-    _finishFullscreenPlayerLoading();
-  }
-
-  /// 标记全屏播放器已经收到可用于展示的播放信号。
-  void _markFullscreenProgressSignalReceived() {
-    _fullscreenProgressSignalReceived = true;
-    _finishFullscreenPlayerLoading();
-  }
-
-  /// 取出一次性初始续播位置。
-  Duration? _takeInitialPlaybackPosition() {
-    if (_hasAppliedInitialPlaybackPosition) {
-      return null;
-    }
-    _hasAppliedInitialPlaybackPosition = true;
-    final position = _pendingInitialPlaybackPosition;
-    _pendingInitialPlaybackPosition = null;
-    return position;
-  }
-
-  /// 记录需要用真实进度信号确认的续播 seek。
+  /// 记录需要等真实进度确认的续播 seek。
   void _rememberPendingResumeSeek(Duration? position) {
     if (position == null || position <= Duration.zero) {
       _clearPendingResumeSeek();
@@ -1057,7 +1047,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _pendingResumeSeekRetryCount = 0;
   }
 
-  /// 清理已确认或已放弃的续播 seek。
+  /// 清理续播 seek 确认状态。
   void _clearPendingResumeSeek() {
     _pendingResumeSeekPosition = null;
     _pendingResumeSeekRetryCount = 0;
@@ -1069,17 +1059,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   }
 
   /// 真实进度仍停在续播点之前时，补一次 seek。
-  ///
-  /// 部分低端 Android WebView 会在 `loadedmetadata` 之前吞掉首个 seek，
-  /// 这里等进度事件确认后再补偿，避免 Flutter 侧的乐观进度误判为已经续播成功。
   Future<void> _retryPendingResumeSeekAfterProgress() async {
     final resumePosition = _pendingResumeSeekPosition;
-    final controller = _effectiveVideoController;
-    if (resumePosition == null || controller == null) {
+    if (resumePosition == null) {
       return;
     }
 
-    final currentPosition = controller.currentPosition;
+    final currentPosition = _effectiveVideoController?.currentPosition;
     if (currentPosition != null &&
         _isAtResumePosition(currentPosition, resumePosition)) {
       _clearPendingResumeSeek();
@@ -1100,6 +1086,56 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     } catch (error) {
       debugPrint('TV 全屏续播 seek 重试失败: $error');
     }
+  }
+
+  /// 解析当前可直接下发给播放器的播放地址。
+  ///
+  /// 代理配置属于增强能力，不反向阻塞全屏首播和换集响应。
+  String _resolvePlaybackUrl(String url) {
+    if (!_hasResolvedM3u8ProxyUrl ||
+        _m3u8ProxyUrl.isEmpty ||
+        !url.startsWith('http')) {
+      return url;
+    }
+    return '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
+  }
+
+  /// 标记全屏播放器开始加载。
+  void _markFullscreenPlayerLoading({Duration? anchorPosition}) {
+    _fullscreenPlayerLoading = true;
+    _fullscreenPlaybackStarted = false;
+    _fullscreenLoadingAnchorPosition =
+        anchorPosition ?? _currentPlaybackPosition;
+  }
+
+  /// 结束全屏播放器加载态，调用方必须先确认播放时间点已经前进。
+  void _finishFullscreenPlayerLoading() {
+    if (!_fullscreenPlayerLoading) {
+      return;
+    }
+    _fullscreenPlayerLoading = false;
+    _fullscreenLoadingAnchorPosition = null;
+    _scheduleChromeRefresh();
+  }
+
+  /// 标记当前全屏视频已经真正起播。
+  void _markFullscreenPlaybackStarted() {
+    if (_fullscreenPlaybackStarted) {
+      return;
+    }
+    _fullscreenPlaybackStarted = true;
+    _finishFullscreenPlayerLoading();
+  }
+
+  /// 取出一次性初始续播位置。
+  Duration? _takeInitialPlaybackPosition() {
+    if (_hasAppliedInitialPlaybackPosition) {
+      return null;
+    }
+    _hasAppliedInitialPlaybackPosition = true;
+    final position = _pendingInitialPlaybackPosition;
+    _pendingInitialPlaybackPosition = null;
+    return position;
   }
 
   /// 处理全屏播放器键盘和遥控器按键。
@@ -1352,13 +1388,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return;
     }
 
+    final recoveryAnchor = _seekPreviewPosition ?? _currentPlaybackPosition;
     // 长按松手后如果视频仍在播放，则立即收起中心提示和底部进度壳层。
     if (mounted) {
       setState(() {
         _seekOverlayVisible = false;
       });
     }
+    _markFullscreenPlayerLoading(anchorPosition: recoveryAnchor);
     _resetSeekState();
+    _scheduleChromeRefresh();
   }
 
   /// 按当前长按阶段安排下一次 seek tick。
@@ -1375,13 +1414,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           TvFullscreenSeekStep.longPressStartThreshold.inMicroseconds -
               _seekHoldElapsed.inMicroseconds;
     } else {
-      final nextTargetSeconds = _seekHoldAppliedSeconds + 1;
+      final longPressElapsedMicros = _seekHoldElapsed.inMicroseconds -
+          TvFullscreenSeekStep.longPressStartThreshold.inMicroseconds;
+      final nextStepSeconds = TvFullscreenSeekStep.repeatStepForElapsed(
+        Duration(microseconds: longPressElapsedMicros),
+      );
+      final nextTargetSeconds = _seekHoldAppliedSeconds + nextStepSeconds;
       final targetElapsedMicros =
           TvFullscreenSeekStep.elapsedMicrosecondsForTotalSeekSeconds(
         nextTargetSeconds,
       );
-      final longPressElapsedMicros = _seekHoldElapsed.inMicroseconds -
-          TvFullscreenSeekStep.longPressStartThreshold.inMicroseconds;
       final remainingMicros = targetElapsedMicros - longPressElapsedMicros;
       final fallbackMicros =
           TvFullscreenSeekStep.repeatIntervalMicrosecondsForElapsed(
@@ -1413,14 +1455,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       if (deltaSeconds > 0) {
         _seekHoldHasRepeated = true;
         _seekHoldAppliedSeconds = targetSeconds;
-        _applySeekDelta(_seekDirection, deltaSeconds);
+        _applySeekDelta(
+          _seekDirection,
+          deltaSeconds,
+          markRecoveryLoading: false,
+        );
       }
       _scheduleNextSeekHoldTick();
     });
   }
 
   /// 执行一次实际 seek，并刷新中心时间提示。
-  void _applySeekDelta(int direction, int seconds) {
+  void _applySeekDelta(
+    int direction,
+    int seconds, {
+    bool markRecoveryLoading = true,
+  }) {
     final duration = _currentPlaybackDuration;
     if (duration <= Duration.zero) {
       return;
@@ -1439,6 +1489,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       _seekPreviewDuration = duration;
       _seekOverlayVisible = true;
     });
+    if (markRecoveryLoading) {
+      _markFullscreenPlayerLoading(anchorPosition: target);
+    }
     _resetDanmakuIndex(target, clearVisible: false);
     unawaited(_seekTo(target));
     _scheduleSeekOverlayHide();
@@ -1475,40 +1528,45 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前播放器是否仍在加载或缓冲。
   bool get _isPlaybackLoading {
-    if (_canFinishFullscreenPlayerLoading) {
-      return false;
-    }
+    bool controllerLoading;
     final injectedController = widget.playbackController;
     if (injectedController != null) {
-      return _fullscreenPlayerLoading || injectedController.isLoading;
+      if (injectedController is TvFullscreenVideoControllerProvider &&
+          (injectedController as TvFullscreenVideoControllerProvider)
+                  .videoController ==
+              null) {
+        return false;
+      }
+      controllerLoading = injectedController.isLoading;
+    } else {
+      final controller = _playerController;
+      if (controller == null) {
+        return false;
+      }
+      controllerLoading = controller.isLoading;
     }
-    final controller = _playerController;
-    return _fullscreenPlayerLoading || (controller?.isLoading ?? false);
+    return _fullscreenPlayerLoading ||
+        (!_fullscreenPlaybackStarted && controllerLoading);
+  }
+
+  /// 当前播放器下载速度文案。
+  String get _fullscreenNetworkSpeedText {
+    final injectedController = widget.playbackController;
+    if (injectedController != null) {
+      if (injectedController is TvFullscreenVideoControllerProvider &&
+          (injectedController as TvFullscreenVideoControllerProvider)
+                  .videoController ==
+              null) {
+        return '0KB/s';
+      }
+      return injectedController.networkSpeedText;
+    }
+    return _playerController?.networkSpeedText ?? '0KB/s';
   }
 
   /// 当前全屏视频是否已经真正起播。
   bool get _hasFullscreenPlaybackStarted {
-    return _fullscreenPlaybackStarted ||
-        (widget.playbackController?.isPlaying ?? false) ||
-        (_playerController?.isPlaying ?? false);
-  }
-
-  /// 全屏播放器加载态是否可以安全退出。
-  bool get _canFinishFullscreenPlayerLoading {
-    return _hasFullscreenPlaybackStarted ||
-        _isFullscreenPlaybackReadyForDisplay;
-  }
-
-  /// 全屏播放器是否已经有可展示的播放状态。
-  bool get _isFullscreenPlaybackReadyForDisplay {
-    final loading = widget.playbackController?.isLoading ??
-        _playerController?.isLoading ??
-        false;
-    if (loading || !_fullscreenProgressSignalReceived) {
-      return false;
-    }
-    return _currentPlaybackPosition > Duration.zero ||
-        _currentPlaybackDuration > Duration.zero;
+    return _fullscreenPlaybackStarted;
   }
 
   /// 是否显示暂停/拖动时的播放器信息壳层。
@@ -1538,11 +1596,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final injectedController = widget.playbackController;
     if (injectedController != null) {
       await injectedController.seekTo(position);
-      _markFullscreenProgressSignalReceived();
+      if (mounted) {
+        setState(() {});
+      }
       return;
     }
     await _playerController?.seekTo(position);
-    _markFullscreenProgressSignalReceived();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   /// 限制时间在合法播放区间内。
@@ -2291,13 +2353,27 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
-    _markFullscreenProgressSignalReceived();
-    if ((_playerController?.isPlaying ?? false) &&
-        !_hasFullscreenPlaybackStarted) {
+    final position = _currentPlaybackPosition;
+    if (_hasPlaybackPositionAdvanced(
+      current: position,
+      anchor: _fullscreenLoadingAnchorPosition,
+    )) {
       _markFullscreenPlaybackStarted();
     }
     unawaited(_retryPendingResumeSeekAfterProgress());
     unawaited(_saveProgress(scene: '全屏定时保存'));
+  }
+
+  /// 判断播放时间是否已经从本轮 loading 起点向前推进。
+  bool _hasPlaybackPositionAdvanced({
+    required Duration? current,
+    required Duration? anchor,
+  }) {
+    if (current == null) {
+      return false;
+    }
+    final baseline = anchor ?? Duration.zero;
+    return current > baseline;
   }
 
   /// 保存当前播放进度。
@@ -2873,7 +2949,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
               if (_shouldShowTopDecorations) _buildTopDecorations(),
               if (_shouldShowCenterPlayButton) _buildCenterPlayButton(),
               if (_shouldShowPlaybackChrome) _buildBottomProgressBar(),
-              if (_isPlaybackLoading) _buildLoadingIndicator(),
+              if (_isPlaybackLoading) _buildFullscreenLoadingOverlay(),
               if (_seekOverlayVisible) _buildSeekOverlay(),
               if (_menuVisible) _buildBottomMenu(),
             ],
@@ -2913,8 +2989,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           enablePip: false,
           adFilterEnabled: _adFilterEnabled,
           onControllerCreated: _handlePlayerControllerCreated,
-          onReady: _finishFullscreenPlayerLoading,
-          onPlay: _markFullscreenPlaybackStarted,
+          onReady: _handleFullscreenReadySignal,
+          onPlay: _handleFullscreenPlaySignal,
           onPause: () {
             _scheduleChromeRefresh();
           },
@@ -2929,18 +3005,53 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     return _cachedPlayerLayer!;
   }
 
+  /// 构建全屏播放器 loading 转圈和网速提示。
+  Widget _buildFullscreenLoadingOverlay() {
+    final networkSpeedText = _fullscreenNetworkSpeedText;
+    return Center(
+      child: IgnorePointer(
+        child: Container(
+          key: const ValueKey('tv-fullscreen-loading'),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 3,
+                value: _isFlutterTestEnvironment ? 0.72 : null,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '加载中',
+                style: FontUtils.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withValues(alpha: 0.94),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                networkSpeedText,
+                style: FontUtils.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.72),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 记录播放器控制器并执行一次首次续播加载。
   void _handlePlayerControllerCreated(VideoPlayerWidgetController controller) {
-    if (!identical(_playerController, controller)) {
-      _playerController?.removeProgressListener(_onVideoProgressUpdate);
-      controller.addProgressListener(_onVideoProgressUpdate);
-    }
     _playerController = controller;
+    _attachVideoControllerListeners(controller);
     _lastRequestedPlaybackUrl = null;
     _scheduleChromeRefresh();
-    if (controller.isPlaying) {
-      _markFullscreenPlaybackStarted();
-    }
     if (_hasRequestedInitialControllerLoad) {
       return;
     }
@@ -2982,6 +3093,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         ),
       ),
     );
+  }
+
+  /// 处理底层播放器 ready 信号。
+  void _handleFullscreenReadySignal() {
+    _scheduleChromeRefresh();
+  }
+
+  /// 处理底层播放器 play 信号。
+  void _handleFullscreenPlaySignal() {
+    _scheduleChromeRefresh();
   }
 
   /// 构建顶部说明和装饰层。
@@ -3108,24 +3229,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             LucideIcons.play,
             color: Colors.white,
             size: 28,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 构建播放器加载中转圈。
-  Widget _buildLoadingIndicator() {
-    return Center(
-      child: IgnorePointer(
-        child: SizedBox(
-          key: const ValueKey('tv-fullscreen-loading'),
-          width: 46,
-          height: 46,
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            color: Colors.white,
-            value: _isFlutterTestEnvironment ? 0.72 : null,
           ),
         ),
       ),

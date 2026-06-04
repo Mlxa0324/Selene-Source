@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -67,6 +67,7 @@ abstract class PlayerAdapterStream {
   Stream<Duration> get position;
   Stream<Duration> get duration;
   Stream<Duration> get buffer;
+  Stream<int> get networkSpeedBytesPerSecond;
   Stream<List<PlayerCachedRange>> get cachedRanges;
   Stream<bool> get completed;
   Stream<double> get volume;
@@ -79,6 +80,7 @@ abstract class PlayerAdapterState {
   Duration get position;
   Duration get duration;
   Duration get buffer;
+  int get networkSpeedBytesPerSecond;
   List<PlayerCachedRange> get cachedRanges;
   double get volume;
   double get rate;
@@ -109,6 +111,20 @@ class WebViewPreloadTuning {
     required this.backBufferRetention,
     required this.preloadAttribute,
   });
+}
+
+/// 构建 WebView 播放器 HTML，供测试验证 HLS 脚本注入和遥测逻辑。
+@visibleForTesting
+String buildWebViewPlayerHtmlForTest({
+  required String url,
+  bool adFilterEnabled = false,
+  PlaybackPreloadLevel preloadLevel = PlaybackPreloadLevel.off,
+}) {
+  return WebViewPlayerAdapter(
+    url: url,
+    adFilterEnabled: adFilterEnabled,
+    preloadLevel: preloadLevel,
+  )._buildHtmlContent();
 }
 
 WebViewPreloadTuning resolveWebViewPreloadTuning({
@@ -210,6 +226,9 @@ class _MediaKitStream implements PlayerAdapterStream {
   @override
   Stream<Duration> get buffer => player.stream.buffer;
   @override
+  Stream<int> get networkSpeedBytesPerSecond =>
+      const Stream<int>.empty().asBroadcastStream();
+  @override
   Stream<List<PlayerCachedRange>> get cachedRanges =>
       player.stream.buffer.map((buffer) {
         return resolveSinglePlayerCachedRange(
@@ -239,6 +258,8 @@ class _MediaKitState implements PlayerAdapterState {
   Duration get duration => player.state.duration;
   @override
   Duration get buffer => player.state.buffer;
+  @override
+  int get networkSpeedBytesPerSecond => 0;
   @override
   List<PlayerCachedRange> get cachedRanges => resolveSinglePlayerCachedRange(
         start: Duration.zero,
@@ -415,6 +436,9 @@ class _VideoPlayerStream implements PlayerAdapterStream {
   Stream<Duration> get buffer =>
       const Stream<Duration>.empty().asBroadcastStream();
   @override
+  Stream<int> get networkSpeedBytesPerSecond =>
+      const Stream<int>.empty().asBroadcastStream();
+  @override
   Stream<List<PlayerCachedRange>> get cachedRanges =>
       adapter._cachedRangesController.stream;
   @override
@@ -439,6 +463,8 @@ class _VideoPlayerState implements PlayerAdapterState {
   Duration get duration => adapter.controller.value.duration;
   @override
   Duration get buffer => adapter.controller.value.duration;
+  @override
+  int get networkSpeedBytesPerSecond => 0;
   @override
   List<PlayerCachedRange> get cachedRanges => adapter._resolveCachedRanges();
   @override
@@ -489,6 +515,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       StreamController<double>.broadcast();
   final StreamController<bool> _bufferingController =
       StreamController<bool>.broadcast();
+  final StreamController<int> _networkSpeedController =
+      StreamController<int>.broadcast();
   final StreamController<List<PlayerCachedRange>> _cachedRangesController =
       StreamController<List<PlayerCachedRange>>.broadcast();
 
@@ -498,6 +526,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   double _volume = 100;
   double _rate = 1.0;
   bool _buffering = false;
+  int _networkSpeedBytesPerSecond = 0;
   List<PlayerCachedRange> _cachedRanges = const [];
   double _videoWidth = 0; // 💡 新增
   double _videoHeight = 0; // 💡 新增
@@ -607,6 +636,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     _position = Duration.zero;
     _duration = Duration.zero;
     _buffering = true;
+    _networkSpeedBytesPerSecond = 0;
     _cachedRanges = const [];
     if (!_playingController.isClosed) {
       _playingController.add(false);
@@ -619,6 +649,9 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     }
     if (!_bufferingController.isClosed) {
       _bufferingController.add(true);
+    }
+    if (!_networkSpeedController.isClosed) {
+      _networkSpeedController.add(0);
     }
     if (!_cachedRangesController.isClosed) {
       _cachedRangesController.add(const []);
@@ -694,6 +727,16 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         _buffering = nextBuffering;
         if (!_bufferingController.isClosed) {
           _bufferingController.add(_buffering);
+        }
+        break;
+      case 'network_speed':
+        final rawSpeed = (event['bytesPerSecond'] as num?)?.round() ?? 0;
+        final nextSpeed = rawSpeed < 0 ? 0 : rawSpeed;
+        if (_networkSpeedBytesPerSecond != nextSpeed) {
+          _networkSpeedBytesPerSecond = nextSpeed;
+          if (!_networkSpeedController.isClosed) {
+            _networkSpeedController.add(_networkSpeedBytesPerSecond);
+          }
         }
         break;
       case 'cached_ranges':
@@ -989,6 +1032,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     await _volumeController.close();
     await _rateController.close();
     await _bufferingController.close();
+    await _networkSpeedController.close();
     await _cachedRangesController.close();
   }
 
@@ -1114,6 +1158,60 @@ class WebViewPlayerAdapter implements PlayerAdapter {
       if (window.flutter_inappwebview) {
         window.flutter_inappwebview.callHandler('onPlayerEvent', event);
       }
+    }
+
+    function readFiniteNumber(value) {
+      var number = Number(value);
+      return isFinite(number) ? number : 0;
+    }
+
+    function readNestedNumber(source, firstKey, secondKey) {
+      if (!source || !source[firstKey]) {
+        return 0;
+      }
+      return readFiniteNumber(source[firstKey][secondKey]);
+    }
+
+    function estimateResponseBytes(response) {
+      if (!response) {
+        return 0;
+      }
+      var data = response.data;
+      if (typeof data === 'string') {
+        return data.length;
+      }
+      if (data && typeof data.byteLength === 'number') {
+        return data.byteLength;
+      }
+      if (data && typeof data.length === 'number') {
+        return data.length;
+      }
+      return 0;
+    }
+
+    function emitNetworkSpeedFromStats(stats, fallbackBytes) {
+      // HLS 分片加载完成后，用实际字节数和加载耗时刷新外层网速。
+      var bytes =
+          (stats ? readFiniteNumber(stats.loaded) : 0) ||
+          (stats ? readFiniteNumber(stats.total) : 0) ||
+          (stats ? readFiniteNumber(stats.size) : 0) ||
+          readFiniteNumber(fallbackBytes);
+      var startMs =
+          (stats ? readFiniteNumber(stats.trequest) : 0) ||
+          readNestedNumber(stats, 'loading', 'start') ||
+          readNestedNumber(stats, 'request', 'start');
+      var endMs =
+          (stats ? readFiniteNumber(stats.tload) : 0) ||
+          readNestedNumber(stats, 'loading', 'end') ||
+          readNestedNumber(stats, 'parsing', 'end') ||
+          Date.now();
+      var elapsedMs = Math.max(1, endMs - startMs);
+      if (!(bytes > 0) || !(elapsedMs > 0)) {
+        return;
+      }
+      sendEvent('network_speed', {
+        bytesPerSecond: Math.round(bytes * 1000 / elapsedMs)
+      });
     }
 
     function emitBufferedRanges() {
@@ -1755,31 +1853,34 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           config.maxBufferHole = 0.1;
         }
         
-        if (adFilterEnabled) {
-          class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
-            constructor(config) {
-              super(config);
-              var load = this.load.bind(this);
-              this.load = function (context, config, callbacks) {
-                if (context.type === 'manifest' || context.type === 'level') {
-                  var onSuccess = callbacks.onSuccess;
-                  callbacks.onSuccess = function (response, stats, context) {
-                    if (response.data && typeof response.data === 'string') {
-                      // 使用增强型过滤逻辑
-                      response.data = filterAdsEnhanced(response.data);
-                    }
-                    return onSuccess(response, stats, context, null);
-                  };
+        class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+          constructor(config) {
+            super(config);
+            var load = this.load.bind(this);
+            this.load = function (context, config, callbacks) {
+              var onSuccess = callbacks.onSuccess;
+              callbacks.onSuccess = function (response, stats, context, networkDetails) {
+                emitNetworkSpeedFromStats(stats, estimateResponseBytes(response));
+                if (adFilterEnabled &&
+                    (context.type === 'manifest' || context.type === 'level') &&
+                    response.data &&
+                    typeof response.data === 'string') {
+                  // 使用增强型过滤逻辑
+                  response.data = filterAdsEnhanced(response.data);
                 }
-                load(context, config, callbacks);
+                return onSuccess(response, stats, context, networkDetails);
               };
-            }
+              load(context, config, callbacks);
+            };
           }
-          config.loader = CustomHlsJsLoader;
         }
+        config.loader = CustomHlsJsLoader;
 
         var hls = new Hls(config);
         window.hlsInstance = hls;
+        hls.on(Hls.Events.FRAG_LOADED, function(event, data) {
+          emitNetworkSpeedFromStats(data && data.stats, 0);
+        });
         hls.loadSource(videoUrl);
         if (player) {
           hls.attachMedia(player);
@@ -1890,6 +1991,9 @@ class _WebViewPlayerStream implements PlayerAdapterStream {
   Stream<Duration> get buffer =>
       const Stream<Duration>.empty().asBroadcastStream();
   @override
+  Stream<int> get networkSpeedBytesPerSecond =>
+      adapter._networkSpeedController.stream;
+  @override
   Stream<List<PlayerCachedRange>> get cachedRanges =>
       adapter._cachedRangesController.stream;
   @override
@@ -1914,6 +2018,8 @@ class _WebViewPlayerState implements PlayerAdapterState {
   Duration get duration => adapter._duration;
   @override
   Duration get buffer => adapter._duration;
+  @override
+  int get networkSpeedBytesPerSecond => adapter._networkSpeedBytesPerSecond;
   @override
   List<PlayerCachedRange> get cachedRanges => adapter._cachedRanges;
   @override

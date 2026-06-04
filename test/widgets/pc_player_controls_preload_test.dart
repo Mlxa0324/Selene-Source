@@ -211,6 +211,7 @@ class _FakePlayerStream implements PlayerAdapterStream {
   final volumeController = StreamController<double>.broadcast();
   final rateController = StreamController<double>.broadcast();
   final bufferingController = StreamController<bool>.broadcast();
+  final networkSpeedController = StreamController<int>.broadcast();
 
   @override
   Stream<Duration> get buffer => bufferController.stream;
@@ -227,6 +228,9 @@ class _FakePlayerStream implements PlayerAdapterStream {
 
   @override
   Stream<Duration> get duration => durationController.stream;
+
+  @override
+  Stream<int> get networkSpeedBytesPerSecond => networkSpeedController.stream;
 
   @override
   Stream<bool> get playing => playingController.stream;
@@ -250,6 +254,7 @@ class _FakePlayerStream implements PlayerAdapterStream {
     await volumeController.close();
     await rateController.close();
     await bufferingController.close();
+    await networkSpeedController.close();
   }
 }
 
@@ -272,6 +277,9 @@ class _FakePlayerState implements PlayerAdapterState {
 
   @override
   List<PlayerCachedRange> get cachedRanges => cachedRangesValue;
+
+  @override
+  int get networkSpeedBytesPerSecond => 0;
 
   @override
   Duration get duration => durationValue;

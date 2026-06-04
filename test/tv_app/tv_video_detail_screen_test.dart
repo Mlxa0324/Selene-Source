@@ -288,9 +288,12 @@ void main() {
 
     searchSession.complete(const <SearchResult>[]);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsNothing,
+    );
     expect(find.byKey(const ValueKey('tv-detail-empty-playback-hint')),
         findsOneWidget);
     expect(find.byIcon(Icons.search_off_rounded), findsOneWidget);
@@ -602,11 +605,41 @@ void main() {
     expect(resolvedAdFilterEnabled, isFalse);
   });
 
+  testWidgets('detail preview player disables idle loading UI', (tester) async {
+    await _setTvSurfaceSize(tester);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => const TvVideoDetailData(
+            currentDetail: null,
+            sources: [],
+            recommends: [],
+          ),
+          loadInitialSources: (_, __) async => const [],
+          loadMoreSources: (_, __, ___) async => const [],
+          loadRecommends: (_, __, ___) async => const [],
+          fullscreenPlayerBuilder: (_, __) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+
+    await tester.pump();
+
+    final player = tester.widget<VideoPlayerWidget>(
+      find.byType(VideoPlayerWidget),
+    );
+    expect(player.backgroundColor, Colors.transparent);
+    expect(player.showLoadingIndicator, isFalse);
+  });
+
   testWidgets(
       'detail keeps first playable source independent from slow recommends',
       (tester) async {
     await _setTvSurfaceSize(tester);
     final recommendsCompleter = Completer<List<VideoInfo>>();
+    late _FakeVideoPlayerWidgetController controller;
     var controllerCreated = false;
 
     await tester.pumpWidget(
@@ -623,13 +656,12 @@ void main() {
           playerBuilder: (_, onControllerCreated) {
             if (!controllerCreated) {
               controllerCreated = true;
-              onControllerCreated(
-                _FakeVideoPlayerWidgetController(
-                  isPlaying: true,
-                  currentPosition: Duration.zero,
-                  duration: const Duration(seconds: 3600),
-                ),
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                currentPosition: Duration.zero,
+                duration: const Duration(seconds: 3600),
               );
+              onControllerCreated(controller);
             }
             return Container(
               key: const ValueKey('tv-detail-player-placeholder'),
@@ -654,6 +686,10 @@ void main() {
     expect(find.text('主源'), findsOneWidget);
     expect(find.text('相关推荐'), findsNothing);
 
+    controller.currentPosition = const Duration(seconds: 1);
+    controller.emitProgress();
+    await tester.pump();
+
     recommendsCompleter.complete([
       _videoInfo('recommend_1', '推荐影片'),
     ]);
@@ -669,6 +705,7 @@ void main() {
     await _setTvSurfaceSize(tester);
     final events = <String>[];
     final recommendsCompleter = Completer<List<VideoInfo>>();
+    late _FakeVideoPlayerWidgetController controller;
     var controllerCreated = false;
 
     await tester.pumpWidget(
@@ -688,16 +725,15 @@ void main() {
           playerBuilder: (_, onControllerCreated) {
             if (!controllerCreated) {
               controllerCreated = true;
-              onControllerCreated(
-                _FakeVideoPlayerWidgetController(
-                  isPlaying: true,
-                  currentPosition: Duration.zero,
-                  duration: const Duration(seconds: 3600),
-                  onUpdateDataSource: (url, {startAt, headers}) {
-                    events.add('play-request');
-                  },
-                ),
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                currentPosition: Duration.zero,
+                duration: const Duration(seconds: 3600),
+                onUpdateDataSource: (url, {startAt, headers}) {
+                  events.add('play-request');
+                },
               );
+              onControllerCreated(controller);
             }
             return Container(
               key: const ValueKey('tv-detail-player-placeholder'),
@@ -718,6 +754,10 @@ void main() {
     // 首播请求应先于推荐加载，推荐在播放开始后延迟加载
     expect(events, contains('play-request'));
 
+    controller.currentPosition = const Duration(seconds: 1);
+    controller.emitProgress();
+    await tester.pump();
+
     recommendsCompleter.complete(const <VideoInfo>[]);
     await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
@@ -733,6 +773,7 @@ void main() {
     addTearDown(() {
       TvVideoDetailScreen.recommendsDelayAfterPlayback = savedDelay;
     });
+    late _FakeVideoPlayerWidgetController controller;
     var controllerCreated = false;
 
     await tester.pumpWidget(
@@ -752,13 +793,12 @@ void main() {
           playerBuilder: (_, onControllerCreated) {
             if (!controllerCreated) {
               controllerCreated = true;
-              onControllerCreated(
-                _FakeVideoPlayerWidgetController(
-                  isPlaying: true,
-                  currentPosition: Duration.zero,
-                  duration: const Duration(seconds: 3600),
-                ),
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                currentPosition: Duration.zero,
+                duration: const Duration(seconds: 3600),
               );
+              onControllerCreated(controller);
             }
             return Container(
               key: const ValueKey('tv-detail-player-placeholder'),
@@ -775,6 +815,8 @@ void main() {
 
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
+    controller.currentPosition = const Duration(seconds: 1);
+    controller.emitProgress();
     await tester.pump();
     await tester.pumpAndSettle();
     final cachedRecommends =
@@ -1253,7 +1295,8 @@ void main() {
     expect((playerLeft - recommendTitleLeft).abs(), lessThanOrEqualTo(1));
   });
 
-  testWidgets('detail preview keeps spinner before first playback starts',
+  testWidgets(
+      'detail preview shows loading overlay before first playback starts',
       (tester) async {
     await _setTvSurfaceSize(tester);
     var controllerCreated = false;
@@ -1301,6 +1344,7 @@ void main() {
       find.byKey(const ValueKey('tv-detail-preview-loading')),
       findsOneWidget,
     );
+    expect(find.text('0KB/s'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('tv-detail-preview-center-play')),
       findsNothing,
@@ -1313,7 +1357,46 @@ void main() {
     expect(find.text('24:21'), findsNothing);
   });
 
-  testWidgets('loading detail preview shows spinner without pause chrome',
+  testWidgets(
+      'detail preview shows loading overlay while controller attaches late',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult('source_a', '主源'),
+            sources: [
+              _searchResult('source_a', '主源'),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+    expect(find.text('0KB/s'), findsOneWidget);
+  });
+
+  testWidgets(
+      'loading detail preview shows loading overlay without pause chrome',
       (tester) async {
     await _setTvSurfaceSize(tester);
     var controllerCreated = false;
@@ -1338,6 +1421,7 @@ void main() {
                   isLoading: true,
                   currentPosition: const Duration(minutes: 2, seconds: 49),
                   duration: const Duration(minutes: 24, seconds: 21),
+                  networkSpeedText: '768KB/s',
                 ),
               );
             }
@@ -1361,6 +1445,13 @@ void main() {
       find.byKey(const ValueKey('tv-detail-preview-loading')),
       findsOneWidget,
     );
+    final loadingOverlay = tester.widget<Container>(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+    );
+    expect(loadingOverlay.color, isNull);
+    expect(loadingOverlay.decoration, isNull);
+    expect(find.text('768KB/s'), findsOneWidget);
+    expect(find.text('0KB/s'), findsNothing);
     expect(
       find.byKey(const ValueKey('tv-detail-preview-center-play')),
       findsNothing,
@@ -1473,9 +1564,10 @@ void main() {
     _expectFocused(tester, find.text('主源'));
   });
 
-  testWidgets('detail preview spinner hides once playback has started',
+  testWidgets('detail preview keeps loading until playback position changes',
       (tester) async {
     await _setTvSurfaceSize(tester);
+    late _FakeVideoPlayerWidgetController controller;
     var controllerCreated = false;
 
     await tester.pumpWidget(
@@ -1492,14 +1584,13 @@ void main() {
           playerBuilder: (_, onControllerCreated) {
             if (!controllerCreated) {
               controllerCreated = true;
-              onControllerCreated(
-                _FakeVideoPlayerWidgetController(
-                  isPlaying: true,
-                  isLoading: true,
-                  currentPosition: const Duration(minutes: 2, seconds: 49),
-                  duration: const Duration(minutes: 24, seconds: 21),
-                ),
+              controller = _FakeVideoPlayerWidgetController(
+                isPlaying: true,
+                isLoading: true,
+                currentPosition: const Duration(minutes: 2, seconds: 49),
+                duration: const Duration(minutes: 24, seconds: 21),
               );
+              onControllerCreated(controller);
             }
             return Container(
               key: const ValueKey('tv-detail-player-placeholder'),
@@ -1519,8 +1610,27 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+    expect(find.text('0KB/s'), findsOneWidget);
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+    expect(find.text('0KB/s'), findsOneWidget);
+
+    controller.currentPosition = const Duration(minutes: 2, seconds: 50);
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
       findsNothing,
     );
+    expect(find.text('0KB/s'), findsNothing);
     expect(
       find.byKey(const ValueKey('tv-detail-preview-center-play')),
       findsNothing,
@@ -1532,7 +1642,7 @@ void main() {
   });
 
   testWidgets(
-      'detail preview spinner hides after progress signal without play event',
+      'detail preview loading overlay hides after progress signal without play event',
       (tester) async {
     await _setTvSurfaceSize(tester);
     late _FakeVideoPlayerWidgetController controller;
@@ -1580,7 +1690,18 @@ void main() {
       find.byKey(const ValueKey('tv-detail-preview-loading')),
       findsOneWidget,
     );
+    expect(find.text('0KB/s'), findsOneWidget);
 
+    controller.emitProgress();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+    expect(find.text('0KB/s'), findsOneWidget);
+
+    controller.currentPosition = const Duration(minutes: 2, seconds: 50);
     controller.emitProgress();
     await tester.pump();
 
@@ -1588,6 +1709,7 @@ void main() {
       find.byKey(const ValueKey('tv-detail-preview-loading')),
       findsNothing,
     );
+    expect(find.text('0KB/s'), findsNothing);
   });
 
   testWidgets('source row up key focuses nearest hero control', (tester) async {
@@ -3943,6 +4065,9 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    controller.currentPosition = const Duration(minutes: 6, seconds: 1);
+    controller.emitProgress();
+    await tester.pump();
     await tester.tap(find.text('全屏'));
     await tester.pumpAndSettle();
 
@@ -4048,6 +4173,9 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    controller.currentPosition = const Duration(minutes: 6, seconds: 1);
+    controller.emitProgress();
+    await tester.pump();
     await tester.tap(find.text('全屏'));
     await tester.pumpAndSettle();
 
@@ -4105,6 +4233,9 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    controller.currentPosition = const Duration(minutes: 6, seconds: 1);
+    controller.emitProgress();
+    await tester.pump();
     await tester.tap(find.text('全屏'));
     await tester.pumpAndSettle();
 
@@ -5036,7 +5167,8 @@ void main() {
     );
   });
 
-  testWidgets('renders first incremental source before all sources finish',
+  testWidgets(
+      'renders first incremental source with preview loading before all sources finish',
       (tester) async {
     await _setTvSurfaceSize(tester);
     final moreSourcesCompleter = Completer<List<SearchResult>>();
@@ -5068,7 +5200,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 1));
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+    expect(find.text('0KB/s'), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tv-detail-player-entry')), findsOneWidget);
     expect(find.text('主源'), findsOneWidget);
@@ -5081,6 +5217,68 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('备用源'), findsOneWidget);
+  });
+
+  testWidgets(
+      'detail starts initial source loading before resume record finishes',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final resumeRecordsCompleter = Completer<List<PlayRecord>>();
+    final sourceLoadStarted = Completer<void>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片'),
+          loadResumeRecords: (_) => resumeRecordsCompleter.future,
+          loadInitialSources: (_, __) async {
+            if (!sourceLoadStarted.isCompleted) {
+              sourceLoadStarted.complete();
+            }
+            return [
+              _searchResult('source_a', '主源'),
+            ];
+          },
+          loadMoreSources: (_, __, ___) async => const [],
+          loadRecommends: (_, __, ___) async => const [],
+          playerBuilder: (_, onControllerCreated) {
+            onControllerCreated(
+              _FakeVideoPlayerWidgetController(
+                isPlaying: false,
+                currentPosition: Duration.zero,
+                duration: const Duration(seconds: 3600),
+                networkSpeedText: '768KB/s',
+              ),
+            );
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(sourceLoadStarted.isCompleted, isTrue);
+    expect(
+      find.byKey(const ValueKey('tv-detail-preview-loading')),
+      findsOneWidget,
+    );
+    expect(find.text('768KB/s'), findsOneWidget);
+    expect(find.text('0KB/s'), findsNothing);
+
+    resumeRecordsCompleter.complete(const []);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('主源'), findsOneWidget);
   });
 
   testWidgets('continue watching waits for saved streaming source before play',
@@ -5937,6 +6135,7 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     required this.currentPosition,
     required this.duration,
     this.isLoading = false,
+    this.networkSpeedText = '0KB/s',
     this.onUpdateDataSource,
   });
 
@@ -5954,7 +6153,11 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   @override
   bool isLoading;
 
+  @override
+  String networkSpeedText;
+
   final List<VoidCallback> _progressListeners = [];
+  final List<VoidCallback> _networkSpeedListeners = [];
 
   int removedProgressListeners = 0;
 
@@ -5970,6 +6173,13 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
   void addProgressListener(VoidCallback listener) {
     if (!_progressListeners.contains(listener)) {
       _progressListeners.add(listener);
+    }
+  }
+
+  @override
+  void addNetworkSpeedListener(VoidCallback listener) {
+    if (!_networkSpeedListeners.contains(listener)) {
+      _networkSpeedListeners.add(listener);
     }
   }
 
@@ -6010,6 +6220,11 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
     if (_progressListeners.remove(listener)) {
       removedProgressListeners++;
     }
+  }
+
+  @override
+  void removeNetworkSpeedListener(VoidCallback listener) {
+    _networkSpeedListeners.remove(listener);
   }
 
   @override

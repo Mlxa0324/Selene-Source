@@ -75,6 +75,11 @@ typedef TvDetailAdFilterLoader = Future<bool> Function();
 /// TV 详情页 M3U8 代理地址读取函数。
 typedef TvDetailProxyUrlLoader = Future<String> Function();
 
+/// TV 详情页续播记录读取函数。
+typedef TvDetailResumeRecordsLoader = Future<List<PlayRecord>> Function(
+  BuildContext context,
+);
+
 /// TV 详情页测试钩子。
 ///
 /// 仅测试场景使用，用于在占位播放器下模拟“视频播放完成”这类播放器事件。
@@ -135,6 +140,7 @@ class TvVideoDetailScreen extends StatefulWidget {
     this.fullscreenPlayerBuilder,
     this.loadAdFilterEnabled,
     this.loadM3u8ProxyUrl,
+    this.loadResumeRecords,
     this.testHooks,
   });
 
@@ -184,6 +190,9 @@ class TvVideoDetailScreen extends StatefulWidget {
 
   /// M3U8 代理地址读取函数，测试时可注入。
   final TvDetailProxyUrlLoader? loadM3u8ProxyUrl;
+
+  /// 续播记录读取函数，测试时可注入。
+  final TvDetailResumeRecordsLoader? loadResumeRecords;
 
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvVideoDetailScreenTestHooks? testHooks;
@@ -385,7 +394,8 @@ class TvVideoDetailScreen extends StatefulWidget {
 class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 标记当前是否运行在 `flutter test` 环境。
   ///
-  /// widget test 里如果继续使用无限旋转的进度环，`pumpAndSettle` 会一直等不到稳定帧。
+  /// widget test 中的 `pumpAndSettle` 会等待所有动画静止，loading 进度环需改为
+  /// 静态值，避免测试因无限转圈动画超时。
   static bool get _isFlutterTestEnvironment {
     final flutterTest = Platform.environment['FLUTTER_TEST'];
     return flutterTest != null && flutterTest != 'false';
@@ -621,17 +631,20 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 最近一次下发给播放器的地址，避免同一地址重复覆盖续播位置。
   String? _lastRequestedPlaybackUrl;
 
+  /// 续播记录是否已经完成首轮读取。
+  bool _hasLoadedResumeRecord = false;
+
+  /// 续播记录未返回前缓存一次首播请求，待记录就绪后再真正下发。
+  bool _hasPendingInitialPlaybackAfterResumeLoad = false;
+
   /// 详情页小播放器是否正在加载当前视频。
   bool _previewPlayerLoading = false;
 
-  /// 当前这轮预览播放是否已经真正起播。
-  ///
-  /// 这里只认真实播放开始，不把 `onReady` 或 `isLoading=false` 误当成已起播，
-  /// 避免视频首帧还没出来时，中心转圈提前消失。
+  /// 当前预览播放是否已经由真实进度确认起播。
   bool _previewPlaybackStarted = false;
 
-  /// 当前预览播放器是否收到过播放进度信号。
-  bool _previewProgressSignalReceived = false;
+  /// 本轮小播放器 loading 开始时的播放位置。
+  Duration? _previewLoadingAnchorPosition;
 
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
@@ -690,9 +703,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 顶部当前时间刷新定时器。
   Timer? _clockTimer;
 
-  /// 小播放器初始加载保护计时器。
-  Timer? _previewLoadingHoldTimer;
-
   /// 选集分组获焦后的延迟提交计时器。
   Timer? _episodeGroupFocusCommitTimer;
 
@@ -738,10 +748,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 播放进度保存间隔，对齐手机端节流策略。
   static const Duration _saveProgressInterval = Duration(seconds: 10);
 
-  /// 进入详情页后短暂保护加载态，避免播放器初始 `playing=false` 被误判为暂停。
-  static const Duration _initialPreviewLoadingHold =
-      Duration(milliseconds: 500);
-
   /// 低端 Android 播放器 ready 前可能吞掉 seek，限制补偿次数避免高频打扰播放。
   static const int _pendingResumeSeekRetryLimit = 5;
 
@@ -786,6 +792,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     HardwareKeyboard.instance.addHandler(_handleGlobalBackKeyEvent);
     _bindTestHooks();
     _resumeVideoInfo = widget.videoInfo;
+    _markPreviewPlayerLoading();
     _currentTime = _formatCurrentTime(DateTime.now());
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) {
@@ -795,7 +802,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     });
     // 提前预热代理配置，但不让它阻塞详情页首播链路。
     unawaited(_loadM3u8ProxyUrl());
-    unawaited(_loadResumeRecordThenStartDetailLoading());
+    unawaited(_loadResumeRecord());
+    _startDetailLoading();
     _loadFavoriteState();
     _loadAdFilterPreference();
   }
@@ -815,7 +823,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _detachPrefetchedSearchSession();
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
     _clockTimer?.cancel();
-    _previewLoadingHoldTimer?.cancel();
     _episodeGroupFocusCommitTimer?.cancel();
     _recommendsLoadTimer?.cancel();
     // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
@@ -823,6 +830,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     // 播放器实例由子组件自己管理，详情页销毁时只解绑进度监听，
     // 避免预览播放器和全屏共享控制器被父页面重复释放。
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
+    _playerController?.removeNetworkSpeedListener(_onPreviewNetworkSpeedUpdate);
     _playerController = null;
     _playerFocusNode.dispose();
     _fullscreenFocusNode.dispose();
@@ -873,30 +881,50 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     unawaited(_loadMoreSources(serial));
   }
 
-  /// 先按手机端逻辑读取最新播放记录，再开始加载详情源。
-  Future<void> _loadResumeRecordThenStartDetailLoading() async {
+  /// 异步读取最新续播记录，但不阻塞详情源加载启动。
+  ///
+  /// 详情页应尽快进入精确源加载，让首个可播源先到达；
+  /// 续播记录只负责在首次真正起播前补齐目标集数和 `startAt`。
+  Future<void> _loadResumeRecord() async {
     try {
-      final result = await PageCacheService().getPlayRecords(context);
-      final records = result.data;
-      if (result.success && records != null) {
-        final matchedRecord = _matchingResumeRecord(records);
-        if (matchedRecord != null) {
-          _resumeVideoInfo = VideoInfo.fromPlayRecord(
-            matchedRecord,
-            doubanId: widget.videoInfo.doubanId,
-            bangumiId: widget.videoInfo.bangumiId,
-            rate: widget.videoInfo.rate,
-          );
-        }
+      final loader = widget.loadResumeRecords ?? _defaultLoadResumeRecords;
+      final records = await loader(context);
+      final previousResumeVideoInfo = _resumeVideoInfo;
+      final matchedRecord = _matchingResumeRecord(records);
+      if (matchedRecord != null) {
+        _resumeVideoInfo = VideoInfo.fromPlayRecord(
+          matchedRecord,
+          doubanId: widget.videoInfo.doubanId,
+          bangumiId: widget.videoInfo.bangumiId,
+          rate: widget.videoInfo.rate,
+        );
+        _syncPendingPlaybackWithLatestResumeRecord(
+          previousResumeVideoInfo: previousResumeVideoInfo,
+        );
       }
     } catch (error) {
       debugPrint('TV 详情页读取续播记录失败: $error');
+    } finally {
+      _hasLoadedResumeRecord = true;
+      if (_currentDetail != null &&
+          !_hasDispatchedInitialPreviewPlayback &&
+          mounted) {
+        setState(() {
+          _applyInitialResumeState(_currentDetail!);
+        });
+      }
+      if (_hasPendingInitialPlaybackAfterResumeLoad) {
+        _hasPendingInitialPlaybackAfterResumeLoad = false;
+        unawaited(_playCurrentEpisode());
+      }
     }
+  }
 
-    if (!mounted) {
-      return;
-    }
-    _startDetailLoading();
+  /// 默认读取续播记录。
+  Future<List<PlayRecord>> _defaultLoadResumeRecords(
+      BuildContext context) async {
+    final result = await PageCacheService().getPlayRecords(context);
+    return result.success && result.data != null ? result.data! : const [];
   }
 
   /// 查找和入口影片一致的最新播放记录。
@@ -1255,6 +1283,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     var shouldPlay = false;
+    var shouldEnterPreviewLoading = false;
     setState(() {
       final mutableSources = List<SearchResult>.from(_sources);
       final changed =
@@ -1286,11 +1315,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             // 空集数占位被真实源替换后，重新应用继续观看集数和时间。
             _applyInitialResumeState(refreshedCurrentDetail);
             shouldPlay = refreshedCurrentDetail.episodes.isNotEmpty;
+            shouldEnterPreviewLoading = shouldPlay;
           }
         }
       }
 
-      // 首个可播源到达后立刻结束首屏转圈。
+      // 首个可播源到达后立刻结束首屏整页转圈，并切到播放器首帧等待态。
       if (_currentDetail == null && mutableSources.isNotEmpty) {
         final selectedSource = _resolveInitialPlayableSource(
           incoming: incoming,
@@ -1302,6 +1332,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           _currentDetail = selectedSource;
           _applyInitialResumeState(_currentDetail!);
           shouldPlay = true;
+          shouldEnterPreviewLoading = true;
         }
       }
 
@@ -1311,6 +1342,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
       _refreshInitialLoadingState();
     });
+
+    if (shouldEnterPreviewLoading) {
+      _markPreviewPlayerLoading();
+      _schedulePreviewChromeRefresh();
+    }
 
     if (shouldPlay) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1388,6 +1424,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         (_initialSourcesLoaded && _moreSourcesLoaded)) {
       _isInitialDetailLoading = false;
     }
+    if (_currentDetail == null &&
+        _initialSourcesLoaded &&
+        _moreSourcesLoaded &&
+        _previewPlayerLoading) {
+      _previewPlayerLoading = false;
+    }
   }
 
   /// 应用入口播放记录中的续播集数和时间。
@@ -1449,6 +1491,48 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           ? _resumeVideoInfo.searchTitle
           : _resumeVideoInfo.title,
     );
+  }
+
+  /// 续播记录晚于首屏源返回时，按最新记录对齐待下发的首次播放位置。
+  ///
+  /// 这里不主动重发起播请求，避免为了补续播信息把刚拿到的首播链路重新打断；
+  /// 仅在首次 `updateDataSource(startAt)` 还没真正拿走之前，补齐待消费的续播点。
+  void _syncPendingPlaybackWithLatestResumeRecord({
+    required VideoInfo previousResumeVideoInfo,
+  }) {
+    final detail = _currentDetail;
+    if (detail == null || _hasAppliedInitialPlaybackPosition) {
+      return;
+    }
+
+    final previousResumePosition =
+        TvPlayRecordService.resumePositionFromVideoInfo(
+            previousResumeVideoInfo);
+    final latestResumePosition =
+        TvPlayRecordService.resumePositionFromVideoInfo(_resumeVideoInfo);
+    final previousEpisodeIndex = TvPlayRecordService.episodeIndexFromVideoInfo(
+      previousResumeVideoInfo,
+      detail.episodes.length,
+    );
+    final latestEpisodeIndex = TvPlayRecordService.episodeIndexFromVideoInfo(
+      _resumeVideoInfo,
+      detail.episodes.length,
+    );
+
+    final resumeChanged = previousResumePosition != latestResumePosition ||
+        previousEpisodeIndex != latestEpisodeIndex;
+    if (!resumeChanged || !_matchesVideoInfoRecord(detail)) {
+      return;
+    }
+
+    _initialResumeEpisodeIndex = latestEpisodeIndex;
+    _episodeIndex = latestEpisodeIndex;
+    _episodeGroupIndex = _episodeIndex ~/ _episodeGroupSize;
+    _pendingInitialPlaybackPosition =
+        latestResumePosition != null && latestResumePosition > Duration.zero
+            ? latestResumePosition
+            : null;
+    _initialResumePlaybackPositionSnapshot = _pendingInitialPlaybackPosition;
   }
 
   /// 取出一次性初始续播时间。
@@ -1599,46 +1683,43 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 记录播放器控制器并挂载进度监听。
   void _attachPlayerController(VideoPlayerWidgetController controller) {
     if (identical(_playerController, controller)) {
-      if (controller.isPlaying) {
-        _markPreviewPlaybackStarted();
-      }
       _playCurrentEpisode();
       return;
     }
 
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
+    _playerController?.removeNetworkSpeedListener(_onPreviewNetworkSpeedUpdate);
     _playerController = controller;
     _lastRequestedPlaybackUrl = null;
     controller.addProgressListener(_onVideoProgressUpdate);
+    controller.addNetworkSpeedListener(_onPreviewNetworkSpeedUpdate);
     _schedulePreviewChromeRefresh();
-    if (controller.isPlaying) {
-      _markPreviewPlaybackStarted();
-    }
     _playCurrentEpisode();
   }
 
   /// 标记小播放器开始加载。
-  void _markPreviewPlayerLoading() {
-    _previewLoadingHoldTimer?.cancel();
+  void _markPreviewPlayerLoading({Duration? anchorPosition}) {
     _previewPlayerLoading = true;
     _previewPlaybackStarted = false;
-    _previewProgressSignalReceived = false;
+    _previewLoadingAnchorPosition =
+        anchorPosition ?? _playerController?.currentPosition;
   }
 
-  /// 结束小播放器加载态。
+  /// 结束小播放器加载态，调用方必须先确认播放时间点已经前进。
   void _finishPreviewPlayerLoading() {
     if (!_previewPlayerLoading) {
       return;
     }
-    if (!_canFinishPreviewPlayerLoading) {
-      return;
-    }
     _previewPlayerLoading = false;
+    _previewLoadingAnchorPosition = null;
     _schedulePreviewChromeRefresh();
   }
 
   /// 标记当前预览视频已经真正起播。
   void _markPreviewPlaybackStarted() {
+    if (_previewPlaybackStarted) {
+      return;
+    }
     _previewPlaybackStarted = true;
     _finishPreviewPlayerLoading();
     _recommendsLoadTimer?.cancel();
@@ -1654,8 +1735,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
-    _previewProgressSignalReceived = true;
-    if (_isPreviewPlaybackReadyForDisplay && !_hasPreviewPlaybackStarted) {
+    final position = _playerController?.currentPosition;
+    if (_hasPlaybackPositionAdvanced(
+      current: position,
+      anchor: _previewLoadingAnchorPosition,
+    )) {
       _markPreviewPlaybackStarted();
     }
     unawaited(_retryPendingResumeSeekAfterProgress());
@@ -1663,6 +1747,23 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (_playerController?.isPlaying == false) {
       _schedulePreviewChromeRefresh();
     }
+  }
+
+  /// 判断播放时间是否已经从本轮 loading 起点向前推进。
+  bool _hasPlaybackPositionAdvanced({
+    required Duration? current,
+    required Duration? anchor,
+  }) {
+    if (current == null) {
+      return false;
+    }
+    final baseline = anchor ?? Duration.zero;
+    return current > baseline;
+  }
+
+  /// 网速变化时刷新外层 loading 文案。
+  void _onPreviewNetworkSpeedUpdate() {
+    _schedulePreviewChromeRefresh();
   }
 
   /// 保存当前播放进度。
@@ -1763,6 +1864,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (detail == null || controller == null || detail.episodes.isEmpty) {
       return;
     }
+    if (!_hasLoadedResumeRecord) {
+      _hasPendingInitialPlaybackAfterResumeLoad = true;
+      return;
+    }
 
     final index = _episodeIndex.clamp(0, detail.episodes.length - 1);
     final url = _resolvePlaybackUrl(detail.episodes[index]);
@@ -1772,7 +1877,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
     _lastRequestedPlaybackUrl = url;
     _rememberPendingResumeSeek(startAt);
-    _markPreviewPlayerLoading();
+    _markPreviewPlayerLoading(anchorPosition: startAt);
     _schedulePreviewChromeRefresh();
     final playbackRequest = controller.updateDataSource(url, startAt: startAt);
     if (!_hasDispatchedInitialPreviewPlayback) {
@@ -1780,14 +1885,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
     await playbackRequest;
     await _seekToInitialPlaybackPositionIfNeeded(controller, startAt);
-    _previewLoadingHoldTimer?.cancel();
-    _previewLoadingHoldTimer = Timer(_initialPreviewLoadingHold, () {
-      if (mounted &&
-          identical(_playerController, controller) &&
-          !controller.isLoading) {
-        _finishPreviewPlayerLoading();
-      }
-    });
   }
 
   /// 在底层播放器没有吃到 `startAt` 时，按手机端逻辑再补一次 seek。
@@ -3579,16 +3676,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 aspectRatio: 16 / 9,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: _fullscreenOverlayVisible
-                      ? const ColoredBox(color: Colors.black)
-                      : Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            _buildSharedPlayer(detail),
-                            if (_shouldShowPreviewLoading)
-                              _buildPreviewLoadingIndicator(),
-                          ],
-                        ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: _fullscreenOverlayVisible
+                            ? const ColoredBox(color: Colors.black)
+                            : _buildSharedPlayer(detail),
+                      ),
+                      if (_shouldShowPreviewLoadingOverlay)
+                        _buildPreviewLoadingOverlay(),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -3598,51 +3696,62 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
   }
 
-  /// 小播放器是否需要显示加载中转圈。
-  bool get _shouldShowPreviewLoading {
-    return !_fullscreenOverlayVisible &&
-        _previewPlayerLoading &&
-        !_canFinishPreviewPlayerLoading;
-  }
-
-  /// 当前预览视频是否已经真正起播。
-  bool get _hasPreviewPlaybackStarted {
-    return _previewPlaybackStarted || (_playerController?.isPlaying ?? false);
-  }
-
-  /// 小播放器加载态是否可以安全退出。
-  bool get _canFinishPreviewPlayerLoading {
-    return _hasPreviewPlaybackStarted || _isPreviewPlaybackReadyForDisplay;
-  }
-
-  /// 小播放器是否已经有可展示的播放状态。
-  bool get _isPreviewPlaybackReadyForDisplay {
-    final controller = _playerController;
-    if (controller == null ||
-        controller.isLoading ||
-        !_previewProgressSignalReceived) {
+  /// 详情页播放器是否需要展示外层 loading。
+  bool get _shouldShowPreviewLoadingOverlay {
+    if (_fullscreenOverlayVisible || _currentDetail == null) {
       return false;
     }
-    return (controller.currentPosition ?? Duration.zero) > Duration.zero ||
-        (controller.duration ?? Duration.zero) > Duration.zero;
+    final controller = _playerController;
+    if (controller == null) {
+      // 播放器子树已经进入黑底初始化，但控制器可能稍后才回调。
+      // 这段时间外层 TV loading 仍要给用户反馈，避免首帧等待时空黑屏。
+      return _previewPlayerLoading;
+    }
+    if (_previewPlayerLoading &&
+        (_hasPendingInitialPlaybackAfterResumeLoad ||
+            _hasDispatchedInitialPreviewPlayback ||
+            controller.isLoading)) {
+      return true;
+    }
+    return !_previewPlaybackStarted && controller.isLoading;
   }
 
-  /// 构建小播放器加载中转圈。
-  Widget _buildPreviewLoadingIndicator() {
-    return Center(
+  /// 构建详情页播放器 loading 转圈和网速提示。
+  Widget _buildPreviewLoadingOverlay() {
+    final networkSpeedText = _playerController?.networkSpeedText ?? '0KB/s';
+    return Positioned.fill(
       child: IgnorePointer(
-        child: SizedBox(
+        child: Container(
           key: const ValueKey('tv-detail-preview-loading'),
-          width: 42,
-          height: 42,
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            color: Colors.white,
-            value: _isFlutterTestEnvironment ? 0.72 : null,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  color: TvTheme.of(context).accent,
+                  strokeWidth: 3,
+                  value: _isFlutterTestEnvironment ? 0.72 : null,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  networkSpeedText,
+                  style: FontUtils.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.92),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  /// 当前预览视频是否已经真正起播。
+  bool get _hasPreviewPlaybackStarted {
+    return _previewPlaybackStarted;
   }
 
   /// 构建预览和全屏共用的播放器。
@@ -3683,11 +3792,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               sourceName: detail?.sourceName ?? widget.videoInfo.sourceName,
               showControls: false,
               enablePip: false,
+              showLoadingIndicator: false,
+              backgroundColor: Colors.transparent,
               adFilterEnabled: _adFilterEnabled,
               onControllerCreated: controllerCreated,
               onFullscreenChanged: (_) {},
-              onReady: _finishPreviewPlayerLoading,
-              onPlay: _markPreviewPlaybackStarted,
+              onReady: _handlePreviewReadySignal,
+              onPlay: _handlePreviewPlaySignal,
               onPause: _schedulePreviewChromeRefresh,
               onEpisodeChanged: _switchEpisode,
               onNextEpisode: () {
@@ -3705,6 +3816,22 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             ),
       ),
     );
+  }
+
+  /// 处理底层播放器 ready 信号。
+  ///
+  /// `ready` 只说明元数据或播放器壳已就绪，不代表首帧已经真正出画；
+  /// 这里仅尝试按当前更严格条件结束 loading，并刷新外层控制层。
+  void _handlePreviewReadySignal() {
+    _schedulePreviewChromeRefresh();
+  }
+
+  /// 处理底层播放器 play 信号。
+  ///
+  /// `playing=true` 可能早于真实首帧出现，因此这里只把它当作辅助探针，
+  /// 真正结束 loading 仍要等进度侧确认“画面已经开始恢复可见”。
+  void _handlePreviewPlaySignal() {
+    _schedulePreviewChromeRefresh();
   }
 
   /// 构建右侧简介和按钮。
@@ -4207,6 +4334,19 @@ class _TvDetailFullscreenPlaybackController
 
   @override
   bool get isLoading => _controller?.isLoading ?? false;
+
+  @override
+  String get networkSpeedText => _controller?.networkSpeedText ?? '0KB/s';
+
+  @override
+  void addNetworkSpeedListener(VoidCallback listener) {
+    _controller?.addNetworkSpeedListener(listener);
+  }
+
+  @override
+  void removeNetworkSpeedListener(VoidCallback listener) {
+    _controller?.removeNetworkSpeedListener(listener);
+  }
 
   @override
   Future<void> pause() async {
