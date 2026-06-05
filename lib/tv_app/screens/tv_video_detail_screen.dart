@@ -2267,6 +2267,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required String groupKey,
     required ScrollController controller,
     required GlobalKey targetKey,
+    double focusedScale = 1,
   }) {
     if (_consumeHorizontalRevealSuppression(groupKey)) {
       return false;
@@ -2274,6 +2275,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _scheduleHorizontalTargetToSafeLeadingInset(
       controller: controller,
       targetKey: targetKey,
+      focusedScale: focusedScale,
     );
     return true;
   }
@@ -2282,12 +2284,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _scheduleHorizontalTargetToSafeLeadingInset({
     required ScrollController controller,
     required GlobalKey targetKey,
+    double focusedScale = 1,
   }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _animateHorizontalListTargetToSafeLeadingInset(
           controller: controller,
           targetKey: targetKey,
+          focusedScale: focusedScale,
         );
       }
     });
@@ -2399,14 +2403,15 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
   }
 
-  /// 从换源列表向下进入当前分组里最近一次停留的选集。
+  /// 从换源列表向下进入当前分组里与当前线路最近的选集。
   void _focusPreferredEpisodeInCurrentGroup() {
     final detail = _currentDetail;
     if (detail == null || detail.episodes.isEmpty) {
       _focusPreferredRecommend();
       return;
     }
-    final node = _preferredVisibleEpisodeFocusNode();
+    final node = _nearestVisibleEpisodeFocusNodeFromCurrentFocus() ??
+        _preferredVisibleEpisodeFocusNode();
     if (node == null) {
       return;
     }
@@ -2418,12 +2423,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
   }
 
-  /// 从选集向下进入当前分组或推荐。
+  /// 从选集向下进入与当前选集最近的分组或推荐。
   void _focusPreferredEpisodeDownTarget() {
     final detail = _currentDetail;
     final groupCount = _episodeGroupCount(detail?.episodes.length ?? 0);
     if (groupCount > 1) {
-      final node = _preferredVisibleEpisodeGroupFocusNode();
+      final node = _nearestVisibleEpisodeGroupFocusNodeFromCurrentFocus() ??
+          _preferredVisibleEpisodeGroupFocusNode();
       if (node != null) {
         _suppressNextHorizontalReveal(_episodeGroupFocusGroupKey);
         node.requestFocus();
@@ -2444,6 +2450,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _focusEpisodeOptionForGroup(
     int groupIndex, {
     int? preferredEpisodeIndex,
+    bool useNearestVisible = false,
   }) {
     final detail = _currentDetail;
     if (detail == null || detail.episodes.isEmpty) {
@@ -2461,6 +2468,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         normalizedGroupIndex,
         preferredEpisodeIndex,
       )) {
+        return true;
+      }
+      if (useNearestVisible &&
+          _focusNearestVisibleEpisodeOptionInGroup(normalizedGroupIndex)) {
         return true;
       }
       if (_focusEpisodeOptionInGroup(
@@ -2501,6 +2512,104 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       requestEpisodeFocus();
+    });
+  }
+
+  /// 分组内最后一集继续右移时，进入下一组选集的第一集。
+  void _focusNextEpisodeGroupFirstItemOrShake(
+    int groupIndex,
+    GlobalKey<TvEdgeShakeState> edgeShakeKey,
+  ) {
+    final detail = _currentDetail;
+    final total = detail?.episodes.length ?? 0;
+    final groupCount = _episodeGroupCount(total);
+    final nextGroupIndex = groupIndex + 1;
+    if (detail == null || groupCount <= 1 || nextGroupIndex >= groupCount) {
+      // 没有下一组选集时保留原来的边界抖动反馈。
+      edgeShakeKey.currentState?.shake(AxisDirection.right);
+      return;
+    }
+
+    final nextGroupEpisodeIndexes = _episodeIndexesForGroup(
+      total,
+      nextGroupIndex,
+    );
+    if (nextGroupEpisodeIndexes.isEmpty) {
+      // 分组数据异常时也只停留在当前边界，不让焦点跳到未知位置。
+      edgeShakeKey.currentState?.shake(AxisDirection.right);
+      return;
+    }
+
+    final firstEpisodeIndex = nextGroupEpisodeIndexes.first;
+    if (_episodeListScrollController.hasClients) {
+      // 从上一组末尾进入下一组时先回到组首，确保虚拟列表构建下一组第一集。
+      _episodeListScrollController.jumpTo(0);
+    }
+    _focusEpisodeOptionForGroup(
+      nextGroupIndex,
+      preferredEpisodeIndex: firstEpisodeIndex,
+    );
+    _pinEpisodeGroupAndEpisodeNearLeadingEdge(
+      nextGroupIndex,
+      firstEpisodeIndex,
+    );
+  }
+
+  /// 分组内第一集继续左移时，进入上一组选集的最后一集。
+  void _focusPreviousEpisodeGroupLastItemOrShake(
+    int groupIndex,
+    GlobalKey<TvEdgeShakeState> edgeShakeKey,
+  ) {
+    final detail = _currentDetail;
+    final total = detail?.episodes.length ?? 0;
+    final groupCount = _episodeGroupCount(total);
+    final previousGroupIndex = groupIndex - 1;
+    if (detail == null || groupCount <= 1 || previousGroupIndex < 0) {
+      // 没有上一组选集时保留原来的边界抖动反馈。
+      edgeShakeKey.currentState?.shake(AxisDirection.left);
+      return;
+    }
+
+    final previousGroupEpisodeIndexes = _episodeIndexesForGroup(
+      total,
+      previousGroupIndex,
+    );
+    if (previousGroupEpisodeIndexes.isEmpty) {
+      // 分组数据异常时也只停留在当前边界，不让焦点跳到未知位置。
+      edgeShakeKey.currentState?.shake(AxisDirection.left);
+      return;
+    }
+
+    final lastEpisodeIndex = previousGroupEpisodeIndexes.last;
+    _lastFocusedEpisodeIndex = lastEpisodeIndex;
+    setState(() => _episodeGroupIndex = previousGroupIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_episodeListScrollController.hasClients) {
+        // 上一组最后一集通常在懒加载列表尾部，先滚到尾部确保节点构建。
+        final position = _episodeListScrollController.position;
+        _episodeListScrollController.jumpTo(position.maxScrollExtent);
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        if (!_focusEpisodeOptionInGroup(
+          previousGroupIndex,
+          lastEpisodeIndex,
+        )) {
+          _focusEpisodeOptionForGroup(
+            previousGroupIndex,
+            preferredEpisodeIndex: lastEpisodeIndex,
+          );
+        }
+        _pinEpisodeGroupAndEpisodeNearLeadingEdge(
+          previousGroupIndex,
+          lastEpisodeIndex,
+        );
+      });
     });
   }
 
@@ -2546,9 +2655,16 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return false;
   }
 
-  /// 从选集或分组向上回到当前播放源。
+  /// 从选集或分组向上回到与当前选集最近的播放源。
   void _focusSelectedSourceFromBelow() {
-    _focusSelectedSource();
+    final node = _nearestVisibleSourceFocusNodeFromCurrentFocus() ??
+        _preferredVisibleSourceFocusNode();
+    if (node == null) {
+      return;
+    }
+    _suppressNextHorizontalReveal(_sourceFocusGroupKey);
+    node.requestFocus();
+    _ensureFocusedNodeVisible(node);
   }
 
   /// 从分组向下进入最近停留的推荐。
@@ -2939,10 +3055,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   bool _animateHorizontalListTargetToSafeLeadingInset({
     required ScrollController controller,
     required GlobalKey targetKey,
+    double focusedScale = 1,
   }) {
     final targetOffset = _horizontalListTargetSafeLeadingOffset(
       controller: controller,
       targetKey: targetKey,
+      focusedScale: focusedScale,
     );
     if (targetOffset == null) {
       return false;
@@ -2962,6 +3080,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   double? _horizontalListTargetSafeLeadingOffset({
     required ScrollController controller,
     required GlobalKey targetKey,
+    double focusedScale = 1,
   }) {
     if (!controller.hasClients) {
       return null;
@@ -2981,8 +3100,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     final position = controller.position;
-    final deltaToLeadingEdge =
-        targetRect.left - listRect.left - _detailHorizontalListSafePadding;
+    final scaleLeadingOverflow =
+        focusedScale <= 1 ? 0.0 : targetRect.width * (focusedScale - 1) / 2;
+    final deltaToLeadingEdge = targetRect.left -
+        listRect.left -
+        _detailHorizontalListSafePadding -
+        scaleLeadingOverflow;
     return (position.pixels + deltaToLeadingEdge)
         .clamp(
           position.minScrollExtent,
@@ -3098,6 +3221,32 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return null;
   }
 
+  /// 按当前焦点的水平位置获取最近的可见播放源。
+  FocusNode? _nearestVisibleSourceFocusNodeFromCurrentFocus() {
+    final anchorRect = _currentFocusRect();
+    if (anchorRect == null) {
+      return _firstVisibleSourceFocusNode();
+    }
+    FocusNode? nearestNode;
+    var nearestDistance = double.infinity;
+    for (final source in _cachedDisplaySources) {
+      final node = _visibleSourceFocusNodeFor(source);
+      if (node == null) {
+        continue;
+      }
+      final rect = _globalRectForKey(_sourceTargetKeyFor(source));
+      if (rect == null) {
+        continue;
+      }
+      final distance = (rect.center.dx - anchorRect.center.dx).abs();
+      if (distance < nearestDistance) {
+        nearestNode = node;
+        nearestDistance = distance;
+      }
+    }
+    return nearestNode ?? _firstVisibleSourceFocusNode();
+  }
+
   /// 获取当前线路或最近停留线路对应的可见焦点节点。
   FocusNode? _preferredVisibleSourceFocusNode() {
     final rememberedFocusKey = _lastFocusedSourceKey;
@@ -3122,6 +3271,50 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       }
     }
     return _firstVisibleSourceFocusNode();
+  }
+
+  /// 按当前焦点的水平位置获取当前分组里最近的可见选集。
+  FocusNode? _nearestVisibleEpisodeFocusNodeFromCurrentFocus() {
+    final detail = _currentDetail;
+    if (detail == null || detail.episodes.isEmpty) {
+      return null;
+    }
+    final groupCount = _episodeGroupCount(detail.episodes.length);
+    final groupIndex = groupCount == 0
+        ? 0
+        : _episodeGroupIndex.clamp(0, groupCount - 1).toInt();
+    final visibleIndexes = _episodeIndexesForGroup(
+      detail.episodes.length,
+      groupIndex,
+    );
+    return _nearestVisibleIndexedNode(
+      targetKeys: _episodeTargetKeys,
+      focusNodes: _episodeFocusNodes,
+      indexes: visibleIndexes,
+      anchorRect: _currentFocusRect(),
+    );
+  }
+
+  /// 聚焦指定分组里距离当前焦点最近的选集。
+  bool _focusNearestVisibleEpisodeOptionInGroup(int groupIndex) {
+    final detail = _currentDetail;
+    if (detail == null || detail.episodes.isEmpty) {
+      return false;
+    }
+    final visibleIndexes = _episodeIndexesForGroup(
+      detail.episodes.length,
+      groupIndex,
+    );
+    final nearestIndex = _nearestVisibleIndex(
+      targetKeys: _episodeTargetKeys,
+      focusNodes: _episodeFocusNodes,
+      indexes: visibleIndexes,
+      anchorRect: _currentFocusRect(),
+    );
+    if (nearestIndex == null) {
+      return false;
+    }
+    return _focusEpisodeOptionInGroup(groupIndex, nearestIndex);
   }
 
   /// 获取当前分组里最近停留的选集焦点节点。
@@ -3174,6 +3367,21 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       }
     }
     return null;
+  }
+
+  /// 按当前焦点的水平位置获取最近的可见选集分组。
+  FocusNode? _nearestVisibleEpisodeGroupFocusNodeFromCurrentFocus() {
+    final detail = _currentDetail;
+    final groupCount = _episodeGroupCount(detail?.episodes.length ?? 0);
+    if (groupCount <= 1) {
+      return null;
+    }
+    return _nearestVisibleIndexedNode(
+      targetKeys: _episodeGroupTargetKeys,
+      focusNodes: _episodeGroupFocusNodes,
+      indexes: List<int>.generate(groupCount, (index) => index),
+      anchorRect: _currentFocusRect(),
+    );
   }
 
   /// 获取最近停留或当前选中的分组焦点节点。
@@ -3251,6 +3459,70 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return null;
     }
     return _globalRectForContext(context);
+  }
+
+  /// 获取当前主焦点控件的全局矩形。
+  Rect? _currentFocusRect() {
+    final context = FocusManager.instance.primaryFocus?.context;
+    if (context == null || !context.mounted) {
+      return null;
+    }
+    return _globalRectForContext(context);
+  }
+
+  /// 获取与指定位置水平中心最近的可见索引节点。
+  FocusNode? _nearestVisibleIndexedNode({
+    required Map<int, GlobalKey> targetKeys,
+    required Map<int, FocusNode> focusNodes,
+    required Iterable<int> indexes,
+    required Rect? anchorRect,
+  }) {
+    final index = _nearestVisibleIndex(
+      targetKeys: targetKeys,
+      focusNodes: focusNodes,
+      indexes: indexes,
+      anchorRect: anchorRect,
+    );
+    return index == null ? null : focusNodes[index];
+  }
+
+  /// 获取与指定位置水平中心最近的可见索引。
+  int? _nearestVisibleIndex({
+    required Map<int, GlobalKey> targetKeys,
+    required Map<int, FocusNode> focusNodes,
+    required Iterable<int> indexes,
+    required Rect? anchorRect,
+  }) {
+    if (anchorRect == null) {
+      for (final index in indexes) {
+        if (_visibleNodeForIndex(targetKeys, focusNodes, index) != null) {
+          return index;
+        }
+      }
+      return null;
+    }
+
+    int? nearestIndex;
+    var nearestDistance = double.infinity;
+    for (final index in indexes) {
+      if (_visibleNodeForIndex(targetKeys, focusNodes, index) == null) {
+        continue;
+      }
+      final targetKey = targetKeys[index];
+      if (targetKey == null) {
+        continue;
+      }
+      final rect = _globalRectForKey(targetKey);
+      if (rect == null) {
+        continue;
+      }
+      final distance = (rect.center.dx - anchorRect.center.dx).abs();
+      if (distance < nearestDistance) {
+        nearestIndex = index;
+        nearestDistance = distance;
+      }
+    }
+    return nearestIndex;
   }
 
   /// 获取指定上下文对应控件的全局矩形。
@@ -3986,6 +4258,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                               groupKey: _sourceFocusGroupKey,
                               controller: _sourceListScrollController,
                               targetKey: _sourceTargetKeyFor(source),
+                              focusedScale: TvVideoCard.focusedScale,
                             );
                           },
                           onPressed: () => _switchSource(source),
@@ -4051,12 +4324,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                             focusMemoryGroupKey: _episodeFocusGroupKey,
                             allowMultiline: true,
                             onArrowLeft: isFirstItem
-                                ? () => edgeShakeKey.currentState
-                                    ?.shake(AxisDirection.left)
+                                ? () =>
+                                    _focusPreviousEpisodeGroupLastItemOrShake(
+                                      groupIndex,
+                                      edgeShakeKey,
+                                    )
                                 : null,
                             onArrowRight: isLastItem
-                                ? () => edgeShakeKey.currentState
-                                    ?.shake(AxisDirection.right)
+                                ? () => _focusNextEpisodeGroupFirstItemOrShake(
+                                      groupIndex,
+                                      edgeShakeKey,
+                                    )
                                 : null,
                             onArrowUp: _focusSelectedSourceFromBelow,
                             onArrowDown: _focusPreferredEpisodeDownTarget,
@@ -4069,6 +4347,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                 groupKey: _episodeFocusGroupKey,
                                 controller: _episodeListScrollController,
                                 targetKey: _episodeTargetKeyFor(index),
+                                focusedScale: TvVideoCard.focusedScale,
                               );
                             },
                             onPressed: () => _switchEpisode(index),
@@ -4113,8 +4392,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                   ? () => edgeShakeKey.currentState
                                       ?.shake(AxisDirection.right)
                                   : null,
-                              onArrowUp: () =>
-                                  _focusEpisodeOptionForGroup(index),
+                              onArrowUp: () => _focusEpisodeOptionForGroup(
+                                index,
+                                useNearestVisible: true,
+                              ),
                               onArrowDown: _focusPreferredRecommend,
                               onFocus: () {
                                 // 任意分组获焦时都保留 36px 左安全区，滚到最左侧也不裁焦点框。
@@ -4124,6 +4405,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                   groupKey: _episodeGroupFocusGroupKey,
                                   controller: _episodeGroupListScrollController,
                                   targetKey: _episodeGroupTargetKeyFor(index),
+                                  focusedScale: TvVideoCard.focusedScale,
                                 );
                                 _switchEpisodeGroup(
                                   index,
@@ -4600,7 +4882,7 @@ class _TvTextChoice extends StatelessWidget {
       builder: (context, hasFocus) {
         final highlight = hasFocus || selected;
         return AnimatedScale(
-          scale: hasFocus ? 1.08 : 1,
+          scale: hasFocus ? TvVideoCard.focusedScale : 1,
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
           child: Padding(
@@ -4701,33 +4983,38 @@ class _TvChoiceChip extends StatelessWidget {
         }
       },
       builder: (context, hasFocus) {
-        return AnimatedContainer(
+        return AnimatedScale(
+          scale: hasFocus ? TvVideoCard.focusedScale : 1,
           duration: const Duration(milliseconds: 140),
-          constraints: const BoxConstraints(
-            minWidth: 86,
-            maxWidth: _TvVideoDetailScreenState._detailChoiceChipMaxWidth,
-            minHeight: _TvVideoDetailScreenState._detailChoiceChipMinHeight,
-          ),
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(
-            horizontal:
-                _TvVideoDetailScreenState._detailChoiceChipHorizontalPadding,
-            vertical:
-                _TvVideoDetailScreenState._detailChoiceChipVerticalPadding,
-          ),
-          decoration: BoxDecoration(
-            color: selected ? palette.accent : TvThemeColors.cardSurface,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: hasFocus
-                  ? Colors.white
-                  : selected
-                      ? palette.accent
-                      : TvThemeColors.cardSurfaceBorder,
-              width: hasFocus ? 2 : 1,
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            constraints: const BoxConstraints(
+              minWidth: 86,
+              maxWidth: _TvVideoDetailScreenState._detailChoiceChipMaxWidth,
+              minHeight: _TvVideoDetailScreenState._detailChoiceChipMinHeight,
             ),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(
+              horizontal:
+                  _TvVideoDetailScreenState._detailChoiceChipHorizontalPadding,
+              vertical:
+                  _TvVideoDetailScreenState._detailChoiceChipVerticalPadding,
+            ),
+            decoration: BoxDecoration(
+              color: selected ? palette.accent : TvThemeColors.cardSurface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: hasFocus
+                    ? Colors.white
+                    : selected
+                        ? palette.accent
+                        : TvThemeColors.cardSurfaceBorder,
+                width: hasFocus ? 2 : 1,
+              ),
+            ),
+            child: _buildLabelText(palette),
           ),
-          child: _buildLabelText(palette),
         );
       },
     );

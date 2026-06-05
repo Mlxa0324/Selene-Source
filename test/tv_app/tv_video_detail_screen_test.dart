@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2204,11 +2205,15 @@ void main() {
         home: TvVideoDetailScreen(
           videoInfo: _videoInfo('main', '短剧集'),
           loadDetail: (_, __) async => TvVideoDetailData(
-            currentDetail: _searchResult('source_c', '右侧资源三'),
+            currentDetail: _searchResult(
+              'source_a',
+              '左侧资源一',
+              episodeCount: 8,
+            ),
             sources: [
-              _searchResult('source_a', '左侧资源一'),
-              _searchResult('source_b', '中间资源二'),
-              _searchResult('source_c', '右侧资源三'),
+              _searchResult('source_a', '左侧资源一', episodeCount: 8),
+              _searchResult('source_b', '中间资源二', episodeCount: 8),
+              _searchResult('source_c', '右侧资源三', episodeCount: 8),
             ],
             recommends: [
               _videoInfo('recommend_1', '推荐影片'),
@@ -2231,16 +2236,23 @@ void main() {
     Focus.of(tester.element(find.text('右侧资源三'))).requestFocus();
     await tester.pumpAndSettle();
 
+    final nearestEpisode = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: '右侧资源三',
+      candidateTexts: List<String>.generate(8, (index) => '第${index + 1}集'),
+    );
+    expect(nearestEpisode, isNot('第1集'));
+
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
-    _expectFocused(tester, find.text('第1集'));
+    _expectFocused(tester, find.text(nearestEpisode));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     _expectFocused(tester, find.text('推荐影片'));
   });
 
-  testWidgets('detail row transitions restore focused source episode and group',
+  testWidgets('detail row transitions focus nearest source episode and group',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -2289,59 +2301,116 @@ void main() {
     );
 
     await tester.pumpAndSettle();
+    const sourceLabels = [
+      '超长线路资源零',
+      '超长线路资源一',
+      '超长线路资源二',
+      '超长线路资源三',
+      '超长线路资源四',
+      '线路一',
+      '线路二',
+      '线路三',
+      '线路四',
+      '线路五',
+    ];
+    final episodeLabels = List<String>.generate(
+      20,
+      (index) => '第${201 + index}集',
+    );
+    final groupLabels = List<String>.generate(25, (index) {
+      final start = index * 20 + 1;
+      final end = math.min(start + 19, 500);
+      return '$start-$end';
+    });
 
     Focus.of(tester.element(find.text('线路三'))).requestFocus();
     await tester.pumpAndSettle();
+    final nearestEpisodeFromSource = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: '线路三',
+      candidateTexts: episodeLabels,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 420));
-    _expectFocused(tester, find.text('第208集'));
-    _expectFinderNearListLeadingEdge(
+    _expectFocused(tester, find.text(nearestEpisodeFromSource));
+    _expectFinderVisibleWithinList(
       tester,
       listKey: 'tv-detail-episode-list',
-      itemFinder: find.text('第208集'),
-      maxLeadingGap: 76,
+      itemFinder: find.text(nearestEpisodeFromSource),
     );
 
+    final nearestSourceFromEpisode = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: nearestEpisodeFromSource,
+      candidateTexts: sourceLabels,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 420));
-    _expectFocused(tester, find.text('线路三'));
+    _expectFocused(tester, find.text(nearestSourceFromEpisode));
     _expectFinderVisibleWithinList(
       tester,
       listKey: 'tv-detail-source-list',
-      itemFinder: find.text('线路三'),
+      itemFinder: find.text(nearestSourceFromEpisode),
     );
 
     Focus.of(tester.element(find.text('第213集'))).requestFocus();
     await tester.pumpAndSettle();
+    final nearestSourceFrom213 = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: '第213集',
+      candidateTexts: sourceLabels,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
-    _expectFocused(tester, find.text('线路三'));
+    _expectFocused(tester, find.text(nearestSourceFrom213));
 
+    final nearestEpisodeFromSourceAgain = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: nearestSourceFrom213,
+      candidateTexts: episodeLabels,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
-    _expectFocused(tester, find.text('第213集'));
+    _expectFocused(tester, find.text(nearestEpisodeFromSourceAgain));
 
+    final nearestGroupFromEpisode = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: nearestEpisodeFromSourceAgain,
+      candidateTexts: groupLabels,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 420));
-    _expectFocused(tester, find.text('201-220'));
-    _expectFinderNearListLeadingEdge(
+    _expectFocused(tester, find.text(nearestGroupFromEpisode));
+    _expectFinderVisibleWithinList(
       tester,
       listKey: 'tv-detail-episode-group-list',
-      itemFinder: find.text('201-220'),
+      itemFinder: find.text(nearestGroupFromEpisode),
     );
 
+    final groupRange = nearestGroupFromEpisode.split('-');
+    final groupStart = int.parse(groupRange.first);
+    final groupEnd = int.parse(groupRange.last);
+    final groupEpisodeLabels = List<String>.generate(
+      groupEnd - groupStart + 1,
+      (index) => '第${groupStart + index}集',
+    );
+    final nearestEpisodeFromGroup = _nearestTextByHorizontalCenter(
+      tester,
+      anchorText: nearestGroupFromEpisode,
+      candidateTexts: groupEpisodeLabels,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
-    _expectFocused(tester, find.text('第213集'));
+    _expectFocused(tester, find.text(nearestEpisodeFromGroup));
 
     Focus.of(tester.element(find.text('推荐影片二'))).requestFocus();
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
-    _expectFocused(tester, find.text('201-220'));
+    _expectFocused(tester, find.text(nearestGroupFromEpisode));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -2721,6 +2790,51 @@ void main() {
     expect(groupText.style?.decoration, TextDecoration.underline);
   });
 
+  testWidgets('detail source episode and group scale on focus', (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 25,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 25),
+              _searchResult('source_b', '备用源', episodeCount: 25),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('主源'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '主源'), TvVideoCard.focusedScale);
+
+    Focus.of(tester.element(find.text('第1集'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '第1集'), TvVideoCard.focusedScale);
+
+    Focus.of(tester.element(find.text('21-25'))).requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '21-25'), TvVideoCard.focusedScale);
+  });
+
   testWidgets('episode chips grow taller for long titles instead of ellipsis',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -3079,6 +3193,116 @@ void main() {
     expect(find.text('第1集'), findsNothing);
     expect(find.text('第21集'), findsOneWidget);
     expect(find.text('第25集'), findsOneWidget);
+  });
+
+  testWidgets('episode row right key enters next group first episode',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 45),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final episodeScrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-detail-episode-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    episodeScrollable.position.jumpTo(
+      episodeScrollable.position.maxScrollExtent,
+    );
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('第20集'))).requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第20集'), findsNothing);
+    expect(find.text('第21集'), findsOneWidget);
+    _expectFocused(tester, find.text('第21集'));
+  });
+
+  testWidgets('episode row left key enters previous group last episode',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 45),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final episodeScrollable = tester.state<ScrollableState>(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-detail-episode-list')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    episodeScrollable.position.jumpTo(
+      episodeScrollable.position.maxScrollExtent,
+    );
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('第20集'))).requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    _expectFocused(tester, find.text('第21集'));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第20集'), findsOneWidget);
+    _expectFocused(tester, find.text('第20集'));
   });
 
   testWidgets('episode group focus coalesces rapid switching asynchronously',
@@ -6002,6 +6226,40 @@ double _leftOfFocusableForText(WidgetTester tester, String text) {
     matching: find.byType(AnimatedContainer),
   );
   return tester.getRect(focusableFinder.first).left;
+}
+
+double _focusScaleForText(WidgetTester tester, String text) {
+  final scaleFinder = find.ancestor(
+    of: find.text(text),
+    matching: find.byType(AnimatedScale),
+  );
+  return tester.widget<AnimatedScale>(scaleFinder.first).scale;
+}
+
+String _nearestTextByHorizontalCenter(
+  WidgetTester tester, {
+  required String anchorText,
+  required List<String> candidateTexts,
+}) {
+  final anchorCenter =
+      _rectForFocusableOrItem(tester, find.text(anchorText)).center.dx;
+  var nearestText = '';
+  var nearestDistance = double.infinity;
+  for (final text in candidateTexts) {
+    final finder = find.text(text);
+    if (finder.evaluate().isEmpty) {
+      continue;
+    }
+    final distance =
+        (_rectForFocusableOrItem(tester, finder).center.dx - anchorCenter)
+            .abs();
+    if (distance < nearestDistance) {
+      nearestText = text;
+      nearestDistance = distance;
+    }
+  }
+  expect(nearestText, isNotEmpty);
+  return nearestText;
 }
 
 Rect _rectForFocusableOrItem(WidgetTester tester, Finder itemFinder) {

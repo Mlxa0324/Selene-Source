@@ -10,6 +10,7 @@ import 'package:selene/services/local_mode_storage_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
 import 'package:selene/tv_app/widgets/tv_edge_shake.dart';
+import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 import 'package:selene/widgets/video_player_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -387,8 +388,57 @@ void main() {
     expect(_focusNodeForMenuLabel(tester, '片尾 00:00').hasFocus, isTrue);
   });
 
-  testWidgets('play list primary tab up restores remembered group focus',
+  testWidgets('source primary tab up focuses nearest source instead of memory',
       (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 3),
+          currentDetail: _searchResult(
+            'source_a',
+            '左侧线路一',
+            episodeCount: 3,
+          ),
+          sources: [
+            _searchResult('source_a', '左侧线路一', episodeCount: 3),
+            _searchResult('source_b', '中间线路二', episodeCount: 3),
+            _searchResult('source_c', '右侧线路三', episodeCount: 3),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '右侧线路三').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '播放线路').hasFocus, isTrue);
+
+    final nearestSource = _nearestMenuLabelByHorizontalCenter(
+      tester,
+      anchorLabel: '播放线路',
+      candidateLabels: const ['左侧线路一', '中间线路二', '右侧线路三'],
+    );
+    expect(nearestSource, isNot('右侧线路三'));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, nearestSource).hasFocus, isTrue);
+  });
+
+  testWidgets('play list primary tab up focuses nearest group', (tester) async {
     final detail = _searchResult(
       'source_a',
       '主线路',
@@ -434,7 +484,7 @@ void main() {
     expect(_focusNodeForMenuLabel(tester, '21-25').hasFocus, isTrue);
   });
 
-  testWidgets('episode and group rows restore remembered vertical focus',
+  testWidgets('episode and group rows use nearest vertical focus',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -507,7 +557,7 @@ void main() {
     expect(_focusNodeForMenuLabel(tester, '播放列表').hasFocus, isTrue);
   });
 
-  testWidgets('group row arrow up restores episodes after quick group switch',
+  testWidgets('group row arrow up focuses nearest episode after quick switch',
       (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -544,7 +594,13 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
 
-    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+    expect(
+      _focusedMenuLabelIn(
+        tester,
+        const ['第21集', '第22集', '第23集', '第24集', '第25集'],
+      ),
+      isNotNull,
+    );
   });
 
   testWidgets('switching episode updates player data source and title',
@@ -964,12 +1020,27 @@ void main() {
     groupController.jumpTo(shiftedOffset);
     await tester.pump();
 
+    final nearestEpisode = _nearestMenuLabelByHorizontalCenter(
+      tester,
+      anchorLabel: '21-40',
+      candidateLabels: List<String>.generate(
+        20,
+        (index) => '第${21 + index}集',
+      ),
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, nearestEpisode).hasFocus, isTrue);
+
+    final nearestGroup = _nearestMenuLabelByHorizontalCenter(
+      tester,
+      anchorLabel: nearestEpisode,
+      candidateLabels: const ['01-20', '21-40', '41-60', '61-80', '81-100'],
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
-    expect(_focusNodeForMenuLabel(tester, '21-40').hasFocus, isTrue);
+    expect(_focusNodeForMenuLabel(tester, nearestGroup).hasFocus, isTrue);
     expect(groupController.offset, moreOrLessEquals(shiftedOffset));
   });
 
@@ -1077,6 +1148,94 @@ void main() {
     expect(find.text('第21集'), findsOneWidget);
     expect(find.text('第40集'), findsOneWidget);
     expect(find.text('第1集'), findsNothing);
+  });
+
+  testWidgets('episode row right key enters next group first episode',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            totalEpisodes: 45,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 45,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 45,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第20集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第20集'), findsNothing);
+    expect(find.text('第21集'), findsOneWidget);
+    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+  });
+
+  testWidgets('episode row left key enters previous group last episode',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            totalEpisodes: 45,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 45,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 45,
+            ),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '第20集').requestFocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第20集'), findsOneWidget);
+    expect(_focusNodeForMenuLabel(tester, '第20集').hasFocus, isTrue);
   });
 
   testWidgets('fullscreen player menu shell and buttons use compact sizing',
@@ -1347,6 +1506,50 @@ void main() {
     expect(buttonRect.inflate(0.5).contains(nameRect.bottomRight), isTrue);
     expect(buttonRect.inflate(0.5).contains(countRect.topLeft), isTrue);
     expect(buttonRect.inflate(0.5).contains(countRect.bottomRight), isTrue);
+  });
+
+  testWidgets('fullscreen source episode and group scale on focus',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(totalEpisodes: 45),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 45,
+          ),
+          sources: [
+            _searchResult('source_a', '主线路', episodeCount: 45),
+            _searchResult('source_b', '备用线路', episodeCount: 45),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '主线路').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '主线路'), TvVideoCard.focusedScale);
+
+    _focusNodeForMenuLabel(tester, '播放列表').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '第1集').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '第1集'), TvVideoCard.focusedScale);
+
+    _focusNodeForMenuLabel(tester, '01-20').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '01-20'), TvVideoCard.focusedScale);
   });
 
   testWidgets('primary menu shakes at left boundary', (tester) async {
@@ -3253,12 +3456,68 @@ FocusNode _focusNodeForMenuLabel(WidgetTester tester, String label) {
   return tester.widget<Focus>(focusFinder.first).focusNode!;
 }
 
+double _focusScaleForText(WidgetTester tester, String text) {
+  final scaleFinder = find.ancestor(
+    of: find.text(text),
+    matching: find.byType(AnimatedScale),
+  );
+  return tester.widget<AnimatedScale>(scaleFinder.first).scale;
+}
+
 Rect _menuButtonRect(WidgetTester tester, String label) {
   final buttonFinder = find.ancestor(
     of: find.text(label),
     matching: find.byWidgetPredicate((widget) => widget is AnimatedContainer),
   );
   return tester.getRect(buttonFinder.first);
+}
+
+String _nearestMenuLabelByHorizontalCenter(
+  WidgetTester tester, {
+  required String anchorLabel,
+  required List<String> candidateLabels,
+}) {
+  final anchorCenter = _menuLabelRect(tester, anchorLabel).center.dx;
+  var nearestLabel = '';
+  var nearestDistance = double.infinity;
+  for (final label in candidateLabels) {
+    final finder = find.text(label);
+    if (finder.evaluate().isEmpty) {
+      continue;
+    }
+    final distance =
+        (_menuLabelRect(tester, label).center.dx - anchorCenter).abs();
+    if (distance < nearestDistance) {
+      nearestLabel = label;
+      nearestDistance = distance;
+    }
+  }
+  expect(nearestLabel, isNotEmpty);
+  return nearestLabel;
+}
+
+String? _focusedMenuLabelIn(WidgetTester tester, List<String> labels) {
+  for (final label in labels) {
+    final finder = find.text(label);
+    if (finder.evaluate().isEmpty) {
+      continue;
+    }
+    if (_focusNodeForMenuLabel(tester, label).hasFocus) {
+      return label;
+    }
+  }
+  return null;
+}
+
+Rect _menuLabelRect(WidgetTester tester, String label) {
+  final buttonFinder = find.ancestor(
+    of: find.text(label),
+    matching: find.byWidgetPredicate((widget) => widget is AnimatedContainer),
+  );
+  if (buttonFinder.evaluate().isNotEmpty) {
+    return tester.getRect(buttonFinder.first);
+  }
+  return tester.getRect(find.text(label).first);
 }
 
 void _expectFinderNearListLeadingEdge(
