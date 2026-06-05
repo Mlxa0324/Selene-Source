@@ -1335,6 +1335,11 @@ void main() {
     expect(_focusNodeForMenuLabel(tester, '21-40').hasFocus, isFalse);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+
+    expect(_focusNodeForMenuLabel(tester, '21-40').hasFocus, isFalse);
+    expect(_focusNodeForMenuLabel(tester, '01-20').hasFocus, isFalse);
+
     await tester.pumpAndSettle();
 
     expect(find.text('第21集'), findsNothing);

@@ -3298,6 +3298,11 @@ void main() {
     _expectFocused(tester, find.text('第21集'));
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+
+    expect(Focus.of(tester.element(find.text('21-40'))).hasFocus, isFalse);
+    expect(Focus.of(tester.element(find.text('1-20'))).hasFocus, isFalse);
+
     await tester.pumpAndSettle();
 
     expect(find.text('第21集'), findsNothing);

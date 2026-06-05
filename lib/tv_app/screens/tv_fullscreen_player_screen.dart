@@ -1941,6 +1941,24 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     return focused;
   }
 
+  /// 临时控制播放列表分组是否允许获焦。
+  void _setEpisodeGroupFocusEnabled(bool enabled) {
+    for (final node in _episodeGroupFocusNodes.values) {
+      node.canRequestFocus = enabled;
+    }
+  }
+
+  /// 左右跨组选集时短暂锁住分组行焦点。
+  void _lockEpisodeGroupsDuringHorizontalEpisodeMove() {
+    // 选集左右移动只能停留在选集行，分组行只能通过上下方向进入。
+    _setEpisodeGroupFocusEnabled(false);
+  }
+
+  /// 恢复分组行焦点能力。
+  void _unlockEpisodeGroupsAfterHorizontalEpisodeMove() {
+    _setEpisodeGroupFocusEnabled(true);
+  }
+
   /// 聚焦与当前焦点水平位置最近的选集分组。
   bool _focusNearestEpisodeGroupOption() {
     final groupCount = _episodeGroupCount(_episodes.length);
@@ -2460,6 +2478,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     final firstEpisodeIndex = nextGroupEpisodeIndexes.first;
+    _lockEpisodeGroupsDuringHorizontalEpisodeMove();
     if (_episodeListScrollController.hasClients) {
       // 从上一组末尾进入下一组时先回到组首，避免沿用旧分组的横向偏移。
       _episodeListScrollController.jumpTo(0);
@@ -2470,6 +2489,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     );
     _schedulePinEpisodeGroupNearLeadingEdge(nextGroupIndex);
     _schedulePinEpisodeNearLeadingEdge(firstEpisodeIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+        }
+      });
+    });
   }
 
   /// 分组内第一集继续左移时，进入上一组选集的最后一集。
@@ -2497,6 +2523,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final lastEpisodeIndex = previousGroupEpisodeIndexes.last;
     _lastFocusedEpisodeIndex = lastEpisodeIndex;
+    _lockEpisodeGroupsDuringHorizontalEpisodeMove();
     setState(() => _episodeGroupIndex = previousGroupIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -2511,11 +2538,31 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         if (!mounted) {
           return;
         }
-        _focusEpisodeOptionInGroup(previousGroupIndex, lastEpisodeIndex);
+        final focused = _focusEpisodeOptionInGroup(
+          previousGroupIndex,
+          lastEpisodeIndex,
+        );
+        if (!focused) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _focusEpisodeOptionInGroup(previousGroupIndex, lastEpisodeIndex);
+              _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+            }
+          });
+        } else {
+          _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+        }
         _schedulePinEpisodeGroupNearLeadingEdge(previousGroupIndex);
         _schedulePinEpisodeNearLeadingEdge(lastEpisodeIndex);
       });
     });
+  }
+
+  /// 在当前选集行内左右移动到相邻集数。
+  void _focusEpisodeNeighborInCurrentGroup(int groupIndex, int episodeIndex) {
+    if (_focusEpisodeOptionInGroup(groupIndex, episodeIndex)) {
+      _schedulePinEpisodeNearLeadingEdge(episodeIndex);
+    }
   }
 
   /// 聚焦指定分组里距离当前焦点最近的选集。
@@ -3784,13 +3831,19 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                             groupIndex,
                             edgeShakeKey,
                           )
-                      : null,
+                      : () => _focusEpisodeNeighborInCurrentGroup(
+                            groupIndex,
+                            visibleIndexes[itemIndex - 1],
+                          ),
                   onArrowRight: isLastItem
                       ? () => _focusNextEpisodeGroupFirstItemOrShake(
                             groupIndex,
                             edgeShakeKey,
                           )
-                      : null,
+                      : () => _focusEpisodeNeighborInCurrentGroup(
+                            groupIndex,
+                            visibleIndexes[itemIndex + 1],
+                          ),
                   onArrowUp: _keepMenuFocusInCurrentRow,
                   onArrowDown: () =>
                       _focusEpisodeGroupForEpisodeOrPrimaryMenu(index),

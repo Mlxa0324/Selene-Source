@@ -2344,6 +2344,24 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     );
   }
 
+  /// 临时控制选集分组是否允许获焦。
+  void _setEpisodeGroupFocusEnabled(bool enabled) {
+    for (final node in _episodeGroupFocusNodes.values) {
+      node.canRequestFocus = enabled;
+    }
+  }
+
+  /// 左右跨组选集时短暂锁住分组行焦点。
+  void _lockEpisodeGroupsDuringHorizontalEpisodeMove() {
+    // 选集左右移动只能停留在选集行，分组行只能通过上下方向进入。
+    _setEpisodeGroupFocusEnabled(false);
+  }
+
+  /// 恢复分组行焦点能力。
+  void _unlockEpisodeGroupsAfterHorizontalEpisodeMove() {
+    _setEpisodeGroupFocusEnabled(true);
+  }
+
   /// 获取选集分组定位 Key。
   GlobalKey _episodeGroupTargetKeyFor(int index) {
     return _episodeGroupTargetKeys.putIfAbsent(
@@ -2541,6 +2559,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     final firstEpisodeIndex = nextGroupEpisodeIndexes.first;
+    _lockEpisodeGroupsDuringHorizontalEpisodeMove();
     if (_episodeListScrollController.hasClients) {
       // 从上一组末尾进入下一组时先回到组首，确保虚拟列表构建下一组第一集。
       _episodeListScrollController.jumpTo(0);
@@ -2553,6 +2572,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       nextGroupIndex,
       firstEpisodeIndex,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+        }
+      });
+    });
   }
 
   /// 分组内第一集继续左移时，进入上一组选集的最后一集。
@@ -2582,6 +2608,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
     final lastEpisodeIndex = previousGroupEpisodeIndexes.last;
     _lastFocusedEpisodeIndex = lastEpisodeIndex;
+    _lockEpisodeGroupsDuringHorizontalEpisodeMove();
     setState(() => _episodeGroupIndex = previousGroupIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -2607,8 +2634,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 previousGroupIndex,
                 lastEpisodeIndex,
               );
+              _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
             }
           });
+        } else {
+          _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
         }
         _pinEpisodeGroupAndEpisodeNearLeadingEdge(
           previousGroupIndex,
@@ -2634,6 +2664,28 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
     _rememberFocusedEpisode(episodeIndex);
     _suppressNextHorizontalReveal(_episodeFocusGroupKey);
+    node.requestFocus();
+    _ensureFocusedNodeVisible(
+      node,
+      minimumForwardScroll: _detailVerticalFocusMinForwardStep,
+    );
+    return true;
+  }
+
+  /// 在当前选集行内左右移动到相邻集数。
+  bool _focusEpisodeNeighborInCurrentGroup(int groupIndex, int episodeIndex) {
+    if (!_episodeBelongsToGroup(episodeIndex, groupIndex)) {
+      return false;
+    }
+    final node = _visibleNodeForIndex(
+      _episodeTargetKeys,
+      _episodeFocusNodes,
+      episodeIndex,
+    );
+    if (node == null) {
+      return false;
+    }
+    _rememberFocusedEpisode(episodeIndex);
     node.requestFocus();
     _ensureFocusedNodeVisible(
       node,
@@ -4334,13 +4386,19 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                       groupIndex,
                                       edgeShakeKey,
                                     )
-                                : null,
+                                : () => _focusEpisodeNeighborInCurrentGroup(
+                                      groupIndex,
+                                      visibleIndexes[itemIndex - 1],
+                                    ),
                             onArrowRight: isLastItem
                                 ? () => _focusNextEpisodeGroupFirstItemOrShake(
                                       groupIndex,
                                       edgeShakeKey,
                                     )
-                                : null,
+                                : () => _focusEpisodeNeighborInCurrentGroup(
+                                      groupIndex,
+                                      visibleIndexes[itemIndex + 1],
+                                    ),
                             onArrowUp: _focusSelectedSourceFromBelow,
                             onArrowDown: _focusPreferredEpisodeDownTarget,
                             onFocus: () {
