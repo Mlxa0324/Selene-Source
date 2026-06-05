@@ -8,7 +8,7 @@ class TvLayout {
   /// TV 页面左右统一边距。
   ///
   /// 横向列表可在此基础上追加焦点安全留白，避免获焦放大时被裁切。
-  static const double pageHorizontalPadding = 40.0;
+  static const double pageHorizontalPadding = 46.0;
 
   /// TV 纵向 Grid 固定列数。
   static const int gridCrossAxisCount = 7;
