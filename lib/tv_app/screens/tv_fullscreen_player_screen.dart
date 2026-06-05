@@ -1892,12 +1892,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _requestFocusIfMounted(_secondaryFocusNodeFor(group, fallbackIndex));
   }
 
-  /// 播放列表一级菜单上键进入几何位置最近的分组或选集。
+  /// 播放列表一级菜单上键优先进入当前选集行。
   void _focusNearestEpisodeGroupOrEpisodeOption() {
-    if (_focusNearestEpisodeGroupOption()) {
-      return;
-    }
-    _focusEpisodeOptionForGroup(_episodeGroupIndex, useNearestVisible: true);
+    // 从一级菜单进入播放列表时先落到当前集数，避免用户按左键时误在分组行内移动。
+    _focusEpisodeOptionForGroup(
+      _episodeGroupIndex,
+      preferredEpisodeIndex: _lastFocusedEpisodeIndex ?? _episodeIndex,
+      useNearestVisible: true,
+    );
   }
 
   /// 当目标集数按钮还不在视口内时，回到当前已显示的第一项。

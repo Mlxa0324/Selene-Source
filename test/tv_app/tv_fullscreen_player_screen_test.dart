@@ -438,7 +438,8 @@ void main() {
     expect(_focusNodeForMenuLabel(tester, nearestSource).hasFocus, isTrue);
   });
 
-  testWidgets('play list primary tab up focuses nearest group', (tester) async {
+  testWidgets('play list primary tab up focuses current episode',
+      (tester) async {
     final detail = _searchResult(
       'source_a',
       '主线路',
@@ -481,7 +482,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
 
-    expect(_focusNodeForMenuLabel(tester, '21-25').hasFocus, isTrue);
+    expect(_focusNodeForMenuLabel(tester, '第22集').hasFocus, isTrue);
   });
 
   testWidgets('episode and group rows use nearest vertical focus',
@@ -1285,6 +1286,61 @@ void main() {
     expect(find.text('第21集'), findsNothing);
     expect(find.text('第20集'), findsOneWidget);
     expect(_focusNodeForMenuLabel(tester, '第20集').hasFocus, isTrue);
+  });
+
+  testWidgets(
+      'play list primary up then left moves current episode 21 to episode 20',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            index: 21,
+            totalEpisodes: 45,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 45,
+            selectedEpisodeIndex: 20,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 45,
+              selectedEpisodeIndex: 20,
+            ),
+          ],
+          initialEpisodeIndex: 20,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    _focusNodeForMenuLabel(tester, '播放列表').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+
+    expect(_focusNodeForMenuLabel(tester, '第21集').hasFocus, isTrue);
+    expect(_focusNodeForMenuLabel(tester, '21-40').hasFocus, isFalse);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第20集'), findsOneWidget);
+    expect(_focusNodeForMenuLabel(tester, '第20集').hasFocus, isTrue);
+    expect(_focusNodeForMenuLabel(tester, '01-20').hasFocus, isFalse);
   });
 
   testWidgets('fullscreen player menu shell and buttons use compact sizing',
