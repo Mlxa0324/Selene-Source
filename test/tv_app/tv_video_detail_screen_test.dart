@@ -2464,6 +2464,49 @@ void main() {
     expect(controller.offset, greaterThan(0));
   });
 
+  testWidgets('recommend card focus scrolls detail page to bottom',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 25,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 25),
+            ],
+            recommends: [
+              _videoInfo('recommend_1', '推荐影片'),
+            ],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final controller = _detailScrollController(tester);
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+
+    Focus.of(tester.element(find.text('推荐影片'))).requestFocus();
+    await tester.pumpAndSettle();
+
+    // 推荐卡片一获焦，详情页需要直接露出底部区域。
+    expect(controller.offset, closeTo(controller.position.maxScrollExtent, 1));
+  });
+
   testWidgets('recommend boundary keys keep focus and show edge shake',
       (tester) async {
     await _setTvSurfaceSize(tester);

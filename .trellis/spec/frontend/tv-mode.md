@@ -500,6 +500,7 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 预览 loading | 详情页小播放器关闭 `VideoPlayerWidget.showLoadingIndicator` 后，外层必须用 `tv-detail-preview-loading` 承担转圈和网速反馈；已有可播源、控制器晚挂、续播记录未返回导致首播挂起、首帧黑底或缓冲时必须显示；只有当前播放时间点从本轮 loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；网速优先显示播放器控制器的真实下载速度，未知或暂无样本时才回退 `0KB/s`；overlay 必须无背景且 `IgnorePointer`，不得阻断遥控器焦点进入线路、选集或全屏按钮 |
 | 全屏 | 详情页内展示 `TvFullscreenPlayerScreen` 覆盖层，携带当前详情、线路列表和集下标；生产路径必须通过同一个 `VideoPlayerWidget`/控制器在预览和全屏之间移动，避免进入全屏时重新起播或黑屏；TV 全屏播放器同样禁用 PiP/小窗最小化 |
 | 收藏 | 使用 `PageCacheService.addFavorite/removeFavorite` |
+| 推荐焦点 | 任意相关推荐卡片获焦时，详情页外层滚动必须直接到达底部，确保推荐区和底部操作同时露出 |
 | 推荐点击 | `pushReplacement` 到新的 TV 详情页 |
 | 回到顶部 | 当前详情页滚动到顶部 |
 | 返回上一级 | 不显示页面级按钮，直接依赖遥控器返回键 |

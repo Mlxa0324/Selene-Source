@@ -2794,6 +2794,34 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     });
   }
 
+  /// 安排详情页滚动到底部。
+  ///
+  /// 推荐卡片获焦时，用户期望直接看到相关推荐和底部区域；
+  /// 延后一帧执行可避开同一轮焦点恢复里的中线对齐动画。
+  void _scheduleDetailPageScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) {
+          return;
+        }
+        final position = _scrollController.position;
+        final targetOffset = position.maxScrollExtent;
+        if ((position.pixels - targetOffset).abs() <
+            _detailVerticalFocusOffsetEpsilon) {
+          return;
+        }
+        position.animateTo(
+          targetOffset,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      });
+    });
+  }
+
   /// 让详情页外层滚动容器把当前焦点平滑推到中线附近。
   ///
   /// 线路、选集、分组这些控件都嵌在横向列表里，直接调用 `Scrollable.maybeOf`
@@ -4530,14 +4558,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                   onArrowDown: _focusBottomAction,
                   onFocusChanged: (hasFocus) {
                     if (hasFocus) {
-                      // 任意推荐卡片获焦时都保留 36px 左安全区，和首页继续观看一致，
-                      // 滚到最左侧获焦时海报放大描边也不会被屏幕裁掉。
+                      // 推荐卡片获焦时，横向保留安全区，纵向直接滚到底部。
                       _rememberFocusedRecommend(videoInfo);
                       _scheduleHorizontalTargetRevealIfNeeded(
                         groupKey: _recommendFocusGroupKey,
                         controller: _recommendListScrollController,
                         targetKey: _recommendTargetKeyFor(videoInfo),
                       );
+                      _scheduleDetailPageScrollToBottom();
                     }
                   },
                   onPressed: () {
