@@ -339,6 +339,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 二级菜单按钮默认高度。
   static const double _secondaryMenuDefaultHeight = 56 * _secondaryMenuScale;
 
+  /// 非内容型二级菜单按钮高度。
+  ///
+  /// 画面比例、倍速和其它入口不承载长标题，保留缩小后的宽度，
+  /// 高度在缩小基础上增加 1/3，避免按钮显得过扁。
+  static const double _secondaryMenuControlHeight =
+      _secondaryMenuDefaultHeight * 4 / 3;
+
   /// 二级菜单按钮横向内边距。
   static const double _secondaryMenuHorizontalInset = 14 * _secondaryMenuScale;
 
@@ -3748,7 +3755,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             label: item.$2,
             selected: item.$1 == _fitType,
             minWidth: _secondaryMenuSize(67),
-            minHeight: _secondaryMenuDefaultHeight,
+            minHeight: _secondaryMenuControlHeight,
             textFontSize: _secondaryMenuFontSize,
             horizontalPadding: _secondaryMenuHorizontalInset,
             onArrowLeft: isFirstItem
@@ -3784,7 +3791,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             label: '${speed}x',
             selected: (speed - _playbackSpeed).abs() < 0.01,
             minWidth: _secondaryMenuSize(62),
-            minHeight: _secondaryMenuDefaultHeight,
+            minHeight: _secondaryMenuControlHeight,
             textFontSize: _secondaryMenuFontSize,
             horizontalPadding: _secondaryMenuHorizontalInset,
             onArrowLeft: isFirstItem
@@ -3834,7 +3841,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   )}',
                   selected: false,
                   minWidth: _secondaryMenuSize(78),
-                  minHeight: _secondaryMenuDefaultHeight,
+                  minHeight: _secondaryMenuControlHeight,
                   textFontSize: _secondaryMenuFontSize,
                   horizontalPadding: _secondaryMenuHorizontalInset,
                   onArrowLeft: isFirstItem
@@ -3863,7 +3870,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   )}',
                   selected: false,
                   minWidth: _secondaryMenuSize(78),
-                  minHeight: _secondaryMenuDefaultHeight,
+                  minHeight: _secondaryMenuControlHeight,
                   textFontSize: _secondaryMenuFontSize,
                   horizontalPadding: _secondaryMenuHorizontalInset,
                   onArrowLeft: isFirstItem
@@ -3890,7 +3897,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   label: _danmakuEnabled ? '弹幕 开' : '弹幕 关',
                   selected: _danmakuEnabled,
                   minWidth: _secondaryMenuSize(78),
-                  minHeight: _secondaryMenuDefaultHeight,
+                  minHeight: _secondaryMenuControlHeight,
                   textFontSize: _secondaryMenuFontSize,
                   horizontalPadding: _secondaryMenuHorizontalInset,
                   onArrowLeft: isFirstItem
@@ -3917,7 +3924,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 label: '手动匹配',
                 selected: false,
                 minWidth: _secondaryMenuSize(96),
-                minHeight: _secondaryMenuDefaultHeight,
+                minHeight: _secondaryMenuControlHeight,
                 textFontSize: _secondaryMenuFontSize,
                 horizontalPadding: _secondaryMenuHorizontalInset,
                 onArrowLeft: isFirstItem
@@ -3945,7 +3952,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Widget _buildHorizontalChoices({
     required Key key,
     ScrollController? controller,
-    double height = _secondaryMenuDefaultHeight,
+    double height = _secondaryMenuControlHeight,
     required int itemCount,
     required Widget Function(int index) itemBuilder,
   }) {

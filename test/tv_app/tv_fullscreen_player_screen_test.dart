@@ -1140,6 +1140,67 @@ void main() {
     expect(secondaryConstraints.minHeight, greaterThanOrEqualTo(104 * 2 / 3));
   });
 
+  testWidgets('fullscreen simple secondary menus use taller button height',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    const expectedHeight = 56 * 2 / 3 * 4 / 3;
+
+    _focusNodeForMenuLabel(tester, '画面比例').requestFocus();
+    await tester.pumpAndSettle();
+    final fitButton = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('适应'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    expect(fitButton.constraints!.minHeight, closeTo(expectedHeight, 0.1));
+
+    _focusNodeForMenuLabel(tester, '倍速').requestFocus();
+    await tester.pumpAndSettle();
+    final speedButton = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('1.0x'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    expect(speedButton.constraints!.minHeight, closeTo(expectedHeight, 0.1));
+
+    _focusNodeForMenuLabel(tester, '其它').requestFocus();
+    await tester.pumpAndSettle();
+    final otherButton = tester.widget<AnimatedContainer>(
+      find
+          .ancestor(
+            of: find.text('片头 00:00'),
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    expect(otherButton.constraints!.minHeight, closeTo(expectedHeight, 0.1));
+  });
+
   testWidgets('fullscreen episode cards widen with longer titles',
       (tester) async {
     const shortEpisodeTitle = '第1集';
