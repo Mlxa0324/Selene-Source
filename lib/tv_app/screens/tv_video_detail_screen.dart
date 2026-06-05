@@ -2596,14 +2596,19 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         if (!mounted) {
           return;
         }
-        if (!_focusEpisodeOptionInGroup(
+        final focused = _focusEpisodeOptionInGroup(
           previousGroupIndex,
           lastEpisodeIndex,
-        )) {
-          _focusEpisodeOptionForGroup(
-            previousGroupIndex,
-            preferredEpisodeIndex: lastEpisodeIndex,
-          );
+        );
+        if (!focused) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _focusEpisodeOptionInGroup(
+                previousGroupIndex,
+                lastEpisodeIndex,
+              );
+            }
+          });
         }
         _pinEpisodeGroupAndEpisodeNearLeadingEdge(
           previousGroupIndex,

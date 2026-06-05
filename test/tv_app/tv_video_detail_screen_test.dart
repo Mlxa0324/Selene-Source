@@ -3305,6 +3305,57 @@ void main() {
     _expectFocused(tester, find.text('第20集'));
   });
 
+  testWidgets(
+      'episode row left key from initial second group focuses episode 20',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'main',
+            '长剧集',
+            index: 21,
+            totalEpisodes: 45,
+          ),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 45),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsOneWidget);
+    Focus.of(tester.element(find.text('第21集'))).requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第20集'), findsOneWidget);
+    expect(find.text('第1集'), findsNothing);
+    _expectFocused(tester, find.text('第20集'));
+  });
+
   testWidgets('episode group focus coalesces rapid switching asynchronously',
       (tester) async {
     await _setTvSurfaceSize(tester);

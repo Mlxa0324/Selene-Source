@@ -2495,12 +2495,25 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final lastEpisodeIndex = previousGroupEpisodeIndexes.last;
     _lastFocusedEpisodeIndex = lastEpisodeIndex;
-    _focusEpisodeOptionForGroup(
-      previousGroupIndex,
-      preferredEpisodeIndex: lastEpisodeIndex,
-    );
-    _schedulePinEpisodeGroupNearLeadingEdge(previousGroupIndex);
-    _schedulePinEpisodeNearLeadingEdge(lastEpisodeIndex);
+    setState(() => _episodeGroupIndex = previousGroupIndex);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_episodeListScrollController.hasClients) {
+        // 上一组最后一集在列表尾部，先滚到尾部再请求焦点，避免落到组首。
+        final position = _episodeListScrollController.position;
+        _episodeListScrollController.jumpTo(position.maxScrollExtent);
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _focusEpisodeOptionInGroup(previousGroupIndex, lastEpisodeIndex);
+        _schedulePinEpisodeGroupNearLeadingEdge(previousGroupIndex);
+        _schedulePinEpisodeNearLeadingEdge(lastEpisodeIndex);
+      });
+    });
   }
 
   /// 聚焦指定分组里距离当前焦点最近的选集。

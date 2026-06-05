@@ -1238,6 +1238,55 @@ void main() {
     expect(_focusNodeForMenuLabel(tester, '第20集').hasFocus, isTrue);
   });
 
+  testWidgets(
+      'episode row left key from initial second group focuses episode 20',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(
+            index: 21,
+            totalEpisodes: 45,
+          ),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 45,
+            selectedEpisodeIndex: 20,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 45,
+              selectedEpisodeIndex: 20,
+            ),
+          ],
+          initialEpisodeIndex: 20,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsOneWidget);
+    _focusNodeForMenuLabel(tester, '第21集').requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第20集'), findsOneWidget);
+    expect(_focusNodeForMenuLabel(tester, '第20集').hasFocus, isTrue);
+  });
+
   testWidgets('fullscreen player menu shell and buttons use compact sizing',
       (tester) async {
     await tester.pumpWidget(
