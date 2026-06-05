@@ -3739,6 +3739,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                       label: _menuTabs[index],
                       selected: _activeMenuIndex == index,
                       minWidth: 67,
+                      focusScaleEnabled: true,
                       onArrowLeft: isFirstItem
                           ? () => edgeShakeKey.currentState
                               ?.shake(AxisDirection.left)
@@ -3993,6 +3994,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             minHeight: _secondaryMenuControlHeight,
             textFontSize: _secondaryMenuFontSize,
             horizontalPadding: _secondaryMenuHorizontalInset,
+            focusScaleEnabled: true,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -4029,6 +4031,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             minHeight: _secondaryMenuControlHeight,
             textFontSize: _secondaryMenuFontSize,
             horizontalPadding: _secondaryMenuHorizontalInset,
+            focusScaleEnabled: true,
             onArrowLeft: isFirstItem
                 ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                 : null,
@@ -4079,6 +4082,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   minHeight: _secondaryMenuControlHeight,
                   textFontSize: _secondaryMenuFontSize,
                   horizontalPadding: _secondaryMenuHorizontalInset,
+                  focusScaleEnabled: true,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -4108,6 +4112,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   minHeight: _secondaryMenuControlHeight,
                   textFontSize: _secondaryMenuFontSize,
                   horizontalPadding: _secondaryMenuHorizontalInset,
+                  focusScaleEnabled: true,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -4135,6 +4140,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   minHeight: _secondaryMenuControlHeight,
                   textFontSize: _secondaryMenuFontSize,
                   horizontalPadding: _secondaryMenuHorizontalInset,
+                  focusScaleEnabled: true,
                   onArrowLeft: isFirstItem
                       ? () =>
                           edgeShakeKey.currentState?.shake(AxisDirection.left)
@@ -4162,6 +4168,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 minHeight: _secondaryMenuControlHeight,
                 textFontSize: _secondaryMenuFontSize,
                 horizontalPadding: _secondaryMenuHorizontalInset,
+                focusScaleEnabled: true,
                 onArrowLeft: isFirstItem
                     ? () => edgeShakeKey.currentState?.shake(AxisDirection.left)
                     : null,

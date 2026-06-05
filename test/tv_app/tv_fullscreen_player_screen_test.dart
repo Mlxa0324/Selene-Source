@@ -173,19 +173,19 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
-    final episodeMenuTop = _menuButtonRect(tester, '播放列表').top;
+    final episodeMenuCenterY = _menuButtonRect(tester, '播放列表').center.dy;
 
     _focusNodeForMenuLabel(tester, '其它').requestFocus();
     await tester.pumpAndSettle();
-    final otherMenuTop = _menuButtonRect(tester, '播放列表').top;
+    final otherMenuCenterY = _menuButtonRect(tester, '播放列表').center.dy;
 
     _focusNodeForMenuLabel(tester, '画面比例').requestFocus();
     await tester.pumpAndSettle();
-    final fitMenuTop = _menuButtonRect(tester, '播放列表').top;
+    final fitMenuCenterY = _menuButtonRect(tester, '播放列表').center.dy;
 
     // 二级菜单高度变化时，底部一级菜单行不能上下跳动。
-    expect(otherMenuTop, closeTo(episodeMenuTop, 0.5));
-    expect(fitMenuTop, closeTo(episodeMenuTop, 0.5));
+    expect(otherMenuCenterY, closeTo(episodeMenuCenterY, 0.5));
+    expect(fitMenuCenterY, closeTo(episodeMenuCenterY, 0.5));
   });
 
   testWidgets('non episode secondary menus keep compact top padding',
@@ -1618,8 +1618,7 @@ void main() {
     expect(buttonRect.inflate(0.5).contains(countRect.bottomRight), isTrue);
   });
 
-  testWidgets('fullscreen source episode and group scale on focus',
-      (tester) async {
+  testWidgets('fullscreen menu buttons scale on focus', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: TvFullscreenPlayerScreen(
@@ -1645,6 +1644,10 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
 
+    _focusNodeForMenuLabel(tester, '播放列表').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '播放列表'), TvVideoCard.focusedScale);
+
     _focusNodeForMenuLabel(tester, '播放线路').requestFocus();
     await tester.pumpAndSettle();
     _focusNodeForMenuLabel(tester, '主线路').requestFocus();
@@ -1660,6 +1663,24 @@ void main() {
     _focusNodeForMenuLabel(tester, '01-20').requestFocus();
     await tester.pumpAndSettle();
     expect(_focusScaleForText(tester, '01-20'), TvVideoCard.focusedScale);
+
+    _focusNodeForMenuLabel(tester, '画面比例').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '适应').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '适应'), TvVideoCard.focusedScale);
+
+    _focusNodeForMenuLabel(tester, '倍速').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '1.0x').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '1.0x'), TvVideoCard.focusedScale);
+
+    _focusNodeForMenuLabel(tester, '其它').requestFocus();
+    await tester.pumpAndSettle();
+    _focusNodeForMenuLabel(tester, '片头 00:00').requestFocus();
+    await tester.pumpAndSettle();
+    expect(_focusScaleForText(tester, '片头 00:00'), TvVideoCard.focusedScale);
   });
 
   testWidgets('primary menu shakes at left boundary', (tester) async {
