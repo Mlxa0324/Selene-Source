@@ -135,7 +135,9 @@
 
 ### Main Changes
 
-(Add details)
+- 详情页选集分组获焦只保留焦点记忆和横向滚动定位，确认键才切换分组。
+- 全屏播放列表分组获焦不再刷新当前播放列表分组，上键回到已确认分组的选集。
+- 保留选集卡片左右跨组自动切换，并同步 TV 模式焦点契约。
 
 ### Git Commits
 
@@ -145,7 +147,11 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `flutter analyze lib/tv_app/screens/tv_fullscreen_player_screen.dart lib/tv_app/screens/tv_video_detail_screen.dart lib/widgets/video_player_widget.dart test/tv_app/tv_fullscreen_player_screen_test.dart test/tv_app/tv_video_detail_screen_test.dart test/widgets/video_player_widget_preload_config_test.dart`
+- [OK] `flutter test test/tv_app/tv_video_detail_screen_test.dart`
+- [OK] `flutter test test/tv_app/tv_fullscreen_player_screen_test.dart`
+- [OK] `flutter test test/widgets/video_player_widget_preload_config_test.dart`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -341,6 +347,39 @@
 | Hash | Message |
 |------|---------|
 | `b33df9a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 11: 调整 TV 选集分组焦点切换
+
+**Date**: 2026-06-06
+**Task**: 调整 TV 选集分组焦点切换
+**Branch**: `tvtv`
+
+### Summary
+
+实现详情页和全屏播放选集分组确认键切换；保留集数左右跨组自动切换；完成 TV 焦点、全屏播放器和预加载相关验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `adc88bc` | (see git log) |
 
 ### Testing
 

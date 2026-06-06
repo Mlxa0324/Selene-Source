@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
-- **Last Active**: 2026-06-05
+- **Total Sessions**: 11
+- **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~351 | Active |
+| `journal-1.md` | ~388 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-06-06 | 调整 TV 选集分组焦点切换 | `adc88bc` | `tvtv` |
 | 10 | 2026-06-05 | 放大全屏选集分组文字 | `b33df9a` | `tvtv` |
 | 9 | 2026-06-02 | 粗对齐 Kotlin TV 页面壳样式 | `7fedcac` | `tvtv` |
 | 8 | 2026-06-02 | 分析 Flutter TV 详情页首播卡顿因素 | `d24cccf` | `tvtv` |
