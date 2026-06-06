@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:media_kit/media_kit.dart' as mk;
 import 'package:media_kit_video/media_kit_video.dart' as mkv;
+import 'package:selene/config/tv_player_kernel.dart';
+import 'package:selene/services/tv_exo_m3u8_proxy_service.dart';
 import 'package:selene/widgets/player_sources_panel.dart';
 import 'package:video_player/video_player.dart' as vp;
 import 'package:pip/pip.dart';
@@ -31,6 +33,20 @@ String buildVideoSurfaceKey({
   // 画面比例切换只需要更新 fit，不应该因此重建视频表面；
   // 否则全屏切比例时会出现闪屏，某些后端还会从头起播。
   return 'video_${surface.name}_$adapterType';
+}
+
+/// 当前运行环境下，TV 桌面表面是否应优先使用 Android Exo 后端。
+@visibleForTesting
+bool preferExoForAndroidTvPlayback({
+  required bool isAndroid,
+  required bool isLocal,
+  required VideoPlayerSurface surface,
+  required TvPlayerKernel tvPlayerKernel,
+}) {
+  return isAndroid &&
+      !isLocal &&
+      surface == VideoPlayerSurface.desktop &&
+      tvPlayerKernel == TvPlayerKernel.exo;
 }
 
 class VideoPlayerWidget extends StatefulWidget {
@@ -101,6 +117,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final VideoFitType initialFitType;
   final String? videoCover;
   final bool adFilterEnabled;
+  final TvPlayerKernel tvPlayerKernel;
   final bool? isFavorite; // 💡 新增
   final VoidCallback? onFavoriteToggle; // 💡 新增
   final bool hasActiveSleepTimer;
@@ -162,6 +179,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.danmakuLayer,
     this.initialFitType = VideoFitType.contain,
     this.adFilterEnabled = false,
+    this.tvPlayerKernel = TvPlayerKernel.exo,
     this.allSourcesSpeed,
     this.allSources,
     this.currentId,
@@ -343,6 +361,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return Platform.isIOS && widget.isLocal;
   }
 
+  bool get _shouldUseAndroidTvExoNetworkBackend {
+    return preferExoForAndroidTvPlayback(
+      isAndroid: Platform.isAndroid,
+      isLocal: widget.isLocal,
+      surface: widget.surface,
+      tvPlayerKernel: widget.tvPlayerKernel,
+    );
+  }
+
+  bool get _shouldUseAndroidTvWebViewNetworkBackend {
+    return Platform.isAndroid &&
+        !widget.isLocal &&
+        widget.surface == VideoPlayerSurface.desktop &&
+        widget.tvPlayerKernel == TvPlayerKernel.webView;
+  }
+
   bool _canUseMediaKitForUrl(String? url) {
     if (url == null || url.isEmpty) {
       return false;
@@ -350,6 +384,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     final uri = Uri.tryParse(url);
     final scheme = uri?.scheme.toLowerCase();
     return scheme == 'http' || scheme == 'https' || scheme == 'file';
+  }
+
+  bool _canUseVideoPlayerNetworkBackendForUrl(String? url) {
+    if (url == null || url.isEmpty) {
+      return false;
+    }
+    final uri = Uri.tryParse(url);
+    final scheme = uri?.scheme.toLowerCase();
+    return scheme == 'http' || scheme == 'https';
   }
 
   bool get _shouldPersistPreloadProgress {
@@ -539,6 +582,36 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       position: position,
       onSeek: widget.onSeek,
     );
+  }
+
+  /// 解析 Android TV Exo 网络播放最终使用的地址。
+  ///
+  /// 当 TV 开启自动去广告时，M3U8 清单会先切到本地代理链路做过滤，
+  /// 再把过滤后的入口地址交给 Exo；非 M3U8 地址保持原样。
+  Future<Uri> _resolveAndroidTvExoPlaybackUri(String url) async {
+    final resolvedUrl = await TvExoM3u8ProxyService.instance.resolvePlaybackUrl(
+      url: url,
+      adFilterEnabled: widget.adFilterEnabled,
+      headers: _currentHeaders,
+    );
+    return Uri.parse(resolvedUrl);
+  }
+
+  /// 为 Android TV 在线播放创建 Exo(video_player) 适配器。
+  Future<VideoPlayerAdapter> _createNetworkVideoPlayerAdapter(
+    String url, {
+    Duration? startAt,
+  }) async {
+    final playbackUri = await _resolveAndroidTvExoPlaybackUri(url);
+    final controller = vp.VideoPlayerController.networkUrl(
+      playbackUri,
+      httpHeaders: _currentHeaders ?? const <String, String>{},
+    );
+    await controller.initialize();
+    if (startAt != null) {
+      await controller.seekTo(startAt);
+    }
+    return VideoPlayerAdapter(controller);
   }
 
   ({int aspectX, int aspectY, int preferredWidth, int preferredHeight})
@@ -808,6 +881,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             _setupPlayerListeners();
             _adapter?.updateVideoFit(_getBoxFit());
           }
+        } else if (_shouldUseAndroidTvExoNetworkBackend &&
+            _canUseVideoPlayerNetworkBackendForUrl(_currentUrl)) {
+          debugPrint(
+              'VideoPlayerWidget: Android TV 使用 Exo(video_player) 播放网络流');
+          _adapter = await _createNetworkVideoPlayerAdapter(
+            _currentUrl!,
+            startAt: startAt,
+          );
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
+          await _adapter!.play();
         } else if (_useMobileNetworkMediaKit &&
             _canUseMediaKitForUrl(_currentUrl)) {
           debugPrint('VideoPlayerWidget: 移动端使用 MediaKitAdapter 播放网络流');
@@ -1090,12 +1174,48 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
     try {
       final currentSpeed = _adapter!.state.rate;
+      final shouldUseAndroidTvExoNetworkBackend =
+          _shouldUseAndroidTvExoNetworkBackend &&
+              _canUseVideoPlayerNetworkBackendForUrl(url);
       final canUseMediaKitForUrl = _shouldUseMacOSMediaKit ||
           _shouldUseIOSLocalMediaKit ||
           ((_useMobileNetworkMediaKit && !widget.isLocal) &&
               _canUseMediaKitForUrl(url));
 
-      if (_adapter is MediaKitAdapter && canUseMediaKitForUrl) {
+      if (shouldUseAndroidTvExoNetworkBackend) {
+        if (_adapter is VideoPlayerAdapter) {
+          final oldController = (_adapter as VideoPlayerAdapter).controller;
+          await oldController.pause();
+
+          final playbackUri = await _resolveAndroidTvExoPlaybackUri(url);
+          final newController = vp.VideoPlayerController.networkUrl(
+            playbackUri,
+            httpHeaders: _currentHeaders ?? const <String, String>{},
+          );
+          await newController.initialize();
+          if (startAt != null) {
+            await newController.seekTo(startAt);
+          }
+
+          final oldAdapter = _adapter;
+          _adapter = VideoPlayerAdapter(newController);
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
+          await _adapter!.play();
+
+          unawaited(oldAdapter?.dispose());
+        } else {
+          final oldAdapter = _adapter;
+          _adapter = await _createNetworkVideoPlayerAdapter(
+            url,
+            startAt: startAt,
+          );
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
+          await _adapter!.play();
+          unawaited(oldAdapter?.dispose());
+        }
+      } else if (_adapter is MediaKitAdapter && canUseMediaKitForUrl) {
         final player = (_adapter as MediaKitAdapter).player;
         await player.open(
           mk.Media(
@@ -1162,12 +1282,26 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         // Clean up old one after switching to minimize gap
         unawaited(oldAdapter?.dispose());
       } else {
-        // WebView 直接复用同一个控制器切换数据源，避免重建原生视图。
-        await (_adapter as WebViewPlayerAdapter).updateSource(
-          url: url,
-          startAt: startAt,
-          headers: _currentHeaders,
-        );
+        if (_adapter is WebViewPlayerAdapter) {
+          // WebView 直接复用同一个控制器切换数据源，避免重建原生视图。
+          await (_adapter as WebViewPlayerAdapter).updateSource(
+            url: url,
+            startAt: startAt,
+            headers: _currentHeaders,
+          );
+        } else {
+          final oldAdapter = _adapter;
+          _adapter = _createWebViewPlayerAdapter(
+            url: url,
+            startAt: startAt,
+            logReason: _shouldUseAndroidTvWebViewNetworkBackend
+                ? 'VideoPlayerWidget: Android TV 使用 WebViewPlayerAdapter 播放网络流'
+                : 'VideoPlayerWidget: 切回 WebViewPlayerAdapter 播放网络流',
+          );
+          _setupPlayerListeners();
+          _adapter?.updateVideoFit(_getBoxFit());
+          unawaited(oldAdapter?.dispose());
+        }
       }
 
       _playbackSpeed.value = currentSpeed;

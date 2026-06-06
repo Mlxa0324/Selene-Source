@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/playback_preload.dart';
 import 'package:selene/services/user_data_service.dart';
 
@@ -27,6 +28,15 @@ void main() {
     expect(
       await UserDataService.getAdFilterEnabled(),
       isTrue,
+    );
+  });
+
+  test('getTvPlayerKernel defaults to exo when nothing is stored', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    expect(
+      await UserDataService.getTvPlayerKernel(),
+      TvPlayerKernel.exo,
     );
   });
 
@@ -60,6 +70,15 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('playback_preload_level_v1'), 'medium');
+  });
+
+  test('saveTvPlayerKernel writes the TV player kernel key', () async {
+    SharedPreferences.setMockInitialValues({});
+
+    await UserDataService.saveTvPlayerKernel(TvPlayerKernel.webView);
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('tv_player_kernel_v1'), 'webview');
   });
 
   test('getM3u8ProxyUrl uses in-memory cache after first read', () async {

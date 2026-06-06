@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../config/tv_player_kernel.dart';
 import '../models/playback_preload.dart';
 import '../models/search_result.dart';
 
@@ -141,6 +142,9 @@ class UserDataService {
   /// 是否开启自动去广告 Key
   static const String _adFilterEnabledKey = 'ad_filter_enabled';
 
+  /// TV 播放器内核 Key
+  static const String _tvPlayerKernelKey = 'tv_player_kernel_v1';
+
   /// macOS media_kit 预加载 Key
   static const String _mediaKitPreloadEnabledKey = 'media_kit_preload_enabled';
 
@@ -232,6 +236,7 @@ class UserDataService {
   static void debugResetMemoryCaches() {
     _cachedM3u8ProxyUrl = '';
     _hasCachedM3u8ProxyUrl = false;
+    _tvPlayerKernelCache = null;
   }
 
   /// 搜索缓存是否已从磁盘加载标识
@@ -341,6 +346,9 @@ class UserDataService {
   /// 本地模式状态的内存缓存，用于同步读取
   static bool? _isLocalModeCache;
 
+  /// TV 播放器内核的内存缓存。
+  static TvPlayerKernel? _tvPlayerKernelCache;
+
   // 保存去广告开关
   static Future<void> saveAdFilterEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
@@ -351,6 +359,26 @@ class UserDataService {
   static Future<bool> getAdFilterEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_adFilterEnabledKey) ?? true;
+  }
+
+  /// 保存 TV 播放器内核。
+  static Future<void> saveTvPlayerKernel(TvPlayerKernel kernel) async {
+    _tvPlayerKernelCache = kernel;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tvPlayerKernelKey, kernel.key);
+  }
+
+  /// 获取 TV 播放器内核，未配置时默认使用 Exo。
+  static Future<TvPlayerKernel> getTvPlayerKernel() async {
+    final cachedKernel = _tvPlayerKernelCache;
+    if (cachedKernel != null) {
+      return cachedKernel;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final resolvedKernel =
+        TvPlayerKernel.fromKey(prefs.getString(_tvPlayerKernelKey));
+    _tvPlayerKernelCache = resolvedKernel;
+    return resolvedKernel;
   }
 
   // 保存 macOS media_kit 预加载开关

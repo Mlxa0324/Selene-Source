@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/playback_preload.dart';
 import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/widgets/player_adapter.dart';
@@ -64,6 +65,38 @@ void main() {
         fitType: VideoFitType.contain,
       ),
       'video_desktop_WebViewPlayerAdapter',
+    );
+  });
+
+  test('prefers exo for android tv desktop network playback only', () {
+    expect(
+      preferExoForAndroidTvPlayback(
+        isAndroid: true,
+        isLocal: false,
+        surface: VideoPlayerSurface.desktop,
+        tvPlayerKernel: TvPlayerKernel.exo,
+      ),
+      isTrue,
+    );
+
+    expect(
+      preferExoForAndroidTvPlayback(
+        isAndroid: true,
+        isLocal: false,
+        surface: VideoPlayerSurface.desktop,
+        tvPlayerKernel: TvPlayerKernel.webView,
+      ),
+      isFalse,
+    );
+
+    expect(
+      preferExoForAndroidTvPlayback(
+        isAndroid: true,
+        isLocal: true,
+        surface: VideoPlayerSurface.desktop,
+        tvPlayerKernel: TvPlayerKernel.exo,
+      ),
+      isFalse,
     );
   });
 

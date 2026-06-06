@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/services/app_cache_service.dart';
 import 'package:selene/services/danmaku_service.dart';
@@ -44,6 +45,9 @@ typedef TvAdFilterLoader = Future<bool> Function();
 
 /// TV 自动去广告开关保存函数。
 typedef TvAdFilterSaver = Future<void> Function(bool enabled);
+
+/// TV 播放器内核保存函数。
+typedef TvPlayerKernelSaver = Future<void> Function(String playerKernelKey);
 
 /// TV 主题色保存函数。
 typedef TvThemeSaver = Future<void> Function(String themeKey);
@@ -86,6 +90,7 @@ class TvSettingsData {
     this.themeKey = TvThemePalette.netflixRedKey,
     this.backgroundKey = TvThemeBackground.deepBlueKey,
     this.focusEffectModeKey = TvFocusEffectMode.magnifierKey,
+    this.playerKernelKey = 'exo',
     required this.adFilterEnabled,
     required this.doubanImageSource,
     required this.danmakuBaseApi,
@@ -110,6 +115,9 @@ class TvSettingsData {
   /// TV 焦点效果标识。
   final String focusEffectModeKey;
 
+  /// TV 播放器内核标识。
+  final String playerKernelKey;
+
   /// 是否开启自动去广告。
   final bool adFilterEnabled;
 
@@ -131,6 +139,7 @@ class TvSettingsData {
       themeKey: TvThemePalette.netflixRedKey,
       backgroundKey: TvThemeBackground.deepBlueKey,
       focusEffectModeKey: TvFocusEffectMode.magnifierKey,
+      playerKernelKey: 'exo',
       adFilterEnabled: true,
       doubanImageSource: '豆瓣官方精品 CDN',
       danmakuBaseApi: '',
@@ -152,6 +161,7 @@ class TvSettingsScreen extends StatefulWidget {
     this.saveBackground,
     this.saveFocusEffect,
     this.saveDoubanImageSource,
+    this.savePlayerKernel,
     this.loadAdFilterEnabled,
     this.saveAdFilterEnabled,
     this.saveDanmaku,
@@ -177,6 +187,9 @@ class TvSettingsScreen extends StatefulWidget {
 
   /// 图片代理保存函数。
   final TvImageSourceSaver? saveDoubanImageSource;
+
+  /// 播放器内核保存函数。
+  final TvPlayerKernelSaver? savePlayerKernel;
 
   /// 自动去广告开关读取函数。
   final TvAdFilterLoader? loadAdFilterEnabled;
@@ -211,6 +224,7 @@ class TvSettingsScreen extends StatefulWidget {
       themeKey: await TvThemeService.loadSavedThemeKey(),
       backgroundKey: await TvThemeService.loadSavedBackgroundKey(),
       focusEffectModeKey: await TvThemeService.loadSavedFocusEffectModeKey(),
+      playerKernelKey: (await UserDataService.getTvPlayerKernel()).key,
       adFilterEnabled: await UserDataService.getAdFilterEnabled(),
       doubanImageSource:
           await UserDataService.getDoubanImageSourceDisplayName(),
@@ -239,6 +253,13 @@ class TvSettingsScreen extends StatefulWidget {
   /// 默认图片代理保存逻辑。
   static Future<void> defaultSaveDoubanImageSource(String imageSource) {
     return UserDataService.saveDoubanImageSource(imageSource);
+  }
+
+  /// 默认播放器内核保存逻辑。
+  static Future<void> defaultSavePlayerKernel(String playerKernelKey) {
+    return UserDataService.saveTvPlayerKernel(
+      TvPlayerKernel.fromKey(playerKernelKey),
+    );
   }
 
   /// 默认自动去广告保存逻辑。
@@ -381,6 +402,9 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
 
   /// 当前豆瓣图片代理。
   String _doubanImageSource = '豆瓣官方精品 CDN';
+
+  /// 当前 TV 播放器内核标识。
+  String _playerKernelKey = TvPlayerKernel.exo.key;
 
   /// 当前是否开启自动去广告。
   bool _adFilterEnabled = true;
@@ -691,6 +715,7 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     _backgroundKey = TvThemeBackground.fromKey(data.backgroundKey).key;
     _focusEffectModeKey =
         TvFocusEffectMode.fromKey(data.focusEffectModeKey).key;
+    _playerKernelKey = TvPlayerKernel.fromKey(data.playerKernelKey).key;
     _adFilterEnabled = data.adFilterEnabled;
     _doubanImageSource = data.doubanImageSource;
     _danmakuBaseApiController.text = data.danmakuBaseApi;
@@ -726,6 +751,11 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
   /// 可以避免上下切换时依赖默认几何遍历导致的焦点漂移。
   void _requestImageSourceOptionFocus() {
     TvFocusable.requestRememberedFocusForGroup('tv-setting-option-图片代理');
+  }
+
+  /// 请求焦点进入播放器内核选项组。
+  void _requestPlayerKernelOptionFocus() {
+    TvFocusable.requestRememberedFocusForGroup('tv-setting-option-播放器内核');
   }
 
   /// 保存服务器账号配置。
@@ -878,6 +908,24 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
     });
     _syncMobileConfigDraft();
     _showToast('图片代理已保存', TvTheme.of(context).accent);
+  }
+
+  /// 保存 TV 播放器内核配置。
+  Future<void> _savePlayerKernel(String playerKernelKey) async {
+    final resolvedKernelKey = TvPlayerKernel.fromKey(playerKernelKey).key;
+    final saver =
+        widget.savePlayerKernel ?? TvSettingsScreen.defaultSavePlayerKernel;
+    await saver(resolvedKernelKey);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _playerKernelKey = resolvedKernelKey;
+    });
+    _showToast(
+      '播放器内核已切换为 ${TvPlayerKernel.fromKey(resolvedKernelKey).label}',
+      TvTheme.of(context).accent,
+    );
   }
 
   /// 保存自动去广告开关。
@@ -1271,8 +1319,20 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           focusGroupKey: 'tv-setting-option-图片代理',
           onChanged: _saveDoubanImageSource,
           onArrowUp: _requestFocusEffectOptionFocus,
-          onArrowDown: () => _adFilterFocusNode.requestFocus(),
+          onArrowDown: _requestPlayerKernelOptionFocus,
           chipStyleBuilder: _buildPlainOptionChip,
+        ),
+        const SizedBox(height: 18),
+        _TvChipOptionRow<TvPlayerKernel>(
+          label: '播放器内核',
+          value: _playerKernelKey,
+          options: TvPlayerKernel.values,
+          optionKeyBuilder: (option) => option.key,
+          focusGroupKey: 'tv-setting-option-播放器内核',
+          onChanged: (option) => _savePlayerKernel(option.key),
+          onArrowUp: _requestImageSourceOptionFocus,
+          onArrowDown: () => _adFilterFocusNode.requestFocus(),
+          chipStyleBuilder: _buildPlayerKernelOptionChip,
         ),
         const SizedBox(height: 18),
         _TvSwitchRow(
@@ -1772,6 +1832,21 @@ class _TvSettingsScreenState extends State<TvSettingsScreen> {
           color: selected ? palette.selectedText : const Color(0xFFD9E2E0),
         ),
       ),
+    );
+  }
+
+  /// 构建播放器内核选项芯片。
+  _TvChipOptionStyle _buildPlayerKernelOptionChip(
+    BuildContext context,
+    TvPlayerKernel option,
+    bool selected,
+    bool hasFocus,
+  ) {
+    return _buildPlainOptionChip(
+      context,
+      option.label,
+      selected,
+      hasFocus,
     );
   }
 

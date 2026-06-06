@@ -2,12 +2,12 @@
 
 ## Ordered Checklist
 
-- [ ] 梳理 `TvFullscreenPlayerScreen` 当前主动退出、系统 pop、dispose 三条收尾路径的职责与重叠点。
-- [ ] 为全屏退出增加“退出中 / 已调度收尾”守卫，避免单轮退出重复执行。
-- [ ] 把主动退出链路改成“先执行可见退出，再后台保存进度”。
-- [ ] 收紧 `dispose()` 与 `_handlePopInvoked()` 的兜底保存策略，避免重复重保存竞争。
-- [ ] 给退出后的异步回调加守卫，减少已退出页面继续回写状态的风险。
-- [ ] 补或改测试，覆盖共享 fullscreen overlay 的非阻塞退出与避免重复收尾行为。
+- [x] 梳理 `TvFullscreenPlayerScreen` 当前主动退出、系统 pop、dispose 三条收尾路径的职责与重叠点。
+- [x] 为全屏退出增加“退出中 / 已调度收尾”守卫，避免单轮退出重复执行。
+- [x] 把主动退出链路改成“先执行可见退出，再后台保存进度”。
+- [x] 收紧 `dispose()` 与 `_handlePopInvoked()` 的兜底保存策略，避免重复重保存竞争。
+- [x] 给退出后的异步回调加守卫，减少已退出页面继续回写状态的风险。
+- [x] 补或改测试，覆盖共享 fullscreen overlay 的非阻塞退出与避免重复收尾行为。
 - [x] 恢复详情页 preview loading overlay，黑底加载时显示转圈和真实网速，未知时才回退 `0KB/s`，并保持遥控器焦点可移动。
 - [x] 续播记录未返回导致首播挂起时，详情页 preview loading overlay 仍然显示转圈和网速反馈。
 - [x] 调整详情页 preview loading 测试，从“收到 ready/play 隐藏”改成“播放时间点从 loading 锚点前进后隐藏”。

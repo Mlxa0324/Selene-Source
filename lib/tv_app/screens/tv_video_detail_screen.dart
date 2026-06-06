@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/play_record.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
@@ -76,6 +77,9 @@ typedef TvDetailAdFilterLoader = Future<bool> Function();
 /// TV 详情页 M3U8 代理地址读取函数。
 typedef TvDetailProxyUrlLoader = Future<String> Function();
 
+/// TV 详情页播放器内核读取函数。
+typedef TvDetailPlayerKernelLoader = Future<TvPlayerKernel> Function();
+
 /// TV 详情页续播记录读取函数。
 typedef TvDetailResumeRecordsLoader = Future<List<PlayRecord>> Function(
   BuildContext context,
@@ -141,6 +145,7 @@ class TvVideoDetailScreen extends StatefulWidget {
     this.fullscreenPlayerBuilder,
     this.loadAdFilterEnabled,
     this.loadM3u8ProxyUrl,
+    this.loadPlayerKernel,
     this.loadResumeRecords,
     this.testHooks,
   });
@@ -191,6 +196,9 @@ class TvVideoDetailScreen extends StatefulWidget {
 
   /// M3U8 代理地址读取函数，测试时可注入。
   final TvDetailProxyUrlLoader? loadM3u8ProxyUrl;
+
+  /// TV 播放器内核读取函数，测试时可注入。
+  final TvDetailPlayerKernelLoader? loadPlayerKernel;
 
   /// 续播记录读取函数，测试时可注入。
   final TvDetailResumeRecordsLoader? loadResumeRecords;
@@ -650,6 +658,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
 
+  /// 当前 TV 播放器内核配置。
+  TvPlayerKernel _tvPlayerKernel = TvPlayerKernel.exo;
+
+  /// 是否已完成 TV 播放器内核读取。
+  bool _hasResolvedTvPlayerKernel = false;
+
   /// 当前已预热完成的 M3U8 代理地址。
   ///
   /// 代理配置属于播放增强能力，不应该反向阻塞详情页首播。
@@ -811,6 +825,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _startDetailLoading();
     _loadFavoriteState();
     _loadAdFilterPreference();
+    _loadPlayerKernelPreference();
   }
 
   @override
@@ -1155,6 +1170,27 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         });
       },
     );
+  }
+
+  /// 读取 TV 播放器内核配置。
+  Future<void> _loadPlayerKernelPreference() async {
+    final loader = widget.loadPlayerKernel ?? UserDataService.getTvPlayerKernel;
+    final playerKernel = await loader();
+    if (!mounted) {
+      return;
+    }
+    final shouldReplayPendingEpisode =
+        !_hasResolvedTvPlayerKernel && _currentDetail != null;
+    if (_tvPlayerKernel == playerKernel && _hasResolvedTvPlayerKernel) {
+      return;
+    }
+    setState(() {
+      _tvPlayerKernel = playerKernel;
+      _hasResolvedTvPlayerKernel = true;
+    });
+    if (shouldReplayPendingEpisode) {
+      unawaited(_playCurrentEpisode());
+    }
   }
 
   /// 后台预热 M3U8 代理地址。
@@ -2001,6 +2037,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           TvPerfTrace.instant('TV详情页:等待续播记录后起播');
           return;
         }
+        if (!_hasResolvedTvPlayerKernel) {
+          TvPerfTrace.instant('TV详情页:等待播放器内核配置后起播');
+          return;
+        }
 
         final index = _episodeIndex.clamp(0, detail.episodes.length - 1);
         final url = _resolvePlaybackUrl(detail.episodes[index]);
@@ -2386,6 +2426,25 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (targetNode == _playerFocusNode) {
       _scrollToTop();
     }
+  }
+
+  /// 处理换源列表边界方向键。
+  ///
+  /// 最左和最右线路继续横向移动时，要同时保住当前焦点和边界抖动反馈，
+  /// 避免焦点短暂漂移后白色描边消失。
+  void _handleSourceBoundaryArrow(
+    SearchResult source,
+    GlobalKey<TvEdgeShakeState> edgeShakeKey,
+    AxisDirection direction,
+  ) {
+    final node = _sourceFocusNodeFor(source);
+    _rememberFocusedSource(source);
+    edgeShakeKey.currentState?.shake(direction);
+    if (!node.canRequestFocus) {
+      return;
+    }
+    node.requestFocus();
+    _ensureHorizontalTargetVisible(_sourceTargetKeyFor(source));
   }
 
   /// 记录最近一次获焦的线路。
@@ -4100,6 +4159,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         onExitRequested: _closeFullscreenOverlay,
         onEpisodeChanged: _handleFullscreenEpisodeChanged,
         onSourceChanged: _handleFullscreenSourceChanged,
+        loadPlayerKernel: widget.loadPlayerKernel,
         reuseExistingPlayer: widget.fullscreenPlayerBuilder == null,
       ),
     );
@@ -4232,6 +4292,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 构建详情页播放器 loading 转圈和网速提示。
   Widget _buildPreviewLoadingOverlay() {
     final networkSpeedText = _playerController?.networkSpeedText ?? '0KB/s';
+    final shadowColor = Colors.black.withValues(alpha: 0.42);
     return Positioned.fill(
       child: IgnorePointer(
         child: Container(
@@ -4240,10 +4301,23 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(
-                  color: TvTheme.of(context).accent,
-                  strokeWidth: 3,
-                  value: _isFlutterTestEnvironment ? 0.72 : null,
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    // 只给转圈本体增加柔和投影，避免浅色画面里直接看不见。
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(
+                        color: shadowColor,
+                        blurRadius: 18,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: CircularProgressIndicator(
+                    color: TvTheme.of(context).accent,
+                    strokeWidth: 3,
+                    value: _isFlutterTestEnvironment ? 0.72 : null,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -4252,6 +4326,14 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: Colors.white.withValues(alpha: 0.92),
+                  ).copyWith(
+                    shadows: <Shadow>[
+                      Shadow(
+                        color: shadowColor,
+                        blurRadius: 14,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -4308,6 +4390,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               showLoadingIndicator: false,
               backgroundColor: Colors.transparent,
               adFilterEnabled: _adFilterEnabled,
+              tvPlayerKernel: _tvPlayerKernel,
               onControllerCreated: controllerCreated,
               onFullscreenChanged: (_) {},
               onReady: _handlePreviewReadySignal,
@@ -4481,12 +4564,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                           focusNode: _sourceFocusNodeFor(source),
                           focusMemoryGroupKey: _sourceFocusGroupKey,
                           onArrowLeft: isFirstItem
-                              ? () => edgeShakeKey.currentState
-                                  ?.shake(AxisDirection.left)
+                              ? () => _handleSourceBoundaryArrow(
+                                  source,
+                                  edgeShakeKey,
+                                  AxisDirection.left,
+                                )
                               : null,
                           onArrowRight: isLastItem
-                              ? () => edgeShakeKey.currentState
-                                  ?.shake(AxisDirection.right)
+                              ? () => _handleSourceBoundaryArrow(
+                                  source,
+                                  edgeShakeKey,
+                                  AxisDirection.right,
+                                )
                               : null,
                           onArrowUp: () =>
                               _focusNearestHeroControlFrom(chipContext),

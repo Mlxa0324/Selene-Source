@@ -6,6 +6,22 @@ import '../models/search_result.dart';
 
 /// M3U8 解析和测速服务
 class M3U8Service {
+  /// 已知广告标签关键字。
+  ///
+  /// 这些标记既用于过滤单行广告标签，也用于识别需要整段跳过的广告块入口。
+  static const List<String> _adMarkerPatterns = <String>[
+    '#EXT-X-DISCONTINUITY',
+    '#EXT-X-CUE-OUT',
+    '#EXT-X-CUE-IN',
+    '#EXT-X-CUE-OUT-CONT',
+    '#EXT-X-CUE',
+    '#EXT-X-PLACEMENT-OPPORTUNITY',
+    '#EXT-OATCLS-SCTE35',
+    '#EXT-X-SCTE35',
+    '#EXT-X-VERSION:AD',
+    '#EXT-X-AD-STREAMING',
+  ];
+
   /// 优选测速并发数（可在代码中修改）
   static const int defaultPreferSpeedTestConcurrency = 10;
   static int preferSpeedTestConcurrency = defaultPreferSpeedTestConcurrency;
@@ -42,23 +58,43 @@ class M3U8Service {
     // 按行分割内容
     final lines = content.split('\n');
     final filteredLines = <String>[];
+    var skippingAdBlock = false;
 
     for (var line in lines) {
       final trimmedLine = line.trim();
       if (trimmedLine.isEmpty) {
-        filteredLines.add(line);
+        if (!skippingAdBlock) {
+          filteredLines.add(line);
+        }
         continue;
       }
 
-      // 过滤 #EXT-X-DISCONTINUITY 标识
-      if (trimmedLine.contains('#EXT-X-DISCONTINUITY')) {
+      // 显式广告块结束后，恢复正常保留后续片段。
+      if (trimmedLine.contains('#EXT-X-CUE-IN')) {
+        skippingAdBlock = false;
+        continue;
+      }
+
+      // 显式广告块开始后，连同期间的分片与时长标签一起跳过。
+      if (_isAdBlockStart(trimmedLine)) {
+        skippingAdBlock = true;
+        continue;
+      }
+
+      // 广告块内的标签和分片都不再下发给播放器。
+      if (skippingAdBlock) {
+        continue;
+      }
+
+      // 兜底过滤单行广告标记，避免 cue 标签之外的插播控制信息漏出。
+      if (_containsAdMarker(trimmedLine)) {
         continue;
       }
 
       // 处理分片 URL 或 Key URL
       if (!trimmedLine.startsWith('#')) {
         // 这是一行 URL（分片地址）
-        filteredLines.add(_resolveUrlStatic(trimmedLine, baseUrl));
+        filteredLines.add(resolveUrl(trimmedLine, baseUrl));
       } else if (trimmedLine.startsWith('#EXT-X-KEY')) {
         // 处理加密密钥 URL
         // 格式通常为: #EXT-X-KEY:METHOD=AES-128,URI="key.php",IV=0x...
@@ -66,7 +102,7 @@ class M3U8Service {
         final match = uriRegex.firstMatch(trimmedLine);
         if (match != null) {
           final relativeUri = match.group(1)!;
-          final absoluteUri = _resolveUrlStatic(relativeUri, baseUrl);
+          final absoluteUri = resolveUrl(relativeUri, baseUrl);
           filteredLines.add(trimmedLine.replaceFirst(relativeUri, absoluteUri));
         } else {
           filteredLines.add(line);
@@ -78,7 +114,7 @@ class M3U8Service {
         final match = uriRegex.firstMatch(trimmedLine);
         if (match != null) {
           final relativeUri = match.group(1)!;
-          final absoluteUri = _resolveUrlStatic(relativeUri, baseUrl);
+          final absoluteUri = resolveUrl(relativeUri, baseUrl);
           filteredLines.add(trimmedLine.replaceFirst(relativeUri, absoluteUri));
         } else {
           filteredLines.add(line);
@@ -91,8 +127,14 @@ class M3U8Service {
     return filteredLines.join('\n');
   }
 
-  /// 静态版本的 URL 解析
-  static String _resolveUrlStatic(String url, String baseUrl) {
+  /// 判断 URL 是否看起来像 M3U8 播放清单。
+  static bool looksLikeM3u8Url(String url) {
+    final lowerUrl = url.toLowerCase();
+    return lowerUrl.contains('.m3u8');
+  }
+
+  /// 将相对地址解析为绝对地址。
+  static String resolveUrl(String url, String baseUrl) {
     if (url.startsWith('http') || url.startsWith('data:')) {
       return url;
     }
@@ -103,6 +145,27 @@ class M3U8Service {
     } catch (e) {
       return url;
     }
+  }
+
+  /// 判断当前标签是否是显式广告块起点。
+  static bool _isAdBlockStart(String line) {
+    return line.contains('#EXT-X-CUE-OUT') ||
+        line.contains('#EXT-X-CUE-OUT-CONT') ||
+        line.contains('#EXT-X-PLACEMENT-OPPORTUNITY') ||
+        line.contains('#EXT-OATCLS-SCTE35') ||
+        line.contains('#EXT-X-SCTE35') ||
+        line.contains('#EXT-X-AD-STREAMING') ||
+        line.contains('#EXT-X-VERSION:AD');
+  }
+
+  /// 判断当前标签是否命中了任意广告标记。
+  static bool _containsAdMarker(String line) {
+    for (final pattern in _adMarkerPatterns) {
+      if (line.contains(pattern)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// 并发获取流的核心信息：分辨率、下载速度、延迟

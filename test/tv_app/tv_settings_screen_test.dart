@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/tv_app/screens/tv_home_screen.dart';
 import 'package:selene/tv_app/screens/tv_settings_screen.dart';
@@ -31,10 +32,10 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 四组芯片选项行应统一收敛到一个通用泛型实现，避免继续分叉维护。
+    // 五组芯片选项行应统一收敛到一个通用泛型实现，避免继续分叉维护。
     expect(
       _countWidgetsByRuntimeTypePrefix('_TvChipOptionRow<'),
-      4,
+      5,
     );
     expect(_countWidgetsByRuntimeTypeName('_TvThemeOptionRow'), 0);
     expect(_countWidgetsByRuntimeTypeName('_TvBackgroundOptionRow'), 0);
@@ -61,6 +62,7 @@ void main() {
         containsAll(<String>[
           '奈飞红',
           '放大镜',
+          'Exo',
           '豆瓣官方精品 CDN',
         ]));
     expect(TvFocusEffectMode.values.first, TvFocusEffectMode.magnifier);
@@ -103,6 +105,9 @@ void main() {
     expect(find.text('深蓝灰'), findsOneWidget);
     expect(find.text('深黑夜幕'), findsOneWidget);
     expect(find.text('图片代理'), findsOneWidget);
+    expect(find.text('播放器内核'), findsOneWidget);
+    expect(find.text('Exo'), findsOneWidget);
+    expect(find.text('WebView'), findsOneWidget);
     expect(find.text('豆瓣官方精品 CDN'), findsOneWidget);
     expect(find.text('自动去广告'), findsOneWidget);
     expect(find.text('弹幕服务器地址'), findsOneWidget);
@@ -259,8 +264,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // 首焦点从扫码按钮开始，向下依次穿过服务器配置与四组芯片选项后进入弹幕开关。
-    await _sendArrowDownTimes(tester, 9);
+    // 首焦点从扫码按钮开始，向下依次穿过服务器配置与五组芯片选项后进入弹幕开关。
+    await _sendArrowDownTimes(tester, 10);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -303,7 +308,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await _sendArrowDownTimes(tester, 9);
+    await _sendArrowDownTimes(tester, 10);
     expect(
       FocusManager.instance.primaryFocus?.debugLabel,
       'tv-settings-ad-filter-row',
@@ -394,6 +399,14 @@ void main() {
       FocusManager.instance.primaryFocus?.debugLabel,
       isNot('tv-back-handler'),
     );
+    expect(find.text('Exo'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      isNot('tv-back-handler'),
+    );
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -422,7 +435,7 @@ void main() {
     final lowerHalfTargetDy =
         scrollViewRect.top + (scrollViewRect.height * 0.72);
 
-    await _sendArrowDownTimes(tester, 9);
+    await _sendArrowDownTimes(tester, 10);
     final adFilterCenterDy = tester
         .getCenter(find.byKey(const ValueKey('tv-settings-ad-filter-switch')))
         .dy;
@@ -671,6 +684,31 @@ void main() {
 
     expect(savedImageSource, '豆瓣 CDN By CMLiussss（腾讯云）');
     expect(find.text('图片代理已保存'), findsOneWidget);
+  });
+
+  testWidgets('saves TV player kernel option', (tester) async {
+    String? savedPlayerKernelKey;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TvSettingsScreen(
+            loadSettings: () async => TvSettingsData.empty(),
+            savePlayerKernel: (playerKernelKey) async {
+              savedPlayerKernelKey = playerKernelKey;
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('WebView'));
+    await tester.tap(find.text('WebView'));
+    await tester.pumpAndSettle();
+
+    expect(savedPlayerKernelKey, TvPlayerKernel.webView.key);
+    expect(find.text('播放器内核已切换为 WebView'), findsOneWidget);
   });
 
   testWidgets('saves TV ad filter option', (tester) async {

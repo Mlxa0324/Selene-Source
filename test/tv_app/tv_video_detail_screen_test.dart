@@ -1519,6 +1519,17 @@ void main() {
     );
     expect(loadingOverlay.color, isNull);
     expect(loadingOverlay.decoration, isNull);
+    final loadingSpinnerShadow = tester.widget<DecoratedBox>(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-detail-preview-loading')),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    final spinnerDecoration = loadingSpinnerShadow.decoration as BoxDecoration;
+    expect(spinnerDecoration.color, isNull);
+    expect(spinnerDecoration.boxShadow, isNotEmpty);
+    final speedText = tester.widget<Text>(find.text('768KB/s'));
+    expect(speedText.style?.shadows, isNotEmpty);
     expect(find.text('768KB/s'), findsOneWidget);
     expect(find.text('0KB/s'), findsNothing);
     expect(
@@ -3110,6 +3121,14 @@ void main() {
 
     Focus.of(tester.element(find.text('备用源'))).requestFocus();
     await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    final sourceRightShake = await _waitForEdgeShakeOffset(
+      tester,
+      find.text('备用源'),
+    );
+    expect(sourceRightShake.dx, greaterThan(0));
+    expect(Focus.of(tester.element(find.text('备用源'))).hasFocus, isTrue);
+    expect(_focusScaleForText(tester, '备用源'), greaterThan(1));
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(const Duration(milliseconds: 80));
     expect(Focus.of(tester.element(find.text('备用源'))).hasFocus, isTrue);

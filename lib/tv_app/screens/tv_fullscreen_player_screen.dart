@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/danmaku_model.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
@@ -39,6 +40,9 @@ typedef TvFullscreenAdFilterLoader = Future<bool> Function();
 
 /// TV 全屏播放器 M3U8 代理地址读取函数。
 typedef TvFullscreenProxyUrlLoader = Future<String> Function();
+
+/// TV 全屏播放器内核读取函数。
+typedef TvFullscreenPlayerKernelLoader = Future<TvPlayerKernel> Function();
 
 /// TV 全屏播放器测试钩子。
 ///
@@ -225,6 +229,7 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
     this.reuseExistingPlayer = false,
     this.loadAdFilterEnabled,
     this.loadM3u8ProxyUrl,
+    this.loadPlayerKernel,
     this.testHooks,
   });
 
@@ -289,6 +294,9 @@ class TvFullscreenPlayerScreen extends StatefulWidget {
 
   /// M3U8 代理地址读取函数，测试时可注入。
   final TvFullscreenProxyUrlLoader? loadM3u8ProxyUrl;
+
+  /// TV 播放器内核读取函数，测试时可注入。
+  final TvFullscreenPlayerKernelLoader? loadPlayerKernel;
 
   /// 测试钩子，允许 widget test 模拟播放器完成事件。
   final TvFullscreenPlayerScreenTestHooks? testHooks;
@@ -423,6 +431,17 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前自动去广告开关状态。
   bool _adFilterEnabled = true;
 
+  /// 当前 TV 播放器内核配置。
+  ///
+  /// TV 设置页默认值为 Exo，全屏独立页和详情页共享播放器都统一读取这份偏好。
+  TvPlayerKernel _tvPlayerKernel = TvPlayerKernel.exo;
+
+  /// 是否已经完成 TV 播放器内核配置读取。
+  ///
+  /// 首次创建独立全屏播放器前需要先拿到最终内核，避免用户明明保存了 WebView，
+  /// 首播却先按默认 Exo 起一次。
+  bool _hasResolvedTvPlayerKernel = false;
+
   /// 当前已预热完成的 M3U8 代理地址。
   ///
   /// 全屏壳切集、换源和首帧恢复时都直接复用当前缓存，不再为等待配置读取卡住播放。
@@ -454,6 +473,18 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 下次分组获焦时是否跳过横向贴左动画。
   bool _suppressNextEpisodeGroupFocusPin = false;
+
+  /// 当前全屏页是否已经进入退出流程。
+  ///
+  /// 退出开始后，播放器进度、网速、焦点和 loading 等晚到回调都不再回写
+  /// 页面状态，避免共享播放器 overlay 关闭时出现竞态。
+  bool _isExitingFullscreen = false;
+
+  /// 当前退出流程是否已经安排过最终保存。
+  ///
+  /// 主动返回、系统返回和 `dispose` 都可能参与同一轮退出，只允许其中一个
+  /// 入口触发重保存，避免低配 TV 上重复 IO 抢占返回链路。
+  bool _hasScheduledExitSave = false;
 
   /// 当前画面比例。
   VideoFitType _fitType = VideoFitType.contain;
@@ -645,7 +676,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 播放器会在子组件 `initState/build` 过程中同步回调控制器创建和播放状态。
   /// 这些场景如果直接 `setState`，会触发 build 阶段重建异常，因此统一延后到本帧结束。
   void _scheduleChromeRefresh() {
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
 
@@ -657,7 +688,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     if (isBuildRelatedPhase) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (!_shouldIgnoreAsyncUiCallback) {
           setState(() {});
         }
       });
@@ -682,7 +713,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 网速变化时刷新全屏 loading 文案。
   void _onFullscreenNetworkSpeedUpdate() {
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
     _scheduleChromeRefresh();
+  }
+
+  /// 异步回调是否应停止写入当前页面。
+  bool get _shouldIgnoreAsyncUiCallback {
+    return !mounted || _isExitingFullscreen;
   }
 
   /// 绑定真实播放器控制器的进度与网速监听。
@@ -716,7 +755,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _pendingInitialPlaybackPosition =
         _safeInitialPlaybackPosition(widget.initialPlaybackPosition);
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (!mounted) {
+      if (_shouldIgnoreAsyncUiCallback) {
         return;
       }
       setState(() => _clockText = _formatClock(DateTime.now()));
@@ -725,6 +764,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     unawaited(_loadM3u8ProxyUrl());
     unawaited(_loadSkipDurations());
     unawaited(_loadDanmakuSettings());
+    unawaited(_loadPlayerKernelPreference());
     _loadAdFilterPreference();
   }
 
@@ -747,6 +787,10 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       _attachVideoControllerListeners(_effectiveVideoController);
     }
 
+    if (!identical(oldWidget.loadPlayerKernel, widget.loadPlayerKernel)) {
+      unawaited(_loadPlayerKernelPreference());
+    }
+
     final sourceChanged =
         oldWidget.currentDetail?.source != widget.currentDetail?.source ||
             oldWidget.currentDetail?.id != widget.currentDetail?.id;
@@ -764,7 +808,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _episodeCardSizeCache.clear();
     _invalidateCachedPlayerLayer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (!_shouldIgnoreAsyncUiCallback) {
         _ensureCurrentSelectionsVisible();
       }
     });
@@ -774,7 +818,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Future<void> _loadSkipDurations() async {
     final introSeconds = await UserDataService.getSkipIntroDuration();
     final outroSeconds = await UserDataService.getSkipOutroDuration();
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
     setState(() {
@@ -788,7 +832,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final loader =
         widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
     final adFilterEnabled = await loader();
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
     if (_adFilterEnabled == adFilterEnabled) {
@@ -798,6 +842,33 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     setState(() {
       _adFilterEnabled = adFilterEnabled;
     });
+  }
+
+  /// 读取 TV 全屏播放器内核配置。
+  Future<void> _loadPlayerKernelPreference() async {
+    final loader = widget.loadPlayerKernel ?? UserDataService.getTvPlayerKernel;
+    final playerKernel = await loader();
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
+
+    final shouldReplayPendingEpisode = !_hasResolvedTvPlayerKernel &&
+        !widget.reuseExistingPlayer &&
+        _playerController != null &&
+        _currentDetail != null;
+    if (_tvPlayerKernel == playerKernel && _hasResolvedTvPlayerKernel) {
+      return;
+    }
+
+    _invalidateCachedPlayerLayer();
+    setState(() {
+      _tvPlayerKernel = playerKernel;
+      _hasResolvedTvPlayerKernel = true;
+    });
+
+    if (shouldReplayPendingEpisode) {
+      unawaited(_loadCurrentEpisode(updateController: true));
+    }
   }
 
   /// 清理播放器画面层缓存。
@@ -820,6 +891,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       episodeTitles: _episodeTitles,
       fitType: _fitType,
       adFilterEnabled: _adFilterEnabled,
+      tvPlayerKernel: _tvPlayerKernel,
       playerBuilder: widget.playerBuilder,
     );
   }
@@ -828,7 +900,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Future<void> _loadM3u8ProxyUrl() async {
     final loader = widget.loadM3u8ProxyUrl ?? UserDataService.getM3u8ProxyUrl;
     final proxyUrl = await loader();
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
 
@@ -846,6 +918,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   @override
   void dispose() {
+    _isExitingFullscreen = true;
     widget.testHooks?.onVideoCompleted = null;
     HardwareKeyboard.instance.removeHandler(_handleGlobalKeyEvent);
     _clockTimer?.cancel();
@@ -853,8 +926,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekHoldTimer?.cancel();
     _menuAutoHideTimer?.cancel();
     _detachDanmakuController();
-    // 播放器壳销毁前兜底保存一次进度，避免系统返回直接销毁时漏记。
-    unawaited(_saveProgress(force: true, scene: '全屏页销毁'));
+    // 播放器壳销毁前只做兜底保存，主动返回和系统返回已保存时不再重复重活。
+    _scheduleExitSaveOnce(scene: '全屏页销毁');
     _attachVideoControllerListeners(null);
     _networkSpeedPlaybackController
         ?.removeNetworkSpeedListener(_onFullscreenNetworkSpeedUpdate);
@@ -881,7 +954,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Future<void> _loadDanmakuSettings() async {
     final service = widget.danmakuService ?? TvDanmakuService();
     final settings = await service.getSettings();
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
     setState(() {
@@ -1010,7 +1083,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 加载当前选集地址。
   Future<void> _loadCurrentEpisode({required bool updateController}) async {
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
     if (!updateController) {
+      return;
+    }
+    if (!_hasResolvedTvPlayerKernel) {
       return;
     }
     final token = ++_loadToken;
@@ -1021,7 +1100,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final index = _episodeIndex.clamp(0, _episodes.length - 1).toInt();
     final url = _resolvePlaybackUrl(_episodes[index]);
 
-    if (!mounted || token != _loadToken) {
+    if (_shouldIgnoreAsyncUiCallback || token != _loadToken) {
       return;
     }
 
@@ -1036,6 +1115,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _markFullscreenPlayerLoading(anchorPosition: startAt);
     _scheduleChromeRefresh();
     await _effectiveVideoController?.updateDataSource(url, startAt: startAt);
+    if (_shouldIgnoreAsyncUiCallback || token != _loadToken) {
+      return;
+    }
     await _seekToInitialPlaybackPositionIfNeeded(startAt);
     if (_danmakuEnabled) {
       unawaited(_loadDanmakuForCurrentEpisode(force: false));
@@ -1085,6 +1167,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 真实进度仍停在续播点之前时，补一次 seek。
   Future<void> _retryPendingResumeSeekAfterProgress() async {
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
     final resumePosition = _pendingResumeSeekPosition;
     if (resumePosition == null) {
       return;
@@ -1305,20 +1390,46 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     unawaited(_handleExitWithSave());
   }
 
-  /// 退出全屏前先保存一次当前进度。
+  /// 开始全屏退出流程。
   ///
-  /// 返回首页后可能立刻刷新“继续观看”，这里等待保存完成，减少新旧源记录并存窗口。
+  /// 返回键可能被连续触发，只有第一次进入的调用方可以继续执行可见退出。
+  bool _beginFullscreenExit() {
+    if (_isExitingFullscreen) {
+      return false;
+    }
+    _isExitingFullscreen = true;
+    _menuAutoHideTimer?.cancel();
+    _seekOverlayTimer?.cancel();
+    _seekHoldTimer?.cancel();
+    return true;
+  }
+
+  /// 退出流程只安排一次最终保存。
+  void _scheduleExitSaveOnce({required String scene}) {
+    if (_hasScheduledExitSave) {
+      return;
+    }
+    _hasScheduledExitSave = true;
+    unawaited(_saveProgress(force: true, scene: scene));
+  }
+
+  /// 先执行可见退出，再后台保存当前进度。
+  ///
+  /// 2G TV 上同步等待保存会把返回动作卡住；这里先关闭全屏壳，再让保存作为
+  /// 本轮退出的唯一后台收尾。
   Future<void> _handleExitWithSave() async {
-    await _saveProgress(force: true, scene: '全屏返回');
-    if (!mounted) {
+    if (!_beginFullscreenExit()) {
       return;
     }
     final exitRequested = widget.onExitRequested;
     if (exitRequested != null) {
       exitRequested();
+      _scheduleExitSaveOnce(scene: '全屏返回');
       return;
     }
-    await Navigator.of(context).maybePop();
+    final navigator = Navigator.of(context);
+    unawaited(navigator.maybePop());
+    _scheduleExitSaveOnce(scene: '全屏返回');
   }
 
   /// 展示底部菜单。
@@ -1330,7 +1441,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     });
     _scheduleMenuAutoHide();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (_shouldIgnoreAsyncUiCallback) {
         return;
       }
       _ensureCurrentSelectionsVisible();
@@ -1365,7 +1476,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
 
     // 播放/暂停切换后主动刷新壳层状态，确保暂停态 UI 立即同步。
-    if (mounted) {
+    if (!_shouldIgnoreAsyncUiCallback) {
       setState(() {});
     }
     _syncDanmakuPlaybackState(forcePlaying: !controller.isPlaying);
@@ -1415,7 +1526,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final recoveryAnchor = _seekPreviewPosition ?? _currentPlaybackPosition;
     // 长按松手后如果视频仍在播放，则立即收起中心提示和底部进度壳层。
-    if (mounted) {
+    if (!_shouldIgnoreAsyncUiCallback) {
       setState(() {
         _seekOverlayVisible = false;
       });
@@ -1461,7 +1572,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
     final interval = Duration(microseconds: intervalMicros);
     _seekHoldTimer = Timer(interval, () {
-      if (!mounted || _activeSeekKey != activeKey) {
+      if (_shouldIgnoreAsyncUiCallback || _activeSeekKey != activeKey) {
         return;
       }
 
@@ -1621,13 +1732,13 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final injectedController = widget.playbackController;
     if (injectedController != null) {
       await injectedController.seekTo(position);
-      if (mounted) {
+      if (!_shouldIgnoreAsyncUiCallback) {
         setState(() {});
       }
       return;
     }
     await _playerController?.seekTo(position);
-    if (mounted) {
+    if (!_shouldIgnoreAsyncUiCallback) {
       setState(() {});
     }
   }
@@ -1685,7 +1796,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   void _scheduleSeekOverlayHide() {
     _seekOverlayTimer?.cancel();
     _seekOverlayTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted) {
+      if (_shouldIgnoreAsyncUiCallback) {
         return;
       }
       setState(() => _seekOverlayVisible = false);
@@ -1718,7 +1829,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _menuAutoHideTimer?.cancel();
     setState(() => _menuVisible = false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (!_shouldIgnoreAsyncUiCallback) {
         _rootFocusNode.requestFocus();
       }
     });
@@ -1728,7 +1839,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   void _handlePopInvoked(bool didPop) {
     if (didPop) {
       // 系统返回已完成路由退出时补一次兜底保存，覆盖手势返回等非按键路径。
-      unawaited(_saveProgress(force: true, scene: '全屏系统返回'));
+      _isExitingFullscreen = true;
+      _scheduleExitSaveOnce(scene: '全屏系统返回');
       return;
     }
     if (!_menuVisible) {
@@ -1746,7 +1858,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     setState(() => _activeMenuIndex = index);
     if (_menuTabs[index] == '播放列表') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
+        if (_shouldIgnoreAsyncUiCallback) {
           return;
         }
         _ensureCurrentSelectionsVisible();
@@ -2007,7 +2119,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前分组真正获焦后，再把选集尽量推到左侧起点。
   void _schedulePinEpisodeNearLeadingEdge(int episodeIndex) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (!_shouldIgnoreAsyncUiCallback) {
         _pinEpisodeNearLeadingEdge(episodeIndex);
       }
     });
@@ -2016,7 +2128,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前分组真正获焦后，再把分组尽量推到左侧起点。
   void _schedulePinEpisodeGroupNearLeadingEdge(int groupIndex) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (!_shouldIgnoreAsyncUiCallback) {
         _pinEpisodeGroupNearLeadingEdge(groupIndex);
       }
     });
@@ -2112,7 +2224,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       }
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
+        if (_shouldIgnoreAsyncUiCallback) {
           return;
         }
         if (episodeGroupCount > 1) {
@@ -2413,7 +2525,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         groupCount == 0 ? 0 : groupIndex.clamp(0, groupCount - 1).toInt();
 
     bool requestEpisodeFocus() {
-      if (!mounted) {
+      if (_shouldIgnoreAsyncUiCallback) {
         return false;
       }
       if (_focusEpisodeOptionInGroup(
@@ -2491,7 +2603,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _schedulePinEpisodeNearLeadingEdge(firstEpisodeIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (!_shouldIgnoreAsyncUiCallback) {
           _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
         }
       });
@@ -2526,7 +2638,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _lockEpisodeGroupsDuringHorizontalEpisodeMove();
     setState(() => _episodeGroupIndex = previousGroupIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (_shouldIgnoreAsyncUiCallback) {
         return;
       }
       if (_episodeListScrollController.hasClients) {
@@ -2535,7 +2647,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         _episodeListScrollController.jumpTo(position.maxScrollExtent);
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
+        if (_shouldIgnoreAsyncUiCallback) {
           return;
         }
         final focused = _focusEpisodeOptionInGroup(
@@ -2544,7 +2656,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         );
         if (!focused) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
+            if (!_shouldIgnoreAsyncUiCallback) {
               _focusEpisodeOptionInGroup(previousGroupIndex, lastEpisodeIndex);
               _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
             }
@@ -2607,6 +2719,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
     final position = _currentPlaybackPosition;
     if (_hasPlaybackPositionAdvanced(
       current: position,
@@ -2836,6 +2951,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 根据当前播放上下文自动加载弹幕。
   Future<void> _loadDanmakuForCurrentEpisode({required bool force}) async {
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
     if (!_danmakuEnabled) {
       return;
     }
@@ -2870,7 +2988,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           : null,
     );
 
-    if (!mounted || token != _danmakuLoadToken) {
+    if (_shouldIgnoreAsyncUiCallback || token != _danmakuLoadToken) {
       return;
     }
 
@@ -2920,7 +3038,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final service = widget.danmakuService ?? TvDanmakuService();
     final comments = await service.loadDanmakuByEpisodeId(episodeId);
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
 
@@ -2935,7 +3053,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       selectedEpisodeOffset: episodeOffset,
     );
 
-    if (!mounted) {
+    if (_shouldIgnoreAsyncUiCallback) {
       return;
     }
 
@@ -2961,6 +3079,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final service = widget.danmakuService ?? TvDanmakuService();
     await service.saveSettings(nextSettings);
+    if (_shouldIgnoreAsyncUiCallback) {
+      return;
+    }
 
     if (!nextEnabled) {
       _clearDanmakuState(clearList: true);
@@ -2974,7 +3095,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _danmakuIndex = 0;
     _lastDanmakuCheckTime = -1;
     _danmakuController?.clear();
-    if (!clearList || !mounted) {
+    if (!clearList || _shouldIgnoreAsyncUiCallback) {
       return;
     }
     setState(() {
@@ -3079,7 +3200,8 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   void _handleDanmakuControllerCreated(DanmakuController controller) {
     _danmakuController = controller;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !identical(_danmakuController, controller)) {
+      if (_shouldIgnoreAsyncUiCallback ||
+          !identical(_danmakuController, controller)) {
         return;
       }
       _refreshDanmakuOption();
@@ -3162,7 +3284,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
     _menuAutoHideTimer?.cancel();
     _menuAutoHideTimer = Timer(_menuAutoHideDuration, () {
-      if (!mounted || !_menuVisible) {
+      if (_shouldIgnoreAsyncUiCallback || !_menuVisible) {
         return;
       }
       _hideMenu();
@@ -3238,6 +3360,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           showControls: false,
           enablePip: false,
           adFilterEnabled: _adFilterEnabled,
+          tvPlayerKernel: _tvPlayerKernel,
           onControllerCreated: _handlePlayerControllerCreated,
           onReady: _handleFullscreenReadySignal,
           onPlay: _handleFullscreenPlaySignal,
@@ -3258,18 +3381,31 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 构建全屏播放器 loading 转圈和网速提示。
   Widget _buildFullscreenLoadingOverlay() {
     final networkSpeedText = _fullscreenNetworkSpeedText;
+    final shadowColor = Colors.black.withValues(alpha: 0.42);
     return Center(
       child: IgnorePointer(
         child: Container(
           key: const ValueKey('tv-fullscreen-loading'),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 3,
-                value: _isFlutterTestEnvironment ? 0.72 : null,
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  // 只给转圈本体增加柔和投影，不给整块 loading 做卡片式背景。
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: shadowColor,
+                      blurRadius: 18,
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 3,
+                  value: _isFlutterTestEnvironment ? 0.72 : null,
+                ),
               ),
               const SizedBox(height: 12),
               Text(
@@ -3278,6 +3414,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
                   color: Colors.white.withValues(alpha: 0.94),
+                ).copyWith(
+                  shadows: <Shadow>[
+                    Shadow(
+                      color: shadowColor,
+                      blurRadius: 14,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 4),
@@ -3287,6 +3431,14 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                   color: Colors.white.withValues(alpha: 0.72),
+                ).copyWith(
+                  shadows: <Shadow>[
+                    Shadow(
+                      color: shadowColor,
+                      blurRadius: 14,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -3308,7 +3460,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     _hasRequestedInitialControllerLoad = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (_shouldIgnoreAsyncUiCallback) {
         return;
       }
       if (widget.reuseExistingPlayer) {
@@ -4317,6 +4469,7 @@ class _TvFullscreenPlayerLayerSignature {
     required this.episodeTitles,
     required this.fitType,
     required this.adFilterEnabled,
+    required this.tvPlayerKernel,
     required this.playerBuilder,
   });
 
@@ -4350,6 +4503,9 @@ class _TvFullscreenPlayerLayerSignature {
   /// 当前自动去广告开关。
   final bool adFilterEnabled;
 
+  /// 当前 TV 播放器内核。
+  final TvPlayerKernel tvPlayerKernel;
+
   /// 当前测试或特殊播放器构建函数。
   final TvFullscreenPlayerBuilder? playerBuilder;
 
@@ -4365,6 +4521,7 @@ class _TvFullscreenPlayerLayerSignature {
         other.episodeCount == episodeCount &&
         other.fitType == fitType &&
         other.adFilterEnabled == adFilterEnabled &&
+        other.tvPlayerKernel == tvPlayerKernel &&
         identical(other.playerBuilder, playerBuilder) &&
         listEquals(other.episodeTitles, episodeTitles);
   }
@@ -4380,6 +4537,7 @@ class _TvFullscreenPlayerLayerSignature {
         episodeCount,
         fitType,
         adFilterEnabled,
+        tvPlayerKernel,
         identityHashCode(playerBuilder),
         Object.hashAll(episodeTitles),
       );

@@ -11,6 +11,21 @@ class TvFocusScroll {
   /// 没必要再发一轮动画，否则会在 TV 长列表里制造额外掉帧。
   static const double offsetEpsilon = 1.0;
 
+  /// 小位移直接跳转阈值。
+  ///
+  /// 低配 TV 上很短距离也开一段滚动动画，方向键快速移动时会叠出多余帧。
+  static const double immediateOffsetThreshold = 8.0;
+
+  /// 同一滚动位置重复请求合并窗口。
+  static const Duration duplicateRequestWindow = Duration(milliseconds: 90);
+
+  /// 最近一次滚动请求缓存。
+  ///
+  /// 焦点切换、尺寸测量和 post-frame 回调可能在短时间内给同一个列表发出
+  /// 相同目标，这里只保留第一轮动画，避免重复 `animateTo` 抢帧。
+  static final Map<ScrollPosition, _TvFocusScrollRequest> _recentRequests =
+      <ScrollPosition, _TvFocusScrollRequest>{};
+
   /// 焦点进入横向列表后，超过视口这个比例时开始提前滚动。
   ///
   /// 该值略小于屏幕中心，确保用户浏览到第 5 个左右就开始平滑推进，
@@ -65,7 +80,16 @@ class TvFocusScroll {
       if ((position.pixels - targetOffset).abs() <= offsetEpsilon) {
         return;
       }
-      scrollable.position.animateTo(
+      if (_isDuplicateRequest(position, targetOffset)) {
+        return;
+      }
+      _rememberRequest(position, targetOffset);
+      final delta = (position.pixels - targetOffset).abs();
+      if (delta <= immediateOffsetThreshold) {
+        position.jumpTo(targetOffset);
+        return;
+      }
+      position.animateTo(
         targetOffset,
         duration: duration,
         curve: curve,
@@ -141,4 +165,46 @@ class TvFocusScroll {
             .toDouble();
     return earlyScrollOffset;
   }
+
+  /// 判断本次滚动是否是短时间内的重复目标。
+  static bool _isDuplicateRequest(
+    ScrollPosition position,
+    double targetOffset,
+  ) {
+    final request = _recentRequests[position];
+    if (request == null) {
+      return false;
+    }
+    final sameTarget =
+        (request.targetOffset - targetOffset).abs() <= offsetEpsilon;
+    final stillFresh =
+        DateTime.now().difference(request.createdAt) <= duplicateRequestWindow;
+    return sameTarget && stillFresh;
+  }
+
+  /// 记录本次滚动目标，供短时间重复请求去重。
+  static void _rememberRequest(
+    ScrollPosition position,
+    double targetOffset,
+  ) {
+    _recentRequests[position] = _TvFocusScrollRequest(
+      targetOffset: targetOffset,
+      createdAt: DateTime.now(),
+    );
+  }
+}
+
+/// TV 焦点滚动请求记录。
+class _TvFocusScrollRequest {
+  /// 创建一条滚动请求记录。
+  const _TvFocusScrollRequest({
+    required this.targetOffset,
+    required this.createdAt,
+  });
+
+  /// 本次滚动目标位置。
+  final double targetOffset;
+
+  /// 本次滚动请求创建时间。
+  final DateTime createdAt;
 }

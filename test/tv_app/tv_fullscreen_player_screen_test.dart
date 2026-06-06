@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/play_record.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
@@ -19,6 +20,40 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     UserDataService.debugResetMemoryCaches();
+  });
+
+  testWidgets('fullscreen default player honors saved TV player kernel',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult(
+            'source_a',
+            '主线路',
+            episodeCount: 0,
+          ),
+          sources: [
+            _searchResult(
+              'source_a',
+              '主线路',
+              episodeCount: 0,
+            ),
+          ],
+          loadPlayerKernel: () async => TvPlayerKernel.webView,
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(
+      tester
+          .widget<VideoPlayerWidget>(find.byType(VideoPlayerWidget))
+          .tvPlayerKernel,
+      TvPlayerKernel.webView,
+    );
   });
 
   testWidgets('opens TV player menu with down key and hides unsupported tabs',
@@ -2071,6 +2106,38 @@ void main() {
     expect(find.byKey(const ValueKey('tv-fullscreen-player')), findsNothing);
   });
 
+  testWidgets('escape requests fullscreen exit only once when repeated',
+      (tester) async {
+    var exitRequestCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          onExitRequested: () {
+            exitRequestCount++;
+          },
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(exitRequestCount, 1);
+  });
+
   testWidgets('escape closes player menu before popping fullscreen route',
       (tester) async {
     await tester.pumpWidget(
@@ -2302,6 +2369,19 @@ void main() {
     );
     expect(loadingOverlay.color, isNull);
     expect(loadingOverlay.decoration, isNull);
+    final loadingSpinnerShadow = tester.widget<DecoratedBox>(
+      find.descendant(
+        of: find.byKey(const ValueKey('tv-fullscreen-loading')),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    final spinnerDecoration = loadingSpinnerShadow.decoration as BoxDecoration;
+    expect(spinnerDecoration.color, isNull);
+    expect(spinnerDecoration.boxShadow, isNotEmpty);
+    final loadingText = tester.widget<Text>(find.text('加载中'));
+    expect(loadingText.style?.shadows, isNotEmpty);
+    final speedText = tester.widget<Text>(find.text('1.5MB/s'));
+    expect(speedText.style?.shadows, isNotEmpty);
     expect(find.text('加载中'), findsOneWidget);
     expect(find.text('1.5MB/s'), findsOneWidget);
     expect(find.text('0KB/s'), findsNothing);
