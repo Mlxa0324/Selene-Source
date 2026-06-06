@@ -101,8 +101,8 @@ abstract interface class TvFullscreenVideoControllerProvider {
 
 /// TV 全屏播放器遥控器 seek 步长规则。
 ///
-/// 短按保持 10 秒跳转；长按前 5 秒保持每真实秒推进 30 秒视频，
-/// 5 秒后切到每真实秒推进 120 秒视频，并减少页面刷新次数。
+/// 短按保持 10 秒跳转；长按前 5 秒保持每真实秒推进 2 分钟视频，
+/// 5 秒后切到每真实秒推进 3 分钟视频，让 TV 遥控器长按拖动更接近分钟位滚动。
 class TvFullscreenSeekStep {
   /// 私有构造，避免工具类被实例化。
   const TvFullscreenSeekStep._();
@@ -111,16 +111,16 @@ class TvFullscreenSeekStep {
   static const int initialPressSeconds = 10;
 
   /// 长按第一档每个内部 tick 推进的视频秒数。
-  static const int normalRepeatStepSeconds = 3;
+  static const int normalRepeatStepSeconds = 12;
 
   /// 长按第二档每个内部 tick 推进的视频秒数。
-  static const int acceleratedRepeatStepSeconds = 6;
+  static const int acceleratedRepeatStepSeconds = 18;
 
   /// 长按第一档每真实秒推进的视频秒数。
-  static const int normalSeekSecondsPerSecond = 30;
+  static const int normalSeekSecondsPerSecond = 120;
 
   /// 长按第二档每真实秒推进的视频秒数。
-  static const int acceleratedSeekSecondsPerSecond = 120;
+  static const int acceleratedSeekSecondsPerSecond = 180;
 
   /// 长按切入第二段加速的持续时间阈值。
   static const Duration accelerationThreshold = Duration(seconds: 5);
@@ -129,10 +129,10 @@ class TvFullscreenSeekStep {
   static const Duration longPressStartThreshold = Duration(milliseconds: 250);
 
   /// 长按第一档重复 seek 的名义最小间隔。
-  static const int normalRepeatIntervalMicroseconds = 16667;
+  static const int normalRepeatIntervalMicroseconds = 100000;
 
   /// 长按第二档重复 seek 的名义最小间隔。
-  static const int acceleratedRepeatIntervalMicroseconds = 8333;
+  static const int acceleratedRepeatIntervalMicroseconds = 100000;
 
   /// 根据长按持续时间计算当前重复 seek 的触发间隔微秒数。
   static int repeatIntervalMicrosecondsForElapsed(Duration elapsed) {
@@ -149,7 +149,7 @@ class TvFullscreenSeekStep {
 
   /// 根据长按持续时间计算当前重复 seek 的步进秒数。
   static int repeatStepForElapsed(Duration elapsed) {
-    if (elapsed <= accelerationThreshold) {
+    if (elapsed < accelerationThreshold) {
       return normalRepeatStepSeconds;
     }
     return acceleratedRepeatStepSeconds;
@@ -201,6 +201,47 @@ class TvFullscreenSeekStep {
                 acceleratedSeekSecondsPerSecond -
                 1) ~/
             acceleratedSeekSecondsPerSecond);
+  }
+
+  /// 根据真实 seek 目标生成中心提示展示时间。
+  ///
+  /// 长按时真实目标保持分钟位高速推进；中心提示的秒个位按真实秒慢速变化，
+  /// 秒十位继续跟随真实目标快速滚动，避免用户只看到一串难读的秒个位跳动。
+  static Duration displayPositionForLongPress({
+    required Duration actualPosition,
+    required Duration basePosition,
+    required Duration elapsed,
+    required int direction,
+    required Duration duration,
+  }) {
+    if (direction == 0 || elapsed <= Duration.zero) {
+      return actualPosition;
+    }
+
+    final durationSeconds = duration.inSeconds;
+    if (durationSeconds <= 0) {
+      return Duration.zero;
+    }
+
+    final actualSeconds =
+        actualPosition.inSeconds.clamp(0, durationSeconds).toInt();
+    final actualSecondsInMinute = actualSeconds.remainder(60);
+    final actualSecondTens = actualSecondsInMinute ~/ 10;
+    final baseSecondOnes = basePosition.inSeconds.remainder(10);
+    final displaySecondOnes = _positiveModulo(
+      baseSecondOnes + direction * elapsed.inSeconds,
+      10,
+    );
+    final displaySecondsInMinute = actualSecondTens * 10 + displaySecondOnes;
+    final displaySeconds = (actualSeconds ~/ 60) * 60 + displaySecondsInMinute;
+    final safeDisplaySeconds = displaySeconds.clamp(0, durationSeconds).toInt();
+    return Duration(seconds: safeDisplaySeconds);
+  }
+
+  /// 对负向快退场景做安全取模，确保秒个位始终落在 0-9。
+  static int _positiveModulo(int value, int divisor) {
+    final result = value % divisor;
+    return result < 0 ? result + divisor : result;
   }
 }
 
@@ -549,6 +590,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 当前 seek 预览位置。
   Duration? _seekPreviewPosition;
 
+  /// 当前 seek 中心提示展示位置。
+  Duration? _seekPreviewDisplayPosition;
+
   /// 当前 seek 提示总时长。
   Duration? _seekPreviewDuration;
 
@@ -566,6 +610,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前长按 seek 已经累计下发的视频秒数。
   int _seekHoldAppliedSeconds = 0;
+
+  /// 当前长按 seek 展示秒个位的起始位置。
+  Duration? _seekHoldDisplayBasePosition;
 
   /// 当前长按 seek 是否已经越过短按保护阈值。
   bool _seekHoldLongPressStarted = false;
@@ -1207,7 +1254,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         !url.startsWith('http')) {
       return url;
     }
-    return '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
+    final proxiedUrl = '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
+    if (_tvPlayerKernel == TvPlayerKernel.exo) {
+      // Exo 内核内部已有专用 M3U8 过滤代理，避免再叠加用户配置的外部代理。
+      return resolveAndroidTvExoSourceUrl(url: proxiedUrl, originalUrl: url);
+    }
+    return proxiedUrl;
   }
 
   /// 标记全屏播放器开始加载。
@@ -1504,6 +1556,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekHoldElapsed = Duration.zero;
     _seekHoldHasRepeated = false;
     _seekHoldAppliedSeconds = 0;
+    _seekHoldDisplayBasePosition = _seekPreviewPosition;
     _seekHoldLongPressStarted = false;
     _scheduleNextSeekHoldTick();
   }
@@ -1594,6 +1647,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
         _applySeekDelta(
           _seekDirection,
           deltaSeconds,
+          longPressElapsed: longPressElapsed,
           markRecoveryLoading: false,
         );
       }
@@ -1605,6 +1659,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   void _applySeekDelta(
     int direction,
     int seconds, {
+    Duration? longPressElapsed,
     bool markRecoveryLoading = true,
   }) {
     final duration = _currentPlaybackDuration;
@@ -1619,9 +1674,20 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       Duration.zero,
       duration,
     );
+    final displayTarget =
+        longPressElapsed == null || _seekHoldDisplayBasePosition == null
+            ? target
+            : TvFullscreenSeekStep.displayPositionForLongPress(
+                actualPosition: target,
+                basePosition: _seekHoldDisplayBasePosition!,
+                elapsed: longPressElapsed,
+                direction: direction,
+                duration: duration,
+              );
 
     setState(() {
       _seekPreviewPosition = target;
+      _seekPreviewDisplayPosition = displayTarget;
       _seekPreviewDuration = duration;
       _seekOverlayVisible = true;
     });
@@ -1812,6 +1878,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekHoldElapsed = Duration.zero;
     _seekHoldHasRepeated = false;
     _seekHoldAppliedSeconds = 0;
+    _seekHoldDisplayBasePosition = null;
     _seekHoldLongPressStarted = false;
   }
 
@@ -1821,6 +1888,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _clearSeekHoldTracking();
     _seekDirection = 0;
     _seekPreviewPosition = null;
+    _seekPreviewDisplayPosition = null;
     _seekPreviewDuration = null;
   }
 
@@ -1886,7 +1954,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 记录播放列表最近一次获焦分组。
   ///
-  /// 分组获焦时同步切换上方选集页，确保按上返回时能对上当前分组。
+  /// 分组获焦只保留菜单焦点记忆；真正切换分组必须等待确认键。
   void _rememberEpisodeGroupFocus(int index) {
     _scheduleMenuAutoHide();
     final cameFromGroupRow =
@@ -1894,37 +1962,11 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _lastFocusedPlaylistRow = _TvPlaylistSecondaryRow.group;
     if (_suppressNextEpisodeGroupFocusPin) {
       _suppressNextEpisodeGroupFocusPin = false;
-      final groupEpisodeIndexes = _episodeIndexesForGroup(
-        _episodes.length,
-        index,
-      );
-      final hasRememberedEpisodeInGroup = _lastFocusedEpisodeIndex != null &&
-          _episodeBelongsToGroup(_lastFocusedEpisodeIndex!, index);
-      if (!hasRememberedEpisodeInGroup && groupEpisodeIndexes.isNotEmpty) {
-        _lastFocusedEpisodeIndex = groupEpisodeIndexes.first;
-      }
-      if (_episodeGroupIndex != index) {
-        setState(() => _episodeGroupIndex = index);
-      }
       return;
     }
     if (cameFromGroupRow) {
       _schedulePinEpisodeGroupNearLeadingEdge(index);
     }
-    final groupEpisodeIndexes = _episodeIndexesForGroup(
-      _episodes.length,
-      index,
-    );
-    final hasRememberedEpisodeInGroup = _lastFocusedEpisodeIndex != null &&
-        _episodeBelongsToGroup(_lastFocusedEpisodeIndex!, index);
-    if (!hasRememberedEpisodeInGroup && groupEpisodeIndexes.isNotEmpty) {
-      // 焦点移到新分组即切换选集页，上键回到该分组第一集。
-      _lastFocusedEpisodeIndex = groupEpisodeIndexes.first;
-    }
-    if (_episodeGroupIndex == index) {
-      return;
-    }
-    setState(() => _episodeGroupIndex = index);
   }
 
   /// 获取二级菜单稳定焦点节点。
@@ -3758,7 +3800,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 构建左右键拖动进度时的中心时间提示。
   Widget _buildSeekOverlay() {
-    final position = _seekPreviewPosition ?? _currentPlaybackPosition;
+    final position = _seekPreviewDisplayPosition ??
+        _seekPreviewPosition ??
+        _currentPlaybackPosition;
     final duration = _seekPreviewDuration ?? _currentPlaybackDuration;
     final icon =
         _seekDirection < 0 ? LucideIcons.rewind : LucideIcons.fastForward;
@@ -4052,7 +4096,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                                           ?.shake(AxisDirection.right)
                                       : null,
                                   onArrowUp: () => _focusEpisodeOptionForGroup(
-                                    index,
+                                    groupIndex,
                                     useNearestVisible: true,
                                   ),
                                   onArrowDown: _focusCurrentPrimaryMenu,

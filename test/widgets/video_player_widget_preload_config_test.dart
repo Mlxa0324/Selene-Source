@@ -100,6 +100,23 @@ void main() {
     );
   });
 
+  test('android tv exo source url prefers original stream over outer proxy', () {
+    expect(
+      resolveAndroidTvExoSourceUrl(
+        url: 'https://proxy.example.com/?url=https%3A%2F%2Fvideo.example.com%2F1.m3u8',
+        originalUrl: 'https://video.example.com/1.m3u8',
+      ),
+      'https://video.example.com/1.m3u8',
+    );
+
+    expect(
+      resolveAndroidTvExoSourceUrl(
+        url: 'https://video.example.com/1.m3u8',
+      ),
+      'https://video.example.com/1.m3u8',
+    );
+  });
+
   test('player adapter exposes cached ranges through stream and state',
       () async {
     final stream = _FakePlayerAdapterStream();

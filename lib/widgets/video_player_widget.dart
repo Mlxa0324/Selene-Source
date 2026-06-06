@@ -49,6 +49,21 @@ bool preferExoForAndroidTvPlayback({
       tvPlayerKernel == TvPlayerKernel.exo;
 }
 
+/// 解析 Android TV Exo 实际使用的源地址。
+///
+/// 详情页和全屏页会为 WebView 老链路提前拼接外部 M3U8 代理地址；
+/// Exo 自身已经有本地清单过滤代理，继续叠加外部代理会增加真实 TV 播放失败风险。
+String resolveAndroidTvExoSourceUrl({
+  required String url,
+  String? originalUrl,
+}) {
+  final candidate = originalUrl;
+  if (candidate == null || candidate.isEmpty) {
+    return url;
+  }
+  return candidate;
+}
+
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
   final String? url;
@@ -603,13 +618,46 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     Duration? startAt,
   }) async {
     final playbackUri = await _resolveAndroidTvExoPlaybackUri(url);
+    return _createAndroidTvExoAdapterFromUri(
+      playbackUri: playbackUri,
+      originalUrl: url,
+      startAt: startAt,
+    );
+  }
+
+  /// 创建 Android TV Exo 适配器，代理地址失败时回退原始地址。
+  Future<VideoPlayerAdapter> _createAndroidTvExoAdapterFromUri({
+    required Uri playbackUri,
+    required String originalUrl,
+    Duration? startAt,
+  }) async {
     final controller = vp.VideoPlayerController.networkUrl(
       playbackUri,
       httpHeaders: _currentHeaders ?? const <String, String>{},
     );
-    await controller.initialize();
-    if (startAt != null) {
-      await controller.seekTo(startAt);
+    try {
+      await controller.initialize();
+      if (startAt != null) {
+        await controller.seekTo(startAt);
+      }
+    } catch (error) {
+      debugPrint(
+        'VideoPlayerWidget: Android TV Exo 初始化失败，url=$playbackUri error=$error',
+      );
+      if (playbackUri.toString() == originalUrl) {
+        rethrow;
+      }
+      await controller.dispose();
+      final fallbackController = vp.VideoPlayerController.networkUrl(
+        Uri.parse(originalUrl),
+        httpHeaders: _currentHeaders ?? const <String, String>{},
+      );
+      await fallbackController.initialize();
+      if (startAt != null) {
+        await fallbackController.seekTo(startAt);
+      }
+      debugPrint('VideoPlayerWidget: Android TV Exo 已回退原始播放地址');
+      return VideoPlayerAdapter(fallbackController);
     }
     return VideoPlayerAdapter(controller);
   }
@@ -1188,17 +1236,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           await oldController.pause();
 
           final playbackUri = await _resolveAndroidTvExoPlaybackUri(url);
-          final newController = vp.VideoPlayerController.networkUrl(
-            playbackUri,
-            httpHeaders: _currentHeaders ?? const <String, String>{},
+          final nextAdapter = await _createAndroidTvExoAdapterFromUri(
+            playbackUri: playbackUri,
+            originalUrl: url,
+            startAt: startAt,
           );
-          await newController.initialize();
-          if (startAt != null) {
-            await newController.seekTo(startAt);
-          }
 
           final oldAdapter = _adapter;
-          _adapter = VideoPlayerAdapter(newController);
+          _adapter = nextAdapter;
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
           await _adapter!.play();

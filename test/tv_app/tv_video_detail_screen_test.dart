@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/favorite_item.dart';
 import 'package:selene/models/play_record.dart';
 import 'package:selene/models/search_result.dart';
@@ -2469,17 +2470,10 @@ void main() {
       itemFinder: find.text(nearestGroupFromEpisode),
     );
 
-    final groupRange = nearestGroupFromEpisode.split('-');
-    final groupStart = int.parse(groupRange.first);
-    final groupEnd = int.parse(groupRange.last);
-    final groupEpisodeLabels = List<String>.generate(
-      groupEnd - groupStart + 1,
-      (index) => '第${groupStart + index}集',
-    );
     final nearestEpisodeFromGroup = _nearestTextByHorizontalCenter(
       tester,
       anchorText: nearestGroupFromEpisode,
-      candidateTexts: groupEpisodeLabels,
+      candidateTexts: episodeLabels,
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
     await tester.pumpAndSettle();
@@ -3283,7 +3277,7 @@ void main() {
     expect(episodeScrollable.position.pixels, moreOrLessEquals(shiftedOffset));
   });
 
-  testWidgets('switches visible episode range when group label gets focus',
+  testWidgets('episode group label focus waits for confirm before switching',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -3318,6 +3312,13 @@ void main() {
     expect(find.text('第25集'), findsNothing);
 
     Focus.of(tester.element(find.text('21-25'))).requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(find.text('第1集'), findsOneWidget);
+    expect(find.text('第21集'), findsNothing);
+    expect(find.text('第25集'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
     await tester.pumpAndSettle();
 
     expect(find.text('第1集'), findsNothing);
@@ -3491,7 +3492,7 @@ void main() {
     _expectFocused(tester, find.text('第20集'));
   });
 
-  testWidgets('episode group focus coalesces rapid switching asynchronously',
+  testWidgets('episode group focus preserves current range until confirmed',
       (tester) async {
     await _setTvSurfaceSize(tester);
     await tester.pumpWidget(
@@ -3536,8 +3537,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 90));
     await tester.pumpAndSettle();
 
+    expect(find.text('第1集'), findsOneWidget);
     expect(find.text('第21集'), findsNothing);
     expect(find.text('第41集'), findsNothing);
+    expect(find.text('第61集'), findsNothing);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.select);
+    await tester.pumpAndSettle();
+
+    expect(find.text('第1集'), findsNothing);
     expect(find.text('第61集'), findsOneWidget);
   });
 
@@ -3665,6 +3673,61 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(updatedUrls, ['https://example.com/2.m3u8']);
+  });
+
+  testWidgets('detail Exo playback ignores outer m3u8 proxy url',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final updatedUrls = <String>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '主影片', totalEpisodes: 2),
+          loadPlayerKernel: () async => TvPlayerKernel.exo,
+          loadM3u8ProxyUrl: () async => 'https://proxy.example.com/?url=',
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 2,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 2),
+            ],
+            recommends: const [],
+          ),
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 1000),
+                  onUpdateDataSource: (url, {startAt, headers}) async {
+                    updatedUrls.add(url);
+                  },
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(updatedUrls, ['https://example.com/1.m3u8']);
   });
 
   testWidgets(

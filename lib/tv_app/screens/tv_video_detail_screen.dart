@@ -496,13 +496,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 详情页推荐横向焦点记忆分组。
   static const String _recommendFocusGroupKey = 'tv-detail-recommend-list';
 
-  /// 选集分组获焦后的延迟提交时间。
-  ///
-  /// 遥控器快速左右移动时，先让焦点和文字高亮即时响应，选集列表刷新延后合并，
-  /// 避免每个路过的分组都同步重建一组选集。
-  static const Duration _episodeGroupFocusCommitDelay =
-      Duration(milliseconds: 80);
-
   /// 页面滚动控制器。
   final ScrollController _scrollController = ScrollController();
 
@@ -718,17 +711,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 顶部当前时间刷新定时器。
   Timer? _clockTimer;
 
-  /// 选集分组获焦后的延迟提交计时器。
-  Timer? _episodeGroupFocusCommitTimer;
-
   /// 推荐加载延迟计时器。
   ///
   /// 播放开始后按 [_recommendsDelayAfterPlayback] 延迟触发推荐加载，
   /// 避免推荐 API 和首播流争抢网速。
   Timer? _recommendsLoadTimer;
-
-  /// 等待提交的选集分组下标。
-  int? _pendingEpisodeGroupFocusIndex;
 
   /// 顶部右侧当前时间。
   late String _currentTime;
@@ -843,7 +830,6 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _detachPrefetchedSearchSession();
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
     _clockTimer?.cancel();
-    _episodeGroupFocusCommitTimer?.cancel();
     _recommendsLoadTimer?.cancel();
     // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
     unawaited(_saveProgress(force: true, scene: '详情页销毁'));
@@ -2122,7 +2108,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         !url.startsWith('http')) {
       return url;
     }
-    return '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
+    final proxiedUrl = '$_m3u8ProxyUrl${Uri.encodeComponent(url)}';
+    if (_tvPlayerKernel == TvPlayerKernel.exo) {
+      // Exo 内核内部已有专用 M3U8 过滤代理，避免再叠加用户配置的外部代理。
+      return resolveAndroidTvExoSourceUrl(url: proxiedUrl, originalUrl: url);
+    }
+    return proxiedUrl;
   }
 
   /// 切换播放源。
@@ -2257,52 +2248,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 切换选集分组。
   void _switchEpisodeGroup(
     int index, {
-    bool defer = false,
     bool pinCurrentWhenUnchanged = true,
   }) {
-    if (defer) {
-      _scheduleEpisodeGroupFocusCommit(
-        index,
-        pinCurrentWhenUnchanged: pinCurrentWhenUnchanged,
-      );
-      return;
-    }
-    _cancelPendingEpisodeGroupFocusCommit();
     _commitEpisodeGroupSwitch(
       index,
       pinCurrentWhenUnchanged: pinCurrentWhenUnchanged,
     );
-  }
-
-  /// 延迟提交选集分组切换。
-  void _scheduleEpisodeGroupFocusCommit(
-    int index, {
-    required bool pinCurrentWhenUnchanged,
-  }) {
-    _pendingEpisodeGroupFocusIndex = index;
-    _episodeGroupFocusCommitTimer?.cancel();
-    _episodeGroupFocusCommitTimer = Timer(
-      _episodeGroupFocusCommitDelay,
-      () {
-        _episodeGroupFocusCommitTimer = null;
-        final pendingIndex = _pendingEpisodeGroupFocusIndex;
-        _pendingEpisodeGroupFocusIndex = null;
-        if (!mounted || pendingIndex == null) {
-          return;
-        }
-        _commitEpisodeGroupSwitch(
-          pendingIndex,
-          pinCurrentWhenUnchanged: pinCurrentWhenUnchanged,
-        );
-      },
-    );
-  }
-
-  /// 取消等待中的选集分组切换任务。
-  void _cancelPendingEpisodeGroupFocusCommit() {
-    _episodeGroupFocusCommitTimer?.cancel();
-    _episodeGroupFocusCommitTimer = null;
-    _pendingEpisodeGroupFocusIndex = null;
   }
 
   /// 提交选集分组切换并刷新可见选集。
@@ -4565,17 +4516,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                           focusMemoryGroupKey: _sourceFocusGroupKey,
                           onArrowLeft: isFirstItem
                               ? () => _handleSourceBoundaryArrow(
-                                  source,
-                                  edgeShakeKey,
-                                  AxisDirection.left,
-                                )
+                                    source,
+                                    edgeShakeKey,
+                                    AxisDirection.left,
+                                  )
                               : null,
                           onArrowRight: isLastItem
                               ? () => _handleSourceBoundaryArrow(
-                                  source,
-                                  edgeShakeKey,
-                                  AxisDirection.right,
-                                )
+                                    source,
+                                    edgeShakeKey,
+                                    AxisDirection.right,
+                                  )
                               : null,
                           onArrowUp: () =>
                               _focusNearestHeroControlFrom(chipContext),
@@ -4729,24 +4680,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                                       ?.shake(AxisDirection.right)
                                   : null,
                               onArrowUp: () => _focusEpisodeOptionForGroup(
-                                index,
+                                groupIndex,
                                 useNearestVisible: true,
                               ),
                               onArrowDown: _focusPreferredRecommend,
                               onFocus: () {
-                                // 任意分组获焦时都保留 36px 左安全区，滚到最左侧也不裁焦点框。
+                                // 分组获焦只记录停留位置，真正切换必须等确认键。
                                 _rememberFocusedEpisodeGroup(index);
-                                final shouldReveal =
-                                    _scheduleHorizontalTargetRevealIfNeeded(
+                                _scheduleHorizontalTargetRevealIfNeeded(
                                   groupKey: _episodeGroupFocusGroupKey,
                                   controller: _episodeGroupListScrollController,
                                   targetKey: _episodeGroupTargetKeyFor(index),
                                   focusedScale: TvVideoCard.focusedScale,
-                                );
-                                _switchEpisodeGroup(
-                                  index,
-                                  defer: true,
-                                  pinCurrentWhenUnchanged: shouldReveal,
                                 );
                               },
                               onPressed: () => _switchEpisodeGroup(index),
