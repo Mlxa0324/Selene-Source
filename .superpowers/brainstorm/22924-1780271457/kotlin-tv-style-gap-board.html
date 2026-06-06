@@ -1,0 +1,118 @@
+<h2>Flutter TV vs Kotlin TV</h2>
+<p class="subtitle">先把“差很多”拆成可执行的样式差异，再决定复刻顺序。</p>
+
+<div class="split section">
+  <div class="mockup">
+    <div class="mockup-header">Flutter TV 目标气质</div>
+    <div class="mockup-body">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
+        <div>
+          <div class="label">Top Shell</div>
+          <div style="font-size:42px;font-weight:800;color:#ffffff;">IvyTV</div>
+        </div>
+        <div style="display:flex;gap:14px;align-items:center;">
+          <div class="mock-button" style="min-width:132px;border-radius:22px;background:#2b3132;color:#fff;">搜索</div>
+          <div class="mock-button" style="min-width:154px;border-radius:22px;background:#2b3132;color:#fff;">播放历史</div>
+          <div class="mock-button" style="min-width:132px;border-radius:22px;background:#2b3132;color:#fff;">收藏夹</div>
+          <div class="mock-button" style="min-width:120px;border-radius:22px;background:#2b3132;color:#fff;">设置</div>
+          <div style="font-size:28px;font-weight:700;color:#cdd3d7;">01:09</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:28px;margin-bottom:30px;font-size:26px;color:#dfe5e8;">
+        <div class="mock-button" style="background:#ff1200;color:#fff;border-color:#fff;">首页</div>
+        <div>电影</div>
+        <div>剧集</div>
+        <div>动漫</div>
+        <div>综艺</div>
+        <div>直播</div>
+      </div>
+      <div style="font-size:34px;font-weight:800;margin-bottom:6px;">继续观看</div>
+      <div style="font-size:18px;color:#7e8892;margin-bottom:18px;">长按删除</div>
+      <div style="display:flex;gap:22px;">
+        <div class="placeholder" style="width:220px;height:350px;border-radius:12px;">竖版卡片</div>
+        <div class="placeholder" style="width:220px;height:350px;border-radius:12px;">竖版卡片</div>
+        <div class="placeholder" style="width:220px;height:350px;border-radius:12px;">竖版卡片</div>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">Kotlin TV 当前状态</div>
+    <div class="mockup-body">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;">
+        <div style="font-size:38px;color:#00d696;">IvyTV</div>
+        <div style="display:flex;gap:16px;align-items:center;">
+          <div style="font-size:28px;font-weight:700;color:#b8c0c9;">01:12</div>
+          <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">搜索</div>
+          <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">播放历史</div>
+          <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">收藏夹</div>
+          <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">设置</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:18px;margin-bottom:30px;">
+        <div class="mock-button" style="background:#ffffff;color:#333;border-color:#16c784;">首页</div>
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">电影</div>
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">剧集</div>
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">动漫</div>
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">综艺</div>
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">直播</div>
+      </div>
+      <div style="font-size:26px;font-weight:700;margin-bottom:8px;">IvyTV</div>
+      <div style="font-size:18px;color:#9aa3ad;margin-bottom:10px;">横向分区首页</div>
+      <div style="display:flex;gap:12px;margin-bottom:20px;">
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">分区 0</div>
+        <div class="mock-button" style="background:#1a2230;border-color:#2f3a49;">焦点 TV</div>
+      </div>
+      <div class="placeholder" style="width:290px;height:180px;border-radius:14px;border-color:#ff4c4c;">错误状态卡片</div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>当前最明显的差异</h3>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>应该保留</h4>
+      <ul>
+        <li>已经有独立路由壳、顶层导航分组和设计 token。</li>
+        <li>已有首页 / 分类 / 详情 / 播放器模块，不是从零开始。</li>
+        <li>已有 Kotlin TV 数据链路，可以把精力放在视觉复刻。</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>需要重点改</h4>
+      <ul>
+        <li>页面壳结构不对：Kotlin 现在还有 subtitle / stats / 状态面板占位气质。</li>
+        <li>顶部导航不对：按钮形状、字号、选中态、时间顺序、对齐都不像 Flutter。</li>
+        <li>首页内容不对：继续观看缺少长按提示、卡片尺寸与间距偏小、层级弱。</li>
+        <li>背景和留白不对：Kotlin 更黑更空，Flutter 更偏蓝灰且信息密度更高。</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<h3>第一阶段你更想让我怎么推进？</h3>
+<p class="subtitle">我推荐先把全局壳和首页首屏做准，再扩到分类 / 详情 / 播放器，否则后面会反复返工。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>先做首页首屏 1:1（推荐）</h3>
+      <p>先把顶栏、主导航、继续观看、热门电影首屏复刻到接近 Flutter，再把这套样式扩到分类 / 详情 / 播放器。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>先统一全局样式 token</h3>
+      <p>先收敛背景、字号、按钮、圆角、间距和页面壳，再逐页补内容布局。前期看起来变化没那么惊艳，但长期更稳。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>四个页面一起并行粗对齐</h3>
+      <p>首页 / 分类 / 详情 / 播放器同时改一轮，先追求“都像一点”。速度快，但很容易出现每页像得不一样。</p>
+    </div>
+  </div>
+</div>

@@ -15,6 +15,7 @@
 - [x] 去掉详情页和全屏 loading 的背景色，只保留顶层转圈、加载文案和网速。
 - [x] 给全屏长按 seek 松手后的 loading 增加真实进度清理路径，并监听复用详情页播放器的真实 controller 进度。
 - [x] 给 WebView HLS loader 增加常驻网速 telemetry，避免关闭广告过滤时网速长期停在 `0KB/s`。
+- [x] 增加 `SELENE_TV_PERF_TRACE` 性能探针，详情页首帧、首播、补源、推荐和播放器阶段写入 Timeline 与 `[TV PERF]` 日志。
 - [x] 运行 `flutter analyze`、相关 `flutter test` 与 `git diff --check`。
 
 ## Validation Commands

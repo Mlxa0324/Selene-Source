@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:selene/services/local_mode_storage_service.dart';
 import 'package:selene/services/page_cache_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/tv_layout.dart';
+import 'package:selene/tv_app/services/tv_perf_trace.dart';
 import 'package:selene/tv_app/services/tv_search_result_session.dart';
 import 'package:selene/tv_app/services/tv_search_recommend_service.dart';
 import 'package:selene/tv_app/services/tv_theme_service.dart';
@@ -31,11 +33,15 @@ void main() {
     PageCacheService().clearAllCache();
     await UserDataService.saveIsLocalMode(false);
     TvSearchRecommendService.clearDebugCache();
+    TvPerfTrace.debugEnabledOverride = null;
+    debugPrint = debugPrintSynchronously;
   });
 
   tearDown(() {
     TvSearchRecommendService.clearDebugCache();
     TvBackIntent.debugResetBackKeyTracking();
+    TvPerfTrace.debugEnabledOverride = null;
+    debugPrint = debugPrintSynchronously;
   });
 
   testWidgets('renders TV detail layout sections in requested order',
@@ -106,6 +112,68 @@ void main() {
     expect(find.byKey(const ValueKey('tv-detail-source-list')), findsOneWidget);
     expect(
         find.byKey(const ValueKey('tv-detail-episode-list')), findsOneWidget);
+  });
+
+  testWidgets('detail perf trace logs first load milestones', (tester) async {
+    await _setTvSurfaceSize(tester);
+    final messages = <String>[];
+    debugPrint = (message, {wrapWidth}) {
+      if (message != null) {
+        messages.add(message);
+      }
+    };
+    TvPerfTrace.debugEnabledOverride = true;
+
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TvVideoDetailScreen(
+            videoInfo: _videoInfo('main', '性能探针'),
+            loadInitialSources: (_, __) async => [
+              _searchResult('source_a', '主源'),
+            ],
+            loadMoreSources: (_, __, ___) async => const <SearchResult>[],
+            loadRecommends: (_, __, ___) async => const <VideoInfo>[],
+            loadResumeRecords: (_) async => const <PlayRecord>[],
+            loadM3u8ProxyUrl: () async => '',
+            loadAdFilterEnabled: () async => false,
+            playerBuilder: (_, __) => Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            ),
+            fullscreenPlayerBuilder: (_, __) => Container(
+              key: const ValueKey('tv-fullscreen-player-placeholder'),
+              color: Colors.black,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+    } finally {
+      debugPrint = debugPrintSynchronously;
+    }
+
+    expect(
+      messages,
+      contains('[TV PERF] TV详情页:initState title=性能探针'),
+    );
+    expect(
+      messages,
+      contains('[TV PERF] TV详情页:开始详情加载 mode=split'),
+    );
+    expect(
+      messages.any(
+        (message) => message.startsWith('[TV PERF] TV详情页:加载精确源 '),
+      ),
+      isTrue,
+    );
+    expect(
+      messages.any(
+        (message) => message.startsWith('[TV PERF] TV详情页:首个可播源 '),
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('prefetched search sources skip more-sources loader',

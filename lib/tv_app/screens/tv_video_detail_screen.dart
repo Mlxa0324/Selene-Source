@@ -16,6 +16,7 @@ import 'package:selene/services/search_service.dart';
 import 'package:selene/services/user_data_service.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
 import 'package:selene/tv_app/screens/tv_search_screen.dart';
+import 'package:selene/tv_app/services/tv_perf_trace.dart';
 import 'package:selene/tv_app/services/tv_search_result_session.dart';
 import 'package:selene/tv_app/tv_layout.dart';
 import 'package:selene/tv_app/services/tv_play_record_service.dart';
@@ -789,6 +790,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   @override
   void initState() {
     super.initState();
+    TvPerfTrace.instant(
+      'TV详情页:initState',
+      arguments: {'title': widget.videoInfo.title},
+    );
     HardwareKeyboard.instance.addHandler(_handleGlobalBackKeyEvent);
     _bindTestHooks();
     _resumeVideoInfo = widget.videoInfo;
@@ -873,10 +878,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _startDetailLoading() {
     final serial = ++_loadSerial;
     if (_shouldUseLegacyLoader) {
+      TvPerfTrace.instant(
+        'TV详情页:开始详情加载',
+        arguments: {'mode': 'legacy'},
+      );
       unawaited(_loadLegacyDetail(serial));
       return;
     }
 
+    TvPerfTrace.instant(
+      'TV详情页:开始详情加载',
+      arguments: {'mode': 'split'},
+    );
     unawaited(_loadInitialSources(serial));
     unawaited(_loadMoreSources(serial));
   }
@@ -886,38 +899,51 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 详情页应尽快进入精确源加载，让首个可播源先到达；
   /// 续播记录只负责在首次真正起播前补齐目标集数和 `startAt`。
   Future<void> _loadResumeRecord() async {
-    try {
-      final loader = widget.loadResumeRecords ?? _defaultLoadResumeRecords;
-      final records = await loader(context);
-      final previousResumeVideoInfo = _resumeVideoInfo;
-      final matchedRecord = _matchingResumeRecord(records);
-      if (matchedRecord != null) {
-        _resumeVideoInfo = VideoInfo.fromPlayRecord(
-          matchedRecord,
-          doubanId: widget.videoInfo.doubanId,
-          bangumiId: widget.videoInfo.bangumiId,
-          rate: widget.videoInfo.rate,
-        );
-        _syncPendingPlaybackWithLatestResumeRecord(
-          previousResumeVideoInfo: previousResumeVideoInfo,
-        );
-      }
-    } catch (error) {
-      debugPrint('TV 详情页读取续播记录失败: $error');
-    } finally {
-      _hasLoadedResumeRecord = true;
-      if (_currentDetail != null &&
-          !_hasDispatchedInitialPreviewPlayback &&
-          mounted) {
-        setState(() {
-          _applyInitialResumeState(_currentDetail!);
-        });
-      }
-      if (_hasPendingInitialPlaybackAfterResumeLoad) {
-        _hasPendingInitialPlaybackAfterResumeLoad = false;
-        unawaited(_playCurrentEpisode());
-      }
-    }
+    await TvPerfTrace.async(
+      'TV详情页:读取续播记录',
+      () async {
+        try {
+          final loader = widget.loadResumeRecords ?? _defaultLoadResumeRecords;
+          final records = await loader(context);
+          final previousResumeVideoInfo = _resumeVideoInfo;
+          final matchedRecord = _matchingResumeRecord(records);
+          if (matchedRecord != null) {
+            TvPerfTrace.instant(
+              'TV详情页:命中续播记录',
+              arguments: {
+                'episode': matchedRecord.index,
+                'playTime': matchedRecord.playTime,
+              },
+            );
+            _resumeVideoInfo = VideoInfo.fromPlayRecord(
+              matchedRecord,
+              doubanId: widget.videoInfo.doubanId,
+              bangumiId: widget.videoInfo.bangumiId,
+              rate: widget.videoInfo.rate,
+            );
+            _syncPendingPlaybackWithLatestResumeRecord(
+              previousResumeVideoInfo: previousResumeVideoInfo,
+            );
+          }
+        } catch (error) {
+          debugPrint('TV 详情页读取续播记录失败: $error');
+        } finally {
+          _hasLoadedResumeRecord = true;
+          if (_currentDetail != null &&
+              !_hasDispatchedInitialPreviewPlayback &&
+              mounted) {
+            setState(() {
+              _applyInitialResumeState(_currentDetail!);
+            });
+          }
+          if (_hasPendingInitialPlaybackAfterResumeLoad) {
+            _hasPendingInitialPlaybackAfterResumeLoad = false;
+            unawaited(_playCurrentEpisode());
+          }
+        }
+      },
+      arguments: {'title': widget.videoInfo.title},
+    );
   }
 
   /// 默认读取续播记录。
@@ -1099,155 +1125,212 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 加载收藏状态。
   Future<void> _loadFavoriteState() async {
-    final isFavorite = PageCacheService().isFavoritedSync(
-      widget.videoInfo.source,
-      widget.videoInfo.id,
+    await TvPerfTrace.async(
+      'TV详情页:读取收藏状态',
+      () async {
+        final isFavorite = PageCacheService().isFavoritedSync(
+          widget.videoInfo.source,
+          widget.videoInfo.id,
+        );
+        if (mounted) {
+          setState(() => _isFavorite = isFavorite);
+        }
+      },
     );
-    if (mounted) {
-      setState(() => _isFavorite = isFavorite);
-    }
   }
 
   /// 加载 TV 详情页自动去广告偏好。
   Future<void> _loadAdFilterPreference() async {
-    final loader =
-        widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
-    final adFilterEnabled = await loader();
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _adFilterEnabled = adFilterEnabled;
-    });
+    await TvPerfTrace.async(
+      'TV详情页:读取去广告配置',
+      () async {
+        final loader =
+            widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
+        final adFilterEnabled = await loader();
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _adFilterEnabled = adFilterEnabled;
+        });
+      },
+    );
   }
 
   /// 后台预热 M3U8 代理地址。
   Future<void> _loadM3u8ProxyUrl() async {
-    final loader = widget.loadM3u8ProxyUrl ?? UserDataService.getM3u8ProxyUrl;
-    final proxyUrl = await loader();
-    if (!mounted) {
-      return;
-    }
+    await TvPerfTrace.async(
+      'TV详情页:预热M3U8代理',
+      () async {
+        final loader =
+            widget.loadM3u8ProxyUrl ?? UserDataService.getM3u8ProxyUrl;
+        final proxyUrl = await loader();
+        if (!mounted) {
+          return;
+        }
 
-    // 代理地址只给后续播放动作复用，不触发额外 rebuild，避免影响当前画面。
-    _m3u8ProxyUrl = proxyUrl;
-    _hasResolvedM3u8ProxyUrl = true;
+        // 代理地址只给后续播放动作复用，不触发额外 rebuild，避免影响当前画面。
+        _m3u8ProxyUrl = proxyUrl;
+        _hasResolvedM3u8ProxyUrl = true;
+      },
+    );
   }
 
   /// 使用旧聚合加载函数加载详情。
   Future<void> _loadLegacyDetail(int serial) async {
-    try {
-      final data = await widget.loadDetail!(context, widget.videoInfo);
-      if (!mounted || serial != _loadSerial) {
-        return;
-      }
+    await TvPerfTrace.async(
+      'TV详情页:旧聚合加载',
+      () async {
+        try {
+          final data = await widget.loadDetail!(context, widget.videoInfo);
+          if (!mounted || serial != _loadSerial) {
+            return;
+          }
 
-      setState(() {
-        _currentDetail = data.currentDetail;
-        _sources = data.sources;
-        _recommends = data.recommends;
-        _refreshSourceDisplayCaches(sourcesChanged: true);
-        if (_currentDetail != null) {
-          _applyInitialResumeState(_currentDetail!);
+          setState(() {
+            _currentDetail = data.currentDetail;
+            _sources = data.sources;
+            _recommends = data.recommends;
+            _refreshSourceDisplayCaches(sourcesChanged: true);
+            if (_currentDetail != null) {
+              _applyInitialResumeState(_currentDetail!);
+            }
+            _isInitialDetailLoading = false;
+            _initialSourcesLoaded = true;
+            _moreSourcesLoaded = true;
+          });
+          if (data.currentDetail != null) {
+            TvPerfTrace.instant(
+              'TV详情页:旧聚合可播源',
+              arguments: {
+                'source': data.currentDetail!.sourceName,
+                'episodes': data.currentDetail!.episodes.length,
+                'sources': data.sources.length,
+                'recommends': data.recommends.length,
+              },
+            );
+          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _ensureCurrentSelectionsVisible();
+          });
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _playCurrentEpisode());
+        } catch (error) {
+          debugPrint('TV 详情页聚合加载失败: $error');
+          if (mounted && serial == _loadSerial) {
+            setState(() {
+              _isInitialDetailLoading = false;
+              _initialSourcesLoaded = true;
+              _moreSourcesLoaded = true;
+            });
+          }
         }
-        _isInitialDetailLoading = false;
-        _initialSourcesLoaded = true;
-        _moreSourcesLoaded = true;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _ensureCurrentSelectionsVisible();
-      });
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _playCurrentEpisode());
-    } catch (error) {
-      debugPrint('TV 详情页聚合加载失败: $error');
-      if (mounted && serial == _loadSerial) {
-        setState(() {
-          _isInitialDetailLoading = false;
-          _initialSourcesLoaded = true;
-          _moreSourcesLoaded = true;
-        });
-      }
-    }
+      },
+      arguments: {'serial': serial},
+    );
   }
 
   /// 加载入口精确源，优先让详情页有可播数据。
   Future<void> _loadInitialSources(int serial) async {
-    if (_hasPrefetchedSearchSession) {
-      final sessionSources = _prefetchedSearchSessionSources();
-      if (sessionSources.isNotEmpty) {
-        _mergeSources(sessionSources, preferAsCurrent: true);
-      }
-    }
+    await TvPerfTrace.async(
+      'TV详情页:加载精确源',
+      () async {
+        if (_hasPrefetchedSearchSession) {
+          final sessionSources = _prefetchedSearchSessionSources();
+          if (sessionSources.isNotEmpty) {
+            _mergeSources(sessionSources, preferAsCurrent: true);
+          }
+        }
 
-    if (widget.prefetchedSources.isNotEmpty) {
-      _mergeSources(widget.prefetchedSources, preferAsCurrent: true);
-    }
+        if (widget.prefetchedSources.isNotEmpty) {
+          _mergeSources(widget.prefetchedSources, preferAsCurrent: true);
+        }
 
-    final loader = widget.loadInitialSources ??
-        TvVideoDetailScreen.defaultLoadInitialSources;
-    try {
-      final sources = await loader(context, widget.videoInfo);
-      if (!mounted || serial != _loadSerial) {
-        return;
-      }
+        final loader = widget.loadInitialSources ??
+            TvVideoDetailScreen.defaultLoadInitialSources;
+        try {
+          final sources = await loader(context, widget.videoInfo);
+          if (!mounted || serial != _loadSerial) {
+            return;
+          }
 
-      _mergeSources(sources, preferAsCurrent: true);
-    } catch (error) {
-      debugPrint('TV 详情页精确源加载失败: $error');
-    }
-    _markInitialSourcesLoaded();
+          _mergeSources(sources, preferAsCurrent: true);
+        } catch (error) {
+          debugPrint('TV 详情页精确源加载失败: $error');
+        }
+        _markInitialSourcesLoaded();
+      },
+      arguments: {
+        'serial': serial,
+        'prefetched': widget.prefetchedSources.length,
+        'sharedSession': _hasPrefetchedSearchSession,
+      },
+    );
   }
 
   /// 后台搜索并增量追加其它播放源。
   Future<void> _loadMoreSources(int serial) async {
-    if (_hasPrefetchedSearchSession) {
-      _attachPrefetchedSearchSession(serial);
-      return;
-    }
+    await TvPerfTrace.async(
+      'TV详情页:后台补源',
+      () async {
+        if (_hasPrefetchedSearchSession) {
+          _attachPrefetchedSearchSession(serial);
+          return;
+        }
 
-    if (widget.prefetchedSources.isNotEmpty) {
-      _markMoreSourcesLoaded();
-      return;
-    }
+        if (widget.prefetchedSources.isNotEmpty) {
+          _markMoreSourcesLoaded();
+          return;
+        }
 
-    final loader = widget.loadMoreSources ??
-        (
-          BuildContext context,
-          VideoInfo videoInfo,
-          ValueChanged<List<SearchResult>> onIncrementalResults,
-        ) {
-          return TvVideoDetailScreen._loadMoreSourcesByQuery(
-            videoInfo,
-            stype: widget.stype,
-            onIncrementalResults: onIncrementalResults,
+        final loader = widget.loadMoreSources ??
+            (
+              BuildContext context,
+              VideoInfo videoInfo,
+              ValueChanged<List<SearchResult>> onIncrementalResults,
+            ) {
+              return TvVideoDetailScreen._loadMoreSourcesByQuery(
+                videoInfo,
+                stype: widget.stype,
+                onIncrementalResults: onIncrementalResults,
+              );
+            };
+
+        try {
+          final sources = await loader(
+            context,
+            widget.videoInfo,
+            (incrementalResults) {
+              if (!mounted || serial != _loadSerial) {
+                return;
+              }
+              TvPerfTrace.instant(
+                'TV详情页:补源增量',
+                arguments: {'count': incrementalResults.length},
+              );
+              _mergeSources(incrementalResults, preferAsCurrent: false);
+            },
           );
-        };
-
-    try {
-      final sources = await loader(
-        context,
-        widget.videoInfo,
-        (incrementalResults) {
           if (!mounted || serial != _loadSerial) {
             return;
           }
-          _mergeSources(incrementalResults, preferAsCurrent: false);
-        },
-      );
-      if (!mounted || serial != _loadSerial) {
-        return;
-      }
 
-      _mergeSources(
-        sources,
-        preferAsCurrent: false,
-        allowResumeFallback: true,
-      );
-    } catch (error) {
-      debugPrint('TV 详情页后台补源失败: $error');
-    }
-    _markMoreSourcesLoaded();
+          _mergeSources(
+            sources,
+            preferAsCurrent: false,
+            allowResumeFallback: true,
+          );
+        } catch (error) {
+          debugPrint('TV 详情页后台补源失败: $error');
+        }
+        _markMoreSourcesLoaded();
+      },
+      arguments: {
+        'serial': serial,
+        'prefetched': widget.prefetchedSources.length,
+        'sharedSession': _hasPrefetchedSearchSession,
+      },
+    );
   }
 
   /// 标记精确源加载完成。
@@ -1284,6 +1367,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
     var shouldPlay = false;
     var shouldEnterPreviewLoading = false;
+    SearchResult? firstPlayableTraceSource;
     setState(() {
       final mutableSources = List<SearchResult>.from(_sources);
       final changed =
@@ -1330,6 +1414,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         );
         if (selectedSource != null) {
           _currentDetail = selectedSource;
+          firstPlayableTraceSource = selectedSource;
           _applyInitialResumeState(_currentDetail!);
           shouldPlay = true;
           shouldEnterPreviewLoading = true;
@@ -1342,6 +1427,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
       _refreshInitialLoadingState();
     });
+
+    final firstPlayableSource = firstPlayableTraceSource;
+    if (firstPlayableSource != null) {
+      TvPerfTrace.instant(
+        'TV详情页:首个可播源',
+        arguments: {
+          'source': firstPlayableSource.sourceName,
+          'episodes': firstPlayableSource.episodes.length,
+          'incoming': incoming.length,
+        },
+      );
+    }
 
     if (shouldEnterPreviewLoading) {
       _markPreviewPlayerLoading();
@@ -1656,37 +1753,57 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return;
     }
     _hasStartedRecommends = true;
+    TvPerfTrace.instant(
+      'TV详情页:启动相关推荐任务',
+      arguments: {
+        'forceWhenEmpty': forceWhenEmpty,
+        'hasCurrentDetail': _currentDetail != null,
+      },
+    );
     unawaited(_loadRecommendsAsync(_loadSerial));
   }
 
   /// 异步加载相关推荐。
   Future<void> _loadRecommendsAsync(int serial) async {
-    final loader = widget.loadRecommends ?? TvVideoDetailScreen._loadRecommends;
-    try {
-      final recommends =
-          await loader(context, widget.videoInfo, _currentDetail);
-      if (!mounted || serial != _loadSerial) {
-        return;
-      }
-      setState(() => _recommends = recommends);
+    await TvPerfTrace.async(
+      'TV详情页:加载相关推荐',
+      () async {
+        final loader =
+            widget.loadRecommends ?? TvVideoDetailScreen._loadRecommends;
+        try {
+          final recommends =
+              await loader(context, widget.videoInfo, _currentDetail);
+          if (!mounted || serial != _loadSerial) {
+            return;
+          }
+          setState(() => _recommends = recommends);
+          TvPerfTrace.instant(
+            'TV详情页:相关推荐完成',
+            arguments: {'count': recommends.length},
+          );
 
-      // 搜索页推荐改为被动复用最近打开过的详情页相关推荐，不额外主动查询。
-      TvSearchRecommendService.recordDetailRecommends(
-        videoInfo: widget.videoInfo,
-        recommends: recommends,
-      );
-    } catch (error) {
-      debugPrint('TV 详情页推荐加载失败: $error');
-    }
+          // 搜索页推荐改为被动复用最近打开过的详情页相关推荐，不额外主动查询。
+          TvSearchRecommendService.recordDetailRecommends(
+            videoInfo: widget.videoInfo,
+            recommends: recommends,
+          );
+        } catch (error) {
+          debugPrint('TV 详情页推荐加载失败: $error');
+        }
+      },
+      arguments: {'serial': serial},
+    );
   }
 
   /// 记录播放器控制器并挂载进度监听。
   void _attachPlayerController(VideoPlayerWidgetController controller) {
     if (identical(_playerController, controller)) {
+      TvPerfTrace.instant('TV详情页:复用播放器控制器');
       _playCurrentEpisode();
       return;
     }
 
+    TvPerfTrace.instant('TV详情页:挂载播放器控制器');
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
     _playerController?.removeNetworkSpeedListener(_onPreviewNetworkSpeedUpdate);
     _playerController = controller;
@@ -1703,6 +1820,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _previewPlaybackStarted = false;
     _previewLoadingAnchorPosition =
         anchorPosition ?? _playerController?.currentPosition;
+    TvPerfTrace.instant(
+      'TV详情页:预览loading开始',
+      arguments: {
+        'anchorMs': _previewLoadingAnchorPosition?.inMilliseconds,
+      },
+    );
   }
 
   /// 结束小播放器加载态，调用方必须先确认播放时间点已经前进。
@@ -1720,6 +1843,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (_previewPlaybackStarted) {
       return;
     }
+    TvPerfTrace.instant(
+      'TV详情页:真实进度恢复',
+      arguments: {
+        'positionMs': _playerController?.currentPosition?.inMilliseconds,
+      },
+    );
     _previewPlaybackStarted = true;
     _finishPreviewPlayerLoading();
     _recommendsLoadTimer?.cancel();
@@ -1859,32 +1988,59 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 播放当前选集。
   Future<void> _playCurrentEpisode() async {
-    final detail = _currentDetail;
-    final controller = _playerController;
-    if (detail == null || controller == null || detail.episodes.isEmpty) {
-      return;
-    }
-    if (!_hasLoadedResumeRecord) {
-      _hasPendingInitialPlaybackAfterResumeLoad = true;
-      return;
-    }
+    await TvPerfTrace.async(
+      'TV详情页:播放当前选集',
+      () async {
+        final detail = _currentDetail;
+        final controller = _playerController;
+        if (detail == null || controller == null || detail.episodes.isEmpty) {
+          return;
+        }
+        if (!_hasLoadedResumeRecord) {
+          _hasPendingInitialPlaybackAfterResumeLoad = true;
+          TvPerfTrace.instant('TV详情页:等待续播记录后起播');
+          return;
+        }
 
-    final index = _episodeIndex.clamp(0, detail.episodes.length - 1);
-    final url = _resolvePlaybackUrl(detail.episodes[index]);
-    final startAt = _takeInitialPlaybackPosition();
-    if (_lastRequestedPlaybackUrl == url && startAt == null) {
-      return;
-    }
-    _lastRequestedPlaybackUrl = url;
-    _rememberPendingResumeSeek(startAt);
-    _markPreviewPlayerLoading(anchorPosition: startAt);
-    _schedulePreviewChromeRefresh();
-    final playbackRequest = controller.updateDataSource(url, startAt: startAt);
-    if (!_hasDispatchedInitialPreviewPlayback) {
-      _hasDispatchedInitialPreviewPlayback = true;
-    }
-    await playbackRequest;
-    await _seekToInitialPlaybackPositionIfNeeded(controller, startAt);
+        final index = _episodeIndex.clamp(0, detail.episodes.length - 1);
+        final url = _resolvePlaybackUrl(detail.episodes[index]);
+        final startAt = _takeInitialPlaybackPosition();
+        if (_lastRequestedPlaybackUrl == url && startAt == null) {
+          TvPerfTrace.instant(
+            'TV详情页:跳过重复播放地址',
+            arguments: {'episode': index + 1},
+          );
+          return;
+        }
+        _lastRequestedPlaybackUrl = url;
+        _rememberPendingResumeSeek(startAt);
+        _markPreviewPlayerLoading(anchorPosition: startAt);
+        _schedulePreviewChromeRefresh();
+        await TvPerfTrace.async(
+          'TV详情页:播放器updateDataSource',
+          () {
+            return controller.updateDataSource(url, startAt: startAt);
+          },
+          arguments: {
+            'episode': index + 1,
+            'source': detail.sourceName,
+            'startAtMs': startAt?.inMilliseconds,
+            'proxied':
+                _m3u8ProxyUrl.isNotEmpty && url.startsWith(_m3u8ProxyUrl),
+          },
+        );
+        if (!_hasDispatchedInitialPreviewPlayback) {
+          _hasDispatchedInitialPreviewPlayback = true;
+          TvPerfTrace.instant('TV详情页:首次播放地址已下发');
+        }
+        await _seekToInitialPlaybackPositionIfNeeded(controller, startAt);
+      },
+      arguments: {
+        'episode': _episodeIndex + 1,
+        'hasDetail': _currentDetail != null,
+        'hasController': _playerController != null,
+      },
+    );
   }
 
   /// 在底层播放器没有吃到 `startAt` 时，按手机端逻辑再补一次 seek。
