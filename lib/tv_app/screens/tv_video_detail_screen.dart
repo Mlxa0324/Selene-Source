@@ -2517,15 +2517,33 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
   }
 
-  /// 左右跨组选集时短暂锁住分组行焦点。
-  void _lockEpisodeGroupsDuringHorizontalEpisodeMove() {
-    // 选集左右移动只能停留在选集行，分组行只能通过上下方向进入。
-    _setEpisodeGroupFocusEnabled(false);
+  /// 临时控制选集以外区域是否允许获焦。
+  void _setNonEpisodeFocusEnabled(bool enabled) {
+    _playerFocusNode.canRequestFocus = enabled;
+    _fullscreenFocusNode.canRequestFocus = enabled;
+    _favoriteFocusNode.canRequestFocus = enabled;
+    _searchFocusNode.canRequestFocus = enabled;
+    for (final node in _sourceFocusNodes.values) {
+      node.canRequestFocus = enabled;
+    }
+    for (final node in _recommendFocusNodes.values) {
+      node.canRequestFocus = enabled;
+    }
+    _bottomActionFocusNode.canRequestFocus = enabled;
   }
 
-  /// 恢复分组行焦点能力。
-  void _unlockEpisodeGroupsAfterHorizontalEpisodeMove() {
+  /// 左右跨组选集时短暂锁住非选集行焦点。
+  void _lockNonEpisodeRowsDuringHorizontalEpisodeMove() {
+    // 选集左右跨组会先重建当前选集行。过渡期间锁住非选集焦点，
+    // 避免 FocusScope 临时回落到推荐区，再被下一帧拉回目标选集造成抖动。
+    _setEpisodeGroupFocusEnabled(false);
+    _setNonEpisodeFocusEnabled(false);
+  }
+
+  /// 恢复非选集行焦点能力。
+  void _unlockNonEpisodeRowsAfterHorizontalEpisodeMove() {
     _setEpisodeGroupFocusEnabled(true);
+    _setNonEpisodeFocusEnabled(true);
   }
 
   /// 获取选集分组定位 Key。
@@ -2725,7 +2743,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
 
     final firstEpisodeIndex = nextGroupEpisodeIndexes.first;
-    _lockEpisodeGroupsDuringHorizontalEpisodeMove();
+    _lockNonEpisodeRowsDuringHorizontalEpisodeMove();
     if (_episodeListScrollController.hasClients) {
       // 从上一组末尾进入下一组时先回到组首，确保虚拟列表构建下一组第一集。
       _episodeListScrollController.jumpTo(0);
@@ -2741,7 +2759,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+          _unlockNonEpisodeRowsAfterHorizontalEpisodeMove();
         }
       });
     });
@@ -2774,7 +2792,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
     final lastEpisodeIndex = previousGroupEpisodeIndexes.last;
     _lastFocusedEpisodeIndex = lastEpisodeIndex;
-    _lockEpisodeGroupsDuringHorizontalEpisodeMove();
+    _lockNonEpisodeRowsDuringHorizontalEpisodeMove();
     setState(() => _episodeGroupIndex = previousGroupIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -2800,11 +2818,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 previousGroupIndex,
                 lastEpisodeIndex,
               );
-              _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+              _unlockNonEpisodeRowsAfterHorizontalEpisodeMove();
             }
           });
         } else {
-          _unlockEpisodeGroupsAfterHorizontalEpisodeMove();
+          _unlockNonEpisodeRowsAfterHorizontalEpisodeMove();
         }
         _pinEpisodeGroupAndEpisodeNearLeadingEdge(
           previousGroupIndex,

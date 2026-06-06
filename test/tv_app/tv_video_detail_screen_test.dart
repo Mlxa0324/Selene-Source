@@ -3441,6 +3441,60 @@ void main() {
     _expectFocused(tester, find.text('第20集'));
   });
 
+  testWidgets('episode left group switch does not flash recommendation focus',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo('main', '长剧集'),
+          loadDetail: (_, __) async => TvVideoDetailData(
+            currentDetail: _searchResult(
+              'source_a',
+              '主源',
+              episodeCount: 45,
+            ),
+            sources: [
+              _searchResult('source_a', '主源', episodeCount: 45),
+            ],
+            recommends: [
+              _videoInfo('recommend_1', '推荐影片一'),
+              _videoInfo('recommend_2', '推荐影片二'),
+            ],
+          ),
+          playerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-detail-player-placeholder'),
+            color: Colors.black,
+          ),
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    Focus.of(tester.element(find.text('推荐影片二'))).requestFocus();
+    await tester.pumpAndSettle();
+    _expectFocused(tester, find.text('推荐影片二'));
+
+    await tester.tap(find.text('21-40'));
+    await tester.pumpAndSettle();
+    Focus.of(tester.element(find.text('第21集'))).requestFocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pump();
+
+    expect(Focus.of(tester.element(find.text('推荐影片二'))).hasFocus, isFalse);
+
+    await tester.pumpAndSettle();
+
+    _expectFocused(tester, find.text('第20集'));
+  });
+
   testWidgets(
       'episode row left key from initial second group focuses episode 20',
       (tester) async {
