@@ -675,6 +675,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 是否消费全屏关闭后的同一次详情页返回事件。
   bool _consumeFullscreenOverlayBack = false;
 
+  /// 详情页是否已经进入退出流程。
+  ///
+  /// 返回键和路由销毁之间可能还有源加载、播放器创建、post-frame 等异步回调晚到，
+  /// 统一用该标记阻止它们继续起播或刷新焦点。
+  bool _isExitingDetail = false;
+
   /// 首屏详情是否仍在等待可播数据。
   bool _isInitialDetailLoading = true;
 
@@ -695,6 +701,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return TvPlayRecordService.hasResumeHint(_resumeVideoInfo) &&
         _resumeVideoInfo.source.isNotEmpty;
   }
+
+  /// 当前详情页是否仍可执行 UI 和播放动作。
+  bool get _canUseDetailRoute => mounted && !_isExitingDetail;
 
   /// 推荐内容是否已经开始加载。
   bool _hasStartedRecommends = false;
@@ -757,7 +766,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   ///
   /// 播放器可能在子组件构建或平台回调中同步通知播放状态，统一延后可避免 build 阶段 setState。
   void _schedulePreviewChromeRefresh() {
-    if (!mounted) {
+    if (!_canUseDetailRoute) {
       return;
     }
 
@@ -769,7 +778,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
     if (isBuildRelatedPhase) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (_canUseDetailRoute) {
           setState(() {});
         }
       });
@@ -826,6 +835,8 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   @override
   void dispose() {
+    _isExitingDetail = true;
+    _loadSerial++;
     widget.testHooks?.onVideoCompleted = null;
     _detachPrefetchedSearchSession();
     HardwareKeyboard.instance.removeHandler(_handleGlobalBackKeyEvent);
@@ -833,6 +844,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _recommendsLoadTimer?.cancel();
     // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
     unawaited(_saveProgress(force: true, scene: '详情页销毁'));
+    unawaited(_playerController?.pause());
     // 播放器实例由子组件自己管理，详情页销毁时只解绑进度监听，
     // 避免预览播放器和全屏共享控制器被父页面重复释放。
     _playerController?.removeProgressListener(_onVideoProgressUpdate);
@@ -906,6 +918,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         try {
           final loader = widget.loadResumeRecords ?? _defaultLoadResumeRecords;
           final records = await loader(context);
+          if (!_canUseDetailRoute) {
+            return;
+          }
           final previousResumeVideoInfo = _resumeVideoInfo;
           final matchedRecord = _matchingResumeRecord(records);
           if (matchedRecord != null) {
@@ -929,17 +944,24 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         } catch (error) {
           debugPrint('TV 详情页读取续播记录失败: $error');
         } finally {
-          _hasLoadedResumeRecord = true;
-          if (_currentDetail != null &&
-              !_hasDispatchedInitialPreviewPlayback &&
-              mounted) {
-            setState(() {
-              _applyInitialResumeState(_currentDetail!);
-            });
-          }
-          if (_hasPendingInitialPlaybackAfterResumeLoad) {
-            _hasPendingInitialPlaybackAfterResumeLoad = false;
-            unawaited(_playCurrentEpisode());
+          if (_canUseDetailRoute) {
+            _hasLoadedResumeRecord = true;
+            final restoredSavedSource =
+                _restoreSavedSourceAfterResumeRecordLoaded();
+            if (_currentDetail != null &&
+                !_hasDispatchedInitialPreviewPlayback &&
+                _canUseDetailRoute) {
+              setState(() {
+                _applyInitialResumeState(_currentDetail!);
+              });
+            }
+            if (_hasPendingInitialPlaybackAfterResumeLoad) {
+              _hasPendingInitialPlaybackAfterResumeLoad = false;
+              unawaited(_playCurrentEpisode());
+            } else if (restoredSavedSource &&
+                !_hasDispatchedInitialPreviewPlayback) {
+              unawaited(_playCurrentEpisode());
+            }
           }
         }
       },
@@ -962,7 +984,105 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         return record;
       }
     }
+    if (!TvPlayRecordService.hasResumeHint(widget.videoInfo)) {
+      return null;
+    }
+    final sameSourceNameRecords = records
+        .where(
+          (record) =>
+              _matchesEntrySourceName(record) &&
+              _matchesEntryVideoIdentity(record),
+        )
+        .toList();
+    if (sameSourceNameRecords.isEmpty) {
+      return null;
+    }
+    sameSourceNameRecords.sort((a, b) => b.saveTime.compareTo(a.saveTime));
+    return sameSourceNameRecords.first;
+  }
+
+  /// 判断播放记录线路名是否与入口一致。
+  bool _matchesEntrySourceName(PlayRecord record) {
+    final entrySourceName = _normalizeResumeRecordKey(
+      widget.videoInfo.sourceName,
+    );
+    if (entrySourceName.isEmpty) {
+      return false;
+    }
+    return _normalizeResumeRecordKey(record.sourceName) == entrySourceName;
+  }
+
+  /// 判断播放记录是否属于当前入口影片。
+  bool _matchesEntryVideoIdentity(PlayRecord record) {
+    final entryTitle = _normalizeResumeRecordKey(widget.videoInfo.title);
+    final entrySearchTitle =
+        _normalizeResumeRecordKey(widget.videoInfo.searchTitle);
+    final recordTitle = _normalizeResumeRecordKey(record.title);
+    final recordSearchTitle = _normalizeResumeRecordKey(record.searchTitle);
+
+    final titleMatched = entryTitle.isNotEmpty && entryTitle == recordTitle;
+    final searchTitleMatched =
+        entrySearchTitle.isNotEmpty && entrySearchTitle == recordSearchTitle;
+    if (!titleMatched && !searchTitleMatched) {
+      return false;
+    }
+    if (_isUnknownResumeYear(widget.videoInfo.year) ||
+        _isUnknownResumeYear(record.year)) {
+      return true;
+    }
+    return widget.videoInfo.year.trim().toLowerCase() ==
+        record.year.trim().toLowerCase();
+  }
+
+  /// 判断播放记录年份是否缺失。
+  bool _isUnknownResumeYear(String year) {
+    final normalized = year.trim().toLowerCase();
+    return normalized.isEmpty || normalized == 'unknown' || normalized == '未知';
+  }
+
+  /// 标准化播放记录匹配关键字。
+  String _normalizeResumeRecordKey(String value) {
+    return value.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+  }
+
+  /// 查找第一个满足条件的播放源。
+  SearchResult? _firstWhereOrNull(
+    List<SearchResult> sources,
+    bool Function(SearchResult source) test,
+  ) {
+    for (final source in sources) {
+      if (test(source)) {
+        return source;
+      }
+    }
     return null;
+  }
+
+  /// 续播记录晚到时，把首屏临时选中的线路纠正为保存线路。
+  bool _restoreSavedSourceAfterResumeRecordLoaded() {
+    if (!_canUseDetailRoute || !_shouldPrioritizeResumeSource) {
+      return false;
+    }
+    final savedSource = _resolveSavedSourceCandidate(_sources);
+    if (savedSource == null) {
+      return false;
+    }
+    final currentDetail = _currentDetail;
+    if (currentDetail?.source == savedSource.source &&
+        currentDetail?.id == savedSource.id) {
+      return false;
+    }
+
+    setState(() {
+      // 续播记录是入口真实意图，晚到时要覆盖首屏临时源。
+      _currentDetail = savedSource;
+      _pinCurrentDetailFirst = true;
+      _lastRequestedPlaybackUrl = null;
+      _applyInitialResumeState(savedSource);
+      _refreshSourceDisplayCaches(sourcesChanged: false);
+      _refreshInitialLoadingState();
+    });
+    return true;
   }
 
   /// 是否使用旧的聚合加载入口。
@@ -1078,6 +1198,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   ///
   /// 详情页进入时先吃掉当前快照；如果该轮搜索还没结束，再继续订阅后续增量。
   void _attachPrefetchedSearchSession(int serial) {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     final session = widget.prefetchedSearchSession;
     if (session == null || widget.prefetchedSearchTitleKey.isEmpty) {
       _markMoreSourcesLoaded();
@@ -1087,7 +1210,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _detachPrefetchedSearchSession();
 
     void handleSessionChanged() {
-      if (!mounted || serial != _loadSerial) {
+      if (!_canUseDetailRoute || serial != _loadSerial) {
         _detachPrefetchedSearchSession();
         return;
       }
@@ -1133,7 +1256,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
           widget.videoInfo.source,
           widget.videoInfo.id,
         );
-        if (mounted) {
+        if (_canUseDetailRoute) {
           setState(() => _isFavorite = isFavorite);
         }
       },
@@ -1148,7 +1271,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         final loader =
             widget.loadAdFilterEnabled ?? UserDataService.getAdFilterEnabled;
         final adFilterEnabled = await loader();
-        if (!mounted) {
+        if (!_canUseDetailRoute) {
           return;
         }
         setState(() {
@@ -1162,7 +1285,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   Future<void> _loadPlayerKernelPreference() async {
     final loader = widget.loadPlayerKernel ?? UserDataService.getTvPlayerKernel;
     final playerKernel = await loader();
-    if (!mounted) {
+    if (!_canUseDetailRoute) {
       return;
     }
     final shouldReplayPendingEpisode =
@@ -1187,7 +1310,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         final loader =
             widget.loadM3u8ProxyUrl ?? UserDataService.getM3u8ProxyUrl;
         final proxyUrl = await loader();
-        if (!mounted) {
+        if (!_canUseDetailRoute) {
           return;
         }
 
@@ -1205,7 +1328,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       () async {
         try {
           final data = await widget.loadDetail!(context, widget.videoInfo);
-          if (!mounted || serial != _loadSerial) {
+          if (!_canUseDetailRoute || serial != _loadSerial) {
             return;
           }
 
@@ -1239,7 +1362,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               .addPostFrameCallback((_) => _playCurrentEpisode());
         } catch (error) {
           debugPrint('TV 详情页聚合加载失败: $error');
-          if (mounted && serial == _loadSerial) {
+          if (_canUseDetailRoute && serial == _loadSerial) {
             setState(() {
               _isInitialDetailLoading = false;
               _initialSourcesLoaded = true;
@@ -1272,7 +1395,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             TvVideoDetailScreen.defaultLoadInitialSources;
         try {
           final sources = await loader(context, widget.videoInfo);
-          if (!mounted || serial != _loadSerial) {
+          if (!_canUseDetailRoute || serial != _loadSerial) {
             return;
           }
 
@@ -1323,7 +1446,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             context,
             widget.videoInfo,
             (incrementalResults) {
-              if (!mounted || serial != _loadSerial) {
+              if (!_canUseDetailRoute || serial != _loadSerial) {
                 return;
               }
               TvPerfTrace.instant(
@@ -1333,7 +1456,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               _mergeSources(incrementalResults, preferAsCurrent: false);
             },
           );
-          if (!mounted || serial != _loadSerial) {
+          if (!_canUseDetailRoute || serial != _loadSerial) {
             return;
           }
 
@@ -1357,7 +1480,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 标记精确源加载完成。
   void _markInitialSourcesLoaded() {
-    if (!mounted) {
+    if (!_canUseDetailRoute) {
       return;
     }
     setState(() {
@@ -1368,7 +1491,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 标记后台补源加载完成。
   void _markMoreSourcesLoaded() {
-    if (!mounted) {
+    if (!_canUseDetailRoute) {
       return;
     }
     setState(() {
@@ -1390,6 +1513,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     var shouldPlay = false;
     var shouldEnterPreviewLoading = false;
     SearchResult? firstPlayableTraceSource;
+    if (!_canUseDetailRoute) {
+      return;
+    }
     setState(() {
       final mutableSources = List<SearchResult>.from(_sources);
       final changed =
@@ -1469,10 +1595,16 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
     if (shouldPlay) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_canUseDetailRoute) {
+          return;
+        }
         _ensureCurrentSelectionsVisible();
       });
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _playCurrentEpisode());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_canUseDetailRoute) {
+          _playCurrentEpisode();
+        }
+      });
     } else {
       _loadRecommendsIfNeeded();
     }
@@ -1496,6 +1628,17 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return savedSource;
     }
 
+    final sameSourceKey = _firstWhereOrNull(allSources, _matchesSavedSourceKey);
+    if (sameSourceKey != null) {
+      return sameSourceKey;
+    }
+
+    final sameSourceName =
+        _firstWhereOrNull(allSources, _matchesSavedSourceName);
+    if (sameSourceName != null) {
+      return sameSourceName;
+    }
+
     if (!allowResumeFallback) {
       return null;
     }
@@ -1507,23 +1650,34 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     return sameEpisodeCountSource ?? _randomSource(allSources);
   }
 
-  /// 查找第一个满足条件的播放源。
-  SearchResult? _firstWhereOrNull(
-    List<SearchResult> sources,
-    bool Function(SearchResult source) test,
-  ) {
-    for (final source in sources) {
-      if (test(source)) {
-        return source;
-      }
-    }
-    return null;
-  }
-
   /// 判断播放源是否就是播放记录保存的线路。
   bool _matchesSavedSource(SearchResult source) {
     return source.source == _resumeVideoInfo.source &&
         source.id == _resumeVideoInfo.id;
+  }
+
+  /// 判断播放源是否来自播放记录保存的资源站。
+  bool _matchesSavedSourceKey(SearchResult source) {
+    return _resumeVideoInfo.source.isNotEmpty &&
+        source.source == _resumeVideoInfo.source;
+  }
+
+  /// 判断播放源线路名是否与播放记录保存线路一致。
+  bool _matchesSavedSourceName(SearchResult source) {
+    final savedSourceName = _normalizeResumeRecordKey(
+      _resumeVideoInfo.sourceName,
+    );
+    if (savedSourceName.isEmpty) {
+      return false;
+    }
+    return _normalizeResumeRecordKey(source.sourceName) == savedSourceName;
+  }
+
+  /// 按强到弱解析保存线路候选。
+  SearchResult? _resolveSavedSourceCandidate(List<SearchResult> sources) {
+    return _firstWhereOrNull(sources, _matchesSavedSource) ??
+        _firstWhereOrNull(sources, _matchesSavedSourceKey) ??
+        _firstWhereOrNull(sources, _matchesSavedSourceName);
   }
 
   /// 判断播放源集数是否与播放记录一致。
@@ -1765,6 +1919,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 按需加载相关推荐。
   void _loadRecommendsIfNeeded({bool forceWhenEmpty = false}) {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     if (_hasStartedRecommends) {
       return;
     }
@@ -1795,7 +1952,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         try {
           final recommends =
               await loader(context, widget.videoInfo, _currentDetail);
-          if (!mounted || serial != _loadSerial) {
+          if (!_canUseDetailRoute || serial != _loadSerial) {
             return;
           }
           setState(() => _recommends = recommends);
@@ -1819,6 +1976,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 记录播放器控制器并挂载进度监听。
   void _attachPlayerController(VideoPlayerWidgetController controller) {
+    if (!_canUseDetailRoute) {
+      unawaited(controller.pause());
+      return;
+    }
     if (identical(_playerController, controller)) {
       TvPerfTrace.instant('TV详情页:复用播放器控制器');
       _playCurrentEpisode();
@@ -1838,6 +1999,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 标记小播放器开始加载。
   void _markPreviewPlayerLoading({Duration? anchorPosition}) {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     _previewPlayerLoading = true;
     _previewPlaybackStarted = false;
     _previewLoadingAnchorPosition =
@@ -1877,7 +2041,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _recommendsLoadTimer = Timer(
       TvVideoDetailScreen.recommendsDelayAfterPlayback,
       () {
-        if (mounted) {
+        if (_canUseDetailRoute) {
           _loadRecommendsIfNeeded();
         }
       },
@@ -1886,6 +2050,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 播放进度变化时按手机端节流策略保存。
   void _onVideoProgressUpdate() {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     final position = _playerController?.currentPosition;
     if (_hasPlaybackPositionAdvanced(
       current: position,
@@ -1914,6 +2081,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 网速变化时刷新外层 loading 文案。
   void _onPreviewNetworkSpeedUpdate() {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     _schedulePreviewChromeRefresh();
   }
 
@@ -2013,6 +2183,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     await TvPerfTrace.async(
       'TV详情页:播放当前选集',
       () async {
+        if (!_canUseDetailRoute) {
+          return;
+        }
         final detail = _currentDetail;
         final controller = _playerController;
         if (detail == null || controller == null || detail.episodes.isEmpty) {
@@ -2025,6 +2198,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
         }
         if (!_hasResolvedTvPlayerKernel) {
           TvPerfTrace.instant('TV详情页:等待播放器内核配置后起播');
+          return;
+        }
+        if (!_canUseDetailRoute) {
           return;
         }
 
@@ -2055,6 +2231,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                 _m3u8ProxyUrl.isNotEmpty && url.startsWith(_m3u8ProxyUrl),
           },
         );
+        if (!_canUseDetailRoute) {
+          return;
+        }
         if (!_hasDispatchedInitialPreviewPlayback) {
           _hasDispatchedInitialPreviewPlayback = true;
           TvPerfTrace.instant('TV详情页:首次播放地址已下发');
@@ -2118,6 +2297,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 切换播放源。
   void _switchSource(SearchResult source) {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     if (_currentDetail?.source == source.source &&
         _currentDetail?.id == source.id) {
       return;
@@ -2150,6 +2332,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _refreshSourceDisplayCaches(sourcesChanged: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canUseDetailRoute) {
+        return;
+      }
       _ensureCurrentSelectionsVisible();
       _playCurrentEpisode();
     });
@@ -2166,7 +2351,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 同步全屏覆盖层内切换后的选集。
   void _handleFullscreenEpisodeChanged(int index) {
-    if (!mounted || index == _episodeIndex) {
+    if (!_canUseDetailRoute || index == _episodeIndex) {
       return;
     }
     setState(() {
@@ -2178,13 +2363,16 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _lastRequestedPlaybackUrl = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canUseDetailRoute) {
+        return;
+      }
       _ensureCurrentSelectionsVisible();
     });
   }
 
   /// 同步全屏覆盖层内切换后的播放线路。
   void _handleFullscreenSourceChanged(SearchResult source) {
-    if (!mounted) {
+    if (!_canUseDetailRoute) {
       return;
     }
     final currentPlaybackPosition = _playerController?.currentPosition;
@@ -2207,6 +2395,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _refreshSourceDisplayCaches(sourcesChanged: false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canUseDetailRoute) {
+        return;
+      }
       _ensureCurrentSelectionsVisible();
     });
   }
@@ -2218,6 +2409,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 按指定场景切换选集。
   void _switchEpisodeWithScene(int index, {required String scene}) {
+    if (!_canUseDetailRoute) {
+      return;
+    }
     unawaited(_saveProgress(force: true, scene: scene));
     setState(() {
       _episodeIndex = index;
@@ -2228,6 +2422,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _lastRequestedPlaybackUrl = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canUseDetailRoute) {
+        return;
+      }
       _ensureCurrentSelectionsVisible();
       _playCurrentEpisode();
     });
@@ -3868,6 +4065,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 处理详情页返回键，避免全屏关闭事件继续弹出详情页路由。
   Future<bool> _handleDetailBackPressed() async {
+    if (_isExitingDetail) {
+      return true;
+    }
     if (_fullscreenOverlayVisible) {
       _closeFullscreenOverlay();
       return true;
@@ -3875,6 +4075,12 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (_consumeFullscreenOverlayBack) {
       _consumeFullscreenOverlayBack = false;
       return true;
+    }
+    _isExitingDetail = true;
+    _loadSerial++;
+    final controller = _playerController;
+    if (controller != null) {
+      unawaited(controller.pause());
     }
     // 真正离开详情页前强制保存当前进度，保持与普通端返回语义一致。
     await _saveProgress(force: true, scene: '详情页返回');
@@ -3932,6 +4138,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 打开 TV 搜索页。
   void _openSearch() {
+    _isExitingDetail = true;
+    _loadSerial++;
+    unawaited(_playerController?.pause());
     TvRoute.pushReplacement<void, void>(context, const TvSearchScreen());
   }
 
@@ -3966,7 +4175,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   void _scrollToTopAndFocusPlayer() {
     _scrollToTop();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (_canUseDetailRoute) {
         _playerFocusNode.requestFocus();
       }
     });
@@ -4270,22 +4479,30 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    // 只给转圈本体增加柔和投影，避免浅色画面里直接看不见。
-                    boxShadow: <BoxShadow>[
-                      BoxShadow(
-                        color: shadowColor,
-                        blurRadius: 18,
-                        spreadRadius: 4,
+                SizedBox.square(
+                  dimension: 36,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      Positioned.fill(
+                        child: Transform.translate(
+                          offset: const Offset(0, 2),
+                          child: CircularProgressIndicator(
+                            color: shadowColor,
+                            strokeWidth: 3,
+                            value: _isFlutterTestEnvironment ? 0.72 : null,
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: CircularProgressIndicator(
+                          color: TvTheme.of(context).accent,
+                          strokeWidth: 3,
+                          value: _isFlutterTestEnvironment ? 0.72 : null,
+                        ),
                       ),
                     ],
-                  ),
-                  child: CircularProgressIndicator(
-                    color: TvTheme.of(context).accent,
-                    strokeWidth: 3,
-                    value: _isFlutterTestEnvironment ? 0.72 : null,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -4299,7 +4516,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                     shadows: <Shadow>[
                       Shadow(
                         color: shadowColor,
-                        blurRadius: 14,
+                        blurRadius: 2,
                         offset: const Offset(0, 2),
                       ),
                     ],

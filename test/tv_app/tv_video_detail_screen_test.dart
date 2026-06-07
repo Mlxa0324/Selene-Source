@@ -1520,17 +1520,16 @@ void main() {
     );
     expect(loadingOverlay.color, isNull);
     expect(loadingOverlay.decoration, isNull);
-    final loadingSpinnerShadow = tester.widget<DecoratedBox>(
+    expect(
       find.descendant(
         of: find.byKey(const ValueKey('tv-detail-preview-loading')),
-        matching: find.byType(DecoratedBox),
+        matching: find.byType(CircularProgressIndicator),
       ),
+      findsNWidgets(2),
     );
-    final spinnerDecoration = loadingSpinnerShadow.decoration as BoxDecoration;
-    expect(spinnerDecoration.color, isNull);
-    expect(spinnerDecoration.boxShadow, isNotEmpty);
     final speedText = tester.widget<Text>(find.text('768KB/s'));
     expect(speedText.style?.shadows, isNotEmpty);
+    expect(speedText.style?.shadows?.single.blurRadius, 2);
     expect(find.text('768KB/s'), findsOneWidget);
     expect(find.text('0KB/s'), findsNothing);
     expect(
@@ -5919,6 +5918,101 @@ void main() {
   });
 
   testWidgets(
+      'continue watching switches to saved source when resume record finishes late',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final resumeRecordsCompleter = Completer<List<PlayRecord>>();
+    final updatedUrls = <String>[];
+    final startPositions = <Duration?>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'stale_entry_id',
+            '主影片',
+            source: 'source_stale',
+            sourceName: '保存源',
+            index: 2,
+            totalEpisodes: 8,
+            playTime: 10,
+            totalTime: 3600,
+          ),
+          loadResumeRecords: (_) => resumeRecordsCompleter.future,
+          loadInitialSources: (_, __) async => [
+            _searchResult(
+              'source_other',
+              '其它源',
+              episodeCount: 8,
+              episodeUrlPrefix: 'https://other.example.com',
+            ),
+            _searchResult(
+              'source_saved',
+              '保存源',
+              episodeCount: 12,
+              episodeUrlPrefix: 'https://saved.example.com',
+            ),
+          ],
+          loadMoreSources: (_, __, ___) async => const [],
+          loadRecommends: (_, __, ___) async => const [],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 3600),
+                  onUpdateDataSource: (url, {startAt, headers}) {
+                    updatedUrls.add(url);
+                    startPositions.add(startAt);
+                  },
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(updatedUrls, isEmpty);
+
+    resumeRecordsCompleter.complete([
+      PlayRecord(
+        id: 'detail_source_saved',
+        source: 'source_saved',
+        title: '主影片',
+        sourceName: '保存源',
+        year: '2026',
+        cover: '',
+        index: 4,
+        totalEpisodes: 12,
+        playTime: 260,
+        totalTime: 3600,
+        saveTime: 2,
+        searchTitle: '主影片',
+      ),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(updatedUrls, ['https://saved.example.com/4.m3u8']);
+    expect(startPositions, [const Duration(seconds: 260)]);
+  });
+
+  testWidgets(
       'continue watching refreshes saved source when later result has episodes',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -6101,6 +6195,91 @@ void main() {
     expect(startPositions, [const Duration(seconds: 90)]);
   });
 
+  testWidgets(
+      'continue watching prefers saved source name before episode count',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    late ValueChanged<List<SearchResult>> emitIncrementalSources;
+    final moreSourcesCompleter = Completer<List<SearchResult>>();
+    final updatedUrls = <String>[];
+    final startPositions = <Duration?>[];
+    var controllerCreated = false;
+    final searchedSources = [
+      _searchResult(
+        'source_same_count',
+        '同集数源',
+        episodeCount: 10,
+        episodeUrlPrefix: 'https://same-count.example.com',
+      ),
+      _searchResult(
+        'source_saved_new_id',
+        '保存源',
+        episodeCount: 6,
+        episodeUrlPrefix: 'https://saved-name.example.com',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvVideoDetailScreen(
+          videoInfo: _videoInfo(
+            'missing_saved_id',
+            '主影片',
+            source: 'source_missing',
+            sourceName: '保存源',
+            index: 4,
+            totalEpisodes: 10,
+            playTime: 90,
+            totalTime: 3600,
+          ),
+          loadInitialSources: (_, __) async => const [],
+          loadMoreSources: (_, __, onIncrementalResults) {
+            emitIncrementalSources = onIncrementalResults;
+            return moreSourcesCompleter.future;
+          },
+          loadRecommends: (_, __, ___) async => const [],
+          playerBuilder: (_, onControllerCreated) {
+            if (!controllerCreated) {
+              controllerCreated = true;
+              onControllerCreated(
+                _FakeVideoPlayerWidgetController(
+                  isPlaying: true,
+                  currentPosition: Duration.zero,
+                  duration: const Duration(seconds: 3600),
+                  onUpdateDataSource: (url, {startAt, headers}) {
+                    updatedUrls.add(url);
+                    startPositions.add(startAt);
+                  },
+                ),
+              );
+            }
+            return Container(
+              key: const ValueKey('tv-detail-player-placeholder'),
+              color: Colors.black,
+            );
+          },
+          fullscreenPlayerBuilder: (_, __) => Container(
+            key: const ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    emitIncrementalSources(searchedSources);
+    await tester.pump();
+    await tester.pump();
+
+    expect(updatedUrls, ['https://saved-name.example.com/4.m3u8']);
+    expect(startPositions, [const Duration(seconds: 90)]);
+
+    moreSourcesCompleter.complete(searchedSources);
+    await tester.pumpAndSettle();
+
+    expect(updatedUrls, ['https://saved-name.example.com/4.m3u8']);
+  });
+
   testWidgets('continue watching falls back to any source without count match',
       (tester) async {
     await _setTvSurfaceSize(tester);
@@ -6179,6 +6358,84 @@ void main() {
       }),
     );
     expect(startPositions, [const Duration(seconds: 90)]);
+  });
+
+  testWidgets('detail does not start delayed playback after quick pop',
+      (tester) async {
+    await _setTvSurfaceSize(tester);
+    final sourcesCompleter = Completer<List<SearchResult>>();
+    final updatedUrls = <String>[];
+    var controllerCreated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            return Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    PageRouteBuilder(
+                      pageBuilder: (context, animation, secondaryAnimation) =>
+                          TvVideoDetailScreen(
+                        videoInfo: _videoInfo('main', '主影片'),
+                        loadInitialSources: (_, __) => sourcesCompleter.future,
+                        loadMoreSources: (_, __, ___) async => const [],
+                        loadRecommends: (_, __, ___) async => const [],
+                        playerBuilder: (_, onControllerCreated) {
+                          if (!controllerCreated) {
+                            controllerCreated = true;
+                            onControllerCreated(
+                              _FakeVideoPlayerWidgetController(
+                                isPlaying: false,
+                                currentPosition: Duration.zero,
+                                duration: const Duration(seconds: 3600),
+                                onUpdateDataSource: (url, {startAt, headers}) {
+                                  updatedUrls.add(url);
+                                },
+                              ),
+                            );
+                          }
+                          return Container(
+                            key: const ValueKey(
+                              'tv-detail-player-placeholder',
+                            ),
+                            color: Colors.black,
+                          );
+                        },
+                        fullscreenPlayerBuilder: (_, __) => Container(
+                          key: const ValueKey(
+                            'tv-fullscreen-player-placeholder',
+                          ),
+                          color: Colors.black,
+                        ),
+                      ),
+                      transitionDuration: Duration.zero,
+                      reverseTransitionDuration: Duration.zero,
+                    ),
+                  );
+                },
+                child: const Text('打开详情页'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开详情页'));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    sourcesCompleter.complete([
+      _searchResult('source_a', '主源'),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('打开详情页'), findsOneWidget);
+    expect(updatedUrls, isEmpty);
   });
 
   testWidgets('favorite action uses red heart icon when current video is saved',

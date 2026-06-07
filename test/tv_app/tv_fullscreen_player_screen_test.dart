@@ -2426,19 +2426,19 @@ void main() {
     );
     expect(loadingOverlay.color, isNull);
     expect(loadingOverlay.decoration, isNull);
-    final loadingSpinnerShadow = tester.widget<DecoratedBox>(
+    expect(
       find.descendant(
         of: find.byKey(const ValueKey('tv-fullscreen-loading')),
-        matching: find.byType(DecoratedBox),
+        matching: find.byType(CircularProgressIndicator),
       ),
+      findsNWidgets(2),
     );
-    final spinnerDecoration = loadingSpinnerShadow.decoration as BoxDecoration;
-    expect(spinnerDecoration.color, isNull);
-    expect(spinnerDecoration.boxShadow, isNotEmpty);
     final loadingText = tester.widget<Text>(find.text('加载中'));
     expect(loadingText.style?.shadows, isNotEmpty);
+    expect(loadingText.style?.shadows?.single.blurRadius, 2);
     final speedText = tester.widget<Text>(find.text('1.5MB/s'));
     expect(speedText.style?.shadows, isNotEmpty);
+    expect(speedText.style?.shadows?.single.blurRadius, 2);
     expect(find.text('加载中'), findsOneWidget);
     expect(find.text('1.5MB/s'), findsOneWidget);
     expect(find.text('0KB/s'), findsNothing);
@@ -2552,8 +2552,14 @@ void main() {
 
     expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
+    await tester.pump();
+
+    expect(
+        controller.currentPosition, const Duration(minutes: 35, seconds: 25));
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(
@@ -2704,14 +2710,21 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
-    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
+    expect(playback.seekPositions, isEmpty);
     expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
         findsOneWidget);
     expect(find.text('35:35/1:46:59'), findsOneWidget);
     expect(find.textContaining('按【菜单键】或【下键】'), findsNothing);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
+    expect(
+        find.byKey(const ValueKey('tv-fullscreen-seek-overlay')), findsNothing);
   });
 
   testWidgets('brief arrow key holds seek by ten seconds instead of long press',
@@ -2743,13 +2756,23 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump(const Duration(milliseconds: 100));
+    expect(playback.seekPositions, isEmpty);
+    expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
+        findsOneWidget);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
+    expect(
+        find.byKey(const ValueKey('tv-fullscreen-seek-overlay')), findsNothing);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pump(const Duration(milliseconds: 100));
+    expect(playback.seekPositions, [
+      const Duration(minutes: 35, seconds: 35),
+    ]);
+    expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
+        findsOneWidget);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowLeft);
     await tester.pump();
 
@@ -2757,6 +2780,8 @@ void main() {
       const Duration(minutes: 35, seconds: 35),
       const Duration(minutes: 35, seconds: 25),
     ]);
+    expect(
+        find.byKey(const ValueKey('tv-fullscreen-seek-overlay')), findsNothing);
   });
 
   testWidgets(
@@ -2920,7 +2945,7 @@ void main() {
   });
 
   testWidgets(
-      'long press seek hides chrome and clears recovery loading after key up',
+      'long press seek hides chrome and native playing clears recovery loading',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
       position: const Duration(minutes: 35, seconds: 25),
@@ -2972,7 +2997,7 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 180));
 
-    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
   });
 
   testWidgets(
@@ -3035,6 +3060,58 @@ void main() {
     expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
   });
 
+  testWidgets('seek recovery loading hides when native player is playing',
+      (tester) async {
+    final videoController = _FakeVideoPlayerWidgetController(
+      isPlaying: true,
+      isLoading: false,
+      currentPosition: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+    );
+    final playback = _FakeTvFullscreenPlaybackController(
+      position: const Duration(minutes: 35, seconds: 25),
+      duration: const Duration(hours: 1, minutes: 46, seconds: 59),
+      playing: true,
+      loading: false,
+    )..videoController = videoController;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: TvFullscreenPlayerScreen(
+          videoInfo: _videoInfo(),
+          currentDetail: _searchResult('source_a', '主线路'),
+          sources: [
+            _searchResult('source_a', '主线路'),
+          ],
+          initialPlaybackStarted: true,
+          playbackController: playback,
+          reuseExistingPlayer: true,
+          playerBuilder: (_, __) => const ColoredBox(
+            key: ValueKey('tv-fullscreen-player-placeholder'),
+            color: Colors.black,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump(TvFullscreenSeekStep.longPressStartThreshold);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.byKey(const ValueKey('tv-fullscreen-loading')), findsNothing);
+  });
+
   testWidgets('global remote keys drive fullscreen chrome without root focus',
       (tester) async {
     final playback = _FakeTvFullscreenPlaybackController(
@@ -3078,12 +3155,19 @@ void main() {
     outsideFocusNode.requestFocus();
     await tester.pumpAndSettle();
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+
+    expect(playback.seekPositions, isEmpty);
+    expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
+        findsOneWidget);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     expect(playback.seekPositions, [const Duration(minutes: 35, seconds: 35)]);
-    expect(find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
-        findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('tv-fullscreen-seek-overlay')), findsNothing);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -3117,13 +3201,15 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     final overlaySize = tester.getSize(
       find.byKey(const ValueKey('tv-fullscreen-seek-overlay')),
     );
     expect(overlaySize.width, 232);
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
   });
 
   testWidgets('bottom progress track keeps leading edge stable while seeking',
@@ -3153,7 +3239,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     final firstTrackRect = tester.getRect(
@@ -3164,7 +3250,9 @@ void main() {
     );
     expect(find.text('10:09'), findsOneWidget);
 
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 
     final secondTrackRect = tester.getRect(
@@ -3186,6 +3274,8 @@ void main() {
       secondTrackRect.width,
       moreOrLessEquals(firstTrackRect.width, epsilon: 0.01),
     );
+
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowRight);
   });
 
   testWidgets('starts fullscreen player from injected initial position',

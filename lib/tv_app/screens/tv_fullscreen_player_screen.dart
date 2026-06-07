@@ -584,6 +584,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   /// 底部菜单空闲自动隐藏定时器。
   Timer? _menuAutoHideTimer;
 
+  /// seek 后播放器原生播放态兜底检查定时器。
+  Timer? _seekRecoveryNativeStateTimer;
+
   /// 顶部右侧当前时间。
   late String _clockText;
 
@@ -592,6 +595,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 当前 seek 中心提示展示位置。
   Duration? _seekPreviewDisplayPosition;
+
+  /// 当前按住方向键时的短按预览目标。
+  Duration? _seekPressPreviewPosition;
 
   /// 当前 seek 提示总时长。
   Duration? _seekPreviewDuration;
@@ -972,6 +978,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekOverlayTimer?.cancel();
     _seekHoldTimer?.cancel();
     _menuAutoHideTimer?.cancel();
+    _seekRecoveryNativeStateTimer?.cancel();
     _detachDanmakuController();
     // 播放器壳销毁前只做兜底保存，主动返回和系统返回已保存时不再重复重活。
     _scheduleExitSaveOnce(scene: '全屏页销毁');
@@ -1268,6 +1275,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _fullscreenPlaybackStarted = false;
     _fullscreenLoadingAnchorPosition =
         anchorPosition ?? _currentPlaybackPosition;
+    _scheduleSeekRecoveryNativeStateCheck();
   }
 
   /// 结束全屏播放器加载态，调用方必须先确认播放时间点已经前进。
@@ -1275,9 +1283,31 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (!_fullscreenPlayerLoading) {
       return;
     }
+    _seekRecoveryNativeStateTimer?.cancel();
     _fullscreenPlayerLoading = false;
     _fullscreenLoadingAnchorPosition = null;
     _scheduleChromeRefresh();
+  }
+
+  /// 延后检查底层播放器播放态，兜底收起 seek 后残留的 loading。
+  void _scheduleSeekRecoveryNativeStateCheck() {
+    _seekRecoveryNativeStateTimer?.cancel();
+    _seekRecoveryNativeStateTimer =
+        Timer(const Duration(milliseconds: 180), () {
+      if (_shouldIgnoreAsyncUiCallback || !_fullscreenPlayerLoading) {
+        return;
+      }
+      _clearLoadingIfNativePlayerHasRecovered();
+    });
+  }
+
+  /// 如果底层 Exo/video_player 已经恢复播放，则收起全屏 recovery loading。
+  void _clearLoadingIfNativePlayerHasRecovered() {
+    final controller = _effectiveVideoController;
+    if (controller == null || controller.isLoading || !controller.isPlaying) {
+      return;
+    }
+    _markFullscreenPlaybackStarted();
   }
 
   /// 标记当前全屏视频已经真正起播。
@@ -1558,6 +1588,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekHoldAppliedSeconds = 0;
     _seekHoldDisplayBasePosition = _seekPreviewPosition;
     _seekHoldLongPressStarted = false;
+    _showInitialSeekPressPreview(direction);
     _scheduleNextSeekHoldTick();
   }
 
@@ -1569,11 +1600,16 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     final hadRepeated = _seekHoldHasRepeated;
     final direction = _seekDirection;
+    final pressPreviewPosition = _seekPressPreviewPosition;
     _clearSeekHoldTracking();
 
     // 没有进入连续滚动时按短按处理，保持单次 10 秒跳转语义。
-    if (!hadRepeated && direction != 0) {
-      _applySeekDelta(direction, TvFullscreenSeekStep.initialPressSeconds);
+    if (!hadRepeated && direction != 0 && pressPreviewPosition != null) {
+      _applySeekTarget(
+        pressPreviewPosition,
+        markRecoveryLoading: true,
+      );
+      _hideSeekOverlayImmediately();
       return;
     }
 
@@ -1587,6 +1623,28 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _markFullscreenPlayerLoading(anchorPosition: recoveryAnchor);
     _resetSeekState();
     _scheduleChromeRefresh();
+  }
+
+  /// 展示短按或长按开始阶段的中心 seek 预览。
+  void _showInitialSeekPressPreview(int direction) {
+    final duration = _currentPlaybackDuration;
+    if (duration <= Duration.zero) {
+      return;
+    }
+    final basePosition = _seekPreviewPosition ?? _currentPlaybackPosition;
+    final displayTarget = _clampDuration(
+      basePosition +
+          Duration(
+              seconds: TvFullscreenSeekStep.initialPressSeconds * direction),
+      Duration.zero,
+      duration,
+    );
+    setState(() {
+      _seekPressPreviewPosition = displayTarget;
+      _seekPreviewDisplayPosition = displayTarget;
+      _seekPreviewDuration = duration;
+      _seekOverlayVisible = true;
+    });
   }
 
   /// 按当前长按阶段安排下一次 seek tick。
@@ -1656,7 +1714,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   }
 
   /// 执行一次实际 seek，并刷新中心时间提示。
-  void _applySeekDelta(
+  Duration? _applySeekDelta(
     int direction,
     int seconds, {
     Duration? longPressElapsed,
@@ -1664,7 +1722,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   }) {
     final duration = _currentPlaybackDuration;
     if (duration <= Duration.zero) {
-      return;
+      return null;
     }
 
     _seekDirection = direction;
@@ -1691,12 +1749,24 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       _seekPreviewDuration = duration;
       _seekOverlayVisible = true;
     });
+    _applySeekTarget(
+      target,
+      markRecoveryLoading: markRecoveryLoading,
+    );
+    _scheduleSeekOverlayHide();
+    return target;
+  }
+
+  /// 提交指定 seek 目标到播放器。
+  void _applySeekTarget(
+    Duration target, {
+    bool markRecoveryLoading = false,
+  }) {
     if (markRecoveryLoading) {
       _markFullscreenPlayerLoading(anchorPosition: target);
     }
     _resetDanmakuIndex(target, clearVisible: false);
     unawaited(_seekTo(target));
-    _scheduleSeekOverlayHide();
   }
 
   /// 获取当前播放位置，播放器尚未准备好时回退播放记录进度。
@@ -1870,6 +1940,15 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     });
   }
 
+  /// 立即收起中心 seek 提示，避免松手后弹框继续停留。
+  void _hideSeekOverlayImmediately() {
+    _seekOverlayTimer?.cancel();
+    if (!_shouldIgnoreAsyncUiCallback) {
+      setState(() => _seekOverlayVisible = false);
+    }
+    _resetSeekState();
+  }
+
   /// 清理当前长按 seek 调度状态，但保留预览结果给提示层复用。
   void _clearSeekHoldTracking() {
     _seekHoldTimer?.cancel();
@@ -1889,6 +1968,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     _seekDirection = 0;
     _seekPreviewPosition = null;
     _seekPreviewDisplayPosition = null;
+    _seekPressPreviewPosition = null;
     _seekPreviewDuration = null;
   }
 
@@ -3431,22 +3511,30 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  // 只给转圈本体增加柔和投影，不给整块 loading 做卡片式背景。
-                  boxShadow: <BoxShadow>[
-                    BoxShadow(
-                      color: shadowColor,
-                      blurRadius: 18,
-                      spreadRadius: 4,
+              SizedBox.square(
+                dimension: 36,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Positioned.fill(
+                      child: Transform.translate(
+                        offset: const Offset(0, 2),
+                        child: CircularProgressIndicator(
+                          color: shadowColor,
+                          strokeWidth: 3,
+                          value: _isFlutterTestEnvironment ? 0.72 : null,
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                        value: _isFlutterTestEnvironment ? 0.72 : null,
+                      ),
                     ),
                   ],
-                ),
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 3,
-                  value: _isFlutterTestEnvironment ? 0.72 : null,
                 ),
               ),
               const SizedBox(height: 12),
@@ -3460,7 +3548,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   shadows: <Shadow>[
                     Shadow(
                       color: shadowColor,
-                      blurRadius: 14,
+                      blurRadius: 2,
                       offset: const Offset(0, 2),
                     ),
                   ],
@@ -3477,7 +3565,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                   shadows: <Shadow>[
                     Shadow(
                       color: shadowColor,
-                      blurRadius: 14,
+                      blurRadius: 2,
                       offset: const Offset(0, 2),
                     ),
                   ],
@@ -3546,6 +3634,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 处理底层播放器 play 信号。
   void _handleFullscreenPlaySignal() {
+    _clearLoadingIfNativePlayerHasRecovered();
     _scheduleChromeRefresh();
   }
 
@@ -3683,7 +3772,9 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
   Widget _buildBottomProgressBar() {
     final palette = TvTheme.of(context);
     final duration = _seekPreviewDuration ?? _currentPlaybackDuration;
-    final position = _seekPreviewPosition ?? _currentPlaybackPosition;
+    final position = _seekPressPreviewPosition ??
+        _seekPreviewPosition ??
+        _currentPlaybackPosition;
     final clampedPosition = _clampDuration(position, Duration.zero, duration);
     final progress = duration <= Duration.zero
         ? 0.0

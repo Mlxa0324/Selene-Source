@@ -64,6 +64,14 @@ String resolveAndroidTvExoSourceUrl({
   return candidate;
 }
 
+/// 判断播放器异步初始化恢复后是否应该中止后续播放动作。
+bool shouldAbortPlayerAsyncAfterAwait({
+  required bool mounted,
+  required bool playerDisposed,
+}) {
+  return !mounted || playerDisposed;
+}
+
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
   final String? url;
@@ -913,19 +921,37 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
               File(_currentUrl!),
             );
             _adapter = VideoPlayerAdapter(controller);
-            controller.initialize().then((_) async {
+            unawaited(controller.initialize().then((_) async {
+              if (_shouldAbortAsyncAfterAwait()) {
+                try {
+                  await controller.pause();
+                  await controller.dispose();
+                } catch (error) {
+                  debugPrint(
+                    'VideoPlayerWidget: aborted local controller dispose failed $error',
+                  );
+                }
+                return;
+              }
               if (startAt != null) {
                 // 首次创建本地播放器时承接外部续播位置。
                 await controller.seekTo(startAt);
               }
-              if (mounted) {
+              if (!_shouldAbortAsyncAfterAwait()) {
                 _safeSetState(() {
                   _isLoadingVideo = false;
                 });
                 widget.onReady?.call();
-                _adapter!.play();
+                await _adapter?.play();
               }
-            });
+            }).catchError((Object error, StackTrace stackTrace) {
+              if (_shouldAbortAsyncAfterAwait()) {
+                return;
+              }
+              debugPrint(
+                  'VideoPlayerWidget: local controller init failed $error');
+              debugPrint('$stackTrace');
+            }));
             _setupPlayerListeners();
             _adapter?.updateVideoFit(_getBoxFit());
           }
@@ -937,6 +963,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             _currentUrl!,
             startAt: startAt,
           );
+          if (_shouldAbortAsyncAfterAwait()) {
+            await _disposeAdapterAfterAbortedAsync(_adapter);
+            _adapter = null;
+            return;
+          }
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
           await _adapter!.play();
@@ -947,6 +978,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
           await _openCurrentMedia(startAt: startAt);
+          if (_shouldAbortAsyncAfterAwait()) {
+            return;
+          }
         } else {
           _adapter = _createWebViewPlayerAdapter(
             url: _currentUrl!,
@@ -957,6 +991,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
         }
+      }
+      if (_shouldAbortAsyncAfterAwait()) {
+        return;
       }
       _safeSetState(() {
         _isInitialized = true;
@@ -984,9 +1021,15 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _setupPlayerListeners();
         if (_currentUrl != null) {
           await _openCurrentMedia(startAt: startAt);
+          if (_shouldAbortAsyncAfterAwait()) {
+            return;
+          }
         }
       }
 
+      if (_shouldAbortAsyncAfterAwait()) {
+        return;
+      }
       _safeSetState(() {
         _isInitialized = true;
       });
@@ -1011,10 +1054,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
           play: true,
         );
+        if (_shouldAbortAsyncAfterAwait()) {
+          await _disposeAdapterAfterAbortedAsync(_adapter);
+          _adapter = null;
+          return;
+        }
       } else if (_adapter is VideoPlayerAdapter) {
         // Handled in initialization or _updateDataSource for mobile
       }
 
+      if (_shouldAbortAsyncAfterAwait()) {
+        return;
+      }
       await _adapter!.setRate(_playbackSpeed.value);
       _safeSetState(() {
         _hasCompleted = false;
@@ -1057,6 +1108,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     await _openCurrentMedia(
       startAt: currentPosition > Duration.zero ? currentPosition : null,
     );
+    if (_shouldAbortAsyncAfterAwait()) {
+      await oldAdapter.dispose();
+      return;
+    }
     await _adapter!.setRate(currentRate);
     if (!wasPlaying) {
       await _adapter!.pause();
@@ -1241,6 +1296,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             originalUrl: url,
             startAt: startAt,
           );
+          if (_shouldAbortAsyncAfterAwait()) {
+            await _disposeAdapterAfterAbortedAsync(nextAdapter);
+            return;
+          }
 
           final oldAdapter = _adapter;
           _adapter = nextAdapter;
@@ -1255,6 +1314,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             url,
             startAt: startAt,
           );
+          if (_shouldAbortAsyncAfterAwait()) {
+            await _disposeAdapterAfterAbortedAsync(_adapter);
+            _adapter = oldAdapter;
+            return;
+          }
           _setupPlayerListeners();
           _adapter?.updateVideoFit(_getBoxFit());
           await _adapter!.play();
@@ -1270,6 +1334,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           ),
           play: true,
         );
+        if (_shouldAbortAsyncAfterAwait()) {
+          return;
+        }
         _setupCachedRangesListener();
       } else if (canUseMediaKitForUrl) {
         final oldAdapter = _adapter;
@@ -1277,6 +1344,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         _setupPlayerListeners();
         _adapter?.updateVideoFit(_getBoxFit());
         await _openCurrentMedia(startAt: startAt);
+        if (_shouldAbortAsyncAfterAwait()) {
+          await oldAdapter?.dispose();
+          return;
+        }
         unawaited(oldAdapter?.dispose());
       } else if (widget.isLocal &&
           !_shouldUseMacOSMediaKit &&
@@ -1287,8 +1358,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           File(url),
         );
         await newController.initialize();
+        if (_shouldAbortAsyncAfterAwait()) {
+          await newController.dispose();
+          return;
+        }
         if (startAt != null) {
           await newController.seekTo(startAt);
+        }
+        if (_shouldAbortAsyncAfterAwait()) {
+          await newController.dispose();
+          return;
         }
 
         _adapter = VideoPlayerAdapter(newController);
@@ -1314,8 +1393,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
           httpHeaders: _currentHeaders ?? const {},
         );
         await newController.initialize();
+        if (_shouldAbortAsyncAfterAwait()) {
+          await newController.dispose();
+          return;
+        }
         if (startAt != null) {
           await newController.seekTo(startAt);
+        }
+        if (_shouldAbortAsyncAfterAwait()) {
+          await newController.dispose();
+          return;
         }
 
         final oldAdapter = _adapter;
@@ -1349,11 +1436,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         }
       }
 
+      if (_shouldAbortAsyncAfterAwait() || _adapter == null) {
+        return;
+      }
       _playbackSpeed.value = currentSpeed;
       _notifyPlaybackSpeedChanged(currentSpeed, reason: 'switch_data_source');
       await _adapter!.setRate(currentSpeed);
 
-      if (mounted) {
+      if (!_shouldAbortAsyncAfterAwait()) {
         _safeSetState(() {
           _hasCompleted = false;
         });
@@ -1550,6 +1640,30 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
     await _disposePlayer();
+  }
+
+  /// 判断播放器异步初始化恢复后是否已经失效。
+  bool _shouldAbortAsyncAfterAwait() {
+    return shouldAbortPlayerAsyncAfterAwait(
+      mounted: mounted,
+      playerDisposed: _playerDisposed,
+    );
+  }
+
+  /// 异步初始化中途页面退出时，释放刚创建但还未接管的适配器。
+  Future<void> _disposeAdapterAfterAbortedAsync(
+    PlayerAdapter? adapter,
+  ) async {
+    if (adapter == null) {
+      return;
+    }
+    try {
+      await adapter.pause();
+      await adapter.dispose();
+    } catch (error) {
+      debugPrint(
+          'VideoPlayerWidget: aborted async adapter dispose failed $error');
+    }
   }
 
   Future<void> _disposePlayer() async {

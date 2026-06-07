@@ -100,10 +100,12 @@ void main() {
     );
   });
 
-  test('android tv exo source url prefers original stream over outer proxy', () {
+  test('android tv exo source url prefers original stream over outer proxy',
+      () {
     expect(
       resolveAndroidTvExoSourceUrl(
-        url: 'https://proxy.example.com/?url=https%3A%2F%2Fvideo.example.com%2F1.m3u8',
+        url:
+            'https://proxy.example.com/?url=https%3A%2F%2Fvideo.example.com%2F1.m3u8',
         originalUrl: 'https://video.example.com/1.m3u8',
       ),
       'https://video.example.com/1.m3u8',
@@ -114,6 +116,30 @@ void main() {
         url: 'https://video.example.com/1.m3u8',
       ),
       'https://video.example.com/1.m3u8',
+    );
+  });
+
+  test('player async initialization aborts after route disposal', () {
+    expect(
+      shouldAbortPlayerAsyncAfterAwait(
+        mounted: false,
+        playerDisposed: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldAbortPlayerAsyncAfterAwait(
+        mounted: true,
+        playerDisposed: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldAbortPlayerAsyncAfterAwait(
+        mounted: true,
+        playerDisposed: false,
+      ),
+      isFalse,
     );
   });
 
