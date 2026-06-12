@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/play_record.dart';
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/api_service.dart';
@@ -32,6 +33,8 @@ import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
 import 'package:selene/widgets/video_player_surface.dart';
 import 'package:selene/widgets/video_player_widget.dart';
+import 'package:selene/utils/player_cached_range_utils.dart';
+import 'package:selene/utils/playback_time_utils.dart';
 
 /// TV 详情页换源、选集和分组列表的横向滚动触发线。
 const double _tvDetailOptionScrollTriggerFraction = 0.5;
@@ -731,6 +734,11 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
 
   /// 上次保存播放进度的时间。
   DateTime? _lastSaveTime;
+
+  /// 详情页进度条刷新节流（播放中时避免每帧都重建整页）。
+  DateTime? _lastDetailProgressRefresh;
+  static const Duration _detailProgressRefreshInterval =
+      Duration(milliseconds: 500);
 
   /// 上次保存播放进度的秒数。
   int? _lastSavePosition;
@@ -2062,8 +2070,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     }
     unawaited(_retryPendingResumeSeekAfterProgress());
     unawaited(_saveProgress(scene: '定时保存'));
-    if (_playerController?.isPlaying == false) {
+    final isPlaying = _playerController?.isPlaying;
+    if (isPlaying == false) {
       _schedulePreviewChromeRefresh();
+    } else if (isPlaying == true) {
+      // 播放中节流刷新进度条（约 2 fps）
+      final now = DateTime.now();
+      if (_lastDetailProgressRefresh == null ||
+          now.difference(_lastDetailProgressRefresh!) >=
+              _detailProgressRefreshInterval) {
+        _lastDetailProgressRefresh = now;
+        _schedulePreviewChromeRefresh();
+      }
     }
   }
 
@@ -4436,12 +4454,157 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
                       ),
                       if (_shouldShowPreviewLoadingOverlay)
                         _buildPreviewLoadingOverlay(),
+                      if (_previewPlaybackStarted && _currentDetail != null)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: _buildDetailProgressBar(),
+                        ),
                     ],
                   ),
                 ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  /// 构建详情页嵌入播放器底部进度条（含缓冲段）。
+  Widget _buildDetailProgressBar() {
+    final palette = TvTheme.of(context);
+    final controller = _playerController;
+    final position = controller?.currentPosition ?? Duration.zero;
+    final duration = controller?.duration ?? Duration.zero;
+    final clampedPosition = clampDuration(position, Duration.zero, duration);
+    final progress = duration <= Duration.zero
+        ? 0.0
+        : (clampedPosition.inMilliseconds / duration.inMilliseconds)
+            .clamp(0.0, 1.0);
+    final isPlaying = controller?.isPlaying ?? false;
+    final statusIcon = isPlaying ? LucideIcons.pause : LucideIcons.play;
+    final timeTextStyle = FontUtils.poppins(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      color: Colors.white.withValues(alpha: 0.96),
+    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+
+    // 缓冲段计算：截断至当前位置 + 3 分钟
+    final cachedRanges = controller?.cachedRanges ?? const [];
+    final preloadCap =
+        clampedPosition + const Duration(minutes: 3);
+    final cappedCap = duration > Duration.zero && preloadCap > duration
+        ? duration
+        : preloadCap;
+    final cappedRatio = duration > Duration.zero
+        ? (cappedCap.inMilliseconds / duration.inMilliseconds)
+            .clamp(0.0, 1.0)
+        : 0.0;
+    final segments = resolvePlayerCachedProgressSegments(
+      cachedRanges: cachedRanges,
+      duration: duration,
+    );
+
+    return IgnorePointer(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              statusIcon,
+              color: Colors.white,
+              size: 16,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              formatPlaybackDuration(clampedPosition),
+              style: timeTextStyle,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 14,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final trackWidth = constraints.maxWidth;
+                    final playedWidth = trackWidth * progress;
+                    final knobLeft =
+                        (playedWidth - 5).clamp(0.0, trackWidth - 10.0);
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.centerLeft,
+                      children: [
+                        // 背景轨道
+                        Container(
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.54),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        // 缓冲段（浅灰色条，截断至 cappedRatio）
+                        for (final segment in segments)
+                          if (segment.start < cappedRatio)
+                            Positioned(
+                              left: segment.start * trackWidth,
+                              child: Container(
+                                width: ((segment.end > cappedRatio
+                                            ? cappedRatio
+                                            : segment.end) -
+                                        segment.start) *
+                                    trackWidth,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color:
+                                      Colors.white.withValues(alpha: 0.24),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                        // 已播放轨道
+                        Container(
+                          width: playedWidth,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: palette.accent,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        // 时间圆点
+                        Positioned(
+                          left: knobLeft,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: palette.accent,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      Colors.black.withValues(alpha: 0.28),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              formatPlaybackDuration(duration),
+              textAlign: TextAlign.right,
+              style: timeTextStyle,
+            ),
+          ],
         ),
       ),
     );
@@ -5160,6 +5323,10 @@ class _TvDetailFullscreenPlaybackController
   Future<void> seekTo(Duration position) async {
     await _controller?.seekTo(position);
   }
+
+  @override
+  List<PlayerCachedRange> get cachedRanges =>
+      _controller?.cachedRanges ?? const [];
 }
 
 /// TV 详情页分区。

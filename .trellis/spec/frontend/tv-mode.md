@@ -530,7 +530,8 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 选集 | 更新 `_episodeIndex` 并刷新内嵌播放器 |
 | 换源布局 | 标题展示为「切换线路」，并补充 `遇播放卡顿，音画不同步或无法播放时，请切换播放线路`；单行横向列表，不使用多行换行布局；线路展示为 `线路名（集数）`，并按集数倒序排列，相同集数保持原始返回顺序；线路卡片获焦必须使用 `TvVideoCard.focusedScale` 与影视卡片一致放大；换源卡片按上方向键必须按实际位置就近回到播放器、全屏或收藏按钮；全屏和收藏按钮按下方向键必须优先回到当前选中的播放源，当前源未构建时才回到第一个已构建源，避免依赖几何焦点导致丢焦或跳到非当前源；线路行与选集行之间上下移动时必须按当前焦点水平位置选择目标行最近可见项，不得优先恢复上次停留项；焦点中心超过横向视口 50% 后才开始平滑滚动；首尾继续按左右只触发当前项边界抖动，不能跳到其它列表 |
 | 选集布局 | 单行横向集数列表在上，分组标签在集数列表下方；分组标签字号必须与全屏播放选集分组一致使用 17 号；总集数不超过 20 集时不展示分组，长剧集按固定区间切换；分组标签通过上下或左右获焦时只更新焦点和滚动位置，不得刷新当前选集范围；只有确认键或点击分组标签才切换分组；选集卡片和分组标签获焦必须使用 `TvVideoCard.focusedScale` 与影视卡片一致放大；换源、选集、分组和相关推荐之间必须设置明确的上下焦点目标，向下按顺序进入下一块，向上回到就近的上一块；选集行和分组行之间上下移动时必须按当前焦点水平位置选择目标行最近可见项，不得优先恢复上次停留项；详情页所有横向列表首尾必须按获焦放大尺寸预留安全留白，确保长按到右端再回到首项时焦点框不会贴边或被裁剪；集数列表和分组列表焦点中心超过横向视口 50% 后才开始平滑滚动；选集卡片左右键必须显式处理相邻集数或跨组边界，不能交给默认焦点遍历落到分组行；有分组时，当前选集列表最后一项按右键必须无缝切到下一组第一集，当前选集列表第一项按左键必须无缝切到上一组最后一集，并继续保持选集焦点；首组左边界、最后一组右边界或无分组时才触发当前项边界抖动，不能跳到其它列表 |
-| 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏；无播放 URL 的预览占位态不得提前拉起重型 WebView HTML/JS 初始化 |
+| 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏；无播放 URL 的预览占位态不得提前拉起重型 WebView HTML/JS 初始化；播放中在视频底部叠加精简版进度条（含缓冲段），用 `IgnorePointer` 包裹不拦截焦点 |
+| 详情页进度条 | 比全屏版略小（轨道 4px，圆点 10x10，字号 14），无全屏按钮，与全屏版同步显示缓冲段；仅当 `_previewPlaybackStarted && _currentDetail != null` 时展示；缓冲数据从 `_playerController.cachedRanges` 读取 |
 | 预览 loading | 详情页小播放器关闭 `VideoPlayerWidget.showLoadingIndicator` 后，外层必须用 `tv-detail-preview-loading` 承担转圈和网速反馈；已有可播源、控制器晚挂、续播记录未返回导致首播挂起、首帧黑底或缓冲时必须显示；只有当前播放时间点从本轮 loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；网速优先显示播放器控制器的真实下载速度，未知或暂无样本时才回退 `0KB/s`；overlay 必须无背景且 `IgnorePointer`，不得阻断遥控器焦点进入线路、选集或全屏按钮 |
 | 全屏 | 详情页内展示 `TvFullscreenPlayerScreen` 覆盖层，携带当前详情、线路列表和集下标；生产路径必须通过同一个 `VideoPlayerWidget`/控制器在预览和全屏之间移动，避免进入全屏时重新起播或黑屏；TV 全屏播放器同样禁用 PiP/小窗最小化 |
 | 收藏 | 使用 `PageCacheService.addFavorite/removeFavorite` |
@@ -571,7 +572,9 @@ TV 详情页加载错误契约：
 | 画面比例 | 选项文案与手机端播放器设置一致：适应、填充、宽度、高度 |
 | 倍速 | 提供常用倍速，确认后调用播放器倍速切换 |
 | 其它 | 展示片头、片尾和弹幕开关入口；片头/片尾上方展示“确认/空格/Enter 设置当前时间，长按清空”提示；短按确认、空格或 Enter 保存当前播放时间点，长按清空对应配置 |
-| 底部进度条 | 当前时间和总时长必须使用稳定宽度的时间槽位，并启用等宽数字；长按快进/快退时，进度轨道起止位置不能因为时间文本变化而左右跳动 |
+| 底部进度条 | 当前时间和总时长必须使用稳定宽度的时间槽位，并启用等宽数字；长按快进/快退时，进度轨道起止位置不能因为时间文本变化而左右跳动；播放中进度条常驻显示，不再仅在暂停/seek 时出现；菜单打开或加载中时隐藏 |
+| 底部进度条缓冲段 | 在已播放轨道和背景轨道之间叠加浅灰色缓冲段（`Colors.white.withValues(alpha: 0.24)`），数据来自 `TvFullscreenPlaybackController.cachedRanges`，通过 `resolvePlayerCachedProgressSegments()` 计算分段位置；缓冲显示范围截断至当前播放位置 + 3 分钟 |
+| 底部进度条尺寸 | 轨道高度 6px，当前时间圆点 15x15；圆点居中偏移量 `knobLeft = (playedWidth - 7.5).clamp(0.0, trackWidth - 15.0)` |
 | 菜单未弹出时确认键 | 切换播放和暂停，不弹出底部菜单 |
 | 菜单未弹出时左右键 | 执行进度跳转，前 5 秒固定 5 秒步进，之后平滑加速到 19 秒封顶 |
 | 左右键进度提示 | 屏幕中心展示浅灰圆角时间提示，格式为 `当前时间 / 总时长` |
@@ -923,3 +926,30 @@ TvFocusable.requestRememberedFocusForGroup(groupKey);
 - `TvHomeScreen` 的 `buildDetailPage` 用于测试替换真实详情页，避免卡片跳转测试触发详情页网络请求。
 - `TvVideoDetailScreen` 的 `loadDetail` 和 `playerBuilder` 用于隔离详情数据和播放器。
 - 新增 TV 焦点行为时，优先在 `TvFocusable` 或具体 TV 组件内封装，不要在页面里散落键盘事件。
+
+### 9.1 播放器缓冲数据流
+
+```
+PlayerAdapter.state.cachedRanges          ← Exo/WebView 内核都实现
+  ↓ (stream 订阅，已持久化合并)
+_VideoPlayerWidgetState._currentPreloadProgressRanges
+  ↓ (新增 getter)
+VideoPlayerWidgetController.cachedRanges
+  ↓ (适配器桥接)
+TvFullscreenPlaybackController.cachedRanges
+  ↓ (UI 消费)
+_buildBottomProgressBar() / _buildDetailProgressBar()
+```
+
+- `VideoPlayerWidgetController.cachedRanges` 委托到已有的 `_currentPreloadProgressRanges`，不新增数据链路或订阅。
+- `_TvDetailFullscreenPlaybackController` 实时读取 `_controller?.cachedRanges`，因为控制器可能在全屏打开后才挂上。
+- 缓冲数据更新时无需额外订阅；进度监听回调触发 `setState` 时顺带读取最新 `cachedRanges` 即可。
+
+### 9.2 TV 进度条实现约定
+
+- TV 进度条不使用 Flutter `Slider`，由 `Stack` + `Container` + `Positioned` 手写，四层结构：背景轨道 → 缓冲段 → 已播放轨道 → 时间圆点。
+- 全屏播放器进度条由 `_buildBottomProgressBar()` 构建，详情页进度条由 `_buildDetailProgressBar()` 构建。
+- 缓冲段使用 `resolvePlayerCachedProgressSegments()` 计算归一化位置，截断至 `position + 3min`。
+- 播放中进度条常驻显示：`_shouldShowPlaybackChrome` 只检查 `!_menuVisible && !_isPlaybackLoading`。
+- 进度条通过 `IgnorePointer` 包裹，不拦截遥控器焦点事件。
+- 时间格式化复用 `lib/utils/playback_time_utils.dart` 中的 `clampDuration()` 和 `formatPlaybackDuration()`。

@@ -283,6 +283,10 @@ class VideoPlayerWidgetController {
 
   double get playbackSpeed => _state._playbackSpeed.value;
 
+  /// 当前播放器已缓冲的区间列表。
+  List<PlayerCachedRange> get cachedRanges =>
+      _state._currentPreloadProgressRanges;
+
   Future<void> setVolume(double volume) async {
     await _state._adapter?.setVolume(volume);
   }

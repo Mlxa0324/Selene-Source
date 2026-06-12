@@ -10,6 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/favorite_item.dart';
 import 'package:selene/models/play_record.dart';
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/local_mode_storage_service.dart';
@@ -6974,6 +6975,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   String networkSpeedText;
+
+  @override
+  List<PlayerCachedRange> cachedRanges = const [];
 
   final List<VoidCallback> _progressListeners = [];
   final List<VoidCallback> _networkSpeedListeners = [];

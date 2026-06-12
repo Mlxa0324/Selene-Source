@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/models/danmaku_model.dart';
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/tv_app/screens/tv_fullscreen_player_screen.dart';
@@ -154,6 +155,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   double get playbackSpeed => 1.0;
+
+  @override
+  List<PlayerCachedRange> cachedRanges = const [];
 
   @override
   Future<void> pause() async {}

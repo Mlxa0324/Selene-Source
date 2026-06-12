@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/danmaku_model.dart';
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/danmaku_service.dart';
@@ -25,6 +26,8 @@ import 'package:selene/tv_app/widgets/tv_focusable.dart';
 import 'package:selene/tv_app/widgets/tv_focus_scroll.dart';
 import 'package:selene/tv_app/widgets/tv_video_card.dart';
 import 'package:selene/utils/font_utils.dart';
+import 'package:selene/utils/player_cached_range_utils.dart';
+import 'package:selene/utils/playback_time_utils.dart';
 import 'package:selene/widgets/player_settings_panel.dart';
 import 'package:selene/widgets/video_player_surface.dart';
 import 'package:selene/widgets/video_player_widget.dart';
@@ -88,6 +91,9 @@ abstract class TvFullscreenPlaybackController {
 
   /// 跳转到指定播放位置。
   Future<void> seekTo(Duration position);
+
+  /// 当前播放器已缓冲的区间列表。
+  List<PlayerCachedRange> get cachedRanges;
 }
 
 /// 提供全屏壳可直接操作的底层播放器控制器。
@@ -1632,7 +1638,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
       return;
     }
     final basePosition = _seekPreviewPosition ?? _currentPlaybackPosition;
-    final displayTarget = _clampDuration(
+    final displayTarget = clampDuration(
       basePosition +
           Duration(
               seconds: TvFullscreenSeekStep.initialPressSeconds * direction),
@@ -1727,7 +1733,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
     _seekDirection = direction;
     final basePosition = _seekPreviewPosition ?? _currentPlaybackPosition;
-    final target = _clampDuration(
+    final target = clampDuration(
       basePosition + Duration(seconds: seconds * direction),
       Duration.zero,
       duration,
@@ -1843,9 +1849,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
 
   /// 是否显示暂停/拖动时的播放器信息壳层。
   bool get _shouldShowPlaybackChrome {
-    return !_menuVisible &&
-        !_isPlaybackLoading &&
-        (_seekOverlayVisible || !_isPlaybackPlaying);
+    return !_menuVisible && !_isPlaybackLoading;
   }
 
   /// 是否显示顶部标题和说明装饰层。
@@ -1879,21 +1883,12 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     }
   }
 
-  /// 限制时间在合法播放区间内。
-  Duration _clampDuration(Duration value, Duration min, Duration max) {
-    final milliseconds = value.inMilliseconds.clamp(
-      min.inMilliseconds,
-      max.inMilliseconds,
-    );
-    return Duration(milliseconds: milliseconds);
-  }
-
   /// 将当前播放位置保存为片头跳过点。
   void _setIntroToCurrentPosition() {
     final duration = _currentPlaybackDuration;
     final position = _currentPlaybackPosition;
     final seconds = duration > Duration.zero
-        ? _clampDuration(position, Duration.zero, duration).inSeconds
+        ? clampDuration(position, Duration.zero, duration).inSeconds
         : math.max(0, position.inSeconds);
     setState(() => _skipIntroSeconds = seconds);
     unawaited(UserDataService.saveSkipIntroDuration(seconds));
@@ -1911,7 +1906,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     if (duration <= Duration.zero) {
       return;
     }
-    final position = _clampDuration(
+    final position = clampDuration(
       _currentPlaybackPosition,
       Duration.zero,
       duration,
@@ -3775,7 +3770,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
     final position = _seekPressPreviewPosition ??
         _seekPreviewPosition ??
         _currentPlaybackPosition;
-    final clampedPosition = _clampDuration(position, Duration.zero, duration);
+    final clampedPosition = clampDuration(position, Duration.zero, duration);
     final progress = duration <= Duration.zero
         ? 0.0
         : (clampedPosition.inMilliseconds / duration.inMilliseconds)
@@ -3808,7 +3803,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 key: const ValueKey('tv-fullscreen-bottom-current-time-slot'),
                 width: _progressTimeSlotWidth,
                 child: Text(
-                  _formatProgressBarDuration(clampedPosition),
+                  formatPlaybackDuration(clampedPosition),
                   style: timeTextStyle,
                 ),
               ),
@@ -3822,31 +3817,74 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                       final trackWidth = constraints.maxWidth;
                       final playedWidth = trackWidth * progress;
                       final knobLeft =
-                          (playedWidth - 5).clamp(0.0, trackWidth - 10.0);
+                          (playedWidth - 7.5).clamp(0.0, trackWidth - 15.0);
+
+                      // 缓冲段计算：截断至当前位置 + 3 分钟
+                      final cachedRanges =
+                          widget.playbackController?.cachedRanges ?? const [];
+                      final preloadCap =
+                          clampedPosition + const Duration(minutes: 3);
+                      final cappedCap = duration > Duration.zero &&
+                              preloadCap > duration
+                          ? duration
+                          : preloadCap;
+                      final cappedRatio = duration > Duration.zero
+                          ? (cappedCap.inMilliseconds /
+                                  duration.inMilliseconds)
+                              .clamp(0.0, 1.0)
+                          : 0.0;
+                      final segments =
+                          resolvePlayerCachedProgressSegments(
+                        cachedRanges: cachedRanges,
+                        duration: duration,
+                      );
+
                       return Stack(
                         clipBehavior: Clip.none,
                         alignment: Alignment.centerLeft,
                         children: [
+                          // 背景轨道
                           Container(
-                            height: 3,
+                            height: 6,
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.54),
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
+                          // 缓冲段（浅灰色条，截断至 cappedRatio）
+                          for (final segment in segments)
+                            if (segment.start < cappedRatio)
+                              Positioned(
+                                left: segment.start * trackWidth,
+                                child: Container(
+                                  width: ((segment.end > cappedRatio
+                                              ? cappedRatio
+                                              : segment.end) -
+                                          segment.start) *
+                                      trackWidth,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.24),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
+                          // 已播放轨道
                           Container(
                             width: playedWidth,
-                            height: 3,
+                            height: 6,
                             decoration: BoxDecoration(
                               color: palette.accent,
                               borderRadius: BorderRadius.circular(999),
                             ),
                           ),
+                          // 时间圆点
                           Positioned(
                             left: knobLeft,
                             child: Container(
-                              width: 10,
-                              height: 10,
+                              width: 15,
+                              height: 15,
                               decoration: BoxDecoration(
                                 color: palette.accent,
                                 shape: BoxShape.circle,
@@ -3871,7 +3909,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 key: const ValueKey('tv-fullscreen-bottom-total-time-slot'),
                 width: _progressTimeSlotWidth,
                 child: Text(
-                  _formatProgressBarDuration(duration),
+                  formatPlaybackDuration(duration),
                   textAlign: TextAlign.right,
                   style: timeTextStyle,
                 ),
@@ -3950,22 +3988,6 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
           '${seconds.toString().padLeft(2, '0')}';
     }
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
-  }
-
-  /// 格式化底部进度条时间。
-  ///
-  /// 底部进度条对齐电视端播放器习惯，小于 1 小时时也固定显示 `mm:ss`。
-  String _formatProgressBarDuration(Duration duration) {
-    final safeDuration = duration < Duration.zero ? Duration.zero : duration;
-    final hours = safeDuration.inHours;
-    final minutes = safeDuration.inMinutes.remainder(60);
-    final seconds = safeDuration.inSeconds.remainder(60);
-    if (hours > 0) {
-      return '$hours:${minutes.toString().padLeft(2, '0')}:'
-          '${seconds.toString().padLeft(2, '0')}';
-    }
-    return '${minutes.toString().padLeft(2, '0')}:'
-        '${seconds.toString().padLeft(2, '0')}';
   }
 
   /// 构建底部一二级菜单。
@@ -4361,7 +4383,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 key: edgeShakeKey,
                 child: _TvPlayerMenuButton(
                   focusNode: _secondaryFocusNodeFor('other', index),
-                  label: '片头 ${_formatProgressBarDuration(
+                  label: '片头 ${formatPlaybackDuration(
                     Duration(seconds: _skipIntroSeconds),
                   )}',
                   selected: false,
@@ -4391,7 +4413,7 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
                 key: edgeShakeKey,
                 child: _TvPlayerMenuButton(
                   focusNode: _secondaryFocusNodeFor('other', index),
-                  label: '片尾 ${_formatProgressBarDuration(
+                  label: '片尾 ${formatPlaybackDuration(
                     Duration(seconds: _skipOutroSeconds),
                   )}',
                   selected: false,

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/config/tv_player_kernel.dart';
 import 'package:selene/models/play_record.dart';
+import 'package:selene/models/player_cached_range.dart';
 import 'package:selene/models/search_result.dart';
 import 'package:selene/models/video_info.dart';
 import 'package:selene/services/local_mode_storage_service.dart';
@@ -143,7 +144,7 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('tv-fullscreen-top-decorations')),
-        findsNothing);
+        findsOneWidget);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
@@ -2508,7 +2509,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('tv-fullscreen-bottom-progress')),
-      findsNothing,
+      findsOneWidget,
     );
   });
 
@@ -4058,6 +4059,9 @@ class _FakeTvFullscreenPlaybackController
     this.position = position;
     seekPositions.add(position);
   }
+
+  @override
+  List<PlayerCachedRange> get cachedRanges => const [];
 }
 
 class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
@@ -4129,6 +4133,9 @@ class _FakeVideoPlayerWidgetController implements VideoPlayerWidgetController {
 
   @override
   double get playbackSpeed => 1.0;
+
+  @override
+  List<PlayerCachedRange> cachedRanges = const [];
 
   @override
   Future<void> pause() async {}
