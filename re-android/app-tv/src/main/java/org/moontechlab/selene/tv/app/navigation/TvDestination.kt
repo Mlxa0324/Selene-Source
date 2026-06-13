@@ -8,10 +8,12 @@ import java.nio.charset.StandardCharsets
  *
  * @property route Compose Navigation 使用的路由字符串。
  * @property label TV UI 展示文案。
+ * @property iconGlyph 顶部快捷入口展示的轻量图标符号。
  */
 sealed class TvDestination(
     val route: String,
     val label: String,
+    val iconGlyph: String? = null,
 ) {
     /**
      * 首页路由。
@@ -41,22 +43,22 @@ sealed class TvDestination(
     /**
      * 搜索页路由。
      */
-    data object Search : TvDestination("search", "搜索")
+    data object Search : TvDestination("search", "搜索", "⌕")
 
     /**
      * 播放历史页路由。
      */
-    data object History : TvDestination("history", "播放历史")
+    data object History : TvDestination("history", "播放历史", "↺")
 
     /**
      * 收藏夹页路由。
      */
-    data object Favorites : TvDestination("favorites", "收藏夹")
+    data object Favorites : TvDestination("favorites", "收藏夹", "★")
 
     /**
      * 设置页路由。
      */
-    data object Settings : TvDestination("settings", "设置")
+    data object Settings : TvDestination("settings", "设置", "⚙")
 
     /**
      * 直播页路由。

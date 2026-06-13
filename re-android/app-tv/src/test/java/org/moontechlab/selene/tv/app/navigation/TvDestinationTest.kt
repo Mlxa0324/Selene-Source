@@ -2,6 +2,7 @@ package org.moontechlab.selene.tv.app.navigation
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
+import org.moontechlab.selene.tv.feature.home.TvHomeSectionMoreTarget
 
 /**
  * 校验 TV 顶级路由的公开契约。
@@ -78,6 +79,40 @@ class TvDestinationTest {
             "favorites",
             "settings",
         ).inOrder()
+    }
+
+    /**
+     * 确认快捷入口暴露图标符号，供顶部按钮渲染图标加文字。
+     */
+    @Test
+    fun quick_access_destinations_expose_icon_glyphs() {
+        val iconGlyphs = TvDestination.quickAccessDestinations.map { it.iconGlyph }
+
+        assertThat(iconGlyphs).containsExactly(
+            "⌕",
+            "↺",
+            "★",
+            "⚙",
+        ).inOrder()
+    }
+
+    /**
+     * 确认首页查看更多目标能映射到既有顶层路由，避免额外引入中转页面。
+     */
+    @Test
+    fun home_section_more_targets_map_to_existing_top_level_destinations() {
+        assertThat(TvHomeSectionMoreTarget.History.toDestination().route)
+            .isEqualTo(TvDestination.History.route)
+        assertThat(TvHomeSectionMoreTarget.Movie.toDestination().route)
+            .isEqualTo(TvDestination.Movie.route)
+        assertThat(TvHomeSectionMoreTarget.Tv.toDestination().route)
+            .isEqualTo(TvDestination.Tv.route)
+        assertThat(TvHomeSectionMoreTarget.Anime.toDestination().route)
+            .isEqualTo(TvDestination.Anime.route)
+        assertThat(TvHomeSectionMoreTarget.Show.toDestination().route)
+            .isEqualTo(TvDestination.Show.route)
+        assertThat(TvHomeSectionMoreTarget.Favorites.toDestination().route)
+            .isEqualTo(TvDestination.Favorites.route)
     }
 
     /**

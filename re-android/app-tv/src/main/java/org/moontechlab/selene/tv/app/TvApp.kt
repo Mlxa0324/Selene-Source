@@ -27,7 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.tv.material3.MaterialTheme
@@ -104,11 +106,11 @@ private fun TvTopNavigationBar(
             .fillMaxWidth()
             .padding(
                 start = TvTokens.PageHorizontalPadding,
-                top = 18.dp,
+                top = 28.dp,
                 end = TvTokens.PageHorizontalPadding,
-                bottom = 12.dp,
+                bottom = 24.dp,
             ),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -116,7 +118,10 @@ private fun TvTopNavigationBar(
         ) {
             Text(
                 text = "IvyTV",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                ),
                 color = Color.White,
             )
 
@@ -125,6 +130,7 @@ private fun TvTopNavigationBar(
             TvDestinationGroup(
                 destinations = TvDestination.quickAccessDestinations,
                 currentRoute = currentRoute,
+                horizontalSpacing = 10.dp,
                 onNavigate = onNavigate,
             )
 
@@ -136,6 +142,7 @@ private fun TvTopNavigationBar(
         TvDestinationGroup(
             destinations = TvDestination.primaryMenuDestinations,
             currentRoute = currentRoute,
+            horizontalSpacing = 12.dp,
             onNavigate = onNavigate,
         )
     }
@@ -152,16 +159,18 @@ private fun TvTopNavigationBar(
 private fun TvDestinationGroup(
     destinations: List<TvDestination>,
     currentRoute: String?,
+    horizontalSpacing: androidx.compose.ui.unit.Dp = 10.dp,
     onNavigate: (TvDestination) -> Unit,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         destinations.forEach { destination ->
             val isSelected = destination.route == currentRoute
             TvNavigationPill(
                 label = destination.label,
+                iconGlyph = destination.iconGlyph,
                 selected = isSelected,
                 onClick = { onNavigate(destination) },
             )
@@ -179,6 +188,7 @@ private fun TvDestinationGroup(
 @Composable
 private fun TvNavigationPill(
     label: String,
+    iconGlyph: String?,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -212,12 +222,29 @@ private fun TvNavigationPill(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // 顶部导航保持纯文本，避免 Kotlin 侧在首轮粗对齐中引入额外图标差异。
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!iconGlyph.isNullOrBlank()) {
+                Text(
+                    text = iconGlyph,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = Color.White,
+                )
+            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 16.sp,
+                    fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
+                ),
+                color = if (selected || isFocused) Color.White else TvTokens.TextPrimary,
+            )
+        }
     }
 }
 

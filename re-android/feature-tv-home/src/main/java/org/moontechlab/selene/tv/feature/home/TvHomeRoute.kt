@@ -23,6 +23,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
+import org.moontechlab.selene.tv.core.design.layout.TvMorePosterCard
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
@@ -33,10 +34,14 @@ import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
  * TV 首页路由。
  *
  * @param state 首页界面状态。
+ * @param onVideoClick 视频卡片点击回调。
+ * @param onSectionMoreClick 分区查看更多点击回调。
  */
 @Composable
 fun TvHomeRoute(
     state: TvHomeUiState = TvHomeUiState(),
+    onVideoClick: (String) -> Unit = {},
+    onSectionMoreClick: (TvHomeSectionMoreTarget) -> Unit = {},
 ) {
     TvPageScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -71,18 +76,37 @@ fun TvHomeRoute(
         }
 
         state.sections.forEachIndexed { index, section ->
+            // 分区展示模型统一处理数量截断和更多入口，Route 只负责渲染。
+            val presentation = section.toHomeSectionPresentation()
+            val moreTarget = presentation.moreTarget
             TvPageSection(
                 title = section.title,
                 hint = if (index == 0) "长按删除" else null,
             ) {
                 TvPosterRail(
-                    items = section.videos.map { video ->
+                    items = presentation.visibleVideos.map { video ->
                         TvPosterItem(
                             id = video.id,
                             title = video.title,
                             subtitle = section.title,
                             posterUrl = video.posterUrl,
                         )
+                    },
+                    trailingContent = if (presentation.showMore && moreTarget != null) {
+                        {
+                            TvMorePosterCard(
+                                onClick = {
+                                    // 首页分区更多入口统一交给宿主路由层决定跳转页面。
+                                    onSectionMoreClick(moreTarget)
+                                },
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                    onItemClick = { item ->
+                        // 首页卡片统一把视频身份交给宿主路由，避免页面直接持有 NavController。
+                        onVideoClick(item.id)
                     },
                 )
             }

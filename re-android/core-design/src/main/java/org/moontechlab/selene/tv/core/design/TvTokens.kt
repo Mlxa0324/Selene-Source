@@ -75,7 +75,7 @@ object TvTokens {
     /**
      * TV 页面水平安全边距。
      */
-    val PageHorizontalPadding = 36.dp
+    val PageHorizontalPadding = 46.dp
 
     /**
      * TV 页面顶部留白。
@@ -90,7 +90,7 @@ object TvTokens {
     /**
      * TV 页面卡片间距。
      */
-    val CardSpacing = 22.dp
+    val CardSpacing = 18.dp
 
     /**
      * TV 页面纵向内容底部留白。
@@ -100,17 +100,17 @@ object TvTokens {
     /**
      * TV 海报卡片宽度。
      */
-    val PosterWidth = 168.dp
+    val PosterWidth = 158.dp
 
     /**
      * TV 海报卡片高度。
      */
-    val PosterHeight = 304.dp
+    val PosterHeight = 300.dp
 
     /**
      * TV 海报封面高度。
      */
-    val PosterCoverHeight = 244.dp
+    val PosterCoverHeight = 237.dp
 
     /**
      * TV 顶部快捷入口高度。

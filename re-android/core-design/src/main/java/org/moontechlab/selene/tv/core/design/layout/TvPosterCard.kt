@@ -105,6 +105,72 @@ fun TvPosterCard(
 }
 
 /**
+ * TV 横向海报带尾部的查看更多卡片。
+ *
+ * @param modifier 外层修饰器。
+ * @param label 卡片展示文案。
+ * @param onClick 点击查看更多回调。
+ */
+@Composable
+fun TvMorePosterCard(
+    modifier: Modifier = Modifier,
+    label: String = "查看更多",
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.08f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "tvMorePosterCardScale",
+    )
+    val radius = RoundedCornerShape(TvTokens.CardRadius)
+
+    Box(
+        modifier = modifier
+            .width(TvTokens.PosterWidth)
+            .height(TvTokens.PosterHeight),
+    ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .width(TvTokens.PosterWidth)
+                .height(TvTokens.PosterCoverHeight)
+                .scale(scale)
+                .clip(radius)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                )
+                .border(
+                    width = if (isFocused) TvTokens.FocusBorderWidth else 1.dp,
+                    color = if (isFocused) TvTokens.FocusBorder else TvTokens.Outline,
+                    shape = radius,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(
+                    text = "→",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = if (isFocused) TvTokens.FocusBorder else Color.White,
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+/**
  * 计算海报卡片底图颜色。
  *
  * @param seed1 第一层哈希种子。

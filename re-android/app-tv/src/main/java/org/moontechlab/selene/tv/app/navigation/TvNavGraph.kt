@@ -18,6 +18,7 @@ import org.moontechlab.selene.tv.app.TvAppContainer
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
 import org.moontechlab.selene.tv.feature.detail.TvDetailRoute
+import org.moontechlab.selene.tv.feature.home.TvHomeSectionMoreTarget
 import org.moontechlab.selene.tv.feature.home.TvHomeRoute
 import org.moontechlab.selene.tv.feature.home.TvVideoLibraryRoute
 import org.moontechlab.selene.tv.feature.live.TvLiveRoute
@@ -50,7 +51,17 @@ fun TvNavGraph(
             LaunchedEffect(homeViewModel) {
                 homeViewModel.load()
             }
-            TvHomeRoute(state = homeState)
+            TvHomeRoute(
+                state = homeState,
+                onVideoClick = { videoId ->
+                    // 首页所有视频卡片统一进入原生 TV 详情页。
+                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                },
+                onSectionMoreClick = { target ->
+                    // 首页分区查看更多沿用既有顶层页面，避免额外引入中转页。
+                    navController.navigate(target.toDestination().route)
+                },
+            )
         }
         composable(TvDestination.Movie.route) {
             TvRemoteVideoLibraryRoute(
@@ -164,6 +175,22 @@ fun TvNavGraph(
             // 当前播放器模块先由自身 ViewModel 承载状态，路由参数契约保留给详情页接入。
             TvPlayerRoute()
         }
+    }
+}
+
+/**
+ * 将首页更多入口目标映射为 TV 顶层导航路由。
+ *
+ * @return 对应的顶层导航目标。
+ */
+internal fun TvHomeSectionMoreTarget.toDestination(): TvDestination {
+    return when (this) {
+        TvHomeSectionMoreTarget.History -> TvDestination.History
+        TvHomeSectionMoreTarget.Movie -> TvDestination.Movie
+        TvHomeSectionMoreTarget.Tv -> TvDestination.Tv
+        TvHomeSectionMoreTarget.Anime -> TvDestination.Anime
+        TvHomeSectionMoreTarget.Show -> TvDestination.Show
+        TvHomeSectionMoreTarget.Favorites -> TvDestination.Favorites
     }
 }
 

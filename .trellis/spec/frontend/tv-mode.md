@@ -955,6 +955,7 @@ Kotlin 原生 TV 工程必须把 Flutter TV 的设计系统和根导航契约收
 - `core-design` 使用 `androidx.tv.material3`，不要在 TV 设计基础组件里混用普通 `androidx.compose.material3.MaterialTheme`。
 - `TvDesignPreset` 必须包含 `AUTO / HD720 / FULL_HD_1080 / QHD_1440`，`TvDesignMetrics` 必须同时暴露 `configuredPreset` 和 `effectivePreset`，用于页面和弹窗继承同一设计视口。
 - 可复用页面组件放在 `core-design/layout/`，包括页面壳、区块、海报卡、横向 rail、纵向 grid、空/加载/错误状态面板。
+- Kotlin 原生 TV 首页横向分区必须对齐 Flutter TV 首屏节奏：单个分区首屏最多展示 `15` 张海报，超出时在 rail 尾部追加一个与海报同宽的「查看更多」卡片；`continue_watching/history -> 播放历史`、`hot_movies -> 电影`、`hot_tv_shows -> 剧集`、`bangumi_calendar -> 动漫`、`hot_shows -> 综艺`、`favorites -> 收藏夹`，不要为首页更多入口再造一套中转路由。
 - 遥控器确认键策略放在 `core-design/focus/`，短按、长按和重复 KeyDown 去重必须由共享策略处理，避免页面各自实现导致重复跳转。
 - TV 风格确认弹窗放在 `core-design/dialog/`，后续页面只传 title/message/action，不重复写弹窗视觉。
 - `app-tv` 顶部导航必须使用 `TvDestination` 的统一 route/label 契约；主菜单顺序是：首页、电影、剧集、动漫、综艺、直播；快捷入口顺序是：搜索、播放历史、收藏夹、设置。
