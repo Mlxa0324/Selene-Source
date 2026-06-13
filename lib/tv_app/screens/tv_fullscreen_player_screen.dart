@@ -3508,28 +3508,22 @@ class _TvFullscreenPlayerScreenState extends State<TvFullscreenPlayerScreen> {
             children: [
               SizedBox.square(
                 dimension: 36,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    Positioned.fill(
-                      child: Transform.translate(
-                        offset: const Offset(0, 2),
-                        child: CircularProgressIndicator(
-                          color: shadowColor,
-                          strokeWidth: 3,
-                          value: _isFlutterTestEnvironment ? 0.72 : null,
-                        ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.32),
+                        blurRadius: 4,
+                        offset: const Offset(2, 2),
                       ),
-                    ),
-                    Positioned.fill(
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 3,
-                        value: _isFlutterTestEnvironment ? 0.72 : null,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 3,
+                    value: _isFlutterTestEnvironment ? 0.72 : null,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),

@@ -1521,12 +1521,13 @@ void main() {
     );
     expect(loadingOverlay.color, isNull);
     expect(loadingOverlay.decoration, isNull);
+    // R1: 单圈 + BoxShadow 投影，不再用双击 spinner 做阴影。
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('tv-detail-preview-loading')),
         matching: find.byType(CircularProgressIndicator),
       ),
-      findsNWidgets(2),
+      findsOneWidget,
     );
     final speedText = tester.widget<Text>(find.text('768KB/s'));
     expect(speedText.style?.shadows, isNotEmpty);
@@ -5571,6 +5572,10 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
+    // R3: 保存改为 unawaited 后台执行，给时间让异步写入落盘；
+    // TvBackIntent 自身也有 700ms 释放防抖定时器，需一并排空避免测试框架残留检查失败。
+    await tester.pump(const Duration(milliseconds: 800));
+
     final records = await LocalModeStorageService.getPlayRecords();
     expect(records, hasLength(1));
     expect(records.first.source, 'source_a');
@@ -6696,6 +6701,10 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
+
+    // R3: 保存改为 unawaited 后台执行，等待异步操作完成；
+    // 同时排空 TvBackIntent 700ms 防抖定时器，避免测试框架残留检查失败。
+    await tester.pump(const Duration(milliseconds: 800));
 
     expect(controller.disposeCount, 0);
     expect(controller.removedProgressListeners, 1);

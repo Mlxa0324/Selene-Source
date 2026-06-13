@@ -2427,12 +2427,13 @@ void main() {
     );
     expect(loadingOverlay.color, isNull);
     expect(loadingOverlay.decoration, isNull);
+    // R1: 单圈 + BoxShadow 投影，不再用双击 spinner 做阴影。
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('tv-fullscreen-loading')),
         matching: find.byType(CircularProgressIndicator),
       ),
-      findsNWidgets(2),
+      findsOneWidget,
     );
     final loadingText = tester.widget<Text>(find.text('加载中'));
     expect(loadingText.style?.shadows, isNotEmpty);

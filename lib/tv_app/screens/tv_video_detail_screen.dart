@@ -639,6 +639,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 续播记录是否已经完成首轮读取。
   bool _hasLoadedResumeRecord = false;
 
+  /// 续播记录返回后锁定的目标线路（source + id），
+  /// 用于在流式搜索中等待命中该线路后才起播。
+  ({String source, String id})? _resumeSourceTarget;
+
   /// 续播记录未返回前缓存一次首播请求，待记录就绪后再真正下发。
   bool _hasPendingInitialPlaybackAfterResumeLoad = false;
 
@@ -683,6 +687,9 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   /// 返回键和路由销毁之间可能还有源加载、播放器创建、post-frame 等异步回调晚到，
   /// 统一用该标记阻止它们继续起播或刷新焦点。
   bool _isExitingDetail = false;
+
+  /// 正常退出时是否已经触发过后台保存，避免 dispose 重复保存。
+  bool _hasManuallySavedOnExit = false;
 
   /// 首屏详情是否仍在等待可播数据。
   bool _isInitialDetailLoading = true;
@@ -851,7 +858,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     _clockTimer?.cancel();
     _recommendsLoadTimer?.cancel();
     // 路由销毁前兜底补一次异步保存，避免返回过快时错过定时节流窗口。
-    unawaited(_saveProgress(force: true, scene: '详情页销毁'));
+    // 正常 ESC 退出已在 _handleDetailBackPressed 中触发保存，这里跳过避免重复。
+    if (!_hasManuallySavedOnExit) {
+      unawaited(_saveProgress(force: true, scene: '详情页销毁'));
+    }
     unawaited(_playerController?.pause());
     // 播放器实例由子组件自己管理，详情页销毁时只解绑进度监听，
     // 避免预览播放器和全屏共享控制器被父页面重复释放。
@@ -944,6 +954,10 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               doubanId: widget.videoInfo.doubanId,
               bangumiId: widget.videoInfo.bangumiId,
               rate: widget.videoInfo.rate,
+            );
+            _resumeSourceTarget = (
+              source: matchedRecord.source,
+              id: matchedRecord.id,
             );
             _syncPendingPlaybackWithLatestResumeRecord(
               previousResumeVideoInfo: previousResumeVideoInfo,
@@ -1364,10 +1378,16 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
             );
           }
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _ensureCurrentSelectionsVisible();
+            if (_canUseDetailRoute) {
+              _ensureCurrentSelectionsVisible();
+            }
           });
           WidgetsBinding.instance
-              .addPostFrameCallback((_) => _playCurrentEpisode());
+              .addPostFrameCallback((_) {
+                if (_canUseDetailRoute) {
+                  _playCurrentEpisode();
+                }
+              });
         } catch (error) {
           debugPrint('TV 详情页聚合加载失败: $error');
           if (_canUseDetailRoute && serial == _loadSerial) {
@@ -1495,6 +1515,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       _initialSourcesLoaded = true;
       _refreshInitialLoadingState();
     });
+    _checkResumeFallback();
   }
 
   /// 标记后台补源加载完成。
@@ -1505,6 +1526,56 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     setState(() {
       _moreSourcesLoaded = true;
       _refreshInitialLoadingState();
+    });
+    _checkResumeFallback();
+  }
+
+  /// 所有搜索完成但续播目标源仍未命中时，回退用当前最佳可用源起播。
+  void _checkResumeFallback() {
+    if (!_canUseDetailRoute) {
+      return;
+    }
+    // 已有当前选中的源或首播已下发，无需回退。
+    if (_currentDetail != null || _hasDispatchedInitialPreviewPlayback) {
+      return;
+    }
+    // 搜索尚未全部完成，继续等待。
+    if (!_initialSourcesLoaded || !_moreSourcesLoaded) {
+      return;
+    }
+    // 无源可用。
+    if (_sources.isEmpty) {
+      return;
+    }
+    // 搜索全部完成但仍未命中续播目标，用首个可播源兜底。
+    final fallback = _resolveInitialPlayableSource(
+      incoming: _sources,
+      allSources: _sources,
+      preferAsCurrent: true,
+      allowResumeFallback: true,
+      forceResumeFallback: true,
+    );
+    if (fallback == null) {
+      return;
+    }
+    setState(() {
+      _currentDetail = fallback;
+      _applyInitialResumeState(fallback);
+      _refreshSourceDisplayCaches(sourcesChanged: false);
+      _refreshInitialLoadingState();
+    });
+    _markPreviewPlayerLoading();
+    _schedulePreviewChromeRefresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_canUseDetailRoute) {
+        return;
+      }
+      _ensureCurrentSelectionsVisible();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_canUseDetailRoute) {
+        _playCurrentEpisode();
+      }
     });
   }
 
@@ -1624,6 +1695,7 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     required List<SearchResult> allSources,
     required bool preferAsCurrent,
     required bool allowResumeFallback,
+    bool forceResumeFallback = false,
   }) {
     if (!_shouldPrioritizeResumeSource) {
       return preferAsCurrent && incoming.isNotEmpty
@@ -1647,7 +1719,24 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
       return sameSourceName;
     }
 
+    // 以续播记录锁定的精确目标再做一次强匹配，避免入口信息和记录不一致时漏判。
+    if (_resumeSourceTarget != null) {
+      final matched = _firstWhereOrNull(allSources, _sourceMatchesResumeTarget);
+      if (matched != null) {
+        return matched;
+      }
+    }
+
     if (!allowResumeFallback) {
+      return null;
+    }
+
+    // 续播目标已锁定但尚未命中时，禁止回退到非目标源。
+    // 同样，续播记录仍在加载中时也禁止回退，等待记录就绪后再决策。
+    // forceResumeFallback 用于所有搜索完成后的兜底回退。
+    if (!forceResumeFallback &&
+        (_resumeSourceTarget != null ||
+            (_shouldPrioritizeResumeSource && !_hasLoadedResumeRecord))) {
       return null;
     }
 
@@ -1662,6 +1751,18 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
   bool _matchesSavedSource(SearchResult source) {
     return source.source == _resumeVideoInfo.source &&
         source.id == _resumeVideoInfo.id;
+  }
+
+  /// 判断播放源是否命中续播记录锁定的目标线路。
+  ///
+  /// 当续播记录已加载并锁定了目标 `source + id` 时，仅命中该目标才返回 `true`。
+  /// 无续播目标时任意源都视为命中。
+  bool _sourceMatchesResumeTarget(SearchResult source) {
+    final target = _resumeSourceTarget;
+    if (target == null) {
+      return true;
+    }
+    return source.source == target.source && source.id == target.id;
   }
 
   /// 判断播放源是否来自播放记录保存的资源站。
@@ -4100,12 +4201,13 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
     if (controller != null) {
       unawaited(controller.pause());
     }
-    // 真正离开详情页前强制保存当前进度，保持与普通端返回语义一致。
-    await _saveProgress(force: true, scene: '详情页返回');
+    // 先关闭页面再后台保存，与全屏播放器退出语义一致，避免同步保存阻塞返回动画。
+    _hasManuallySavedOnExit = true;
+    unawaited(_saveProgress(force: true, scene: '详情页返回'));
     if (!mounted) {
       return true;
     }
-    Navigator.of(context).pop(true);
+    Navigator.of(context).maybePop();
     return true;
   }
 
@@ -4644,28 +4746,22 @@ class _TvVideoDetailScreenState extends State<TvVideoDetailScreen> {
               children: [
                 SizedBox.square(
                   dimension: 36,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      Positioned.fill(
-                        child: Transform.translate(
-                          offset: const Offset(0, 2),
-                          child: CircularProgressIndicator(
-                            color: shadowColor,
-                            strokeWidth: 3,
-                            value: _isFlutterTestEnvironment ? 0.72 : null,
-                          ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.32),
+                          blurRadius: 4,
+                          offset: const Offset(2, 2),
                         ),
-                      ),
-                      Positioned.fill(
-                        child: CircularProgressIndicator(
-                          color: TvTheme.of(context).accent,
-                          strokeWidth: 3,
-                          value: _isFlutterTestEnvironment ? 0.72 : null,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: CircularProgressIndicator(
+                      color: TvTheme.of(context).accent,
+                      strokeWidth: 3,
+                      value: _isFlutterTestEnvironment ? 0.72 : null,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),

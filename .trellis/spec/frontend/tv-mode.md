@@ -532,7 +532,8 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 | 选集布局 | 单行横向集数列表在上，分组标签在集数列表下方；分组标签字号必须与全屏播放选集分组一致使用 17 号；总集数不超过 20 集时不展示分组，长剧集按固定区间切换；分组标签通过上下或左右获焦时只更新焦点和滚动位置，不得刷新当前选集范围；只有确认键或点击分组标签才切换分组；选集卡片和分组标签获焦必须使用 `TvVideoCard.focusedScale` 与影视卡片一致放大；换源、选集、分组和相关推荐之间必须设置明确的上下焦点目标，向下按顺序进入下一块，向上回到就近的上一块；选集行和分组行之间上下移动时必须按当前焦点水平位置选择目标行最近可见项，不得优先恢复上次停留项；详情页所有横向列表首尾必须按获焦放大尺寸预留安全留白，确保长按到右端再回到首项时焦点框不会贴边或被裁剪；集数列表和分组列表焦点中心超过横向视口 50% 后才开始平滑滚动；选集卡片左右键必须显式处理相邻集数或跨组边界，不能交给默认焦点遍历落到分组行；有分组时，当前选集列表最后一项按右键必须无缝切到下一组第一集，当前选集列表第一项按左键必须无缝切到上一组最后一集，并继续保持选集焦点；首组左边界、最后一组右边界或无分组时才触发当前项边界抖动，不能跳到其它列表 |
 | 内嵌播放器 | 关闭播放器控制层和 PiP/小窗最小化能力，焦点确认只用于进入全屏；无播放 URL 的预览占位态不得提前拉起重型 WebView HTML/JS 初始化；播放中在视频底部叠加精简版进度条（含缓冲段），用 `IgnorePointer` 包裹不拦截焦点 |
 | 详情页进度条 | 比全屏版略小（轨道 4px，圆点 10x10，字号 14），无全屏按钮，与全屏版同步显示缓冲段；仅当 `_previewPlaybackStarted && _currentDetail != null` 时展示；缓冲数据从 `_playerController.cachedRanges` 读取 |
-| 预览 loading | 详情页小播放器关闭 `VideoPlayerWidget.showLoadingIndicator` 后，外层必须用 `tv-detail-preview-loading` 承担转圈和网速反馈；已有可播源、控制器晚挂、续播记录未返回导致首播挂起、首帧黑底或缓冲时必须显示；只有当前播放时间点从本轮 loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；网速优先显示播放器控制器的真实下载速度，未知或暂无样本时才回退 `0KB/s`；overlay 必须无背景且 `IgnorePointer`，不得阻断遥控器焦点进入线路、选集或全屏按钮 |
+| 预览 loading | 详情页小播放器关闭 `VideoPlayerWidget.showLoadingIndicator` 后，外层必须用 `tv-detail-preview-loading` 承担转圈和网速反馈；加载转圈使用单 `CircularProgressIndicator` + `BoxShadow`（`alpha: 0.32, blurRadius: 4, offset: (2, 2)`），不得使用双 spinner 重叠；已有可播源、控制器晚挂、续播记录未返回导致首播挂起、首帧黑底或缓冲时必须显示；只有当前播放时间点从本轮 loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；网速优先显示播放器控制器的真实下载速度，未知或暂无样本时才回退 `0KB/s`；overlay 必须无背景且 `IgnorePointer`，不得阻断遥控器焦点进入线路、选集或全屏按钮 |
+| 全屏 loading | 全屏播放器同样使用单圈 + `BoxShadow` 投影（同预览 loading 参数），圈颜色为白色（黑底），不得使用双 spinner 重叠 |
 | 全屏 | 详情页内展示 `TvFullscreenPlayerScreen` 覆盖层，携带当前详情、线路列表和集下标；生产路径必须通过同一个 `VideoPlayerWidget`/控制器在预览和全屏之间移动，避免进入全屏时重新起播或黑屏；TV 全屏播放器同样禁用 PiP/小窗最小化 |
 | 收藏 | 使用 `PageCacheService.addFavorite/removeFavorite` |
 | 推荐焦点 | 任意相关推荐卡片获焦时，详情页外层滚动必须直接到达底部，确保推荐区和底部操作同时露出 |
@@ -552,6 +553,89 @@ TV 详情页加载错误契约：
 | 推荐加载失败 | 仅保持相关推荐为空，不影响播放器和换源列表 |
 | 增量补源重复返回同一 `source + id` | 去重后不重复展示线路 |
 | 旧 `loadDetail` 测试入口 | 只用于兼容既有 widget test；生产默认路径不得等待推荐和全量补源完成后才渲染 |
+
+### 4.4.1 继续播放续播源匹配契约
+
+从继续观看进入详情页时，必须等待流式搜索命中续播记录中的源：
+
+```dart
+// 续播源目标：从 PlayRecord 提取 source + id
+({String source, String id})? _resumeSourceTarget;
+
+bool _sourceMatchesResumeTarget(SearchResult detail) {
+  final target = _resumeSourceTarget;
+  if (target == null) return true; // 无续播目标，任何源可播
+  return detail.source == target.source && detail.id == target.id;
+}
+```
+
+实现要求：
+- 进入详情页后同时发起续播记录加载和源搜索，互不阻塞。
+- 续播记录返回后设置 `_resumeSourceTarget`。
+- 源到达后先检查 `_sourceMatchesResumeTarget()`，不匹配则暂不起播，继续等待。
+- 精确源搜索和标题补源都完成后仍无命中时，回退用最佳可用源起播。
+- 非续播路径（直接点卡片进入）`_resumeSourceTarget` 为 null，任何源立即起播。
+- ESC 在等待期间可随时打断（见 4.4.2）。
+
+测试要求：
+- 测试必须覆盖续播目标命中后起播。
+- 测试必须覆盖搜索完成未命中后的回退起播。
+- 测试必须覆盖无续播记录时立即起播。
+
+### 4.4.2 详情页返回高优先级打断契约
+
+详情页退出必须优先销毁 UI，保存逻辑不得阻塞路由弹出：
+
+```dart
+Future<void> _handleDetailBackPressed() async {
+  if (_isExitingDetail) return;
+  _isExitingDetail = true;                // ← 必须最先设置
+  unawaited(_saveProgress(force: true));  // ← 后台保存，不 await
+  if (mounted) {
+    Navigator.of(context).maybePop();     // ← 立即退出
+  }
+}
+```
+
+实现要求：
+- `_isExitingDetail` 必须在任何 await 之前设置为 true。
+- 进度保存使用 `unawaited`，不得 await 阻塞退出。
+- 使用 `maybePop` 而非 `pop`，避免路由已不在栈上时崩溃。
+- 所有异步回包处理（搜索、续播记录、ad filter、player kernel、controller 创建）必须在处理前检查 `mounted && !_isExitingDetail`。
+- 所有 `addPostFrameCallback` 回调必须在执行前检查 `mounted && !_isExitingDetail`。
+- `dispose()` 中检查 `_hasManuallySavedOnExit` 避免重复保存。
+- 全屏播放器退出逻辑不受影响（已有同策略的 `_handleExitWithSave`）。
+
+测试要求：
+- 测试必须覆盖返回后路由立即消失。
+- 测试必须覆盖 exit 标志设置后的回调被正确丢弃。
+- 测试必须覆盖 dispose 不重复保存。
+
+#### Wrong
+
+```dart
+// 错误：await 等数据库写入完成才 pop，UI 冻结
+Future<void> _handleDetailBackPressed() async {
+  if (_isExitingDetail) return;
+  await _saveProgress(force: true);  // 阻塞！
+  _isExitingDetail = true;            // 太晚！
+  Navigator.of(context).pop();
+}
+```
+
+#### Correct
+
+```dart
+// 正确：先设退出标志，unawaited 保存，立即 pop
+Future<void> _handleDetailBackPressed() async {
+  if (_isExitingDetail) return;
+  _isExitingDetail = true;
+  unawaited(_saveProgress(force: true));
+  if (mounted) {
+    Navigator.of(context).maybePop();
+  }
+}
+```
 
 ### 4.9 TV 全屏播放器契约
 
@@ -953,3 +1037,11 @@ _buildBottomProgressBar() / _buildDetailProgressBar()
 - 播放中进度条常驻显示：`_shouldShowPlaybackChrome` 只检查 `!_menuVisible && !_isPlaybackLoading`。
 - 进度条通过 `IgnorePointer` 包裹，不拦截遥控器焦点事件。
 - 时间格式化复用 `lib/utils/playback_time_utils.dart` 中的 `clampDuration()` 和 `formatPlaybackDuration()`。
+
+### 9.3 TV 加载转圈约定
+
+- TV 端所有加载转圈使用单 `CircularProgressIndicator` + `BoxShadow` 实现投影，不得使用双 spinner 重叠。
+- `BoxShadow` 参数：`color: Colors.black.withValues(alpha: 0.32), blurRadius: 4, offset: Offset(2, 2)`，模拟光源左上方照射效果。
+- 圈颜色：详情页用 `palette.accent`，全屏用 `Colors.white`。
+- 圈 `strokeWidth` 统一为 3。
+- 文字阴影使用 `TextSpan` 的 `Shadow` 属性，保持现有实现不变。
