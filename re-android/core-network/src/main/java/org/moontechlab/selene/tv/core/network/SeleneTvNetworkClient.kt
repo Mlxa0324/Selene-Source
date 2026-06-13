@@ -4,6 +4,8 @@ import okhttp3.Headers
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.IOException
+import java.net.URI
 
 /**
  * TV 后台网关客户端契约。
@@ -51,21 +53,23 @@ class SeleneTvNetworkClient(
         password: String,
     ): SessionPayload {
         val normalizedUsername = username.trim()
-        val response = authApi.login(
-            SeleneTvLoginRequest(
-                username = normalizedUsername,
-                password = password,
-            ),
-        )
+        val response = try {
+            authApi.login(
+                SeleneTvLoginRequest(
+                    username = normalizedUsername,
+                    password = password,
+                ),
+            )
+        } catch (throwable: IOException) {
+            // 连接类异常需要转换成 TV 端可操作文案，避免只展示 OkHttp 原始地址。
+            throw IllegalStateException(
+                buildConnectionErrorMessage(reason = throwable.message),
+                throwable,
+            )
+        }
         if (!response.isSuccessful) {
             // 认证失败直接抛给 ViewModel，首页展示明确错误态。
-            throw IllegalStateException(
-                if (response.code() == UNAUTHORIZED_STATUS_CODE) {
-                    "后台账号或密码错误"
-                } else {
-                    "后台登录失败(${response.code()})"
-                },
-            )
+            throw IllegalStateException(buildLoginFailureMessage(response))
         }
         val cookie = SeleneTvNetworkFactory.parseSetCookie(response.headers())
         sessionCookieStore.saveSession(
@@ -77,9 +81,88 @@ class SeleneTvNetworkClient(
             ?: error("后台会话保存失败")
     }
 
+    /**
+     * 构建后台连接失败提示。
+     *
+     * @param reason 底层网络异常原因。
+     * @return 可直接展示给 TV 用户的诊断文案。
+     */
+    private fun buildConnectionErrorMessage(reason: String?): String {
+        val reasonText = reason
+            ?.takeIf { value -> value.isNotBlank() }
+            ?.let { value -> "原因：$value。" }
+            .orEmpty()
+        return "无法连接后台服务：${baseUrl.trimEnd('/')}。" +
+            reasonText +
+            buildResolvedTargetHint(reason = reason) +
+            "请确认 TV/模拟器与后台在同一网络、后台端口已启动并监听局域网地址；" +
+            "如果刚修改 local.gateway.properties，请重新构建并安装 TV 应用。"
+    }
+
+    /**
+     * 构建实际连接地址提示。
+     *
+     * @param reason 底层网络异常原因。
+     * @return 域名最终连接地址和配置地址不一致时的排查提示。
+     */
+    private fun buildResolvedTargetHint(reason: String?): String {
+        val failedTarget = reason
+            ?.let { value -> FAILED_CONNECT_TARGET_REGEX.find(value) }
+            ?.groupValues
+            ?.getOrNull(1)
+            .orEmpty()
+        if (failedTarget.isBlank()) {
+            return ""
+        }
+        val baseHost = runCatching {
+            URI(baseUrl).host.orEmpty()
+        }.getOrDefault("")
+        if (baseHost.isNotBlank() && failedTarget.contains(baseHost, ignoreCase = true)) {
+            return ""
+        }
+        // 域名和最终连接地址不同，通常是穿透、解析或网关转发到内网地址。
+        return "当前请求实际连接到 $failedTarget，" +
+            "请检查域名解析、穿透或重定向是否指向可访问的后端 API。"
+    }
+
+    /**
+     * 构建登录失败提示。
+     *
+     * @param response 登录接口响应。
+     * @return 可直接展示给 TV 用户的登录失败原因。
+     */
+    private fun buildLoginFailureMessage(response: retrofit2.Response<*>): String {
+        if (response.code() == UNAUTHORIZED_STATUS_CODE) {
+            return "后台账号或密码错误"
+        }
+        val errorBody = runCatching {
+            response.errorBody()?.string().orEmpty()
+        }.getOrDefault("")
+        return when {
+            errorBody.contains(PASSNAT_MARKER, ignoreCase = true) ->
+                "后台地址未命中 Selene 服务：${baseUrl.trimEnd('/')} 返回 PassNAT 节点页面。" +
+                    "请检查穿透域名是否绑定到后端服务，或改填真实后端 API 地址。"
+
+            errorBody.contains(HTML_MARKER, ignoreCase = true) ->
+                "后台登录失败(${response.code()})：${baseUrl.trimEnd('/')} 返回网页内容，" +
+                    "不是 Selene 后台 API。请检查服务器地址是否填到后端接口入口。"
+
+            else -> "后台登录失败(${response.code()})"
+        }
+    }
+
     private companion object {
         /** 后台认证失败状态码。 */
         const val UNAUTHORIZED_STATUS_CODE = 401
+
+        /** PassNAT 错误页特征文本。 */
+        const val PASSNAT_MARKER = "PassNAT"
+
+        /** HTML 错误页特征文本。 */
+        const val HTML_MARKER = "<html"
+
+        /** OkHttp 连接失败目标地址提取规则。 */
+        val FAILED_CONNECT_TARGET_REGEX = Regex("Failed to connect to /([^\\s。]+)")
     }
 }
 

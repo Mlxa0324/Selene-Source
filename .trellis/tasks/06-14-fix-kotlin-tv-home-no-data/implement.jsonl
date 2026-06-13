@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Native Android TV local gateway config, login diagnostics, and home fallback contracts."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Service boundary failures must surface localized actionable messages."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Gateway config flows through BuildConfig, settings state, network login, repository, and UI error state."}

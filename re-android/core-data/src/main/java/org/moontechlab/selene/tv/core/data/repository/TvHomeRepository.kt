@@ -24,7 +24,9 @@ class TvHomeRepository(
      * @return 包含继续观看和远端热门分区的首页载荷。
      */
     suspend fun loadHome(): TvHomePayload {
-        val continueWatching = playbackRepository.readContinueWatching()
+        val continueWatching = runCatching {
+            playbackRepository.readContinueWatching()
+        }.getOrDefault(emptyList())
         val remote = runCatching { api.getDashboard() }.getOrNull()
         if (remote != null) {
             return remote.toHomePayload(continueWatching = continueWatching)
@@ -54,11 +56,14 @@ class TvHomeRepository(
             )
             FALLBACK_SECTIONS.forEach { fallbackSection ->
                 // 每个分区沿用分类页搜索契约，避免首页和分类页数据来源不一致。
+                val videos = runCatching {
+                    libraryRepository.loadCategory(fallbackSection.categoryKey)
+                }.getOrDefault(emptyList())
                 add(
                     TvHomeSection(
                         key = fallbackSection.key,
                         title = fallbackSection.title,
-                        videos = libraryRepository.loadCategory(fallbackSection.categoryKey),
+                        videos = videos,
                     ),
                 )
             }

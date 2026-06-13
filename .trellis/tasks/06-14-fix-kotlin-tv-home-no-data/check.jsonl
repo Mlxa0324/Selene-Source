@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify tests cover local gateway config, login diagnostics, and home fallback isolation."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify user-facing errors remain localized and actionable without exposing secrets."}
