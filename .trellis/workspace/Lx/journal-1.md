@@ -174,7 +174,10 @@
 
 ### Main Changes
 
-(Add details)
+- `SeleneTvNetworkClient.login` 将 `IOException` 转换为 TV 首页可读诊断，并在域名最终连接到不同地址时提示实际失败目标。
+- 登录非成功响应区分 401、PassNAT 节点页、普通 HTML 错误页和其他 HTTP 状态，避免把 API 入口错误误判成旧 APK 或单纯断网。
+- `TvHomeRepository.loadHome` 隔离继续观看、dashboard 和兜底分类失败，单个接口异常不再拖垮整个首页。
+- 补充 Trellis 任务与 Native Android TV Local Gateway 规格，记录本次 ivy3004 域名实际落到 `192.168.31.28:9000` 的排查结论。
 
 ### Git Commits
 
@@ -185,7 +188,10 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `./gradlew :core-network:testDebugUnitTest :core-data:testDebugUnitTest`
+- [OK] `./gradlew :app-tv:assembleDebug`
+- [OK] `adb install -r app-tv/build/outputs/apk/debug/app-tv-debug.apk`
+- [OK] 模拟器重启应用截图确认首页显示配置域名 `http://ivy3004.s.odn.cc` 和实际失败目标 `192.168.31.28:9000`。
 
 ### Status
 
@@ -380,6 +386,39 @@
 | Hash | Message |
 |------|---------|
 | `adc88bc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: 修复Kotlin TV首页后台诊断
+
+**Date**: 2026-06-14
+**Task**: 修复Kotlin TV首页后台诊断
+**Branch**: `tvtv`
+
+### Summary
+
+修复Kotlin TV首页后台配置后无数据链路：网络登录错误区分连接失败、PassNAT/HTML页面和实际失败目标；首页仓库隔离继续观看与兜底分类失败；补充单测、构建和模拟器截图验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9b7e01e` | (see git log) |
 
 ### Testing
 
