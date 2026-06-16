@@ -119,11 +119,13 @@ String buildWebViewPlayerHtmlForTest({
   required String url,
   bool adFilterEnabled = false,
   PlaybackPreloadLevel preloadLevel = PlaybackPreloadLevel.off,
+  bool seekBoostEnabled = false,
 }) {
   return WebViewPlayerAdapter(
     url: url,
     adFilterEnabled: adFilterEnabled,
     preloadLevel: preloadLevel,
+    seekBoostEnabled: seekBoostEnabled,
   )._buildHtmlContent();
 }
 
@@ -1054,7 +1056,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     final startSeconds = _startAt != null ? _startAt!.inMilliseconds / 1000 : 0;
     final encodedVideoUrl = jsonEncode(_url);
     final adFilterEnabledJs = adFilterEnabled ? 'true' : 'false';
-    final seekBoostEnabledJs = seekBoostEnabled ? 'false' : 'false'; // 暂时先关闭该功能
+    final seekBoostEnabledJs = seekBoostEnabled ? 'true' : 'false';
     final preloadEnabledJs = preloadLevel.isEnabled ? 'true' : 'false';
     final preloadAttributeJs = preloadTuning.preloadAttribute;
     final targetForwardBufferSecondsJs =
@@ -1845,9 +1847,6 @@ class WebViewPlayerAdapter implements PlayerAdapter {
           );
         }
         if (seekBoostEnabled) {
-          config.maxBufferLength = 8;
-          config.maxMaxBufferLength = 16;
-          config.backBufferLength = 30;
           config.nudgeMaxRetry = 1;
           config.maxFragLookUpTolerance = 0.1;
           config.maxBufferHole = 0.1;

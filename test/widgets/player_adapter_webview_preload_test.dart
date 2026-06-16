@@ -46,6 +46,25 @@ void main() {
     expect(tuning.preloadAttribute, 'auto');
   });
 
+  test('web view html keeps seek warmup enabled without shrinking preload', () {
+    final html = buildWebViewPlayerHtmlForTest(
+      url: 'https://example.com/video.m3u8',
+      adFilterEnabled: false,
+      preloadLevel: PlaybackPreloadLevel.medium,
+      seekBoostEnabled: true,
+    );
+
+    expect(html, contains('var seekBoostEnabled = true'));
+    expect(
+      html,
+      contains(
+        'config.maxBufferLength = Math.max(30, targetForwardBufferSeconds);',
+      ),
+    );
+    expect(html, isNot(contains('config.maxBufferLength = 8;')));
+    expect(html, isNot(contains('config.maxMaxBufferLength = 16;')));
+  });
+
   test('decodeWebViewCachedRanges parses confirmed buffered ranges', () {
     final ranges = decodeWebViewCachedRanges([
       {

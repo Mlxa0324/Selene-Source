@@ -22,6 +22,7 @@ The project uses `flutter_lints` through `analysis_options.yaml` and has active 
 - Layout changes that only work on one platform without checking mobile/desktop/TV implications.
 - Changing public widget constructor requirements without updating all callers and tests.
 - Replacing existing tested helper functions with inline layout math.
+- Tying seek warmup or fast-seek helpers to the main preload buffer in a way that silently reduces the configured forward buffer. Seek recovery should strengthen jump points without overriding the normal preload level.
 
 ## Testing Requirements
 
