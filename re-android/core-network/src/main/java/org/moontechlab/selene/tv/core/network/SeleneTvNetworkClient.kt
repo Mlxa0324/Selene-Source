@@ -5,6 +5,7 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
+import java.net.Proxy
 import java.net.URI
 
 /**
@@ -182,13 +183,7 @@ object SeleneTvNetworkFactory {
         sessionCookieStore: SessionCookieStore = SessionCookieStore(),
     ): SeleneTvNetworkClient {
         val baseUrl = normalizeBaseUrl(rawBaseUrl)
-        val okHttpClient = OkHttpClient.Builder()
-            .addInterceptor(
-                AuthInterceptor(
-                    cookieProvider = { sessionCookieStore.currentCookie() },
-                ),
-            )
-            .build()
+        val okHttpClient = createOkHttpClient(sessionCookieStore)
         val retrofit = Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(okHttpClient)
@@ -200,6 +195,24 @@ object SeleneTvNetworkFactory {
             authApi = retrofit.create(SeleneTvAuthApi::class.java),
             sessionCookieStore = sessionCookieStore,
         )
+    }
+
+    /**
+     * 创建 TV 后台 HTTP 客户端。
+     *
+     * @param sessionCookieStore 会话 Cookie 存储。
+     * @return 直连后台的 OkHttp 客户端。
+     */
+    internal fun createOkHttpClient(sessionCookieStore: SessionCookieStore): OkHttpClient {
+        return OkHttpClient.Builder()
+            // 后台 API 必须直连，避免模拟器或系统代理把公网域名劫持到旧内网地址。
+            .proxy(Proxy.NO_PROXY)
+            .addInterceptor(
+                AuthInterceptor(
+                    cookieProvider = { sessionCookieStore.currentCookie() },
+                ),
+            )
+            .build()
     }
 
     /**

@@ -3,6 +3,7 @@ package org.moontechlab.selene.tv.core.network
 import com.google.common.truth.Truth.assertThat
 import okhttp3.Headers
 import org.junit.Test
+import java.net.Proxy
 
 /**
  * 校验 TV 后台网络工厂契约。
@@ -56,5 +57,15 @@ class SeleneTvNetworkFactoryTest {
         val cookie = SeleneTvNetworkFactory.parseSetCookie(headers)
 
         assertThat(cookie).isEqualTo("sid=fresh; auth=token")
+    }
+
+    /**
+     * 后台 API 客户端应绕过系统代理，避免模拟器代理劫持公网域名请求。
+     */
+    @Test
+    fun createOkHttpClient_bypasses_system_proxy() {
+        val client = SeleneTvNetworkFactory.createOkHttpClient(SessionCookieStore())
+
+        assertThat(client.proxy).isEqualTo(Proxy.NO_PROXY)
     }
 }

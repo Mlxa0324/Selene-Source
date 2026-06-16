@@ -3,7 +3,7 @@ package org.moontechlab.selene.tv.core.design.layout
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -35,7 +35,7 @@ fun TvPosterRail(
         ),
         horizontalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
     ) {
-        items(items, key = TvPosterItem::id) { item ->
+        itemsIndexed(items, key = ::posterListItemKey) { _, item ->
             TvPosterCard(
                 item = item,
                 onClick = onItemClick?.let { click -> { click(item) } },
