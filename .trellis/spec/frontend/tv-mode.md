@@ -640,6 +640,12 @@ TV 焦点控件进入纵向滚动视口时，必须自动触发平滑滚动，�
 详情页选集跨组补充契约：
 - 选集卡片左右键跨组期间，重建过渡帧必须继续限制焦点停留在选集链路内；目标集数获焦前，不得让播放器、线路、分组、相关推荐或底部操作成为 `FocusScope` 的临时回退目标，避免推荐区历史焦点闪现后再跳回选集。
 
+Kotlin TV 详情页焦点滚动契约：
+- `TvDetailRoute` 的线路、选集和选集分组横向轨道必须分别持有 `rememberSaveable(saver = LazyListState.Saver)` 创建的 `LazyListState`，并传入对应 `LazyRow(state = ...)`。
+- 横向轨道 item 获焦时必须在 `onFocusChanged` 内调用统一滚动 helper，根据 `TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(focusedIndex, itemCount)` 计算目标首个可见项，再执行 `listState.animateScrollToItem(targetIndex)`；只接 `FocusRequester` 不能算完成，因为默认几何焦点会把靠右选项移出可视区。
+- 推荐横向海报轨道继续复用 `TvPosterRail` 的内置获焦滚动，不在详情页重复实现。
+- 详情页焦点滚动改动必须补源码契约或等价 Compose 焦点测试，至少断言 `LazyListState.Saver`、`onFocusChanged`、统一滚动 helper 和 `animateScrollToItem` 同时存在。
+
 TV 详情页加载错误契约：
 
 | 场景 | 预期 |

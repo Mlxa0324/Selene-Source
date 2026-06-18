@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/tv-mode.md", "reason": "核对 UI/焦点实现是否满足 TV 详情页契约"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对组件职责、回调和遥控器交互"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "核对状态归属和异步回调边界"}
