@@ -214,7 +214,10 @@
 
 ### Main Changes
 
-(Add details)
+- Rebuilt Kotlin TV detail state around exact-source and title-fallback loaders.
+- Added incremental source merge, resume-target waiting, completed empty state, and playback request derivation.
+- Wired repository/container loaders and regression tests for the new contract.
+- Documented the Kotlin TV detail state-machine contract in `.trellis/spec/frontend/tv-mode.md`.
 
 ### Git Commits
 
@@ -224,7 +227,8 @@
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `./re-android/gradlew -p re-android :feature-tv-detail:testDebugUnitTest :core-data:testDebugUnitTest :app-tv:testDebugUnitTest`
+- [OK] `git diff --check -- <Phase 1 files>`
 
 ### Status
 
@@ -232,7 +236,7 @@
 
 ### Next Steps
 
-- None - task complete
+- Start `06-18-rewrite-tv-detail-ui-focus` for the detail UI and focus graph rewrite.
 
 
 ## Session 7: 完成搜索页详情复用搜索会话
@@ -419,6 +423,39 @@
 | Hash | Message |
 |------|---------|
 | `9b7e01e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 13: 重做 Kotlin TV 详情状态机数据链路
+
+**Date**: 2026-06-18
+**Task**: 重做 Kotlin TV 详情状态机数据链路
+**Branch**: `tvtv`
+
+### Summary
+
+按 Flutter TV 逻辑重做 Kotlin TV 详情页状态机：拆分精确源和标题补源双路加载，支持增量首播、续播目标等待、完成空态、播放请求派生，并补充仓库/容器接线测试和 TV 模式规格。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4a78535` | (see git log) |
 
 ### Testing
 
