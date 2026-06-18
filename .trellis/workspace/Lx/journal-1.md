@@ -501,3 +501,41 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 重做详情页截图样式
+
+**Date**: 2026-06-19
+**Task**: 重做详情页截图样式
+**Branch**: `tvtv`
+
+### Summary
+
+按用户提供的两张截图推翻重做 Kotlin TV 详情页 Route，新增 Ncat 截图式顶栏、Hero、线路、选集分组、推荐和底部动作，并保留状态机与焦点滚动契约。
+
+### Main Changes
+
+- 推翻旧 `TvDetailRoute` 视觉结构，重建 `NcatDetailTopBar`、`NcatDetailHero`、`NcatSourceRail`、`NcatEpisodeGroupRail`、`NcatRecommendRail`、`NcatBottomActions`。
+- 顶部栏、Hero、线路卡、选集分组轨道、推荐海报和底部胶囊按钮按两张截图重组。
+- 保留 `TvDetailPresentation` 的线路排序、20 集分组、区块显隐和横向获焦滚动契约。
+- 新增 Route 源码契约测试锁定截图式组件和文案，避免回退到旧 IvyTV 结构。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `389d085` | (see git log) |
+
+### Testing
+
+- [OK] `./re-android/gradlew -p re-android :feature-tv-detail:testDebugUnitTest --tests org.moontechlab.selene.tv.feature.detail.TvDetailRouteFocusContractTest`
+- [OK] `./re-android/gradlew -p re-android :feature-tv-detail:testDebugUnitTest`
+- [OK] `git diff --check -- re-android/feature-tv-detail/src/main/java/org/moontechlab/selene/tv/feature/detail/TvDetailRoute.kt re-android/feature-tv-detail/src/test/java/org/moontechlab/selene/tv/feature/detail/TvDetailRouteFocusContractTest.kt .trellis/tasks/06-18-rewrite-kotlin-tv-detail-from-flutter/task.json .trellis/tasks/06-19-rewrite-tv-detail-screenshot-style`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
