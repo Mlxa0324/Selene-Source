@@ -174,6 +174,102 @@ class TvVideoDetailData {
 - 搜索页进入详情页时，如果共享搜索会话尚未结束，详情页必须继续订阅后续增量结果直到该轮搜索结束；不能只消费进入瞬间的快照后就停住。
 - 详情页在首屏精确源和后台补源都结束后仍无任何可播线路时，播放线路区必须展示“搜索已完成，未找到可播放信息”的图标空态，用于区分“还在搜”和“已搜完但无结果”。
 
+### 3.3.1 Kotlin TV 详情页状态机
+
+#### 1. Scope / Trigger
+
+- Trigger: 修改 Kotlin TV 详情页的 loader 接线、播放源合并、续播匹配、空态收敛、route 兼容或播放请求派生。
+- Scope: `re-android/feature-tv-detail`、`re-android/core-data`、`re-android/app-tv`。
+- This contract exists to keep the Kotlin TV detail flow aligned with Flutter TV's two-lane loading model.
+
+#### 2. Signatures
+
+```kotlin
+data class TvDetailEntry(
+  val source: String,
+  val videoId: String,
+  val title: String = "",
+  val searchTitle: String = "",
+  val year: String = "",
+  val posterUrl: String = "",
+  val stype: String = "",
+)
+
+data class TvDetailResumeRecord(
+  val source: String,
+  val videoId: String,
+  val episodeIndex: Int = 0,
+  val positionMs: Long = 0L,
+  val sourceName: String = "",
+)
+
+data class TvDetailResumeTarget(
+  val source: String,
+  val videoId: String,
+  val sourceName: String = "",
+)
+
+class TvDetailViewModel(
+  initialEntry: TvDetailEntry? = null,
+  loadExactSources: suspend (TvDetailEntry) -> List<TvVideoSource>,
+  loadMoreSources: suspend (TvDetailEntry, onIncremental: (List<TvVideoSource>) -> Unit) -> List<TvVideoSource>,
+  loadRecommends: suspend (TvDetailEntry, TvVideoDetail?) -> List<TvVideoCard>,
+  loadResumeRecord: suspend (TvDetailEntry) -> TvDetailResumeRecord?,
+  loadFavoriteState: suspend (TvDetailEntry) -> Boolean,
+  saveFavoriteState: suspend (TvDetailEntry?, Boolean) -> Unit,
+  playerEngine: PlayerEngine? = null,
+)
+```
+
+#### 3. Contracts
+
+- `loadExactSources(source, id)` owns the exact `source + id` request path. Blank input and资料源 (`douban`, `bangumi`) must short-circuit to an empty list.
+- `loadMoreSourcesByEntry(title, searchTitle, year)` owns the title fallback path. `searchTitle` wins; `title` is the fallback.
+- `loadMoreSources` must call `onIncrementalResults` as soon as a playable batch arrives, even if the final list is still being assembled.
+- `initialSourcesLoaded` and `moreSourcesLoaded` are per-lane completion flags. `emptyPlaybackCompleted` becomes true only when both lanes are done and no playable source exists.
+- `isInitialLoading` stops when the first playable source is selected or when both lanes complete with no source. `isMoreSourcesLoading` tracks the fallback lane only.
+- `playbackRequest` must only be emitted when current source, current episode, and URL are all valid. `startPositionMs` comes from preview progress first, then resume position.
+- `load(videoId)` stays as a compatibility entry and must build a `TvDetailEntry` from the stored initial entry fields.
+
+#### 4. Validation & Error Matrix
+
+- Exact lane fails, more lane succeeds -> keep playing, no fatal error.
+- More lane fails, exact lane succeeds -> keep playing, no fatal error.
+- Both lanes finish with no playable source -> set `emptyPlaybackCompleted=true` and show the completed empty state.
+- Resume target exists but does not match any current source -> do not auto-pick a wrong source before both lanes finish.
+- Duplicate `source + id` with more episodes -> keep the source with the larger episode list.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: exact source returns first, current source is selected immediately, more sources append later.
+- Base: route only passes `source::id::title`, and the view model reconstructs the full entry context locally.
+- Bad: one aggregated loader blocks exact playback, or a non-fatal source failure clears already discovered playable data.
+
+#### 6. Tests Required
+
+- `TvDetailViewModelTest` must cover exact-first, more-first, exact-failure-then-more-success, dual-empty completion, duplicate merge, resume wait, and playback request refresh.
+- `TvDetailRepositoryTest` must cover `hasPlayableIdentity`, exact source loading, and title fallback source loading.
+- `TvAppContainerTest` must cover loader injection and old `source::id::title` compatibility.
+- `git diff --check` must pass for the files in the task batch.
+
+#### 7. Wrong vs Correct
+
+**Wrong**
+
+```kotlin
+val detail = loadInitialDetail(videoId)
+val more = loadMoreSources(videoId, detail)
+```
+
+**Correct**
+
+```kotlin
+val exactSources = loadExactSources(entry)
+val moreSources = loadMoreSources(entry) { incremental ->
+  mergeSources(incremental)
+}
+```
+
 ### 3.4 TV 焦点封装
 
 ```dart

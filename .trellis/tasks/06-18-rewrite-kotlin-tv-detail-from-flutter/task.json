@@ -1,0 +1,37 @@
+{
+  "id": "rewrite-kotlin-tv-detail-from-flutter",
+  "name": "rewrite-kotlin-tv-detail-from-flutter",
+  "title": "重做 Kotlin TV 详情页对齐 Flutter TV",
+  "description": "推翻当前 Kotlin TV 详情页页面和逻辑，按 Flutter TV 端详情页的数据加载、首播、续播、播放器、焦点和空态契约重做。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-06-18",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-18-rewrite-tv-detail-state-machine",
+    "06-18-rewrite-tv-detail-ui-focus",
+    "06-18-finish-tv-detail-playback-record-exit"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "lib/tv_app/screens/tv_video_detail_screen.dart",
+    "re-android/feature-tv-detail/src/main/java/org/moontechlab/selene/tv/feature/detail/TvDetailViewModel.kt",
+    "re-android/feature-tv-detail/src/main/java/org/moontechlab/selene/tv/feature/detail/TvDetailRoute.kt",
+    "re-android/core-data/src/main/java/org/moontechlab/selene/tv/core/data/repository/TvDetailRepository.kt",
+    "re-android/app-tv/src/main/java/org/moontechlab/selene/tv/app/TvAppContainer.kt",
+    "re-android/app-tv/src/main/java/org/moontechlab/selene/tv/app/navigation/TvNavGraph.kt"
+  ],
+  "notes": "用户确认分阶段推进；父任务负责总控和最终集成验收，三个子任务分别承载状态机数据链路、UI焦点图、播放器续播记录与退出收尾。",
+  "meta": {}
+}
