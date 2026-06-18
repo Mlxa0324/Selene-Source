@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~466 | Active |
+| `journal-1.md` | ~503 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-06-18 | 重做 Kotlin TV 详情 UI 焦点图 | `1e2f38c` | `tvtv` |
 | 13 | 2026-06-18 | 重做 Kotlin TV 详情状态机数据链路 | `4a78535` | `tvtv` |
 | 12 | 2026-06-14 | 修复Kotlin TV首页后台诊断 | `9b7e01e` | `tvtv` |
 | 11 | 2026-06-06 | 调整 TV 选集分组焦点切换 | `adc88bc` | `tvtv` |

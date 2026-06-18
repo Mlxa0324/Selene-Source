@@ -468,3 +468,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 重做 Kotlin TV 详情 UI 焦点图
+
+**Date**: 2026-06-18
+**Task**: 重做 Kotlin TV 详情 UI 焦点图
+**Branch**: `tvtv`
+
+### Summary
+
+完成详情页第二阶段：重写 Kotlin TV 详情页 UI 结构，新增展示/焦点策略测试，接入线路、选集、分组横向获焦滚动，并沉淀 tv-mode 规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e2f38c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
