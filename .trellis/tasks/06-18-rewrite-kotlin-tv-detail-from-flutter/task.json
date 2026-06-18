@@ -21,7 +21,8 @@
   "children": [
     "06-18-rewrite-tv-detail-state-machine",
     "06-18-rewrite-tv-detail-ui-focus",
-    "06-18-finish-tv-detail-playback-record-exit"
+    "06-18-finish-tv-detail-playback-record-exit",
+    "06-19-rewrite-tv-detail-screenshot-style"
   ],
   "parent": null,
   "relatedFiles": [
