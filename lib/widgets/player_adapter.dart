@@ -129,6 +129,31 @@ String buildWebViewPlayerHtmlForTest({
   )._buildHtmlContent();
 }
 
+/// 构建 WebView 播放命令，供测试验证暂停恢复桥接逻辑。
+@visibleForTesting
+String buildWebViewPlayerPlayCommandForTest() {
+  return _buildWebViewPlayerPlayCommand();
+}
+
+String _buildWebViewPlayerPlayCommand() {
+  return '''
+    (function() {
+      var player = window.player || document.getElementById('player');
+      if (!player) return;
+      if (typeof window.resumePlaybackFromPause === 'function') {
+        window.resumePlaybackFromPause();
+        return;
+      }
+      try {
+        var playResult = player.play();
+        if (playResult && typeof playResult.catch === 'function') {
+          playResult.catch(function() {});
+        }
+      } catch (_) {}
+    })();
+  ''';
+}
+
 WebViewPreloadTuning resolveWebViewPreloadTuning({
   required PlaybackPreloadLevel preloadLevel,
 }) {
@@ -760,7 +785,9 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
   @override
   Future<void> play() async {
-    await _controller?.evaluateJavascript(source: 'player.play();');
+    await _controller?.evaluateJavascript(
+      source: _buildWebViewPlayerPlayCommand(),
+    );
   }
 
   @override
@@ -1763,6 +1790,84 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
     window.beginRateChangeBufferingSuppression = beginRateChangeBufferingSuppression;
 
+    function playSafely(currentPlayer) {
+      var p = currentPlayer || window.player || document.getElementById('player');
+      if (!p) {
+        return;
+      }
+      try {
+        var playResult = p.play();
+        if (playResult && typeof playResult.catch === 'function') {
+          playResult.catch(function() {});
+        }
+      } catch (_) {}
+    }
+
+    function scheduleResumePlaybackRecovery(resumeTime, currentPlayer) {
+      var token = (window.__resumePlaybackToken || 0) + 1;
+      window.__resumePlaybackToken = token;
+      var checks = [
+        { delay: 220, nudge: false },
+        { delay: 760, nudge: true },
+        { delay: 1500, nudge: true }
+      ];
+
+      for (var i = 0; i < checks.length; i++) {
+        (function(step) {
+          setTimeout(function() {
+            if (token !== window.__resumePlaybackToken) {
+              return;
+            }
+            var p = currentPlayer || window.player || document.getElementById('player');
+            if (!p || p.paused) {
+              return;
+            }
+            var now = Number(p.currentTime) || resumeTime || 0;
+            if (now > resumeTime + 0.08) {
+              return;
+            }
+            try {
+              if (window.hlsInstance &&
+                  typeof window.hlsInstance.startLoad === 'function') {
+                window.hlsInstance.startLoad(now);
+              }
+            } catch (_) {}
+            var readyState = Number(p.readyState) || 0;
+            if (step.nudge && (p.seeking || readyState < 3)) {
+              try {
+                p.currentTime = Math.max(now + 0.01, resumeTime + 0.01);
+              } catch (_) {}
+            }
+            playSafely(p);
+            emitBufferedRanges();
+          }, step.delay);
+        })(checks[i]);
+      }
+    }
+
+    function resumePlaybackFromPause() {
+      if (!player) {
+        return;
+      }
+      var resumeTime = Number(player.currentTime) || 0;
+      try {
+        if (window.hlsInstance &&
+            typeof window.hlsInstance.startLoad === 'function') {
+          // 暂停较久后主动唤醒当前位置，避免 iOS WebView 一直停在 waiting。
+          window.hlsInstance.startLoad(resumeTime);
+        }
+      } catch (_) {}
+      try {
+        beginRateChangeBufferingSuppression(260);
+      } catch (_) {}
+      playSafely(player);
+      scheduleResumePlaybackRecovery(resumeTime, player);
+      emitBufferedRanges();
+    }
+
+    window.resumePlaybackFromPause = resumePlaybackFromPause;
+    window.scheduleResumePlaybackRecovery = scheduleResumePlaybackRecovery;
+
     if (player) {
       player.preload = preloadAttribute;
       configureIOSPlaybackDefaults();
@@ -1879,6 +1984,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         window.hlsInstance = hls;
         hls.on(Hls.Events.FRAG_LOADED, function(event, data) {
           emitNetworkSpeedFromStats(data && data.stats, 0);
+          // 分片加载完成后主动同步缓冲区间，避免移动端 progress 事件缺失时进度条空白。
+          emitBufferedRanges();
         });
         hls.loadSource(videoUrl);
         if (player) {

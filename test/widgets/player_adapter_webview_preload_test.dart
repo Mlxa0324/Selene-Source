@@ -65,6 +65,41 @@ void main() {
     expect(html, isNot(contains('config.maxMaxBufferLength = 16;')));
   });
 
+  test('web view HLS fragment loads report buffered ranges', () {
+    final html = buildWebViewPlayerHtmlForTest(
+      url: 'https://example.com/video.m3u8',
+      preloadLevel: PlaybackPreloadLevel.medium,
+    );
+
+    expect(
+      html,
+      contains('''
+        hls.on(Hls.Events.FRAG_LOADED, function(event, data) {
+          emitNetworkSpeedFromStats(data && data.stats, 0);
+          // 分片加载完成后主动同步缓冲区间，避免移动端 progress 事件缺失时进度条空白。
+          emitBufferedRanges();
+        });'''),
+    );
+  });
+
+  test('web view play command uses paused resume recovery helper', () {
+    final command = buildWebViewPlayerPlayCommandForTest();
+
+    expect(command, contains('window.resumePlaybackFromPause'));
+    expect(command, contains('player.play();'));
+  });
+
+  test('web view html wakes HLS loading when resuming after pause', () {
+    final html = buildWebViewPlayerHtmlForTest(
+      url: 'https://example.com/video.m3u8',
+      preloadLevel: PlaybackPreloadLevel.medium,
+    );
+
+    expect(html, contains('function resumePlaybackFromPause()'));
+    expect(html, contains('window.hlsInstance.startLoad(resumeTime);'));
+    expect(html, contains('scheduleResumePlaybackRecovery(resumeTime'));
+  });
+
   test('decodeWebViewCachedRanges parses confirmed buffered ranges', () {
     final ranges = decodeWebViewCachedRanges([
       {
