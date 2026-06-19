@@ -72,6 +72,15 @@ bool shouldAbortPlayerAsyncAfterAwait({
   return !mounted || playerDisposed;
 }
 
+/// 判断复用播放器切源后是否需要恢复缓存区间监听。
+@visibleForTesting
+bool shouldRestoreCachedRangesListenerAfterDataSourceSwitch({
+  required bool reusedExistingWebViewAdapter,
+  required bool preloadProgressEnabled,
+}) {
+  return reusedExistingWebViewAdapter && preloadProgressEnabled;
+}
+
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
   final String? url;
@@ -1425,6 +1434,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             startAt: startAt,
             headers: _currentHeaders,
           );
+          if (_shouldAbortAsyncAfterAwait()) {
+            return;
+          }
+          if (shouldRestoreCachedRangesListenerAfterDataSourceSwitch(
+            reusedExistingWebViewAdapter: true,
+            preloadProgressEnabled: _shouldPersistPreloadProgress,
+          )) {
+            // 切集/切源前会取消旧监听，复用 WebView 后必须重新订阅新源缓存区间。
+            _setupCachedRangesListener();
+          }
         } else {
           final oldAdapter = _adapter;
           _adapter = _createWebViewPlayerAdapter(

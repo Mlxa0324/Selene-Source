@@ -143,6 +143,32 @@ void main() {
     );
   });
 
+  test('reused web view source switches restore cached range listener', () {
+    expect(
+      shouldRestoreCachedRangesListenerAfterDataSourceSwitch(
+        reusedExistingWebViewAdapter: true,
+        preloadProgressEnabled: true,
+      ),
+      isTrue,
+    );
+
+    expect(
+      shouldRestoreCachedRangesListenerAfterDataSourceSwitch(
+        reusedExistingWebViewAdapter: true,
+        preloadProgressEnabled: false,
+      ),
+      isFalse,
+    );
+
+    expect(
+      shouldRestoreCachedRangesListenerAfterDataSourceSwitch(
+        reusedExistingWebViewAdapter: false,
+        preloadProgressEnabled: true,
+      ),
+      isFalse,
+    );
+  });
+
   test('player adapter exposes cached ranges through stream and state',
       () async {
     final stream = _FakePlayerAdapterStream();
