@@ -539,3 +539,44 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 修复移动端播放器预加载与iOS恢复
+
+**Date**: 2026-06-19
+**Task**: 修复移动端播放器预加载与iOS恢复
+**Branch**: `tvtv`
+
+### Summary
+
+修复手机端切集后 cachedRanges 监听未恢复导致预加载进度偶发失效；修复 iOS WebView HLS 暂停数分钟后恢复播放只转圈的问题；补充移动端 WebView 播放规则并完成相关 Flutter 测试和分析验证。
+
+### Main Changes
+
+- 恢复 WebView 切集后 `cachedRanges` 监听，避免复用播放器实例时预加载进度条不再刷新。
+- 在 HLS `FRAG_LOADED` 后主动上报缓存区间，让预加载进度跟随真实分片加载更新。
+- 为 iOS WebView 恢复播放增加 `resumePlaybackFromPause()`，恢复 HLS 加载并做有限次数播放恢复检查。
+- 补充移动端 WebView 播放规则，记录切源监听恢复和暂停恢复策略。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a9df5aa` | (see git log) |
+| `15dbfbb` | (see git log) |
+| `99b71b9` | (see git log) |
+
+### Testing
+
+- [OK] `flutter test test/widgets/player_adapter_webview_preload_test.dart`
+- [OK] `flutter test test/widgets/video_player_widget_preload_config_test.dart`
+- [OK] `flutter test test/widgets/mobile_player_controls_seek_test.dart`
+- [OK] `flutter analyze lib/widgets/player_adapter.dart lib/widgets/video_player_widget.dart test/widgets/player_adapter_webview_preload_test.dart test/widgets/video_player_widget_preload_config_test.dart test/widgets/mobile_player_controls_seek_test.dart`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
