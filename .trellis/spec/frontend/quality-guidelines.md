@@ -14,6 +14,9 @@ The project uses `flutter_lints` through `analysis_options.yaml` and has active 
 - Keep page-level workflows in screens and reusable controls in widgets.
 - For TV UI, test focus and route behavior under `test/tv_app/`.
 - Use `const` and `final` where supported by the current code style.
+- For WebView HLS preload telemetry, fragment-load handlers must refresh both network speed and buffered ranges; `Hls.Events.FRAG_LOADED` should call `emitBufferedRanges()` so Flutter receives `cached_ranges` even when mobile WebView `progress` events are sparse.
+- When `VideoPlayerWidget` reuses an existing WebView adapter for episode or source switching, restore the cached-range subscription after `updateSource()`; switching cancels the old subscription before the new source starts reporting preload ranges.
+- WebView pause/resume playback must use a resume helper rather than bare `player.play()`; the helper should wake hls.js with `startLoad(currentTime)` and schedule finite recovery checks so iOS does not stay stuck in `waiting` after a long pause.
 
 ## Forbidden Patterns
 
@@ -29,6 +32,8 @@ The project uses `flutter_lints` through `analysis_options.yaml` and has active 
 - Component behavior: use `testWidgets`, pump the component, interact with controls, and assert callbacks or rendered state.
 - Layout helper logic: prefer plain `test` for pure functions.
 - Player controls: cover seek/preload/surface-key regressions in `test/widgets/`.
+- Generated WebView player HTML: assert important JS event hooks directly, especially `cached_ranges` bridge behavior and preload buffer tuning.
+- WebView play bridge tests should assert pause-resume recovery commands directly, including `resumePlaybackFromPause`, HLS `startLoad`, and finite recovery scheduling.
 - TV focus: cover directional focus, back handling, and route behavior in `test/tv_app/`.
 - Screen regressions: add focused tests under `test/screens/` for page-level behavior.
 
