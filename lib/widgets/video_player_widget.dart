@@ -81,6 +81,161 @@ bool shouldRestoreCachedRangesListenerAfterDataSourceSwitch({
   return reusedExistingWebViewAdapter && preloadProgressEnabled;
 }
 
+/// 播放媒体身份，用于把 controller 触发的切集绑定到正确缓存 key。
+class PlaybackMediaIdentity {
+  /// 当前来源编码。
+  final String? source;
+
+  /// 当前影片 ID。
+  final String? id;
+
+  /// 当前集数索引。
+  final int? episodeIndex;
+
+  /// 当前播放地址。
+  final String? url;
+
+  const PlaybackMediaIdentity({
+    this.source,
+    this.id,
+    this.episodeIndex,
+    this.url,
+  });
+}
+
+String _buildCachedRangesMediaKey({
+  required String? currentSource,
+  required String? currentId,
+  required int? currentEpisodeIndex,
+  required String? currentUrl,
+  PlaybackMediaIdentity? override,
+}) {
+  // controller 切源时优先使用调用方传入的最新媒体身份，避免 widget rebuild 时序污染缓存 key。
+  return [
+    override?.source ?? currentSource ?? '',
+    override?.id ?? currentId ?? '',
+    (override?.episodeIndex ?? currentEpisodeIndex)?.toString() ?? '-1',
+    override?.url ?? currentUrl ?? '',
+  ].join('|');
+}
+
+/// 测试用缓存 key 构建入口，验证 controller 身份覆盖逻辑。
+@visibleForTesting
+String buildCachedRangesMediaKeyForTest({
+  required String? currentSource,
+  required String? currentId,
+  required int? currentEpisodeIndex,
+  required String? currentUrl,
+  PlaybackMediaIdentity? override,
+}) {
+  return _buildCachedRangesMediaKey(
+    currentSource: currentSource,
+    currentId: currentId,
+    currentEpisodeIndex: currentEpisodeIndex,
+    currentUrl: currentUrl,
+    override: override,
+  );
+}
+
+bool _recordCachedRangesInStore({
+  required Map<String, List<PlayerCachedRange>> store,
+  required String key,
+  required List<PlayerCachedRange> incoming,
+  required bool preloadProgressEnabled,
+}) {
+  if (!preloadProgressEnabled) {
+    return false;
+  }
+  final previous = store[key] ?? const [];
+  // 空 ranges 是 WebView 切源的清空信号，不能按“无数据”忽略。
+  final merged = incoming.isEmpty
+      ? const <PlayerCachedRange>[]
+      : accumulatePlayerCachedRanges(
+          existing: previous,
+          incoming: incoming,
+        );
+  if (listEquals(previous, merged)) {
+    return false;
+  }
+  store[key] = merged;
+  return true;
+}
+
+/// 测试用缓存记录入口，验证空 ranges 清空当前媒体显示缓存。
+@visibleForTesting
+bool recordCachedRangesForTest({
+  required Map<String, List<PlayerCachedRange>> store,
+  required String key,
+  required List<PlayerCachedRange> incoming,
+  required bool preloadProgressEnabled,
+}) {
+  return _recordCachedRangesInStore(
+    store: store,
+    key: key,
+    incoming: incoming,
+    preloadProgressEnabled: preloadProgressEnabled,
+  );
+}
+
+bool _shouldSuppressBufferingOverlayForCachedPosition({
+  required bool isBuffering,
+  required bool isLoadingVideo,
+  required Duration position,
+  required List<PlayerCachedRange> realtimeCachedRanges,
+}) {
+  if (!isBuffering || isLoadingVideo) {
+    return false;
+  }
+  // 只相信 adapter 实时缓存段；持久进度条可能包含历史累计段，不能用来压 loading。
+  return findContainingPlayerCachedRange(position, realtimeCachedRanges) !=
+      null;
+}
+
+bool _shouldShowPlayerBufferingOverlay({
+  required bool showLoadingIndicator,
+  required bool isBuffering,
+  required bool isLoadingVideo,
+  required bool controlsVisible,
+  required Duration position,
+  required List<PlayerCachedRange> realtimeCachedRanges,
+}) {
+  if (!showLoadingIndicator || controlsVisible) {
+    return false;
+  }
+  if (isLoadingVideo) {
+    return true;
+  }
+  if (_shouldSuppressBufferingOverlayForCachedPosition(
+    isBuffering: isBuffering,
+    isLoadingVideo: isLoadingVideo,
+    position: position,
+    realtimeCachedRanges: realtimeCachedRanges,
+  )) {
+    return false;
+  }
+  return isBuffering;
+}
+
+/// 测试用 loading 判定入口，覆盖真实加载与瞬时 buffering 的分流。
+@visibleForTesting
+bool shouldShowPlayerBufferingOverlayForTest({
+  required bool showLoadingIndicator,
+  required bool isBuffering,
+  required bool isLoadingVideo,
+  required bool controlsVisible,
+  required Duration position,
+  required List<PlayerCachedRange> realtimeCachedRanges,
+}) {
+  return _shouldShowPlayerBufferingOverlay(
+    showLoadingIndicator: showLoadingIndicator,
+    isBuffering: isBuffering,
+    isLoadingVideo: isLoadingVideo,
+    controlsVisible: controlsVisible,
+    position: position,
+    realtimeCachedRanges: realtimeCachedRanges,
+  );
+}
+
 class VideoPlayerWidget extends StatefulWidget {
   final VideoPlayerSurface surface;
   final String? url;
@@ -240,11 +395,13 @@ class VideoPlayerWidgetController {
     String url, {
     Duration? startAt,
     Map<String, String>? headers,
+    PlaybackMediaIdentity? mediaIdentity,
   }) async {
     await _state._updateDataSource(
       url,
       startAt: startAt,
       headers: headers,
+      mediaIdentity: mediaIdentity,
     );
   }
 
@@ -435,13 +592,17 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return widget.playbackPreloadLevel.isEnabled && !widget.isLocal;
   }
 
-  String _buildCachedRangesMediaKey({String? url}) {
-    return [
-      widget.currentSource ?? '',
-      widget.currentId ?? '',
-      widget.currentEpisodeIndex?.toString() ?? '-1',
-      url ?? _currentUrl ?? '',
-    ].join('|');
+  String _buildCachedRangesMediaKey({
+    String? url,
+    PlaybackMediaIdentity? mediaIdentity,
+  }) {
+    return buildCachedRangesMediaKeyForTest(
+      currentSource: widget.currentSource,
+      currentId: widget.currentId,
+      currentEpisodeIndex: widget.currentEpisodeIndex,
+      currentUrl: url ?? _currentUrl,
+      override: mediaIdentity,
+    );
   }
 
   List<PlayerCachedRange> get _currentPreloadProgressRanges {
@@ -455,38 +616,44 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     return _persistedCachedRangesByMedia[key] ?? const [];
   }
 
-  void _activateCachedRangesMediaKey({String? url}) {
+  void _activateCachedRangesMediaKey({
+    String? url,
+    PlaybackMediaIdentity? mediaIdentity,
+    bool clearExisting = false,
+  }) {
     if (!_shouldPersistPreloadProgress) {
       _activeCachedRangesMediaKey = null;
       return;
     }
-    final key = _buildCachedRangesMediaKey(url: url);
+    final key = _buildCachedRangesMediaKey(
+      url: url,
+      mediaIdentity: mediaIdentity,
+    );
     _activeCachedRangesMediaKey = key;
-    _persistedCachedRangesByMedia.putIfAbsent(key, () => const []);
+    if (clearExisting) {
+      _persistedCachedRangesByMedia[key] = const [];
+    } else {
+      _persistedCachedRangesByMedia.putIfAbsent(key, () => const []);
+    }
   }
 
   void _recordCachedRanges(List<PlayerCachedRange> ranges) {
-    if (!_shouldPersistPreloadProgress || ranges.isEmpty) {
+    if (!_shouldPersistPreloadProgress) {
       return;
     }
 
     final key = _activeCachedRangesMediaKey ?? _buildCachedRangesMediaKey();
-    final previous = _persistedCachedRangesByMedia[key] ?? const [];
-    final merged = accumulatePlayerCachedRanges(
-      existing: previous,
+    final changed = _recordCachedRangesInStore(
+      store: _persistedCachedRangesByMedia,
+      key: key,
       incoming: ranges,
+      preloadProgressEnabled: _shouldPersistPreloadProgress,
     );
-    if (listEquals(previous, merged)) {
-      return;
-    }
-
-    if (!mounted) {
-      _persistedCachedRangesByMedia[key] = merged;
+    if (!changed) {
       return;
     }
 
     _safeSetState(() {
-      _persistedCachedRangesByMedia[key] = merged;
       _activeCachedRangesMediaKey = key;
     });
   }
@@ -1267,14 +1434,19 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     String url, {
     Duration? startAt,
     Map<String, String>? headers,
+    PlaybackMediaIdentity? mediaIdentity,
   }) async {
     if (_playerDisposed) {
       return;
     }
-    _currentUrl = url;
-    _activateCachedRangesMediaKey(url: url);
     _cachedRangesSubscription?.cancel();
     _cachedRangesSubscription = null;
+    _currentUrl = url;
+    _activateCachedRangesMediaKey(
+      url: url,
+      mediaIdentity: mediaIdentity,
+      clearExisting: true,
+    );
     if (headers != null) {
       _currentHeaders = headers;
     }
@@ -1879,9 +2051,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
             _buildControls(),
 
           // 4. 加载遮罩
-          if (widget.showLoadingIndicator &&
-              (_isBuffering || _isLoadingVideo) &&
-              !_controlsVisible)
+          if (_shouldShowPlayerBufferingOverlay(
+            showLoadingIndicator: widget.showLoadingIndicator,
+            isBuffering: _isBuffering,
+            isLoadingVideo: _isLoadingVideo,
+            controlsVisible: _controlsVisible,
+            position: _adapter?.state.position ?? Duration.zero,
+            realtimeCachedRanges: _adapter?.state.cachedRanges ?? const [],
+          ))
             const Center(
               child: CircularProgressIndicator(
                 color: Colors.white,

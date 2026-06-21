@@ -2189,7 +2189,16 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
         // 增加超时保护，防止 updateDataSource 内部卡死
         await playerController
-            .updateDataSource(finalUrl, startAt: startAt)
+            .updateDataSource(
+              finalUrl,
+              startAt: startAt,
+              mediaIdentity: PlaybackMediaIdentity(
+                source: currentSource,
+                id: currentID,
+                episodeIndex: currentEpisodeIndex,
+                url: finalUrl,
+              ),
+            )
             .timeout(
               const Duration(seconds: 15),
               onTimeout: () =>

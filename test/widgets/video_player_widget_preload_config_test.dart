@@ -169,6 +169,101 @@ void main() {
     );
   });
 
+  test('controller data source identity overrides stale widget episode key',
+      () {
+    expect(
+      buildCachedRangesMediaKeyForTest(
+        currentSource: 'source-a',
+        currentId: 'video-1',
+        currentEpisodeIndex: 2,
+        currentUrl: 'https://example.com/old.m3u8',
+        override: const PlaybackMediaIdentity(
+          source: 'source-a',
+          id: 'video-1',
+          episodeIndex: 3,
+          url: 'https://example.com/new.m3u8',
+        ),
+      ),
+      'source-a|video-1|3|https://example.com/new.m3u8',
+    );
+  });
+
+  test('empty cached ranges clear the active preload progress key', () {
+    final store = <String, List<PlayerCachedRange>>{
+      'source-a|video-1|2|https://example.com/old.m3u8': const [
+        PlayerCachedRange(
+          start: Duration(minutes: 8),
+          end: Duration(minutes: 12),
+        ),
+      ],
+    };
+
+    final changed = recordCachedRangesForTest(
+      store: store,
+      key: 'source-a|video-1|2|https://example.com/old.m3u8',
+      incoming: const [],
+      preloadProgressEnabled: true,
+    );
+
+    expect(changed, isTrue);
+    expect(store['source-a|video-1|2|https://example.com/old.m3u8'], isEmpty);
+  });
+
+  test(
+      'buffering overlay is suppressed only when realtime cache covers position',
+      () {
+    expect(
+      shouldShowPlayerBufferingOverlayForTest(
+        showLoadingIndicator: true,
+        isBuffering: true,
+        isLoadingVideo: false,
+        controlsVisible: false,
+        position: const Duration(minutes: 3),
+        realtimeCachedRanges: const [
+          PlayerCachedRange(
+            start: Duration(minutes: 2),
+            end: Duration(minutes: 4),
+          ),
+        ],
+      ),
+      isFalse,
+    );
+
+    expect(
+      shouldShowPlayerBufferingOverlayForTest(
+        showLoadingIndicator: true,
+        isBuffering: true,
+        isLoadingVideo: false,
+        controlsVisible: false,
+        position: const Duration(minutes: 6),
+        realtimeCachedRanges: const [
+          PlayerCachedRange(
+            start: Duration(minutes: 2),
+            end: Duration(minutes: 4),
+          ),
+        ],
+      ),
+      isTrue,
+    );
+
+    expect(
+      shouldShowPlayerBufferingOverlayForTest(
+        showLoadingIndicator: true,
+        isBuffering: true,
+        isLoadingVideo: true,
+        controlsVisible: false,
+        position: const Duration(minutes: 3),
+        realtimeCachedRanges: const [
+          PlayerCachedRange(
+            start: Duration(minutes: 2),
+            end: Duration(minutes: 4),
+          ),
+        ],
+      ),
+      isTrue,
+    );
+  });
+
   test('player adapter exposes cached ranges through stream and state',
       () async {
     final stream = _FakePlayerAdapterStream();
