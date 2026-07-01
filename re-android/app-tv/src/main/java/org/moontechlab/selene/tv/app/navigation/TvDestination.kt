@@ -53,7 +53,7 @@ sealed class TvDestination(
     /**
      * 收藏夹页路由。
      */
-    data object Favorites : TvDestination("favorites", "收藏夹", "★")
+    data object Favorites : TvDestination("favorites", "收藏夹", "♥")
 
     /**
      * 设置页路由。
@@ -66,24 +66,59 @@ sealed class TvDestination(
     data object Live : TvDestination("live", "直播")
 
     /**
+     * 弹幕手动匹配路由。
+     */
+    data object DanmakuMatch : TvDestination(danmakuMatchRoutePattern, "手动匹配弹幕") {
+        /**
+         * 默认搜索词参数名。
+         */
+        const val queryArg: String = DANMAKU_MATCH_QUERY_ARG
+
+        /**
+         * 根据默认搜索词构造弹幕匹配路由。
+         *
+         * @param query 默认搜索词，通常为当前片名。
+         * @return 经过编码后的弹幕匹配路由。
+         */
+        fun createRoute(query: String): String {
+            val routeQuery = query.ifBlank { danmakuMatchEmptyQuerySentinel }
+            return "$danmakuMatchPathPrefix/${encodeRouteArg(routeQuery)}"
+        }
+
+        /**
+         * 解析弹幕匹配默认搜索词。
+         *
+         * @param queryArg 路由参数中的搜索词。
+         * @return 还原后的搜索词。
+         */
+        fun parseQuery(queryArg: String): String {
+            return if (queryArg == danmakuMatchEmptyQuerySentinel) {
+                ""
+            } else {
+                queryArg
+            }
+        }
+    }
+
+    /**
      * 全屏播放器路由。
      */
     data object Player : TvDestination(playerRoutePattern, "播放器") {
         /**
-         * 播放器路由参数名。
+         * 播放请求路由参数名。
          */
-        const val videoIdArg: String = PLAYER_VIDEO_ID_ARG
+        const val requestIdArg: String = PLAYER_REQUEST_ID_ARG
 
         /**
-         * 根据视频 ID 构造可安全传递的播放器路由。
+         * 根据播放请求 ID 构造可安全传递的播放器路由。
          *
-         * @param videoId 原始视频 ID。
+         * @param requestId 播放请求暂存 ID。
          * @return 经过编码后的播放器路由。
          */
-        fun createRoute(videoId: String): String {
+        fun createRoute(requestId: String): String {
             // 对动态参数做 URL 编码，避免斜杠和空格污染路由层级。
-            val encodedVideoId = encodeRouteArg(videoId)
-            return "$playerPathPrefix/$encodedVideoId"
+            val encodedRequestId = encodeRouteArg(requestId)
+            return "$playerPathPrefix/$encodedRequestId"
         }
     }
 
@@ -96,28 +131,107 @@ sealed class TvDestination(
          */
         const val videoIdArg: String = DETAIL_VIDEO_ID_ARG
 
+        /** 详情路由中 source、id 和 title 的分隔符。 */
+        private const val videoKeySeparator = "::"
+
         /**
          * 根据视频 ID 构造可安全传递的详情路由。
          *
-         * @param videoId 原始视频 ID。
+         * @param videoId 原始视频 ID 或 `source::id` 或 `source::id::encodedTitle` 详情 key。
          * @return 经过编码后的详情路由。
          */
         fun createRoute(videoId: String): String {
             val encodedVideoId = encodeRouteArg(videoId)
             return "$detailPathPrefix/$encodedVideoId"
         }
+
+        /**
+         * 创建详情页精准取源 key。
+         *
+         * @param source 播放来源标识。
+         * @param videoId 视频 ID。
+         * @return 可放入详情路由的 `source::id`。
+         */
+        fun createVideoKey(
+            source: String,
+            videoId: String,
+        ): String {
+            return if (source.isBlank()) {
+                videoId
+            } else {
+                "$source$videoKeySeparator$videoId"
+            }
+        }
+
+        /**
+         * 创建携带标题的详情 key（用于未知来源卡片通过标题搜索兜底）。
+         *
+         * @param source 播放来源标识。
+         * @param videoId 视频 ID。
+         * @param title 视频标题。
+         * @return 可放入详情路由的 `source::id::encodedTitle`。
+         */
+        fun createVideoKeyWithTitle(
+            source: String,
+            videoId: String,
+            title: String,
+        ): String {
+            val key = createVideoKey(source, videoId)
+            return if (title.isBlank()) {
+                key
+            } else {
+                "$key$videoKeySeparator${encodeRouteArg(title)}"
+            }
+        }
+
+        /**
+         * 从详情 key 解析播放来源。
+         *
+         * @param videoKey 详情路由参数。
+         * @return 播放来源；旧路由无来源时返回空字符串。
+         */
+        fun parseSource(videoKey: String): String {
+            return videoKey.substringBefore(videoKeySeparator, missingDelimiterValue = "")
+        }
+
+        /**
+         * 从详情 key 解析视频 ID。
+         *
+         * @param videoKey 详情路由参数。
+         * @return 视频 ID。
+         */
+        fun parseVideoId(videoKey: String): String {
+            val withoutSource = videoKey.substringAfter(videoKeySeparator, missingDelimiterValue = videoKey)
+            return withoutSource.substringBefore(videoKeySeparator, missingDelimiterValue = withoutSource)
+        }
+
+        /**
+         * 从详情 key 解析视频标题。
+         *
+         * @param videoKey 详情路由参数 `source::id::encodedTitle`。
+         * @return 视频标题；key 中没有标题时返回空字符串。
+         */
+        fun parseTitle(videoKey: String): String {
+            val parts = videoKey.split(videoKeySeparator, limit = 3)
+            return if (parts.size >= 3) parts[2].trim() else ""
+        }
     }
 
     companion object {
         /**
-         * 播放器路由参数名单一源。
+         * 播放器请求参数名单一源。
          */
-        private const val PLAYER_VIDEO_ID_ARG = "videoId"
+        private const val PLAYER_REQUEST_ID_ARG = "requestId"
 
         /**
          * 详情路由参数名单一源。
          */
         private const val DETAIL_VIDEO_ID_ARG = "videoId"
+
+        /**
+         * 弹幕匹配默认搜索词参数名单一源。
+         */
+        private const val DANMAKU_MATCH_QUERY_ARG = "query"
 
         /**
          * 播放器路径前缀单一源。
@@ -130,14 +244,29 @@ sealed class TvDestination(
         private const val detailPathPrefix = "detail"
 
         /**
+         * 弹幕匹配路径前缀单一源。
+         */
+        private const val danmakuMatchPathPrefix = "danmaku-match"
+
+        /**
+         * 空搜索词路径哨兵值，避免 Compose path 参数无法匹配空片段。
+         */
+        private const val danmakuMatchEmptyQuerySentinel = "_"
+
+        /**
          * 播放器路由模板单一源。
          */
-        private const val playerRoutePattern = "$playerPathPrefix/{$PLAYER_VIDEO_ID_ARG}"
+        private const val playerRoutePattern = "$playerPathPrefix/{$PLAYER_REQUEST_ID_ARG}"
 
         /**
          * 详情路由模板单一源。
          */
         private const val detailRoutePattern = "$detailPathPrefix/{$DETAIL_VIDEO_ID_ARG}"
+
+        /**
+         * 弹幕匹配路由模板单一源。
+         */
+        private const val danmakuMatchRoutePattern = "$danmakuMatchPathPrefix/{$DANMAKU_MATCH_QUERY_ARG}"
 
         /**
          * 编码动态路由参数。

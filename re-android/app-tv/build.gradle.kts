@@ -60,6 +60,11 @@ android {
             "SELENE_TV_PASSWORD",
             (localGatewayProperties.getProperty("SELENE_TV_PASSWORD") ?: "").toBuildConfigString(),
         )
+        buildConfigField(
+            "String",
+            "SELENE_TV_DANMAKU_BASE_URL",
+            (localGatewayProperties.getProperty("SELENE_TV_DANMAKU_BASE_URL") ?: "").toBuildConfigString(),
+        )
 
         // Debug 默认服务本地 HTTP 后台；Release 在 buildTypes 中关闭明文流量。
         manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "true"
@@ -105,6 +110,8 @@ dependencies {
     implementation(project(":core-design"))
     implementation(project(":core-data"))
     implementation(project(":core-network"))
+    implementation(project(":core-player-api"))
+    implementation(project(":core-player-webview"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -116,6 +123,7 @@ dependencies {
     implementation(libs.androidx.tv.material)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.coil.compose)
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)

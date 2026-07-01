@@ -6,6 +6,7 @@ import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResourceResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
+import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
 
 /**
  * 数据模块测试用 TV 数据接口。
@@ -51,5 +52,13 @@ internal open class FakeSeleneTvApi : SeleneTvApi {
     /** 返回测试搜索响应。 */
     override suspend fun search(query: String): TvSearchResponse {
         return TvSearchResponse(results = emptyList())
+    }
+
+    /** 返回测试详情响应。 */
+    override suspend fun getDetail(
+        source: String,
+        id: String,
+    ): TvSearchResultResponse {
+        return TvSearchResultResponse(id = id, source = source)
     }
 }

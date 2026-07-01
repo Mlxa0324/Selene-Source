@@ -1,57 +1,75 @@
 package org.moontechlab.selene.tv.feature.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
+import org.moontechlab.selene.tv.core.design.layout.TvHomeSkeleton
+import org.moontechlab.selene.tv.core.design.layout.TvLibrarySkeleton
 import org.moontechlab.selene.tv.core.design.layout.TvMorePosterCard
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
+import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
 
 /**
  * TV 首页路由。
  *
  * @param state 首页界面状态。
+ * @param contentFocusRequester 首页内容区入口焦点请求器。
+ * @param onRetry 首页状态面板重试回调。
  * @param onVideoClick 视频卡片点击回调。
  * @param onSectionMoreClick 分区查看更多点击回调。
  */
 @Composable
 fun TvHomeRoute(
     state: TvHomeUiState = TvHomeUiState(),
+    contentFocusRequester: FocusRequester? = null,
+    onRetry: (() -> Unit)? = null,
     onVideoClick: (String) -> Unit = {},
     onSectionMoreClick: (TvHomeSectionMoreTarget) -> Unit = {},
 ) {
     TvPageScaffold(
         modifier = Modifier.fillMaxSize(),
     ) {
-        if (state.isLoading) {
-            TvStatePanel(
-                kind = TvStatePanelKind.Loading,
-                title = "首页加载中",
-                message = "正在同步继续观看、热门内容和收藏快照。",
-            )
+        val showSkeleton = state.isLoading && state.sections.isEmpty()
+        if (showSkeleton) {
+            TvHomeSkeleton(contentFocusRequester = contentFocusRequester)
             return@TvPageScaffold
         }
 
@@ -61,6 +79,9 @@ fun TvHomeRoute(
                 title = "首页加载失败",
                 message = state.errorMessage,
                 actionLabel = "重试",
+                onAction = onRetry,
+                contentFocusRequester = contentFocusRequester,
+                modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
             )
             return@TvPageScaffold
         }
@@ -71,44 +92,69 @@ fun TvHomeRoute(
                 title = "首页暂无内容",
                 message = "当前没有可展示的视频内容。",
                 actionLabel = "刷新首页",
+                onAction = onRetry,
+                contentFocusRequester = contentFocusRequester,
+                modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
             )
             return@TvPageScaffold
         }
 
-        state.sections.forEachIndexed { index, section ->
-            // 分区展示模型统一处理数量截断和更多入口，Route 只负责渲染。
-            val presentation = section.toHomeSectionPresentation()
-            val moreTarget = presentation.moreTarget
-            TvPageSection(
-                title = section.title,
-                hint = if (index == 0) "长按删除" else null,
-            ) {
-                TvPosterRail(
-                    items = presentation.visibleVideos.map { video ->
-                        TvPosterItem(
-                            id = video.id,
-                            title = video.title,
-                            subtitle = section.title,
-                            posterUrl = video.posterUrl,
-                        )
-                    },
-                    trailingContent = if (presentation.showMore && moreTarget != null) {
-                        {
-                            TvMorePosterCard(
-                                onClick = {
-                                    // 首页分区更多入口统一交给宿主路由层决定跳转页面。
-                                    onSectionMoreClick(moreTarget)
-                                },
-                            )
-                        }
-                    } else {
-                        null
-                    },
-                    onItemClick = { item ->
-                        // 首页卡片统一把视频身份交给宿主路由，避免页面直接持有 NavController。
-                        onVideoClick(item.id)
-                    },
-                )
+        val firstFocusableSectionIndex = firstFocusableHomeSectionIndex(state.sections)
+        val homeListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+        val homeScrollScope = rememberCoroutineScope()
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = homeListState,
+            verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
+        ) {
+            itemsIndexed(
+                items = state.sections,
+                key = { _, section -> section.key },
+            ) { sectionIndex, section ->
+                // 分区展示模型统一处理数量截断和更多入口，Route 只负责渲染。
+                val presentation = section.toHomeSectionPresentation()
+                val moreTarget = presentation.moreTarget
+                val sectionFocusRequester = if (sectionIndex == firstFocusableSectionIndex) {
+                    contentFocusRequester
+                } else {
+                    null
+                }
+                TvPageSection(
+                    title = section.title,
+                    hint = if (sectionIndex == 0) "长按删除" else null,
+                    insetContent = false,
+                ) {
+                    TvPosterRail(
+                        firstItemFocusRequester = sectionFocusRequester,
+                        onRailFocused = {
+                            val sectionAlreadyAnchored = homeListState.firstVisibleItemIndex == sectionIndex &&
+                                homeListState.firstVisibleItemScrollOffset == 0
+                            if (!sectionAlreadyAnchored) {
+                                homeScrollScope.launch {
+                                    // 首页纵向换排时把当前分区滚到视口顶部，避免焦点进入了下一排但页面停在原位。
+                                    homeListState.animateScrollToItem(sectionIndex)
+                                }
+                            }
+                        },
+                        items = presentation.visibleVideos.map { video -> video.toPosterItem(section.title) },
+                        trailingContent = if (presentation.showMore && moreTarget != null) {
+                            {
+                                TvMorePosterCard(
+                                    onClick = {
+                                        // 首页分区更多入口统一交给宿主路由层决定跳转页面。
+                                        onSectionMoreClick(moreTarget)
+                                    },
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onItemClick = { item ->
+                            // 首页卡片统一把视频身份交给宿主路由，避免页面直接持有 NavController。
+                            onVideoClick(item.toVideoDetailKey())
+                        },
+                    )
+                }
             }
         }
     }
@@ -118,25 +164,27 @@ fun TvHomeRoute(
  * TV 视频库分类路由。
  *
  * @param state 视频库界面状态。
+ * @param contentFocusRequester 内容区入口焦点请求器。
+ * @param onVideoClick 视频卡片点击回调。
  * @param onFilterOptionSelected 筛选确认回调。
  * @param onFilterOptionFocused 筛选焦点变化回调。
  */
 @Composable
 fun TvVideoLibraryRoute(
     state: TvVideoLibraryUiState,
+    contentFocusRequester: FocusRequester? = null,
+    showFilter: Boolean = false,
+    onVideoClick: (String) -> Unit = {},
     onFilterOptionSelected: ((String, String) -> Unit)? = null,
     onFilterOptionFocused: ((String, String) -> Unit)? = null,
+    onApproachingEnd: (() -> Unit)? = null,
 ) {
     TvPageScaffold(
-        title = state.title,
         modifier = Modifier.fillMaxSize(),
     ) {
-        if (state.isLoading) {
-            TvStatePanel(
-                kind = TvStatePanelKind.Loading,
-                title = "${state.title}加载中",
-                message = "正在拉取分类内容。",
-            )
+        val showSkeleton = state.isLoading && state.videos.isEmpty()
+        if (showSkeleton) {
+            TvLibrarySkeleton(contentFocusRequester = contentFocusRequester)
             return@TvPageScaffold
         }
 
@@ -145,44 +193,51 @@ fun TvVideoLibraryRoute(
                 kind = TvStatePanelKind.Error,
                 title = "${state.title}加载失败",
                 message = state.errorMessage,
+                contentFocusRequester = contentFocusRequester,
+                modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
             )
             return@TvPageScaffold
         }
 
-        TvPageSection(
-            title = "筛选",
-            hint = state.selectedFilterSummary,
+        AnimatedVisibility(
+            visible = showFilter,
+            enter = expandVertically(),
+            exit = shrinkVertically(),
         ) {
-            TvLibraryFilterPanel(
-                filters = state.availableFilters,
-                onOptionSelected = onFilterOptionSelected,
-                onOptionFocused = onFilterOptionFocused,
-            )
-        }
-
-        TvPageSection(
-            title = state.title,
-            hint = if (state.videos.isEmpty()) "暂无内容" else "${state.videos.size} 个视频",
-        ) {
-            if (state.videos.isEmpty()) {
-                TvStatePanel(
-                    kind = TvStatePanelKind.Empty,
-                    title = "${state.title}暂无内容",
-                    message = "当前筛选条件下没有可展示的视频。",
-                )
-            } else {
-                TvPosterGrid(
-                    columns = 7,
-                    items = state.videos.map { video ->
-                        TvPosterItem(
-                            id = video.id,
-                            title = video.title,
-                            subtitle = state.title,
-                            posterUrl = video.posterUrl,
-                        )
-                    },
+            TvPageSection(
+                title = "筛选",
+                hint = state.selectedFilterSummary,
+            ) {
+                TvLibraryFilterPanel(
+                    filters = state.availableFilters,
+                    onOptionSelected = onFilterOptionSelected,
+                    onOptionFocused = onFilterOptionFocused,
                 )
             }
+        }
+
+        if (state.videos.isEmpty()) {
+            TvStatePanel(
+                kind = TvStatePanelKind.Empty,
+                title = "${state.title}暂无内容",
+                message = "当前筛选条件下没有可展示的视频。",
+                contentFocusRequester = contentFocusRequester,
+                modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
+            )
+        } else {
+            TvPosterGrid(
+                columns = 7,
+                items = state.videos.map { video -> video.toPosterItem(state.title) },
+                firstItemFocusRequester = contentFocusRequester,
+                onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
+                onApproachingEnd = onApproachingEnd,
+                headerContent = {
+                    PosterGridHeader(
+                        title = state.title,
+                        subtitle = categorySubtitle(state.categoryKey),
+                    )
+                },
+            )
         }
     }
 }
@@ -238,7 +293,9 @@ private fun TvLibraryFilterRow(
         LazyRow(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(end = TvTokens.PageHorizontalPadding),
+            contentPadding = PaddingValues(
+                end = TvTokens.PageHorizontalPadding,
+            ),
         ) {
             items(filter.options, key = TvLibraryFilterOption::key) { option ->
                 TvLibraryFilterChip(
@@ -305,5 +362,103 @@ private fun TvLibraryFilterChip(
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = if (selected) TvTokens.TextPrimary else MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/**
+ * 将业务视频卡片转换成 TV 海报展示模型。
+ *
+ * @param fallbackSubtitle 无年份和来源时的兜底副标题。
+ * @return 可直接渲染的海报卡片。
+ */
+private fun TvVideoCard.toPosterItem(fallbackSubtitle: String): TvPosterItem {
+    return TvPosterItem(
+        id = id,
+        source = source,
+        title = title,
+        subtitle = posterSubtitle(fallbackSubtitle),
+        posterUrl = posterUrl,
+        totalEpisodes = totalEpisodes,
+        episodeIndex = episodeIndex,
+        progressFraction = playbackProgressFraction(),
+    )
+}
+
+
+/**
+ * 生成贴近 Flutter TV 卡片的副标题。
+ *
+ * @param fallbackSubtitle 分区或页面兜底文案。
+ * @return 卡片副标题。
+ */
+private fun TvVideoCard.posterSubtitle(fallbackSubtitle: String): String {
+    if ((playTime > 0 || episodeIndex > 1) && sourceName.isNotBlank()) {
+        // 续播卡片下方只展示线路，集数和进度交给封面徽标与进度条表达。
+        return sourceName
+    }
+    val parts = buildList {
+        if (year.isNotBlank()) {
+            add(year)
+        }
+        if (sourceName.isNotBlank()) {
+            add(sourceName)
+        }
+    }
+    return parts.joinToString(" · ").ifBlank { fallbackSubtitle }
+}
+
+/**
+ * 计算播放进度比例。
+ *
+ * @return 0..1 之间的播放进度，缺少总时长时返回 0。
+ */
+private fun TvVideoCard.playbackProgressFraction(): Float {
+    if (playTime <= 0 || totalTime <= 0) {
+        return 0f
+    }
+    return playTime.toFloat() / totalTime.toFloat()
+}
+
+/**
+ * 分类副标题文案。
+ */
+private fun categorySubtitle(categoryKey: String): String {
+    return when (categoryKey) {
+        "movie" -> "来自豆瓣的精选内容"
+        "tv" -> "来自豆瓣的精选内容"
+        "anime" -> "来自Bangumi的精选内容"
+        "show" -> "来自豆瓣的精选内容"
+        else -> ""
+    }
+}
+
+/**
+ * TV 海报网格头部 —— 标题+副标题，不获焦，随网格滚动。
+ */
+@Composable
+private fun PosterGridHeader(
+    title: String,
+    subtitle: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = TvTokens.PageHorizontalPadding),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.ExtraBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        if (subtitle.isNotBlank()) {
+            Spacer(modifier = Modifier.padding(start = 12.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

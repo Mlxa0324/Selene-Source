@@ -34,19 +34,48 @@ class TvDestinationTest {
      */
     @Test
     fun fullscreen_player_route_is_hidden_from_top_level_tabs() {
-        assertThat(TvDestination.Player.route).isEqualTo("player/{videoId}")
+        assertThat(TvDestination.Player.route).isEqualTo("player/{requestId}")
         assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.Player)
     }
 
     /**
-     * 确认播放器提供统一参数常量和路由构造方法。
+     * 弹幕手动匹配路由必须隐藏在顶层导航外，并安全携带默认搜索词。
      */
     @Test
-    fun player_route_builder_encodes_video_id() {
-        assertThat(TvDestination.Player.videoIdArg).isEqualTo("videoId")
+    fun danmaku_match_route_builder_encodes_initial_query() {
+        assertThat(TvDestination.DanmakuMatch.route).isEqualTo("danmaku-match/{query}")
+        assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.DanmakuMatch)
+        assertThat(TvDestination.DanmakuMatch.queryArg).isEqualTo("query")
+        assertThat(TvDestination.DanmakuMatch.createRoute("测试 影片/第2集"))
+            .isEqualTo("danmaku-match/%E6%B5%8B%E8%AF%95%20%E5%BD%B1%E7%89%87%2F%E7%AC%AC2%E9%9B%86")
+    }
+
+    /**
+     * 确认播放器提供播放请求 ID 参数和路由构造方法。
+     */
+    @Test
+    fun player_route_builder_encodes_request_id() {
+        assertThat(TvDestination.Player.requestIdArg).isEqualTo("requestId")
         assertThat(
-            TvDestination.Player.createRoute("anime/id?ep=01 中文"),
-        ).isEqualTo("player/anime%2Fid%3Fep%3D01%20%E4%B8%AD%E6%96%87")
+            TvDestination.Player.createRoute("playback/id?seq=01 中文"),
+        ).isEqualTo("player/playback%2Fid%3Fseq%3D01%20%E4%B8%AD%E6%96%87")
+    }
+
+    /**
+     * 确认详情路由携带 source 和 id，支持 `/api/detail` 精准取源。
+     */
+    @Test
+    fun detail_route_builder_encodes_source_and_video_id() {
+        val key = TvDestination.Detail.createVideoKey(
+            source = "source/a",
+            videoId = "video?id=01 中文",
+        )
+
+        assertThat(key).isEqualTo("source/a::video?id=01 中文")
+        assertThat(TvDestination.Detail.parseSource(key)).isEqualTo("source/a")
+        assertThat(TvDestination.Detail.parseVideoId(key)).isEqualTo("video?id=01 中文")
+        assertThat(TvDestination.Detail.createRoute(key))
+            .isEqualTo("detail/source%2Fa%3A%3Avideo%3Fid%3D01%20%E4%B8%AD%E6%96%87")
     }
 
     /**
@@ -91,7 +120,7 @@ class TvDestinationTest {
         assertThat(iconGlyphs).containsExactly(
             "⌕",
             "↺",
-            "★",
+            "♥",
             "⚙",
         ).inOrder()
     }

@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.network
 
 import okhttp3.Headers
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -198,6 +199,26 @@ object SeleneTvNetworkFactory {
     }
 
     /**
+     * 创建 TV 弹幕服务接口。
+     *
+     * @param rawBaseUrl 原始弹幕服务地址。
+     * @return 弹幕服务 Retrofit 接口。
+     */
+    fun createDanmakuApi(rawBaseUrl: String): SeleneDanmakuApi {
+        val baseUrl = normalizeBaseUrl(rawBaseUrl)
+        val okHttpClient = OkHttpClient.Builder()
+            // 弹幕 API 是独立服务，不走后台登录 Cookie，也避免系统代理改写目标。
+            .proxy(Proxy.NO_PROXY)
+            .build()
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(SeleneDanmakuApi::class.java)
+    }
+
+    /**
      * 创建 TV 后台 HTTP 客户端。
      *
      * @param sessionCookieStore 会话 Cookie 存储。
@@ -213,6 +234,25 @@ object SeleneTvNetworkFactory {
                 ),
             )
             .build()
+    }
+
+    /**
+     * 创建 TV 豆瓣代理接口。
+     *
+     * @return 豆瓣代理 Retrofit 接口。
+     */
+    fun createDoubanApi(): SeleneDoubanApi {
+        val baseUrl = normalizeBaseUrl(DOUBAN_BASE_URL)
+        val okHttpClient = OkHttpClient.Builder()
+            .proxy(Proxy.NO_PROXY)
+            .addInterceptor(DoubanHeaderInterceptor())
+            .build()
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(SeleneDoubanApi::class.java)
     }
 
     /**
@@ -247,5 +287,29 @@ object SeleneTvNetworkFactory {
             .map { item -> item.substringBefore(";").trim() }
             .filter { item -> item.isNotEmpty() }
             .joinToString("; ")
+    }
+
+    /** 豆瓣代理 API 基础地址（腾讯 CDN 镜像）。 */
+    private const val DOUBAN_BASE_URL = "https://m.douban.cmliussss.net/"
+}
+
+/**
+ * 豆瓣代理 API 请求头拦截器。
+ *
+ * 模拟浏览器请求，避免豆瓣 API 返回空响应。
+ */
+internal class DoubanHeaderInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
+        val request = chain.request().newBuilder()
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/121.0.0.0 Safari/537.36",
+            )
+            .header("Referer", "https://movie.douban.com/")
+            .header("Accept", "application/json, text/plain, */*")
+            .build()
+        return chain.proceed(request)
     }
 }

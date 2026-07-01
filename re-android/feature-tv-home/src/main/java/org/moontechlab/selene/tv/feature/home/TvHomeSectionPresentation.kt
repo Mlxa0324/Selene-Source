@@ -60,6 +60,19 @@ fun TvHomeSection.toHomeSectionPresentation(): TvHomeSectionPresentation {
 }
 
 /**
+ * 查找首页第一个可进入遥控器焦点链路的分区。
+ *
+ * @param sections 首页接口返回的分区列表。
+ * @return 第一个包含可见影视卡片的分区下标，没有内容时返回空。
+ */
+fun firstFocusableHomeSectionIndex(sections: List<TvHomeSection>): Int? {
+    return sections.indexOfFirst { section ->
+        // 只有真实可见卡片才能承接顶部导航向下的焦点请求。
+        section.toHomeSectionPresentation().visibleVideos.isNotEmpty()
+    }.takeIf { index -> index >= 0 }
+}
+
+/**
  * 获取首页分区更多入口目标。
  *
  * @param sectionKey 首页分区标识。

@@ -66,6 +66,43 @@ class TvHomeSectionPresentationTest {
     }
 
     /**
+     * 首页内容焦点应跳过空分区，避免顶部向下时请求不存在的卡片焦点。
+     */
+    @Test
+    fun firstFocusableHomeSectionIndex_skipsEmptySections() {
+        val sections = listOf(
+            TvHomeSection(
+                key = "continue_watching",
+                title = "继续观看",
+                videos = emptyList(),
+            ),
+            TvHomeSection(
+                key = "hot_movies",
+                title = "热门电影",
+                videos = videoCards(count = 2),
+            ),
+        )
+
+        assertThat(firstFocusableHomeSectionIndex(sections)).isEqualTo(1)
+    }
+
+    /**
+     * 首页没有任何卡片时不提供内容焦点目标。
+     */
+    @Test
+    fun firstFocusableHomeSectionIndex_returnsNullWhenAllSectionsAreEmpty() {
+        val sections = listOf(
+            TvHomeSection(
+                key = "continue_watching",
+                title = "继续观看",
+                videos = emptyList(),
+            ),
+        )
+
+        assertThat(firstFocusableHomeSectionIndex(sections)).isNull()
+    }
+
+    /**
      * 构造指定数量的视频卡片测试数据。
      *
      * @param count 视频数量。

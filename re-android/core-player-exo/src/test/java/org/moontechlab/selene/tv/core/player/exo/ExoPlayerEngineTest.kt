@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.design.threading.DispatcherProvider
+import org.moontechlab.selene.tv.core.player.api.TvResizeMode
 
 /**
  * 校验 ExoPlayer 主内核的线程与控制契约。
@@ -57,6 +58,12 @@ private class RecordingExoPlayerAdapter : ExoPlayerAdapter {
 
     /** 暂停测试空实现。 */
     override suspend fun pause() = Unit
+
+    /** 倍速测试空实现。 */
+    override suspend fun setPlaybackSpeed(speed: Float) = Unit
+
+    /** 画面比例测试空实现。 */
+    override suspend fun setResizeMode(resizeMode: TvResizeMode) = Unit
 
     /** 释放测试空实现。 */
     override suspend fun release() = Unit

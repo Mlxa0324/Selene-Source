@@ -95,4 +95,17 @@ interface SeleneTvApi {
     suspend fun search(
         @Query("q") query: String,
     ): TvSearchResponse
+
+    /**
+     * 获取指定播放源的视频详情。
+     *
+     * @param source 播放来源标识。
+     * @param id 视频 ID。
+     * @return 视频详情响应。
+     */
+    @GET("api/detail")
+    suspend fun getDetail(
+        @Query("source") source: String,
+        @Query("id") id: String,
+    ): org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
 }

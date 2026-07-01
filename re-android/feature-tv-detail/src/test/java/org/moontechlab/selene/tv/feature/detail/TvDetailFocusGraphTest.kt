@@ -108,6 +108,54 @@ class TvDetailFocusGraphTest {
     }
 
     /**
+     * 无线路和选集但有推荐时，播放器向下应进入推荐区，不请求不存在的线路或选集。
+     */
+    @Test
+    fun resolveDetailFocusMove_falls_back_to_recommend_when_sources_are_empty() {
+        val graph = focusGraph(sourceCount = 0, episodeCount = 0, recommendCount = 3)
+
+        val move = graph.resolve(
+            from = TvDetailFocusPosition.area(TvDetailFocusArea.Player),
+            direction = TvDetailFocusDirection.Down,
+        )
+
+        assertThat(move.target).isEqualTo(TvDetailFocusPosition.recommend(index = 0))
+        assertThat(move.boundary).isFalse()
+    }
+
+    /**
+     * 下方区域全为空时，播放器向下应停留当前区域并标记边界。
+     */
+    @Test
+    fun resolveDetailFocusMove_stays_on_player_when_lower_sections_are_empty() {
+        val graph = focusGraph(sourceCount = 0, episodeCount = 0, recommendCount = 0)
+
+        val move = graph.resolve(
+            from = TvDetailFocusPosition.area(TvDetailFocusArea.Player),
+            direction = TvDetailFocusDirection.Down,
+        )
+
+        assertThat(move.target).isEqualTo(TvDetailFocusPosition.area(TvDetailFocusArea.Player))
+        assertThat(move.boundary).isTrue()
+    }
+
+    /**
+     * 底部操作上移在没有推荐、选集、线路时应回播放器，保证焦点仍有真实入口。
+     */
+    @Test
+    fun resolveDetailFocusMove_bottom_action_falls_back_to_player_when_sections_are_empty() {
+        val graph = focusGraph(sourceCount = 0, episodeCount = 0, recommendCount = 0)
+
+        val move = graph.resolve(
+            from = TvDetailFocusPosition.area(TvDetailFocusArea.BottomAction),
+            direction = TvDetailFocusDirection.Up,
+        )
+
+        assertThat(move.target).isEqualTo(TvDetailFocusPosition.area(TvDetailFocusArea.Player))
+        assertThat(move.boundary).isFalse()
+    }
+
+    /**
      * 构造焦点图。
      *
      * @param sourceCount 线路数量。

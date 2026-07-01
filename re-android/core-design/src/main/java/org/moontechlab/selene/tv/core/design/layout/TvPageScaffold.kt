@@ -40,18 +40,20 @@ fun TvPageScaffold(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    start = TvTokens.PageHorizontalPadding,
                     top = if (title.isNullOrBlank()) 0.dp else TvTokens.PageTopPadding,
-                    end = TvTokens.PageHorizontalPadding,
                     bottom = TvTokens.PageBottomPadding,
                 ),
             verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
         ) {
             if (!title.isNullOrBlank()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.headlineMedium,
+                        color = TvTokens.TextPrimary,
                     )
                     if (!subtitle.isNullOrBlank()) {
                         // 副标题只补充页面语义，避免重新出现工程计划感。

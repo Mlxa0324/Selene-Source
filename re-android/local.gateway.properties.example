@@ -3,3 +3,4 @@
 SELENE_TV_BASE_URL=https://example.com
 SELENE_TV_USERNAME=your_username
 SELENE_TV_PASSWORD=your_password
+SELENE_TV_DANMAKU_BASE_URL=https://danmaku.example.com

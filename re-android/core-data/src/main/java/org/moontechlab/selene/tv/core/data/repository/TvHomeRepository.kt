@@ -1,123 +1,111 @@
 package org.moontechlab.selene.tv.core.data.repository
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import org.moontechlab.selene.tv.core.data.model.TvHomePayload
 import org.moontechlab.selene.tv.core.data.model.TvHomeSection
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
-import org.moontechlab.selene.tv.core.network.SeleneTvApi
-import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
-import org.moontechlab.selene.tv.core.network.model.TvHomeSectionResponse
-import org.moontechlab.selene.tv.core.network.model.TvVideoCardResponse
 
 /**
  * TV 首页数据仓库。
  *
- * @property api TV 服务端接口。
+ * 首页各分区与分类 Tab 共用 [DoubanRepository] 的同一份 LRU 缓存，
+ * 确保首页卡片和对应分类页首屏数据一致、不重复请求。
+ *
  * @property playbackRepository 播放记录仓库。
+ * @property doubanRepository 豆瓣数据仓库（与分类页共享）。
  */
 class TvHomeRepository(
-    private val api: SeleneTvApi,
     private val playbackRepository: TvPlaybackRepository,
+    private val doubanRepository: DoubanRepository,
 ) {
     /**
      * 加载 TV 首页聚合数据。
      *
-     * @return 包含继续观看和远端热门分区的首页载荷。
+     * 四个内容分区并行请求 Douban 代理 API，参数 1:1 对齐各分类 Tab 默认筛选：
+     * - 热门电影 → Movie Tab 简单模式 (kind=movie, category=热门)
+     * - 热门剧集 → TV Tab 简单模式 (kind=tv, category=最近热门)
+     * - 新番放送 → Anime Tab 番剧模式 (kind=tv, type=动画, format=电视剧)
+     * - 热门综艺 → Variety Tab 简单模式 (kind=tv, category=show, type=show)
+     *
+     * @return 包含继续观看和四个内容分区的首页载荷。
      */
-    suspend fun loadHome(): TvHomePayload {
+    suspend fun loadHome(): TvHomePayload = coroutineScope {
+        // 继续观看：始终从播放记录仓库取，与播放历史 Tab 共用数据源
         val continueWatching = runCatching {
             playbackRepository.readContinueWatching()
         }.getOrDefault(emptyList())
-        val remote = runCatching { api.getDashboard() }.getOrNull()
-        if (remote != null) {
-            return remote.toHomePayload(continueWatching = continueWatching)
+
+        // ── 四个内容分区：并行请求，参数与分类 Tab 默认完全一致 ──
+
+        val hotMovies = async(Dispatchers.IO) {
+            runCatching {
+                doubanRepository.loadCategory(
+                    DoubanCategoryParams(kind = "movie", category = "热门"),
+                )
+            }.getOrDefault(emptyList())
         }
 
-        // 部分后台版本未提供 dashboard 聚合接口，降级复用分类搜索保证首页有真实列表。
-        return fallbackHomePayload(continueWatching = continueWatching)
-    }
+        val hotTvShows = async(Dispatchers.IO) {
+            runCatching {
+                doubanRepository.loadCategory(
+                    DoubanCategoryParams(kind = "tv", category = "最近热门", type = "tv"),
+                )
+            }.getOrDefault(emptyList())
+        }
 
-    /**
-     * 使用分类搜索结果组装首页兜底分区。
-     *
-     * @param continueWatching 本地继续观看列表。
-     * @return 可直接供首页展示的兜底首页载荷。
-     */
-    private suspend fun fallbackHomePayload(
-        continueWatching: List<TvVideoCard>,
-    ): TvHomePayload {
-        val libraryRepository = TvVideoLibraryRepository(api)
-        val sections = buildList {
-            add(
-                TvHomeSection(
-                    key = CONTINUE_WATCHING_KEY,
-                    title = CONTINUE_WATCHING_TITLE,
-                    videos = continueWatching,
-                ),
-            )
-            FALLBACK_SECTIONS.forEach { fallbackSection ->
-                // 每个分区沿用分类页搜索契约，避免首页和分类页数据来源不一致。
-                val videos = runCatching {
-                    libraryRepository.loadCategory(fallbackSection.categoryKey)
-                }.getOrDefault(emptyList())
-                add(
-                    TvHomeSection(
-                        key = fallbackSection.key,
-                        title = fallbackSection.title,
-                        videos = videos,
+        val bangumiCalendar = async(Dispatchers.IO) {
+            runCatching {
+                // 新番放送 = 动漫 Tab 番剧推荐，后续接入 Bangumi 后可改为每日放送日历
+                doubanRepository.loadCategory(
+                    DoubanCategoryParams(
+                        kind = "tv",
+                        category = "全部",
+                        type = "动画",
+                        format = "电视剧",
                     ),
                 )
-            }
+            }.getOrDefault(emptyList())
         }
-        return TvHomePayload(sections = sections)
-    }
 
-    /**
-     * 将接口响应转换为 TV 首页业务模型。
-     *
-     * @param continueWatching 本地继续观看列表。
-     * @return 可直接供首页 ViewModel 使用的聚合载荷。
-     */
-    private fun TvHomeResponse.toHomePayload(
-        continueWatching: List<TvVideoCard>,
-    ): TvHomePayload {
-        val sections = buildList {
-            // 继续观看始终放在远端分区前，保持 Flutter TV 首页浏览顺序。
-            add(
+        val hotShows = async(Dispatchers.IO) {
+            runCatching {
+                doubanRepository.loadCategory(
+                    DoubanCategoryParams(kind = "tv", category = "show", type = "show"),
+                )
+            }.getOrDefault(emptyList())
+        }
+
+        TvHomePayload(
+            sections = listOfNotNull(
+                // 继续观看：无记录时隐藏
                 TvHomeSection(
                     key = CONTINUE_WATCHING_KEY,
                     title = CONTINUE_WATCHING_TITLE,
                     videos = continueWatching,
+                ).takeIf { continueWatching.isNotEmpty() },
+                TvHomeSection(
+                    key = "hot_movies",
+                    title = "热门电影",
+                    videos = hotMovies.await(),
                 ),
-            )
-            // 远端首页分区保持服务端顺序，避免二次排序影响首页习惯。
-            addAll(sections.map { section -> section.toModel() })
-        }
-        return TvHomePayload(sections = sections)
-    }
-
-    /**
-     * 将接口分区响应转换为业务分区。
-     *
-     * @return 首页业务分区。
-     */
-    private fun TvHomeSectionResponse.toModel(): TvHomeSection {
-        return TvHomeSection(
-            key = key,
-            title = title,
-            videos = videos.map { video -> video.toModel() },
-        )
-    }
-
-    /**
-     * 将接口视频响应转换为业务卡片。
-     *
-     * @return TV 影视卡片模型。
-     */
-    private fun TvVideoCardResponse.toModel(): TvVideoCard {
-        return TvVideoCard(
-            id = id,
-            title = title,
-            posterUrl = posterUrl,
+                TvHomeSection(
+                    key = "hot_tv_shows",
+                    title = "热门剧集",
+                    videos = hotTvShows.await(),
+                ),
+                TvHomeSection(
+                    key = "bangumi_calendar",
+                    title = "新番放送",
+                    videos = bangumiCalendar.await(),
+                ),
+                TvHomeSection(
+                    key = "hot_shows",
+                    title = "热门综艺",
+                    videos = hotShows.await(),
+                ),
+            ),
         )
     }
 
@@ -127,42 +115,5 @@ class TvHomeRepository(
 
         /** 继续观看分区标题。 */
         const val CONTINUE_WATCHING_TITLE = "继续观看"
-
-        /** 首页兜底分区定义。 */
-        val FALLBACK_SECTIONS = listOf(
-            FallbackHomeSection(
-                key = "hot_movies",
-                title = "热门电影",
-                categoryKey = "movie",
-            ),
-            FallbackHomeSection(
-                key = "hot_tv_shows",
-                title = "热门剧集",
-                categoryKey = "tv",
-            ),
-            FallbackHomeSection(
-                key = "bangumi_calendar",
-                title = "新番放送",
-                categoryKey = "anime",
-            ),
-            FallbackHomeSection(
-                key = "hot_shows",
-                title = "热门综艺",
-                categoryKey = "show",
-            ),
-        )
     }
 }
-
-/**
- * 首页兜底分区配置。
- *
- * @property key 首页分区标识。
- * @property title 首页分区标题。
- * @property categoryKey 分类搜索标识。
- */
-private data class FallbackHomeSection(
-    val key: String,
-    val title: String,
-    val categoryKey: String,
-)

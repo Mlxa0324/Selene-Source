@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.feature.live
 
 import com.google.common.truth.Truth.assertThat
+import java.io.File
 import org.junit.Test
 
 /**
@@ -45,5 +46,18 @@ class TvLiveRouteTest {
         )
 
         assertThat(selectedChannelTitle(state)).isEqualTo("未选择频道")
+    }
+
+    /**
+     * 直播频道空态必须承接顶部导航下探入口。
+     */
+    @Test
+    fun empty_channel_state_attaches_content_focus_requester() {
+        val source = File("src/main/java/org/moontechlab/selene/tv/feature/live/TvLiveRoute.kt")
+            .readText()
+
+        assertThat(source).contains("contentFocusRequester: FocusRequester? = null")
+        assertThat(source).contains("contentFocusRequester = contentFocusRequester")
+        assertThat(source).contains("firstItemFocusRequester = contentFocusRequester")
     }
 }

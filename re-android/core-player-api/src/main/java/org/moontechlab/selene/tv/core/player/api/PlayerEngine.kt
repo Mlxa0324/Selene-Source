@@ -30,6 +30,20 @@ interface PlayerEngine {
     suspend fun seekTo(positionMs: Long)
 
     /**
+     * 设置当前播放倍速。
+     *
+     * @param speed 播放倍速，例如 `1.0f` 或 `1.5f`。
+     */
+    suspend fun setPlaybackSpeed(speed: Float)
+
+    /**
+     * 设置当前画面比例模式。
+     *
+     * @param resizeMode 目标画面比例。
+     */
+    suspend fun setResizeMode(resizeMode: TvResizeMode)
+
+    /**
      * 捕获当前播放快照。
      *
      * @return 当前播放快照。

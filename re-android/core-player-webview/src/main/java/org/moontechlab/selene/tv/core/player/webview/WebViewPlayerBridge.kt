@@ -6,11 +6,26 @@ package org.moontechlab.selene.tv.core.player.webview
  * @property positionMs 当前播放位置，单位毫秒。
  * @property durationMs 当前视频时长，单位毫秒。
  * @property isPlaying 是否正在播放。
+ * @property cachedRanges 当前 WebView 已缓存区间。
+ * @property networkSpeedBytesPerSecond 当前 WebView 下载网速，单位 B/s。
  */
 data class WebViewPlaybackEvent(
     val positionMs: Long,
     val durationMs: Long,
     val isPlaying: Boolean,
+    val cachedRanges: List<WebViewCachedRange> = emptyList(),
+    val networkSpeedBytesPerSecond: Long = 0L,
+)
+
+/**
+ * WebView 已缓存区间。
+ *
+ * @property startMs 缓存起点，单位毫秒。
+ * @property endMs 缓存终点，单位毫秒。
+ */
+data class WebViewCachedRange(
+    val startMs: Long,
+    val endMs: Long,
 )
 
 /**
@@ -29,6 +44,8 @@ class WebViewPlayerBridge {
             positionMs = payload.readLongField("positionMs"),
             durationMs = payload.readLongField("durationMs"),
             isPlaying = payload.readBooleanField("isPlaying"),
+            cachedRanges = payload.readCachedRanges(),
+            networkSpeedBytesPerSecond = payload.readLongField("networkSpeedBytesPerSecond"),
         )
     }
 
@@ -52,5 +69,27 @@ class WebViewPlayerBridge {
     private fun String.readBooleanField(name: String): Boolean {
         val regex = Regex("\\\"$name\\\"\\s*:\\s*(true|false)")
         return regex.find(this)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
+    }
+
+    /**
+     * 读取缓存区间列表。
+     *
+     * @return WebView 已缓存区间。
+     */
+    private fun String.readCachedRanges(): List<WebViewCachedRange> {
+        val rangeRegex = Regex(
+            "\\{\\s*\\\"startMs\\\"\\s*:\\s*(\\d+)\\s*,\\s*\\\"endMs\\\"\\s*:\\s*(\\d+)\\s*}",
+        )
+        return rangeRegex.findAll(this)
+            .mapNotNull { match ->
+                val startMs = match.groupValues.getOrNull(1)?.toLongOrNull()
+                val endMs = match.groupValues.getOrNull(2)?.toLongOrNull()
+                if (startMs == null || endMs == null || endMs <= startMs) {
+                    null
+                } else {
+                    WebViewCachedRange(startMs = startMs, endMs = endMs)
+                }
+            }
+            .toList()
     }
 }

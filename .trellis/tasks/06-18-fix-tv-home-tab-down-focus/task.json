@@ -1,0 +1,29 @@
+{
+  "id": "fix-tv-home-tab-down-focus",
+  "name": "fix-tv-home-tab-down-focus",
+  "title": "修复 Kotlin TV 首页 Tab 下移焦点失效",
+  "description": "修复首页从继续观看横向列表上移到顶部 Tab 后，再按下方向键无法回到内容区的问题，并补充焦点契约验证。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-06-18",
+  "completedAt": "2026-06-18",
+  "branch": null,
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "re-android/core-design/src/main/java/org/moontechlab/selene/tv/core/design/layout/TvPosterRail.kt",
+    "re-android/core-design/src/test/java/org/moontechlab/selene/tv/core/design/layout/TvPosterFocusContractTest.kt"
+  ],
+  "notes": "根因：顶部导航下探入口只绑定在横向 Rail 首卡，用户向右移动后首卡可能被 LazyRow 回收，导致从 Tab 再按下方向键没有稳定焦点目标。修复：TvPosterRail 记录最近真实获焦卡片，并把 contentFocusRequester 绑定到该卡片；分组首次进入仍由首卡承接。验证：新增红灯契约后修复，:core-design:testDebugUnitTest、TvHomeRouteFocusContractTest、TvAppFocusContractTest 均通过。",
+  "meta": {}
+}

@@ -1,0 +1,31 @@
+{
+  "id": "fix-tv-detail-empty-data",
+  "name": "fix-tv-detail-empty-data",
+  "title": "修复 Kotlin TV 详情页无数据",
+  "description": "修复首页或其他 Tab 页进入详情页时无数据的问题，按 Flutter TV 端详情页数据加载逻辑尽量 1:1 对齐。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-06-18",
+  "completedAt": "2026-06-18",
+  "branch": "tvtv",
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "re-android/core-data/src/main/java/org/moontechlab/selene/tv/core/data/repository/TvDetailRepository.kt",
+    "re-android/app-tv/src/main/java/org/moontechlab/selene/tv/app/TvAppContainer.kt",
+    "re-android/core-data/src/test/java/org/moontechlab/selene/tv/core/data/repository/TvDetailRepositoryTest.kt",
+    "re-android/app-tv/src/test/java/org/moontechlab/selene/tv/app/TvAppContainerTest.kt"
+  ],
+  "notes": "已对齐 Flutter TV 的详情精确源优先、标题补源兜底逻辑；覆盖精确详情失败、空集数、douban 资料来源、标题年份过滤和重复线路去重。",
+  "meta": {}
+}

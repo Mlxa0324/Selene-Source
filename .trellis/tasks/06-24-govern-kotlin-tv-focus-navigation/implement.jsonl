@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/tv-mode.md","reason":"TV 遥控器焦点、Kotlin TV 页面边界和验证要求"}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"页面组件拆分与可维护性约束"}
+{"file":".trellis/spec/frontend/state-management.md","reason":"焦点状态、页面状态和持久入口约束"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"避免每个页面复制焦点补丁"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"App shell、feature 页面和 core-design 的焦点入口跨层流转"}

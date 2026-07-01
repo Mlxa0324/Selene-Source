@@ -76,6 +76,16 @@ class TvDetailPresentationTest {
     }
 
     /**
+     * 只有一个选集分组时，不展示上方分组切换条，避免单集影片出现 1-1 空白槽。
+     */
+    @Test
+    fun shouldShowDetailEpisodeGroupChoices_only_shows_for_multiple_groups() {
+        assertThat(shouldShowDetailEpisodeGroupChoices(groupCount = 0)).isFalse()
+        assertThat(shouldShowDetailEpisodeGroupChoices(groupCount = 1)).isFalse()
+        assertThat(shouldShowDetailEpisodeGroupChoices(groupCount = 2)).isTrue()
+    }
+
+    /**
      * 推荐为空时，布局不渲染推荐区和底部动作。
      */
     @Test

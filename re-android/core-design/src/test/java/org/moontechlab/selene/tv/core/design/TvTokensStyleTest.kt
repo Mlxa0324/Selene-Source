@@ -33,7 +33,7 @@ class TvTokensStyleTest {
         assertThat(TvTokens.PageHorizontalPadding).isEqualTo(46.dp)
         assertThat(TvTokens.CardSpacing).isEqualTo(18.dp)
         assertThat(TvTokens.PosterWidth).isEqualTo(158.dp)
-        assertThat(TvTokens.PosterHeight).isEqualTo(300.dp)
-        assertThat(TvTokens.PosterCoverHeight).isEqualTo(237.dp)
+        assertThat(TvTokens.PosterHeight).isEqualTo(288.dp)
+        assertThat(TvTokens.PosterCoverHeight).isEqualTo(225.dp)
     }
 }

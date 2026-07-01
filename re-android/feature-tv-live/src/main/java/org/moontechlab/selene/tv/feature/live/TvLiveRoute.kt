@@ -1,8 +1,11 @@
 package org.moontechlab.selene.tv.feature.live
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.layout.TvEmptyStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
@@ -58,11 +61,13 @@ data class TvLiveUiState(
  * TV 直播路由。
  *
  * @param state 直播界面状态。
+ * @param contentFocusRequester 内容区首个频道焦点请求器。
  * @param onChannelClick 频道点击回调。
  */
 @Composable
 fun TvLiveRoute(
     state: TvLiveUiState = TvLiveUiState(),
+    contentFocusRequester: FocusRequester? = null,
     onChannelClick: (String) -> Unit = {},
 ) {
     TvPageScaffold(
@@ -78,11 +83,14 @@ fun TvLiveRoute(
         TvPageSection(
             title = "频道列表",
             hint = state.sourceName,
+            insetContent = false,
         ) {
             if (state.channels.isEmpty()) {
                 TvEmptyStatePanel(
                     title = "暂无直播频道",
                     message = "导入直播源即可在此浏览频道、当前节目和节目单。",
+                    contentFocusRequester = contentFocusRequester,
+                    modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
                 )
             } else {
                 TvPosterGrid(
@@ -94,6 +102,7 @@ fun TvLiveRoute(
                         )
                     },
                     columns = 5,
+                    firstItemFocusRequester = contentFocusRequester,
                     onItemClick = { item -> onChannelClick(item.id) },
                 )
             }
@@ -102,11 +111,13 @@ fun TvLiveRoute(
         TvPageSection(
             title = "当前节目",
             hint = selectedChannelTitle(state),
+            insetContent = false,
         ) {
             if (state.programs.isEmpty()) {
                 TvEmptyStatePanel(
                     title = "暂无节目单",
                     message = "当前直播源未提供节目时间表，可直接从频道列表进入播放。",
+                    modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
                 )
             } else {
                 TvPosterRail(

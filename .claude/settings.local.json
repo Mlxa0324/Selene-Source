@@ -1,12 +1,18 @@
 {
   "permissions": {
+    "defaultMode": "dontAsk",
     "allow": [
       "Bash(flutter pub:*)",
       "mcp__augment-context-engine__codebase-retrieval",
       "Bash(python3:*)",
       "Bash(flutter test:*)",
       "Bash(flutter analyze:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(wc:*)",
+      "Bash(git commit:*)",
+      "Bash(flutter build:*)",
+      "Bash(cd:*)",
+      "Bash(cd *)"
     ]
   }
 }

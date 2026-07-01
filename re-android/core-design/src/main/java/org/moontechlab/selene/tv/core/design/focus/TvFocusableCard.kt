@@ -2,8 +2,8 @@ package org.moontechlab.selene.tv.core.design.focus
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
@@ -13,18 +13,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import org.moontechlab.selene.tv.core.design.TvTokens
 
 /**
  * TV 端可获焦卡片容器。
  *
  * @param modifier 外层修饰器。
+ * @param focusRequesters 绑定到真实焦点节点的请求器列表。
  * @param enabled 是否允许获得焦点。
  * @param onPressed 确认键短按或鼠标点击回调。
  * @param onLongPressed 确认键长按回调。
@@ -33,6 +37,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 @Composable
 fun TvFocusableCard(
     modifier: Modifier = Modifier,
+    focusRequesters: List<FocusRequester> = emptyList(),
     enabled: Boolean = true,
     onPressed: (() -> Unit)? = null,
     onLongPressed: (() -> Unit)? = null,
@@ -44,6 +49,22 @@ fun TvFocusableCard(
     val borderColor = if (isFocused) TvTokens.FocusBorder else Color.Transparent
     val pressPolicy = remember(onLongPressed) {
         TvRemotePressPolicy(hasLongPressHandler = onLongPressed != null)
+    }
+    val focusRequesterModifier: Modifier = focusRequesters.fold<FocusRequester, Modifier>(Modifier) { current, requester ->
+        // 多个入口共享同一个真实焦点节点，避免外层容器成为不可见中转焦点。
+        current.focusRequester(requester)
+    }
+    val pointerClickModifier = if (enabled && onPressed != null) {
+        Modifier.pointerInput(onPressed) {
+            detectTapGestures(
+                onTap = {
+                    // 鼠标和触摸点击只触发业务，不额外创建可获焦节点。
+                    onPressed()
+                },
+            )
+        }
+    } else {
+        Modifier
     }
 
     Box(
@@ -71,12 +92,8 @@ fun TvFocusableCard(
                 }
                 true
             }
-            .clickable(
-                enabled = enabled && onPressed != null,
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = { onPressed?.invoke() },
-            )
+            .then(pointerClickModifier)
+            .then(focusRequesterModifier)
             .focusable(
                 enabled = enabled,
                 interactionSource = interactionSource,

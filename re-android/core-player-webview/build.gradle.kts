@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -22,11 +23,18 @@ android {
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
+
+    buildFeatures {
+        // WebView 播放画面层通过 Compose AndroidView 注入播放器壳。
+        compose = true
+    }
 }
 
 dependencies {
     implementation(project(":core-design"))
     implementation(project(":core-player-api"))
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit4)

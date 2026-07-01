@@ -105,12 +105,12 @@ object TvTokens {
     /**
      * TV 海报卡片高度。
      */
-    val PosterHeight = 300.dp
+    val PosterHeight = 288.dp
 
     /**
      * TV 海报封面高度。
      */
-    val PosterCoverHeight = 237.dp
+    val PosterCoverHeight = 225.dp
 
     /**
      * TV 顶部快捷入口高度。
@@ -141,4 +141,41 @@ object TvTokens {
      * TV 弹窗按钮间距。
      */
     val DialogButtonSpacing = 14.dp
+
+    // ── 表单专用 Token ──
+
+    /**
+     * TV 表单输入框/开关/滑杆背景色。
+     */
+    val FormFieldBackground = Color(0xFF0E1112)
+
+    /**
+     * TV 表单分区面板背景色。
+     */
+    val FormCardBackground = Color(0xFF15191B)
+
+    /**
+     * TV 表单默认边框色。
+     */
+    val FormBorder = Color(0xFF293136)
+
+    /**
+     * TV 表单标签/提示文字颜色。
+     */
+    val FormTextSecondary = Color(0xFF98A2A8)
+
+    /**
+     * TV 表单单行高度。
+     */
+    val FormRowHeight = 52.dp
+
+    /**
+     * TV 表单分区内边距。
+     */
+    val FormPanelPadding = 24.dp
+
+    /**
+     * TV 表单行水平内边距。
+     */
+    val FormRowHorizontalPadding = 20.dp
 }

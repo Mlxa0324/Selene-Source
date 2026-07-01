@@ -31,6 +31,43 @@ class TvDetailRouteFocusContractTest {
     }
 
     /**
+     * 顶部按钮必须是固定宽度，避免在窄一点的 TV 视口里撑爆顶部栏。
+     */
+    @Test
+    fun detail_top_bar_uses_fixed_width_actions() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("width = 132.dp")
+        assertThat(source).contains("width = 164.dp")
+        assertThat(source).contains(".width(width)")
+        assertThat(source).doesNotContain(".widthIn(min = 118.dp)")
+    }
+
+    /**
+     * 详情页不再默认展示续播提醒条，避免遮挡首屏 Hero。
+     */
+    @Test
+    fun detail_route_does_not_render_resume_prompt_by_default() {
+        val source = readRouteSource()
+
+        assertThat(source).doesNotContain("NcatResumePrompt(")
+        assertThat(source).doesNotContain("上次播放到第")
+    }
+
+    /**
+     * 详情页自绘焦点控件必须同时支持遥控确认键和模拟器鼠标点击。
+     */
+    @Test
+    fun detail_custom_focus_controls_support_pointer_tap() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("import androidx.compose.foundation.gestures.detectTapGestures")
+        assertThat(source).contains("import androidx.compose.ui.input.pointer.pointerInput")
+        assertThat(source).contains("private fun Modifier.ncatClickable")
+        assertThat(source).contains(".ncatClickable(onPressed)")
+    }
+
+    /**
      * 详情页横向选项获焦时必须推动列表滚动，避免遥控器焦点移动到屏幕外。
      */
     @Test

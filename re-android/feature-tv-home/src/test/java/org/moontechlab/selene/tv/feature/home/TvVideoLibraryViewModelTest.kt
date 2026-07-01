@@ -16,10 +16,8 @@ class TvVideoLibraryViewModelTest {
     fun load_updates_category_videos() = runTest {
         val viewModel = TvVideoLibraryViewModel(
             categoryKey = "movie",
-            loadCategory = { categoryKey ->
-                TvVideoLibraryUiState.forCategory(categoryKey).copy(
-                    videos = listOf(TvVideoCard(id = "movie-1", title = "电影", posterUrl = "")),
-                )
+            loadCategory = { _, _, _ ->
+                listOf(TvVideoCard(id = "movie-1", title = "电影", posterUrl = ""))
             },
         )
 
@@ -37,7 +35,7 @@ class TvVideoLibraryViewModelTest {
     fun load_keeps_empty_list_as_success_state() = runTest {
         val viewModel = TvVideoLibraryViewModel(
             categoryKey = "anime",
-            loadCategory = { categoryKey -> TvVideoLibraryUiState.forCategory(categoryKey) },
+            loadCategory = { _, _, _ -> emptyList() },
         )
 
         viewModel.load()
@@ -54,7 +52,7 @@ class TvVideoLibraryViewModelTest {
     fun load_exposes_failure_message() = runTest {
         val viewModel = TvVideoLibraryViewModel(
             categoryKey = "show",
-            loadCategory = {
+            loadCategory = { _, _, _ ->
                 error("分类接口失败")
             },
         )
@@ -64,5 +62,30 @@ class TvVideoLibraryViewModelTest {
         assertThat(viewModel.state.value.isLoading).isFalse()
         assertThat(viewModel.state.value.videos).isEmpty()
         assertThat(viewModel.state.value.errorMessage).contains("分类接口失败")
+    }
+
+    /**
+     * 筛选变更应更新状态并可在重新加载后反映。
+     *
+     * 分类切为"全部"进入高级筛选模式，排序值已对齐为 T/U/R/S。
+     */
+    @Test
+    fun applyFilter_updates_selected_option() = runTest {
+        val viewModel = TvVideoLibraryViewModel(
+            categoryKey = "movie",
+            loadCategory = { _, _, _ -> emptyList() },
+        )
+
+        // 切换到"全部"进入高级筛选模式，展示全部筛选行。
+        viewModel.applyFilter("分类", "全部")
+        viewModel.applyFilter("排序", "S")
+
+        val filters = viewModel.state.value.availableFilters
+        assertThat(
+            filters.first { it.title == "分类" }.selectedOption.key
+        ).isEqualTo("全部")
+        assertThat(
+            filters.first { it.title == "排序" }.selectedOption.key
+        ).isEqualTo("S")
     }
 }

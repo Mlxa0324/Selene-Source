@@ -573,6 +573,16 @@ fun buildDetailEpisodeGroups(
 }
 
 /**
+ * 判断是否需要展示选集分组切换条。
+ *
+ * @param groupCount 选集分组数量。
+ * @return 多个分组时返回 true。
+ */
+fun shouldShowDetailEpisodeGroupChoices(groupCount: Int): Boolean {
+    return groupCount > 1
+}
+
+/**
  * 构建详情页区块显隐状态。
  *
  * @param sources 播放线路。

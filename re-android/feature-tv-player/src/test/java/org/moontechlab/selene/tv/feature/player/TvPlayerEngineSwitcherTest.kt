@@ -81,6 +81,16 @@ private class FakePlayerEngine(
         snapshot = snapshot.copy(positionMs = positionMs)
     }
 
+    /** 设置倍速测试实现。 */
+    override suspend fun setPlaybackSpeed(speed: Float) {
+        snapshot = snapshot.copy(playbackSpeed = speed)
+    }
+
+    /** 设置画面比例测试实现。 */
+    override suspend fun setResizeMode(resizeMode: TvResizeMode) {
+        snapshot = snapshot.copy(resizeMode = resizeMode)
+    }
+
     /** 捕获当前快照。 */
     override suspend fun captureSnapshot(): PlaybackSnapshot = snapshot
 

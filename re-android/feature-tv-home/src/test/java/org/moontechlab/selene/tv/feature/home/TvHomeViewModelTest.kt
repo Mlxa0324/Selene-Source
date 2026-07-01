@@ -50,13 +50,41 @@ class TvHomeViewModelTest {
         viewModel.load()
 
         assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
+            "hot_movies",
+            "hot_tv_shows",
+            "bangumi_calendar",
+            "hot_shows",
+        ).inOrder()
+    }
+
+    /**
+     * 首页有续播记录时，“继续观看”应保持在热门内容前方。
+     */
+    @Test
+    fun loadHome_keeps_continue_watching_when_records_exist() = runTest {
+        val viewModel = TvHomeViewModel(
+            loadHome = {
+                TvHomePayload(
+                    sections = listOf(
+                        TvHomeSection(
+                            key = "continue_watching",
+                            title = "继续观看",
+                            videos = listOf(TvVideoCard(id = "resume-1", title = "续看", posterUrl = "")),
+                        ),
+                        TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                    ),
+                )
+            },
+        )
+
+        viewModel.load()
+
+        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
             "continue_watching",
             "hot_movies",
             "hot_tv_shows",
             "bangumi_calendar",
             "hot_shows",
-            "history",
-            "favorites",
         ).inOrder()
     }
 
@@ -78,7 +106,7 @@ class TvHomeViewModelTest {
     }
 
     /**
-     * 分类页应能按主菜单类型建立独立状态。
+     * 分类页默认展示简单筛选行（默认分类为"热门"，仅展示分类+地区两行）。
      */
     @Test
     fun createLibraryState_mapsDestinationToTitleAndFilterKind() {
@@ -86,11 +114,10 @@ class TvHomeViewModelTest {
 
         assertThat(state.categoryKey).isEqualTo("movie")
         assertThat(state.title).isEqualTo("电影")
+        // 默认分类=热门（非"全部"）→ simple mode，仅展示分类和地区。
         assertThat(state.availableFilters.map { it.key }).containsExactly(
-            "class",
-            "area",
-            "year",
-            "sort",
+            "分类",
+            "地区",
         ).inOrder()
     }
 
@@ -101,11 +128,11 @@ class TvHomeViewModelTest {
     fun selectLibraryFilter_updates_selected_and_focused_option() {
         val state = TvVideoLibraryUiState
             .forCategory("movie")
-            .selectFilterOption(filterKey = "class", optionKey = "douban")
+            .selectFilterOption(filterKey = "分类", optionKey = "豆瓣高分")
 
-        val classFilter = state.availableFilters.first { filter -> filter.key == "class" }
+        val classFilter = state.availableFilters.first { filter -> filter.key == "分类" }
         assertThat(classFilter.selectedOption.title).isEqualTo("豆瓣高分")
-        assertThat(classFilter.focusedOption.key).isEqualTo("douban")
+        assertThat(classFilter.focusedOption.key).isEqualTo("豆瓣高分")
         assertThat(state.selectedFilterSummary).contains("分类 豆瓣高分")
     }
 

@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -201,14 +203,6 @@ fun TvDetailRoute(
                 }
             }
 
-            if (state.showResumePrompt) {
-                NcatResumePrompt(
-                    state = state,
-                    onResumeFromRecord = onResumeFromRecord,
-                    onDismissResume = onDismissResume,
-                )
-            }
-
             NcatDetailHero(
                 state = state,
                 focusTargets = focusTargets,
@@ -246,12 +240,14 @@ fun TvDetailRoute(
                     cards = state.recommendCards,
                     focusTargets = focusTargets,
                     listState = recommendListState,
+                    hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
                 )
             }
 
             if (layoutSections.showBottomActions) {
                 NcatBottomActions(
                     focusTargets = focusTargets,
+                    hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
                     onHistoryClick = onHistoryClick,
                     onExitClick = onExitClick,
                 )
@@ -373,6 +369,7 @@ private fun NcatDetailTopBar(
         ) {
             NcatTopPill(
                 label = "⌕ 搜索",
+                width = 132.dp,
                 focusRequester = focusTargets.search,
                 modifier = Modifier.focusProperties {
                     right = focusTargets.login
@@ -382,6 +379,7 @@ private fun NcatDetailTopBar(
             )
             NcatTopPill(
                 label = "♟ 立即登录",
+                width = 164.dp,
                 focusRequester = focusTargets.login,
                 modifier = Modifier.focusProperties {
                     left = focusTargets.search
@@ -410,6 +408,7 @@ private fun NcatDetailTopBar(
 @Composable
 private fun NcatTopPill(
     label: String,
+    width: Dp,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -417,7 +416,7 @@ private fun NcatTopPill(
     TvFocusableCard(
         modifier = modifier
             .height(54.dp)
-            .widthIn(min = 118.dp),
+            .width(width),
         focusRequesters = listOf(focusRequester),
         onPressed = onClick,
     ) {
@@ -436,39 +435,6 @@ private fun NcatTopPill(
                 maxLines = 1,
             )
         }
-    }
-}
-
-/**
- * 截图式续播提示。
- *
- * @param state 详情页状态。
- * @param onResumeFromRecord 续播回调。
- * @param onDismissResume 忽略回调。
- */
-@Composable
-private fun NcatResumePrompt(
-    state: TvDetailUiState,
-    onResumeFromRecord: (() -> Unit)?,
-    onDismissResume: (() -> Unit)?,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 46.dp, vertical = 8.dp)
-            .background(Color(0xFF2B2F38), RoundedCornerShape(NcatRadius))
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "上次播放到第 ${state.resumeEpisodeIndex + 1} 集，是否继续？",
-            color = Color.White,
-            fontSize = 18.sp,
-            modifier = Modifier.weight(1f),
-        )
-        NcatSmallPill(label = "继续", accent = true, onClick = { onResumeFromRecord?.invoke() })
-        NcatSmallPill(label = "忽略", accent = false, onClick = { onDismissResume?.invoke() })
     }
 }
 
@@ -932,6 +898,7 @@ private fun NcatActionTile(
             .border(BorderStroke(3.dp, borderColor), RoundedCornerShape(NcatRadius))
             .focusRequester(focusRequester)
             .focusable(interactionSource = interactionSource)
+            .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
@@ -1061,6 +1028,7 @@ private fun NcatSourceCard(
             )
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
+            .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
@@ -1140,6 +1108,7 @@ private fun NcatEpisodeGroupRail(
 ) {
     val scrollScope = rememberCoroutineScope()
     val totalCount = groups.sumOf { group -> group.episodes.size }
+    val showGroupChoices = shouldShowDetailEpisodeGroupChoices(groups.size)
     NcatSectionHeader(
         title = "选集",
         hint = if (totalCount == 0) "暂无选集" else "(共${totalCount}集全)",
@@ -1155,44 +1124,46 @@ private fun NcatEpisodeGroupRail(
         return
     }
 
-    LazyRow(
-        state = episodeGroupListState,
-        horizontalArrangement = Arrangement.spacedBy(26.dp),
-        contentPadding = PaddingValues(start = 46.dp, end = 46.dp),
-        modifier = Modifier.height(92.dp),
-    ) {
-        items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
-            val group = groups[index]
-            NcatEpisodeGroupChoice(
-                label = group.label,
-                selected = group.selected,
-                focusRequester = focusTargets.episodeGroups.getOrNull(index),
-                modifier = Modifier
-                    .focusProperties {
-                        up = currentEpisodeFocusRequester
-                            ?: focusTargets.episodes.getOrNull(group.episodes.firstOrNull()?.episodeIndex ?: 0)
-                            ?: currentSourceFocusRequester
-                            ?: FocusRequester.Default
-                        down = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
-                            ?: focusTargets.backTop
-                        left = focusTargets.episodeGroups.getOrNull((index - 1).coerceAtLeast(0))
-                            ?: FocusRequester.Default
-                        right = focusTargets.episodeGroups.getOrNull((index + 1).coerceAtMost(groups.lastIndex))
-                            ?: FocusRequester.Default
-                    }
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused) {
-                            // 分组获焦时只滚动定位，确认键才切换当前分组。
-                            scrollDetailOptionIntoView(
-                                listState = episodeGroupListState,
-                                focusedIndex = index,
-                                itemCount = groups.size,
-                                scrollScope = scrollScope,
-                            )
+    if (showGroupChoices) {
+        LazyRow(
+            state = episodeGroupListState,
+            horizontalArrangement = Arrangement.spacedBy(26.dp),
+            contentPadding = PaddingValues(start = 46.dp, end = 46.dp),
+            modifier = Modifier.height(92.dp),
+        ) {
+            items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
+                val group = groups[index]
+                NcatEpisodeGroupChoice(
+                    label = group.label,
+                    selected = group.selected,
+                    focusRequester = focusTargets.episodeGroups.getOrNull(index),
+                    modifier = Modifier
+                        .focusProperties {
+                            up = currentEpisodeFocusRequester
+                                ?: focusTargets.episodes.getOrNull(group.episodes.firstOrNull()?.episodeIndex ?: 0)
+                                ?: currentSourceFocusRequester
+                                ?: FocusRequester.Default
+                            down = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
+                                ?: focusTargets.backTop
+                            left = focusTargets.episodeGroups.getOrNull((index - 1).coerceAtLeast(0))
+                                ?: FocusRequester.Default
+                            right = focusTargets.episodeGroups.getOrNull((index + 1).coerceAtMost(groups.lastIndex))
+                                ?: FocusRequester.Default
                         }
-                    },
-                onPressed = { onGroupSelected?.invoke(group.groupIndex) },
-            )
+                        .onFocusChanged { focusState ->
+                            if (focusState.isFocused) {
+                                // 分组获焦时只滚动定位，确认键才切换当前分组。
+                                scrollDetailOptionIntoView(
+                                    listState = episodeGroupListState,
+                                    focusedIndex = index,
+                                    itemCount = groups.size,
+                                    scrollScope = scrollScope,
+                                )
+                            }
+                        },
+                    onPressed = { onGroupSelected?.invoke(group.groupIndex) },
+                )
+            }
         }
     }
 
@@ -1213,7 +1184,9 @@ private fun NcatEpisodeGroupRail(
                 modifier = Modifier
                     .focusProperties {
                         up = currentSourceFocusRequester ?: FocusRequester.Default
-                        down = focusTargets.episodeGroups.getOrNull(selectedGroup.groupIndex)
+                        down = focusTargets.episodeGroups
+                            .getOrNull(selectedGroup.groupIndex)
+                            .takeIf { showGroupChoices }
                             ?: focusTargets.recommends.firstOrNull()
                             ?: focusTargets.backTop
                         left = focusTargets.episodes.getOrNull((episode.episodeIndex - 1).coerceAtLeast(0))
@@ -1269,6 +1242,7 @@ private fun NcatEpisodeGroupChoice(
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
+            .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
@@ -1338,6 +1312,7 @@ private fun NcatEpisodeChip(
             )
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
+            .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
@@ -1367,12 +1342,14 @@ private fun NcatEpisodeChip(
  * @param cards 推荐卡片。
  * @param focusTargets 焦点请求器。
  * @param listState 横向列表状态。
+ * @param hasEpisodeGroupChoices 是否展示选集分组切换条。
  */
 @Composable
 private fun NcatRecommendRail(
     cards: List<TvVideoCard>,
     focusTargets: TvDetailFocusTargets,
     listState: LazyListState,
+    hasEpisodeGroupChoices: Boolean,
 ) {
     val scrollScope = rememberCoroutineScope()
     NcatSectionHeader(
@@ -1393,7 +1370,9 @@ private fun NcatRecommendRail(
                 focusRequester = focusTargets.recommends.getOrNull(index),
                 modifier = Modifier
                     .focusProperties {
-                        up = focusTargets.episodeGroups.firstOrNull()
+                        up = focusTargets.episodeGroups
+                            .firstOrNull()
+                            .takeIf { hasEpisodeGroupChoices }
                             ?: focusTargets.episodes.firstOrNull()
                             ?: FocusRequester.Default
                         down = focusTargets.backTop
@@ -1524,12 +1503,14 @@ private fun NcatPosterPlaceholder() {
  * 截图式底部动作。
  *
  * @param focusTargets 焦点请求器。
+ * @param hasEpisodeGroupChoices 是否展示选集分组切换条。
  * @param onHistoryClick 历史入口回调。
  * @param onExitClick 退出或随机回调。
  */
 @Composable
 private fun NcatBottomActions(
     focusTargets: TvDetailFocusTargets,
+    hasEpisodeGroupChoices: Boolean,
     onHistoryClick: (() -> Unit)?,
     onExitClick: (() -> Unit)?,
 ) {
@@ -1546,7 +1527,7 @@ private fun NcatBottomActions(
                 focusRequester = focusTargets.backTop,
                 modifier = Modifier.focusProperties {
                     up = focusTargets.recommends.firstOrNull()
-                        ?: focusTargets.episodeGroups.firstOrNull()
+                        ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
                         ?: focusTargets.episodes.firstOrNull()
                         ?: FocusRequester.Default
                     right = focusTargets.random
@@ -1558,7 +1539,7 @@ private fun NcatBottomActions(
                 focusRequester = focusTargets.random,
                 modifier = Modifier.focusProperties {
                     up = focusTargets.recommends.firstOrNull()
-                        ?: focusTargets.episodeGroups.firstOrNull()
+                        ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
                         ?: focusTargets.episodes.firstOrNull()
                         ?: FocusRequester.Default
                     left = focusTargets.backTop
@@ -1703,6 +1684,23 @@ private fun NcatSmallPill(
         ) {
             Text(text = label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
+    }
+}
+
+/**
+ * 详情页自绘焦点控件的点击手势。
+ *
+ * @param onPressed 点击确认回调。
+ * @return 支持鼠标和触摸点击的修饰器。
+ */
+private fun Modifier.ncatClickable(onPressed: () -> Unit): Modifier {
+    return pointerInput(onPressed) {
+        detectTapGestures(
+            onTap = {
+                // 模拟器鼠标点击和真实触摸都走同一套确认逻辑。
+                onPressed()
+            },
+        )
     }
 }
 

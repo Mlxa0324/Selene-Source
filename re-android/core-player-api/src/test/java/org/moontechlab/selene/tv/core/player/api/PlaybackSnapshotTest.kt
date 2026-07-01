@@ -19,6 +19,10 @@ class PlaybackSnapshotTest {
             url = "https://cdn.test/3.m3u8",
             positionMs = 92_000L,
             durationMs = 1_800_000L,
+            cachedRanges = listOf(
+                PlaybackCachedRange(startMs = 90_000L, endMs = 180_000L),
+            ),
+            networkSpeedBytesPerSecond = 512_000L,
             playbackSpeed = 1.25f,
             resizeMode = TvResizeMode.FIT,
         )
@@ -26,6 +30,10 @@ class PlaybackSnapshotTest {
         assertThat(snapshot.sourceId).isEqualTo("source-a")
         assertThat(snapshot.episodeId).isEqualTo("ep-3")
         assertThat(snapshot.positionMs).isEqualTo(92_000L)
+        assertThat(snapshot.cachedRanges).containsExactly(
+            PlaybackCachedRange(startMs = 90_000L, endMs = 180_000L),
+        )
+        assertThat(snapshot.networkSpeedBytesPerSecond).isEqualTo(512_000L)
         assertThat(snapshot.playbackSpeed).isEqualTo(1.25f)
         assertThat(snapshot.resizeMode).isEqualTo(TvResizeMode.FIT)
     }

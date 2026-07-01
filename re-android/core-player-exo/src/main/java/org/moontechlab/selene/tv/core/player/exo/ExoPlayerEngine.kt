@@ -8,6 +8,7 @@ import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlaybackSnapshot
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.api.PlayerState
+import org.moontechlab.selene.tv.core.player.api.TvResizeMode
 
 /**
  * ExoPlayer 主播放内核。
@@ -72,6 +73,32 @@ class ExoPlayerEngine(
     }
 
     /**
+     * 设置播放倍速。
+     *
+     * @param speed 目标倍速。
+     */
+    override suspend fun setPlaybackSpeed(speed: Float) {
+        withContext(dispatchers.playback) {
+            player.setPlaybackSpeed(speed)
+            lastSnapshot = lastSnapshot?.copy(playbackSpeed = speed)
+            syncStateWithSnapshot()
+        }
+    }
+
+    /**
+     * 设置画面比例。
+     *
+     * @param resizeMode 目标画面比例。
+     */
+    override suspend fun setResizeMode(resizeMode: TvResizeMode) {
+        withContext(dispatchers.playback) {
+            player.setResizeMode(resizeMode)
+            lastSnapshot = lastSnapshot?.copy(resizeMode = resizeMode)
+            syncStateWithSnapshot()
+        }
+    }
+
+    /**
      * 捕获当前播放快照。
      *
      * @return 当前播放快照。
@@ -120,5 +147,16 @@ class ExoPlayerEngine(
             playbackSpeed = playbackSpeed,
             resizeMode = resizeMode,
         )
+    }
+
+    /**
+     * 用最新快照刷新当前播放状态。
+     */
+    private fun syncStateWithSnapshot() {
+        val snapshot = lastSnapshot ?: return
+        mutableState.value = when (mutableState.value) {
+            is PlayerState.Playing -> PlayerState.Playing(snapshot)
+            else -> PlayerState.Paused(snapshot = snapshot)
+        }
     }
 }

@@ -16,6 +16,7 @@ package org.moontechlab.selene.tv.core.data.model
  * @property saveTime 最近保存时间戳。
  * @property searchTitle 搜索回源标题。
  * @property origin 收藏来源描述。
+ * @property doubanRate 豆瓣评分（无评分为空字符串）。
  */
 data class TvVideoCard(
     val id: String,
@@ -31,4 +32,5 @@ data class TvVideoCard(
     val saveTime: Long = 0L,
     val searchTitle: String = "",
     val origin: String = "",
+    val doubanRate: String = "",
 )

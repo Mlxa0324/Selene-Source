@@ -3,9 +3,173 @@
 <head>
   <meta charset="utf-8" />
   <title>Selene TV WebView Player</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #player {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      object-fit: contain;
+    }
+  </style>
 </head>
 <body>
-  <video id="player" playsinline controls style="width:100%;height:100%;background:#000"></video>
+  <video id="player" playsinline autoplay></video>
   <script src="hls.min.js"></script>
+  <script>
+    const player = document.getElementById('player');
+    const sourceUrl = new URLSearchParams(window.location.search).get('url') || '';
+    let networkSpeedBytesPerSecond = 0;
+    let playRequested = true;
+
+    function logPlayerIssue(message, detail) {
+      const suffix = detail ? ` ${detail}` : '';
+      console.warn(`[SeleneWebViewPlayer] ${message}${suffix}`);
+    }
+
+    function finiteSeconds(value) {
+      return Number.isFinite(value) ? Math.max(0, value) : 0;
+    }
+
+    function collectCachedRanges() {
+      const ranges = [];
+      for (let index = 0; index < player.buffered.length; index += 1) {
+        ranges.push({
+          startMs: Math.round(finiteSeconds(player.buffered.start(index)) * 1000),
+          endMs: Math.round(finiteSeconds(player.buffered.end(index)) * 1000),
+        });
+      }
+      return ranges;
+    }
+
+    function resolveStatTimeMs(stats, key, fallbackKey) {
+      const loadingValue = Number(stats && stats.loading && stats.loading[key]);
+      if (Number.isFinite(loadingValue) && loadingValue > 0) {
+        return loadingValue;
+      }
+      const fallbackValue = Number(stats && stats[fallbackKey]);
+      return Number.isFinite(fallbackValue) ? fallbackValue : 0;
+    }
+
+    function updateNetworkSpeedFromStats(stats) {
+      const loadedBytes = Number(stats && stats.loaded);
+      const startedAtMs = resolveStatTimeMs(stats, 'start', 'trequest');
+      const endedAtMs = resolveStatTimeMs(stats, 'end', 'tload') || performance.now();
+      const elapsedMs = endedAtMs - startedAtMs;
+
+      if (Number.isFinite(loadedBytes) && loadedBytes > 0 && elapsedMs > 0) {
+        networkSpeedBytesPerSecond = Math.round((loadedBytes * 1000) / elapsedMs);
+      }
+    }
+
+    function reportPlaybackEvent() {
+      if (!window.SeleneAndroidPlayer || !window.SeleneAndroidPlayer.onPlaybackEvent) {
+        return;
+      }
+      window.SeleneAndroidPlayer.onPlaybackEvent(JSON.stringify({
+        positionMs: Math.round(finiteSeconds(player.currentTime) * 1000),
+        durationMs: Math.round(finiteSeconds(player.duration) * 1000),
+        cachedRanges: collectCachedRanges(),
+        networkSpeedBytesPerSecond,
+        isPlaying: !player.paused && !player.ended,
+      }));
+    }
+
+    window.selenePlayer = {
+      play() {
+        playRequested = true;
+        requestPlayback();
+      },
+      pause() {
+        playRequested = false;
+        player.pause();
+      },
+      seekTo(positionMs) {
+        const seconds = Math.max(0, Number(positionMs || 0) / 1000);
+        player.currentTime = seconds;
+      },
+      setPlaybackSpeed(speed) {
+        const normalizedSpeed = Math.max(0.25, Number(speed || 1));
+        player.playbackRate = normalizedSpeed;
+      },
+      setResizeMode(mode) {
+        player.style.width = '100%';
+        player.style.height = '100%';
+        player.style.objectFit = 'contain';
+
+        if (mode === 'FILL') {
+          player.style.objectFit = 'cover';
+        } else if (mode === 'WIDTH') {
+          player.style.width = '100%';
+          player.style.height = 'auto';
+        } else if (mode === 'HEIGHT') {
+          player.style.width = 'auto';
+          player.style.height = '100%';
+        }
+      },
+    };
+
+    function requestPlayback() {
+      if (!playRequested) {
+        return;
+      }
+      const playPromise = player.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch((error) => {
+          logPlayerIssue('play failed', error && error.message ? error.message : String(error));
+        });
+      }
+    }
+
+    player.addEventListener('timeupdate', reportPlaybackEvent);
+    player.addEventListener('durationchange', reportPlaybackEvent);
+    player.addEventListener('progress', reportPlaybackEvent);
+    player.addEventListener('play', reportPlaybackEvent);
+    player.addEventListener('pause', reportPlaybackEvent);
+    player.addEventListener('ended', reportPlaybackEvent);
+    player.addEventListener('loadedmetadata', requestPlayback);
+    player.addEventListener('canplay', requestPlayback);
+    player.addEventListener('error', () => {
+      const error = player.error;
+      logPlayerIssue('video error', error ? `code=${error.code}` : '');
+      reportPlaybackEvent();
+    });
+
+    if (sourceUrl) {
+      if (window.Hls && Hls.isSupported()) {
+        const hls = new Hls();
+        hls.on(Hls.Events.MANIFEST_PARSED, requestPlayback);
+        hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+          updateNetworkSpeedFromStats(data && data.stats);
+          reportPlaybackEvent();
+        });
+        hls.on(Hls.Events.ERROR, (event, data) => {
+          const detail = data ? `${data.type || ''}/${data.details || ''} fatal=${Boolean(data.fatal)}` : '';
+          logPlayerIssue('hls error', detail);
+          if (data && data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              hls.startLoad();
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              hls.recoverMediaError();
+            }
+          }
+          reportPlaybackEvent();
+        });
+        hls.loadSource(sourceUrl);
+        hls.attachMedia(player);
+      } else {
+        player.src = sourceUrl;
+        player.addEventListener('loadedmetadata', requestPlayback, { once: true });
+      }
+      requestPlayback();
+    }
+  </script>
 </body>
 </html>

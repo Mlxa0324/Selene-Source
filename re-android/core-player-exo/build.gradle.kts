@@ -28,6 +28,7 @@ dependencies {
     implementation(project(":core-design"))
     implementation(project(":core-player-api"))
     implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit4)

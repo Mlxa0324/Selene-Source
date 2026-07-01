@@ -21,7 +21,9 @@ data class TvSearchResultGroup(
  *
  * @property query 当前搜索词。
  * @property searchHistory 搜索历史。
+ * @property hotQueries 搜索热词。
  * @property resultGroups 搜索结果分组。
+ * @property showResults 是否展示搜索结果（查询为空时隐藏）。
  * @property isLoading 是否正在搜索。
  * @property errorMessage 搜索失败文案。
  */
@@ -30,6 +32,7 @@ data class TvSearchUiState(
     val searchHistory: List<String> = emptyList(),
     val hotQueries: List<String> = DEFAULT_HOT_QUERIES,
     val resultGroups: List<TvSearchResultGroup> = emptyList(),
+    val showResults: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -38,9 +41,11 @@ data class TvSearchUiState(
  * TV 搜索 ViewModel。
  *
  * @property search 搜索执行函数。
+ * @property loadSearchHistory 搜索历史加载函数。
  */
 class TvSearchViewModel(
     private val search: suspend (query: String) -> TvSearchPayload,
+    private val loadSearchHistory: suspend () -> List<String> = { emptyList() },
 ) {
     /** 搜索内部状态。 */
     private val mutableState = MutableStateFlow(TvSearchUiState())
@@ -49,19 +54,83 @@ class TvSearchViewModel(
     val state: StateFlow<TvSearchUiState> = mutableState
 
     /**
+     * 加载搜索历史。
+     */
+    suspend fun loadHistory() {
+        runCatching { loadSearchHistory() }
+            .onSuccess { history ->
+                mutableState.value = mutableState.value.copy(searchHistory = history)
+            }
+    }
+
+    /**
+     * 键盘追加一个字符到搜索词末尾。
+     *
+     * @param char 追加字符 (A-Z, 0-9)。
+     */
+    fun appendChar(char: String) {
+        val current = mutableState.value.query
+        if (current.length >= MAX_QUERY_LENGTH) return
+        mutableState.value = mutableState.value.copy(
+            query = current + char,
+            showResults = false,
+            resultGroups = emptyList(),
+            errorMessage = null,
+        )
+    }
+
+    /**
+     * 删除搜索词最后一个字符。
+     */
+    fun deleteLastChar() {
+        val current = mutableState.value.query
+        if (current.isEmpty()) return
+        mutableState.value = mutableState.value.copy(
+            query = current.dropLast(1),
+            showResults = false,
+            resultGroups = emptyList(),
+            errorMessage = null,
+        )
+    }
+
+    /**
+     * 清空搜索词。
+     */
+    fun clearQuery() {
+        mutableState.value = mutableState.value.copy(
+            query = "",
+            showResults = false,
+            resultGroups = emptyList(),
+            errorMessage = null,
+        )
+    }
+
+    /**
+     * 直接设置搜索词（来自历史/热词点击），不触发搜索。
+     *
+     * @param query 要设置的搜索词。
+     */
+    fun setQuery(query: String) {
+        mutableState.value = mutableState.value.copy(
+            query = query.trim(),
+            showResults = false,
+            resultGroups = emptyList(),
+            errorMessage = null,
+        )
+    }
+
+    /**
      * 提交搜索关键词。
      *
      * @param query 搜索关键词。
      */
     suspend fun submitQuery(query: String) {
         val normalizedQuery = query.trim()
-        if (normalizedQuery.isEmpty()) {
-            // 空搜索词不触发接口请求，保持遥控器误确认时状态稳定。
-            return
-        }
+        if (normalizedQuery.isEmpty()) return
 
         mutableState.value = mutableState.value.copy(
             query = normalizedQuery,
+            showResults = true,
             isLoading = true,
             errorMessage = null,
         )
@@ -81,7 +150,6 @@ class TvSearchViewModel(
                 )
             }
             .onFailure { throwable ->
-                // 搜索失败必须显式暴露给页面，不能退化成“暂无结果”。
                 mutableState.value = mutableState.value.copy(
                     isLoading = false,
                     errorMessage = throwable.message ?: "搜索失败",
@@ -92,6 +160,9 @@ class TvSearchViewModel(
     private companion object {
         /** 搜索结果默认分组标题。 */
         const val SEARCH_RESULT_GROUP_TITLE = "搜索结果"
+
+        /** 搜索词最大长度。 */
+        const val MAX_QUERY_LENGTH = 32
     }
 }
 

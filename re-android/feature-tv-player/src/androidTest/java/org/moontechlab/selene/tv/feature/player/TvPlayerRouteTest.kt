@@ -20,8 +20,12 @@ class TvPlayerRouteTest {
      */
     @Test
     fun player_route_opens_other_menu_and_shows_engine_switch_entry() {
+        val viewModel = TvPlayerViewModel().apply {
+            // 底部菜单默认隐藏，测试菜单项时先进入播放列表菜单态。
+            openMenu(PLAYER_MENU_PLAYLIST)
+        }
         composeRule.setContent {
-            TvPlayerRoute(viewModel = TvPlayerViewModel())
+            TvPlayerRoute(viewModel = viewModel)
         }
 
         composeRule.onNodeWithTag("tv-player-menu-other").performClick()
