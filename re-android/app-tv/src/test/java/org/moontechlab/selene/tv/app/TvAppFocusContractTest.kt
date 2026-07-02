@@ -15,6 +15,8 @@ class TvAppFocusContractTest {
     fun app_shell_scopes_content_focus_requester_to_current_route() {
         val source = readAppSource()
 
+        assertThat(source).contains("TvDesignCanvas(")
+        assertThat(source).contains("preset = TvDesignPreset.QHD_1440")
         assertThat(source).contains("remember(currentRoute)")
         assertThat(source).contains("FocusRequester()")
         assertThat(source).contains("contentFocusRequester = contentFocusRequester")

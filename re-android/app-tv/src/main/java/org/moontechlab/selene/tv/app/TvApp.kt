@@ -1,5 +1,4 @@
 package org.moontechlab.selene.tv.app
-
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import coil.Coil
@@ -55,6 +54,8 @@ import org.moontechlab.selene.tv.app.navigation.TvDestination
 import org.moontechlab.selene.tv.app.navigation.TvNavGraph
 import org.moontechlab.selene.tv.core.design.SeleneTvTheme
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.layout.TvDesignCanvas
+import org.moontechlab.selene.tv.core.design.layout.TvDesignPreset
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
 import java.time.LocalTime
@@ -66,100 +67,104 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun TvApp() {
     SeleneTvTheme {
-        val context = LocalContext.current
-        val navController = rememberNavController()
-        // 服务器配置变更时重新创建容器，确保新配置在后续请求中生效。
-        var serverConfigVersion by remember { mutableStateOf(0) }
-        val appContainer = remember(serverConfigVersion) {
-            TvAppContainer(
-                gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
-            )
-        }
-
-        // Coil 配置：对 doubanio.com 图片附加 Referer 头，避免 403 空白封面。
-        LaunchedEffect(Unit) {
-            withContext(Dispatchers.IO) {
-                val customClient = OkHttpClient.Builder()
-                    .addInterceptor { chain ->
-                        val request = chain.request()
-                        if (request.url.host.contains("doubanio.com")) {
-                            chain.proceed(
-                                request.newBuilder()
-                                    .header("Referer", "https://movie.douban.com/")
-                                    .header("User-Agent",
-                                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                                        "Chrome/121.0.0.0 Safari/537.36")
-                                    .build(),
-                            )
-                        } else {
-                            chain.proceed(request)
-                        }
-                    }
-                    .build()
-
-                Coil.setImageLoader(
-                    ImageLoader.Builder(context)
-                        .okHttpClient { customClient }
-                        .build(),
+        TvDesignCanvas(
+            preset = TvDesignPreset.QHD_1440,
+        ) {
+            val context = LocalContext.current
+            val navController = rememberNavController()
+            // 服务器配置变更时重新创建容器，确保新配置在后续请求中生效。
+            var serverConfigVersion by remember { mutableStateOf(0) }
+            val appContainer = remember(serverConfigVersion) {
+                TvAppContainer(
+                    gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
                 )
             }
-        }
-        val currentBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = currentBackStackEntry?.destination?.route
-        val contentFocusRequester = remember(currentRoute) {
-            // 顶层页面切换后必须换一个请求器，避免请求到旧页面保留的隐藏卡片。
-            FocusRequester()
-        }
-        var showCategoryFilter by remember { mutableStateOf(false) }
-        val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
-        LaunchedEffect(currentRoute) {
-            // 切换顶层页面后重置筛选面板可见态。
-            showCategoryFilter = false
-            if (!isPrimaryRoute) {
-                // 子页面（搜索/历史/收藏/设置/播放器）无顶部导航，直接落焦到内容区。
-                contentFocusRequester.requestFocus()
-            }
-        }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-        ) {
-            if (currentRoute in TvDestination.primaryMenuDestinations.map { it.route }) {
-                // 顶级导航只在主标签页展示，子页面（搜索/历史/收藏/设置/播放器）不显示。
-                TvTopNavigationBar(
-                    currentRoute = currentRoute,
-                    contentFocusRequester = contentFocusRequester,
-                    onNavigate = { destination ->
-                        if (destination.route != currentRoute) {
-                            // 点击顶部标签时只保留顶层单实例，避免重复入栈。
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.startDestinationId) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
+            // Coil 配置：对 doubanio.com 图片附加 Referer 头，避免 403 空白封面。
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    val customClient = OkHttpClient.Builder()
+                        .addInterceptor { chain ->
+                            val request = chain.request()
+                            if (request.url.host.contains("doubanio.com")) {
+                                chain.proceed(
+                                    request.newBuilder()
+                                        .header("Referer", "https://movie.douban.com/")
+                                        .header("User-Agent",
+                                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                                            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                                            "Chrome/121.0.0.0 Safari/537.36")
+                                        .build(),
+                                )
+                            } else {
+                                chain.proceed(request)
                             }
                         }
-                    },
-                    onFilterToggle = {
-                        showCategoryFilter = !showCategoryFilter
-                    },
-                )
+                        .build()
+
+                    Coil.setImageLoader(
+                        ImageLoader.Builder(context)
+                            .okHttpClient { customClient }
+                            .build(),
+                    )
+                }
+            }
+            val currentBackStackEntry by navController.currentBackStackEntryAsState()
+            val currentRoute = currentBackStackEntry?.destination?.route
+            val contentFocusRequester = remember(currentRoute) {
+                // 顶层页面切换后必须换一个请求器，避免请求到旧页面保留的隐藏卡片。
+                FocusRequester()
+            }
+            var showCategoryFilter by remember { mutableStateOf(false) }
+            val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
+            LaunchedEffect(currentRoute) {
+                // 切换顶层页面后重置筛选面板可见态。
+                showCategoryFilter = false
+                if (!isPrimaryRoute) {
+                    // 子页面（搜索/历史/收藏/设置/播放器）无顶部导航，直接落焦到内容区。
+                    contentFocusRequester.requestFocus()
+                }
             }
 
-            TvNavGraph(
-                navController = navController,
-                appContainer = appContainer,
-                contentFocusRequester = contentFocusRequester,
-                showCategoryFilter = showCategoryFilter,
-                onServerConfigSaved = {
-                    serverConfigVersion++
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
+                if (currentRoute in TvDestination.primaryMenuDestinations.map { it.route }) {
+                    // 顶级导航只在主标签页展示，子页面（搜索/历史/收藏/设置/播放器）不显示。
+                    TvTopNavigationBar(
+                        currentRoute = currentRoute,
+                        contentFocusRequester = contentFocusRequester,
+                        onNavigate = { destination ->
+                            if (destination.route != currentRoute) {
+                                // 点击顶部标签时只保留顶层单实例，避免重复入栈。
+                                navController.navigate(destination.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        onFilterToggle = {
+                            showCategoryFilter = !showCategoryFilter
+                        },
+                    )
+                }
+
+                TvNavGraph(
+                    navController = navController,
+                    appContainer = appContainer,
+                    contentFocusRequester = contentFocusRequester,
+                    showCategoryFilter = showCategoryFilter,
+                    onServerConfigSaved = {
+                        serverConfigVersion++
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
