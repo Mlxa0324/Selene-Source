@@ -3,7 +3,6 @@ package org.moontechlab.selene.tv.feature.detail
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvEpisode
-import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.data.model.TvVideoSource
 
 /**

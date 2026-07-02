@@ -43,10 +43,22 @@ fun TvPosterGrid(
     onItemClick: ((TvPosterItem) -> Unit)? = null,
     onApproachingEnd: (() -> Unit)? = null,
 ) {
-    val gridState = rememberSaveable(saver = LazyGridState.Saver) { LazyGridState() }
+    val designMetrics = LocalTvDesignMetrics.current
+    val gridState = rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyGridState.Saver,
+    ) {
+        LazyGridState()
+    }
     val firstCardFocusRequester = remember { FocusRequester() }
     val scrollScope = rememberCoroutineScope()
-    var lastFocusedItemIndex by rememberSaveable { mutableIntStateOf(0) }
+    var lastFocusedItemIndex by rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+    ) {
+        mutableIntStateOf(0)
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),

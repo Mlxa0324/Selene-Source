@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
+import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
 import org.moontechlab.selene.tv.core.design.layout.TvHomeSkeleton
@@ -100,7 +101,14 @@ fun TvHomeRoute(
         }
 
         val firstFocusableSectionIndex = firstFocusableHomeSectionIndex(state.sections)
-        val homeListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+        val designMetrics = LocalTvDesignMetrics.current
+        val homeListState = rememberSaveable(
+            designMetrics.viewportWidth.toInt(),
+            designMetrics.viewportHeight.toInt(),
+            saver = LazyListState.Saver,
+        ) {
+            LazyListState()
+        }
         val homeScrollScope = rememberCoroutineScope()
         LazyColumn(
             modifier = Modifier.fillMaxSize(),

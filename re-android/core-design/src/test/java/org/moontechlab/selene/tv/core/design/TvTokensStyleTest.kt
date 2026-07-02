@@ -26,6 +26,14 @@ class TvTokensStyleTest {
     }
 
     /**
+     * 默认海报占位色应使用统一的中性浅灰，避免首屏无图时出现杂色。
+     */
+    @Test
+    fun posterPlaceholder_usesNeutralGray() {
+        assertThat(TvTokens.PosterPlaceholder).isEqualTo(Color(0xFF3C424A))
+    }
+
+    /**
      * 首页首屏尺寸应对齐 Flutter TV 当前卡片和边距密度。
      */
     @Test

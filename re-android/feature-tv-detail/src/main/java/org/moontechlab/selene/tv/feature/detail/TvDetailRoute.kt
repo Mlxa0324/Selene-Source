@@ -70,6 +70,7 @@ import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
+import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
@@ -160,9 +161,28 @@ fun TvDetailRoute(
             recommends = state.recommendCards,
         )
     }
-    val sourceListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val episodeListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
-    val episodeGroupListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val designMetrics = LocalTvDesignMetrics.current
+    val sourceListState = rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyListState.Saver,
+    ) {
+        LazyListState()
+    }
+    val episodeListState = rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyListState.Saver,
+    ) {
+        LazyListState()
+    }
+    val episodeGroupListState = rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyListState.Saver,
+    ) {
+        LazyListState()
+    }
     val recommendListState = rememberLazyListState()
 
     Box(
