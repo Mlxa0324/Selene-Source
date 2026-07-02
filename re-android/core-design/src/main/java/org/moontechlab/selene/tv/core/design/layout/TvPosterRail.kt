@@ -36,10 +36,22 @@ fun TvPosterRail(
     onItemClick: ((TvPosterItem) -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
-    val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val designMetrics = LocalTvDesignMetrics.current
+    val listState = rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyListState.Saver,
+    ) {
+        LazyListState()
+    }
     val firstCardFocusRequester = remember { FocusRequester() }
     val scrollScope = rememberCoroutineScope()
-    var lastFocusedItemIndex by rememberSaveable { mutableIntStateOf(0) }
+    var lastFocusedItemIndex by rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+    ) {
+        mutableIntStateOf(0)
+    }
 
     LazyRow(
         modifier = modifier.posterFocusGroup(

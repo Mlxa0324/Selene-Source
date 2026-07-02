@@ -74,9 +74,13 @@ class TvDetailRouteFocusContractTest {
     fun detail_option_rows_scroll_focused_item_into_view() {
         val source = readRouteSource()
 
-        assertThat(source).contains("val sourceListState = rememberSaveable(saver = LazyListState.Saver)")
-        assertThat(source).contains("val episodeListState = rememberSaveable(saver = LazyListState.Saver)")
-        assertThat(source).contains("val episodeGroupListState = rememberSaveable(saver = LazyListState.Saver)")
+        assertThat(source).contains("val designMetrics = LocalTvDesignMetrics.current")
+        assertThat(source).contains("val sourceListState = rememberSaveable(")
+        assertThat(source).contains("val episodeListState = rememberSaveable(")
+        assertThat(source).contains("val episodeGroupListState = rememberSaveable(")
+        assertThat(source).contains("designMetrics.viewportWidth.toInt()")
+        assertThat(source).contains("designMetrics.viewportHeight.toInt()")
+        assertThat(source).contains("saver = LazyListState.Saver")
         assertThat(source).contains("listState = sourceListState")
         assertThat(source).contains("state = listState")
         assertThat(source).contains("state = episodeListState")

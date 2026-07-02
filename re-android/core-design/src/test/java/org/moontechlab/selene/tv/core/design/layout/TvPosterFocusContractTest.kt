@@ -50,6 +50,9 @@ class TvPosterFocusContractTest {
     fun posterRail_remembers_last_focused_card_for_top_navigation_reentry() {
         val source = readLayoutSource("TvPosterRail.kt")
 
+        assertThat(source).contains("val designMetrics = LocalTvDesignMetrics.current")
+        assertThat(source).contains("designMetrics.viewportWidth.toInt()")
+        assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("var lastFocusedItemIndex by rememberSaveable")
         assertThat(source).contains("val bindsContentEntry = index == lastFocusedItemIndex")
         assertThat(source).contains("if (bindsContentEntry) firstItemFocusRequester else null")
@@ -78,6 +81,9 @@ class TvPosterFocusContractTest {
     fun posterGrid_remembers_last_focused_card_for_top_navigation_reentry() {
         val source = readLayoutSource("TvPosterGrid.kt")
 
+        assertThat(source).contains("val designMetrics = LocalTvDesignMetrics.current")
+        assertThat(source).contains("designMetrics.viewportWidth.toInt()")
+        assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("var lastFocusedItemIndex by rememberSaveable")
         assertThat(source).contains("val bindsContentEntry = index == lastFocusedItemIndex")
         assertThat(source).contains("if (bindsContentEntry) firstItemFocusRequester else null")
@@ -111,6 +117,24 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("import androidx.compose.ui.focus.onFocusChanged")
         assertThat(source).contains("var hasCardFocus by remember { mutableStateOf(false) }")
         assertThat(source).contains("hasCardFocus = focusState.hasFocus")
+    }
+
+    /**
+     * 海报占位底色必须固定为统一浅灰，避免封面未返回时出现随机彩色卡片。
+     */
+    @Test
+    fun posterCard_uses_single_neutral_placeholder_color() {
+        val source = readLayoutSource("TvPosterCard.kt")
+        val placeholderSource = source.substringAfter("private fun posterBrushColors()")
+            .substringBefore("/**\n * 生成海报卡片辅助文案。")
+
+        assertThat(placeholderSource).contains("TvTokens.PosterPlaceholder")
+        assertThat(placeholderSource).doesNotContain("Color(0xFF16C784)")
+        assertThat(placeholderSource).doesNotContain("Color(0xFF1E90FF)")
+        assertThat(placeholderSource).doesNotContain("Color(0xFF8B5CF6)")
+        assertThat(placeholderSource).doesNotContain("Color(0xFFFFB020)")
+        assertThat(placeholderSource).doesNotContain("Color(0xFFE25555)")
+        assertThat(placeholderSource).doesNotContain("Color(0xFF2DD4BF)")
     }
 
     /**

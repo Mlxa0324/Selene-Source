@@ -5,7 +5,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.moontechlab.selene.tv.core.data.model.TvHomePayload
 import org.moontechlab.selene.tv.core.data.model.TvHomeSection
-import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 
 /**
  * TV 首页数据仓库。

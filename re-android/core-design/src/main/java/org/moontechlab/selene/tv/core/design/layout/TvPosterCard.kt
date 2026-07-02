@@ -60,8 +60,8 @@ fun TvPosterCard(
         label = "tvPosterCardScale",
     )
     val radius = RoundedCornerShape(TvTokens.CardRadius)
-    val colors = remember(item.id, item.posterUrl) {
-        posterBrushColors(item.id, item.posterUrl)
+    val colors = remember {
+        posterBrushColors()
     }
 
     Column(
@@ -113,7 +113,7 @@ fun TvPosterCard(
  * TV 海报封面区域。
  *
  * @param item 海报数据。
- * @param colors 无图和加载失败时使用的渐变兜底色。
+ * @param colors 无图和加载中时使用的渐变兜底色。
  * @param radius 封面圆角。
  */
 @Composable
@@ -295,25 +295,15 @@ fun TvMorePosterCard(
 /**
  * 计算海报卡片底图颜色。
  *
- * @param seed1 第一层哈希种子。
- * @param seed2 第二层哈希种子。
- * @return 用于海报背景的渐变色。
+ * @return 用于海报背景的固定浅灰渐变色。
  */
-private fun posterBrushColors(seed1: String, seed2: String): List<Color> {
-    val hash = (seed1 + seed2).hashCode()
-    val palette = listOf(
-        Color(0xFF16C784),
-        Color(0xFF1E90FF),
-        Color(0xFF8B5CF6),
-        Color(0xFFFFB020),
-        Color(0xFFE25555),
-        Color(0xFF2DD4BF),
+private fun posterBrushColors(): List<Color> {
+    // 海报首屏统一使用固定浅灰，避免无图时出现五颜六色的视觉噪音。
+    return listOf(
+        TvTokens.PosterPlaceholder,
+        TvTokens.PosterPlaceholder,
+        TvTokens.PosterPlaceholder,
     )
-    val base = palette[(hash and Int.MAX_VALUE) % palette.size]
-    val deep = base.copy(alpha = 0.24f)
-    val mid = base.copy(alpha = 0.44f)
-    val light = base.copy(alpha = 0.82f)
-    return listOf(deep, mid, light)
 }
 
 /**

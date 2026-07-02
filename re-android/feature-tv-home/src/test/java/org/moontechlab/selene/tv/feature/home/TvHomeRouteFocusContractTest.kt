@@ -38,7 +38,11 @@ class TvHomeRouteFocusContractTest {
     fun home_sections_render_inside_lazy_column_for_vertical_scroll() {
         val source = readRouteSource()
 
-        assertThat(source).contains("val homeListState = rememberSaveable(saver = LazyListState.Saver)")
+        assertThat(source).contains("val designMetrics = LocalTvDesignMetrics.current")
+        assertThat(source).contains("val homeListState = rememberSaveable(")
+        assertThat(source).contains("designMetrics.viewportWidth.toInt()")
+        assertThat(source).contains("designMetrics.viewportHeight.toInt()")
+        assertThat(source).contains("saver = LazyListState.Saver")
         assertThat(source).contains("LazyColumn(")
         assertThat(source).contains("state = homeListState")
     }

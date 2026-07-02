@@ -43,6 +43,11 @@ object TvTokens {
     val SurfaceElevated = Color(0xFF343946)
 
     /**
+     * TV 海报在封面未显示前使用的统一浅灰占位色。
+     */
+    val PosterPlaceholder = Color(0xFF3C424A)
+
+    /**
      * TV 端分割线与描边颜色。
      */
     val Outline = Color(0xFF4B515C)
