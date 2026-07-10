@@ -105,6 +105,7 @@ fun TvPlayerRoute(
         scope = scope,
         viewModel = viewModel,
     )
+    val playerRootFocusRequester = remember { FocusRequester() }
     val primaryMenuFocusRequesters = rememberPlayerMenuFocusRequesters(PLAYER_PRIMARY_MENU_ITEMS.size)
     val secondaryMenuFocusRequesters = rememberPlayerMenuFocusRequesters(
         count = resolveSecondaryMenuItemCount(state),
@@ -124,6 +125,16 @@ fun TvPlayerRoute(
         viewModel.loadInitialRequest()
         viewModel.loadSkipDurations()
         viewModel.loadDanmakuForCurrentRequest()
+    }
+
+    LaunchedEffect(state.isMenuVisible) {
+        if (state.isMenuVisible) {
+            // 菜单展开后把焦点交给当前一级菜单，保证上下行导航立即可用。
+            requestSelectedPrimaryMenuFocus()
+        } else {
+            // 首次进入全屏或菜单关闭后，根节点必须重新获焦，左右键才能稳定执行 seek。
+            runCatching { playerRootFocusRequester.requestFocus() }
+        }
     }
 
     LaunchedEffect(
@@ -164,6 +175,7 @@ fun TvPlayerRoute(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .focusRequester(playerRootFocusRequester)
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyUp && event.key.isSeekDirectionKey()) {
                     // 方向键松手立刻停止连续 seek，避免松手后进度继续跳动。
@@ -174,12 +186,10 @@ fun TvPlayerRoute(
                     return@onPreviewKeyEvent false
                 }
                 when (event.key) {
-                    Key.Back,
-                    Key.Escape,
-                    -> {
+                    Key.Escape -> {
                         continuousSeekState.stop()
                         if (state.isMenuVisible) {
-                            // 返回键先收起菜单；菜单未开时才退出播放器页。
+                            // 键盘 ESC 先收起菜单；系统返回键统一交给 BackHandler，避免一次按键被消费两遍。
                             viewModel.closeMenu()
                         } else {
                             onExitRequested()
@@ -238,6 +248,7 @@ fun TvPlayerRoute(
                     else -> false
                 }
             }
+            .focusable()
             .padding(36.dp),
     ) {
         Box(
@@ -1123,7 +1134,7 @@ private class ContinuousSeekState(
 
             var holdMs = CONTINUOUS_SEEK_START_DELAY_MS
             while (isActive) {
-                // 长按进入内部节拍后，每 100ms 按 12/18 秒规则连续推进。
+                // 长按进入内部节拍后，每 100ms 按 12/22 秒分档规则连续推进。
                 viewModel.seekByDirection(
                     direction = direction,
                     holdMs = holdMs,

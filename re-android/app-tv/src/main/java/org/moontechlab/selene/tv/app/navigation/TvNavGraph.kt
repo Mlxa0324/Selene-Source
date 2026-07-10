@@ -1,5 +1,6 @@
 package org.moontechlab.selene.tv.app.navigation
 
+import android.util.Log
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -11,17 +12,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import androidx.compose.ui.platform.LocalContext
 import coil.Coil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.moontechlab.selene.tv.app.TvAppContainer
+import org.moontechlab.selene.tv.app.TvSharedPlayerHost
+import org.moontechlab.selene.tv.app.TvSharedPlayerSession
+import org.moontechlab.selene.tv.core.player.exo.ExoPlayerEngine
+import org.moontechlab.selene.tv.core.player.exo.ExoPlayerSurface
 import org.moontechlab.selene.tv.core.player.webview.WebViewPlayerSurface
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesRoute
 import org.moontechlab.selene.tv.feature.history.TvHistoryRoute
@@ -51,9 +57,39 @@ fun TvNavGraph(
     onServerConfigSaved: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val playbackRequestStore = remember { TvPlaybackRequestStore() }
     var danmakuMatchPlaybackRequest by remember {
         mutableStateOf<org.moontechlab.selene.tv.core.player.api.PlaybackRequest?>(null)
+    }
+    val sharedPlayerHost = remember(appContainer, context) {
+        TvSharedPlayerHost(
+            createExoSession = {
+                val engine = appContainer.createExoPlayerEngine(context) as ExoPlayerEngine
+                TvSharedPlayerSession(
+                    kernel = "exo",
+                    playerEngine = engine,
+                    exoEngine = engine,
+                )
+            },
+            createWebViewSession = {
+                val session = appContainer.createWebViewPlayerSession()
+                TvSharedPlayerSession(
+                    kernel = "webview",
+                    playerEngine = session.engine,
+                    webViewSession = session,
+                )
+            },
+        )
+    }
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute.isNotBlank() && currentRoute !in playbackFlowRoutes) {
+            // 只有离开整条播放流后才统一释放共享播放器资源，详情/全屏/弹幕匹配内部切换不释放。
+            sharedPlayerHost.clearPlaybackFlow()
+        }
     }
 
     NavHost(
@@ -343,15 +379,57 @@ fun TvNavGraph(
             val source = TvDestination.Detail.parseSource(videoKey)
             val videoId = TvDestination.Detail.parseVideoId(videoKey)
             val videoTitle = TvDestination.Detail.parseTitle(videoKey)
-            val detailPlayerSession = remember(source, videoId, appContainer) {
-                appContainer.createWebViewPlayerSession()
+            var playerKernel by remember { mutableStateOf(appContainer.peekPlayerKernel()) }
+            LaunchedEffect(Unit) {
+                playerKernel = appContainer.getPlayerKernel()
             }
-            val detailViewModel = remember(source, videoId, videoTitle, appContainer) {
-                appContainer.createDetailViewModel(source, videoTitle, playerEngine = detailPlayerSession.engine)
+            LaunchedEffect(playerKernel, source, videoId) {
+                // 详情页每次进入或切换内核时都打印一次真实选核结果，方便 adb 直接判定当前是否真走 Exo。
+                Log.i(
+                    TV_NAV_LOG_TAG,
+                    "detailRoute kernel=$playerKernel source=$source videoId=$videoId",
+                )
+            }
+            val sharedPlayerSession = remember(playerKernel, sharedPlayerHost) {
+                sharedPlayerHost.openOrReuseSession(playerKernel)
+            }
+            val detailSessionKey = remember(source, videoId, playerKernel) {
+                listOf(source, videoId, playerKernel).joinToString(separator = "::")
+            }
+            val detailViewModel = remember(
+                detailSessionKey,
+                source,
+                videoTitle,
+                appContainer,
+                sharedPlayerHost,
+                sharedPlayerSession,
+            ) {
+                sharedPlayerHost.openOrReuseDetailViewModel(detailSessionKey) {
+                    appContainer.createDetailViewModel(
+                        source = source,
+                        videoTitle = videoTitle,
+                        playerEngine = sharedPlayerSession.playerEngine,
+                    )
+                }
             }
             val detailState by detailViewModel.state.collectAsState()
             LaunchedEffect(source, videoId, detailViewModel) {
-                detailViewModel.load(videoId)
+                detailViewModel.ensureLoaded(videoId)
+            }
+            LaunchedEffect(detailState.playbackRequest, detailState.currentSourceId, detailState.detail) {
+                detailState.playbackRequest?.let { request ->
+                    val sources = detailState.detail?.sources.orEmpty().map { sourceItem ->
+                        org.moontechlab.selene.tv.core.player.api.PlaybackSource(sourceItem.id, sourceItem.name)
+                    }
+                    val episodes = detailState.currentSource?.episodes.orEmpty().map { episode ->
+                        org.moontechlab.selene.tv.core.player.api.PlaybackEpisode(episode.id, episode.title)
+                    }
+                    sharedPlayerHost.updatePlaybackContext(
+                        request = request,
+                        sources = sources,
+                        episodes = episodes,
+                    )
+                }
             }
             TvDetailRoute(
                 state = detailState,
@@ -365,6 +443,11 @@ fun TvNavGraph(
                         val episodes = detailState.currentSource?.episodes.orEmpty().map {
                             org.moontechlab.selene.tv.core.player.api.PlaybackEpisode(it.id, it.title)
                         }
+                        sharedPlayerHost.updatePlaybackContext(
+                            request = request,
+                            sources = sources,
+                            episodes = episodes,
+                        )
                         val requestId = playbackRequestStore.save(request, sources, episodes)
                         navController.navigate(TvDestination.Player.createRoute(requestId))
                     }
@@ -375,13 +458,23 @@ fun TvNavGraph(
                 onEpisodeGroupSelected = { group -> detailViewModel.selectEpisodeGroup(group) },
                 onHistoryClick = { navController.navigate(TvDestination.History.route) },
                 onExitClick = { navController.popBackStack() },
-                playerSurface = {
-                    WebViewPlayerSurface(
-                        playbackRequest = detailState.playbackRequest,
-                        modifier = Modifier.fillMaxSize(),
-                        commandBus = detailPlayerSession.commandBus,
-                        onPlaybackEvent = detailPlayerSession.engine::updateFromWebView,
-                    )
+                playerSurface = if (playerKernel == "exo") {
+                    {
+                        ExoPlayerSurface(
+                            exoPlayer = sharedPlayerSession.exoEngine?.exoPlayer,
+                            isActive = currentRoute == TvDestination.Detail.route,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                } else {
+                    {
+                        WebViewPlayerSurface(
+                            session = sharedPlayerSession.webViewSession,
+                            playbackRequest = detailState.playbackRequest,
+                            isActive = currentRoute == TvDestination.Detail.route,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 },
             )
         }
@@ -397,17 +490,36 @@ fun TvNavGraph(
             val requestId = backStackEntry.arguments
                 ?.getString(TvDestination.Player.requestIdArg)
                 .orEmpty()
-            val playbackContext = remember(requestId) {
-                playbackRequestStore.getContext(requestId)
+            val playbackContext = sharedPlayerHost.currentContext
+                ?: playbackRequestStore.getContext(requestId)?.toSharedPlaybackContext()
+            LaunchedEffect(requestId, playbackContext) {
+                if (sharedPlayerHost.currentContext == null && playbackContext != null) {
+                    sharedPlayerHost.updatePlaybackContext(
+                        request = playbackContext.request,
+                        sources = playbackContext.sources,
+                        episodes = playbackContext.episodes,
+                    )
+                }
             }
             val playbackRequest = playbackContext?.request
-            val webViewPlayerSession = remember(requestId, appContainer) {
-                appContainer.createWebViewPlayerSession()
+            var playerKernel by remember { mutableStateOf(appContainer.peekPlayerKernel()) }
+            LaunchedEffect(Unit) {
+                playerKernel = appContainer.getPlayerKernel()
             }
-            val playerViewModel = remember(requestId, playbackRequest, appContainer) {
+            LaunchedEffect(playerKernel, requestId, playbackRequest?.videoId, playbackRequest?.sourceId) {
+                // 全屏播放器也记录同一份选核日志，避免详情页和全屏页使用了不同内核却看不出来。
+                Log.i(
+                    TV_NAV_LOG_TAG,
+                    "playerRoute kernel=$playerKernel requestId=$requestId source=${playbackRequest?.sourceId.orEmpty()} videoId=${playbackRequest?.videoId.orEmpty()}",
+                )
+            }
+            val sharedPlayerSession = remember(playerKernel, sharedPlayerHost) {
+                sharedPlayerHost.openOrReuseSession(playerKernel)
+            }
+            val playerViewModel = remember(requestId, playbackRequest, appContainer, sharedPlayerSession, playbackContext) {
                 appContainer.createPlayerViewModel(
                     playbackRequest = playbackRequest,
-                    playerEngine = webViewPlayerSession.engine,
+                    playerEngine = sharedPlayerSession.playerEngine,
                     availableSources = playbackContext?.sources.orEmpty(),
                     allEpisodes = playbackContext?.episodes.orEmpty(),
                 )
@@ -415,13 +527,23 @@ fun TvNavGraph(
             TvPlayerRoute(
                 playbackRequest = playbackRequest,
                 viewModel = playerViewModel,
-                playerSurface = { state ->
-                    WebViewPlayerSurface(
-                        playbackRequest = state.playbackRequest,
-                        modifier = Modifier.fillMaxSize(),
-                        commandBus = webViewPlayerSession.commandBus,
-                        onPlaybackEvent = webViewPlayerSession.engine::updateFromWebView,
-                    )
+                playerSurface = if (playerKernel == "exo") {
+                    { _ ->
+                        ExoPlayerSurface(
+                            exoPlayer = sharedPlayerSession.exoEngine?.exoPlayer,
+                            isActive = currentRoute == TvDestination.Player.route,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                } else {
+                    { state ->
+                        WebViewPlayerSurface(
+                            session = sharedPlayerSession.webViewSession,
+                            playbackRequest = state.playbackRequest,
+                            isActive = currentRoute == TvDestination.Player.route,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 },
                 onDanmakuMatchRequested = { query ->
                     danmakuMatchPlaybackRequest = playbackRequest
@@ -451,6 +573,27 @@ internal fun TvHomeSectionMoreTarget.toDestination(): TvDestination {
         TvHomeSectionMoreTarget.Favorites -> TvDestination.Favorites
     }
 }
+
+/** TV 导航图日志标签。 */
+private const val TV_NAV_LOG_TAG = "SeleneTvNav"
+
+/** 共享播放器允许保活的播放流路由集合。 */
+private val playbackFlowRoutes = setOf(
+    TvDestination.Detail.route,
+    TvDestination.Player.route,
+    TvDestination.DanmakuMatch.route,
+)
+
+/**
+ * 将旧的导航暂存上下文映射为共享播放器上下文。
+ *
+ * @return 共享播放器可复用的播放上下文。
+ */
+private fun TvPlaybackContext.toSharedPlaybackContext() = org.moontechlab.selene.tv.app.TvSharedPlaybackContext(
+    request = request,
+    sources = sources,
+    episodes = episodes,
+)
 
 /**
  * 远端分类视频库路由。

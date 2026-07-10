@@ -36,6 +36,8 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.kotlinx.coroutines.android)
+    // 播放事件桥接直接解析标准 JSON，避免 Android ICU 正则差异导致桥接线程崩溃。
+    implementation(libs.retrofit.converter.gson)
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)

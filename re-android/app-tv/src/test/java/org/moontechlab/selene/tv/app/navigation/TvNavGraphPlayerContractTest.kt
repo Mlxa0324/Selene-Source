@@ -39,7 +39,7 @@ class TvNavGraphPlayerContractTest {
         val source = readNavGraphSource()
 
         assertThat(source).contains("import org.moontechlab.selene.tv.core.player.webview.WebViewPlayerSurface")
-        assertThat(source).contains("playerSurface = { state ->")
+        assertThat(source).contains("ExoPlayerSurface")
         assertThat(source).contains("WebViewPlayerSurface(")
         assertThat(source).contains("playbackRequest = state.playbackRequest")
         assertThat(source).contains("modifier = Modifier.fillMaxSize()")
@@ -52,11 +52,43 @@ class TvNavGraphPlayerContractTest {
     fun player_route_shares_webview_session_between_view_model_and_surface() {
         val source = readNavGraphSource()
 
-        assertThat(source).contains("val webViewPlayerSession = remember(requestId, appContainer)")
-        assertThat(source).contains("appContainer.createWebViewPlayerSession()")
+        assertThat(source).contains("val sharedPlayerHost = remember(appContainer, context)")
+        assertThat(source).contains("sharedPlayerHost.openOrReuseSession(")
         assertThat(source).contains("appContainer.createPlayerViewModel(")
-        assertThat(source).contains("playerEngine = webViewPlayerSession.engine")
-        assertThat(source).contains("commandBus = webViewPlayerSession.commandBus")
+        assertThat(source).contains("sharedPlayerSession.webViewSession")
+        assertThat(source).contains("session = sharedPlayerSession.webViewSession")
+    }
+
+    /**
+     * 详情页和全屏页必须按当前路由显式接管共享画面输出，返回时不能依赖平台视图偶然重组。
+     */
+    @Test
+    fun detail_and_player_routes_switch_shared_surface_ownership_by_active_route() {
+        val source = readNavGraphSource()
+
+        assertThat(source).contains("isActive = currentRoute == TvDestination.Detail.route")
+        assertThat(source).contains("isActive = currentRoute == TvDestination.Player.route")
+    }
+
+    /**
+     * 详情页和播放器页首次组合时必须先使用偏好快照，避免异步设置回读前误走 Exo 默认链路。
+     */
+    @Test
+    fun detail_and_player_routes_seed_kernel_from_container_snapshot() {
+        val source = readNavGraphSource()
+
+        assertThat(source).contains("mutableStateOf(appContainer.peekPlayerKernel())")
+    }
+
+    /**
+     * 详情页返回时必须复用共享状态机会话，并且只做幂等加载检查，不能每次回退都重跑详情请求。
+     */
+    @Test
+    fun detail_route_reuses_retained_view_model_and_uses_idempotent_load_gate() {
+        val source = readNavGraphSource()
+
+        assertThat(source).contains("sharedPlayerHost.openOrReuseDetailViewModel(detailSessionKey)")
+        assertThat(source).contains("detailViewModel.ensureLoaded(videoId)")
     }
 
     /**
@@ -65,8 +97,11 @@ class TvNavGraphPlayerContractTest {
     @Test
     fun player_route_routes_webview_playback_events_back_to_engine() {
         val source = readNavGraphSource()
+        val surfaceSource = readWebViewSurfaceSource()
 
-        assertThat(source).contains("onPlaybackEvent = webViewPlayerSession.engine::updateFromWebView")
+        assertThat(source).contains("WebViewPlayerSurface(")
+        assertThat(source).contains("session = sharedPlayerSession.webViewSession")
+        assertThat(surfaceSource).contains("session.bindPlaybackEventCallback(session.engine::updateFromWebView)")
     }
 
     /**
@@ -127,6 +162,16 @@ class TvNavGraphPlayerContractTest {
      */
     private fun readNavGraphSource(): String {
         return File("src/main/java/org/moontechlab/selene/tv/app/navigation/TvNavGraph.kt")
+            .readText()
+    }
+
+    /**
+     * 读取 WebView 播放画面层源码。
+     *
+     * @return 当前 WebView surface 源码文本。
+     */
+    private fun readWebViewSurfaceSource(): String {
+        return File("../core-player-webview/src/main/java/org/moontechlab/selene/tv/core/player/webview/WebViewPlayerSurface.kt")
             .readText()
     }
 }

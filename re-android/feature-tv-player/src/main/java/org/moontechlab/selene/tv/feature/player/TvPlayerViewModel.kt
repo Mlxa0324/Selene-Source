@@ -8,6 +8,8 @@ import org.moontechlab.selene.tv.core.player.api.PlaybackSource
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.api.PlayerState
 import org.moontechlab.selene.tv.core.player.api.TvResizeMode
+import org.moontechlab.selene.tv.core.player.api.matchesPlaybackRequest
+import org.moontechlab.selene.tv.core.player.api.snapshotOrNull
 
 /**
  * TV 全屏播放器界面状态。
@@ -176,6 +178,15 @@ class TvPlayerViewModel(
     suspend fun loadInitialRequest() {
         val request = mutableState.value.playbackRequest ?: return
         val engine = playerEngine ?: return
+        if (engine.state.value.matchesPlaybackRequest(request)) {
+            // 详情页预览切全屏时，如果共享会话已经在同一媒体上，直接接管状态，避免再次重载。
+            mutableState.value = mutableState.value.copy(
+                isPlayerLoading = false,
+                playerErrorMessage = null,
+            )
+            syncPlayerState(engine.state.value)
+            return
+        }
         mutableState.value = mutableState.value.copy(
             isPlayerLoading = true,
             playerErrorMessage = null,
@@ -671,20 +682,6 @@ class TvPlayerViewModel(
             seekOverlayDurationMs = durationMs,
         )
     }
-}
-
-/**
- * 读取播放器状态里的播放快照。
- *
- * @return 有进度信息的播放快照，空闲和加载态返回空。
- */
-private fun PlayerState.snapshotOrNull() = when (this) {
-    is PlayerState.Playing -> snapshot
-    is PlayerState.Paused -> snapshot
-    is PlayerState.Error,
-    PlayerState.Idle,
-    PlayerState.Loading,
-    -> null
 }
 
 /**

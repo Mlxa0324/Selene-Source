@@ -73,13 +73,21 @@
       if (!window.SeleneAndroidPlayer || !window.SeleneAndroidPlayer.onPlaybackEvent) {
         return;
       }
-      window.SeleneAndroidPlayer.onPlaybackEvent(JSON.stringify({
+      const payload = JSON.stringify({
         positionMs: Math.round(finiteSeconds(player.currentTime) * 1000),
         durationMs: Math.round(finiteSeconds(player.duration) * 1000),
         cachedRanges: collectCachedRanges(),
         networkSpeedBytesPerSecond,
         isPlaying: !player.paused && !player.ended,
-      }));
+      });
+      try {
+        window.SeleneAndroidPlayer.onPlaybackEvent(payload);
+      } catch (bridgeError) {
+        logPlayerIssue(
+          'bridge callback failed',
+          bridgeError && bridgeError.message ? bridgeError.message : String(bridgeError),
+        );
+      }
     }
 
     window.selenePlayer = {

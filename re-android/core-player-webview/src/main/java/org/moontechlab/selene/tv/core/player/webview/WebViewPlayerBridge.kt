@@ -1,5 +1,8 @@
 package org.moontechlab.selene.tv.core.player.webview
 
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+
 /**
  * WebView 播放事件状态。
  *
@@ -39,13 +42,14 @@ class WebViewPlayerBridge {
      * @return 原生播放事件。
      */
     fun mapEvent(payload: String): WebViewPlaybackEvent {
-        // 首期只解析播放器核心字段，避免为简单桥接引入额外 JSON 依赖。
+        // 播放页本身上报的是标准 JSON，这里直接按结构解析，避免 Android ICU 正则差异把桥接线程打崩。
+        val payloadJson = JsonParser.parseString(payload).asJsonObject
         return WebViewPlaybackEvent(
-            positionMs = payload.readLongField("positionMs"),
-            durationMs = payload.readLongField("durationMs"),
-            isPlaying = payload.readBooleanField("isPlaying"),
-            cachedRanges = payload.readCachedRanges(),
-            networkSpeedBytesPerSecond = payload.readLongField("networkSpeedBytesPerSecond"),
+            positionMs = payloadJson.readLongField("positionMs"),
+            durationMs = payloadJson.readLongField("durationMs"),
+            isPlaying = payloadJson.readBooleanField("isPlaying"),
+            cachedRanges = payloadJson.readCachedRanges(),
+            networkSpeedBytesPerSecond = payloadJson.readLongField("networkSpeedBytesPerSecond"),
         )
     }
 
@@ -55,9 +59,8 @@ class WebViewPlayerBridge {
      * @param name 字段名。
      * @return 字段数值；缺失时返回 0。
      */
-    private fun String.readLongField(name: String): Long {
-        val regex = Regex("\\\"$name\\\"\\s*:\\s*(\\d+)")
-        return regex.find(this)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
+    private fun JsonObject.readLongField(name: String): Long {
+        return get(name)?.takeUnless { it.isJsonNull }?.asLong ?: 0L
     }
 
     /**
@@ -66,9 +69,8 @@ class WebViewPlayerBridge {
      * @param name 字段名。
      * @return 字段布尔值；缺失时返回 false。
      */
-    private fun String.readBooleanField(name: String): Boolean {
-        val regex = Regex("\\\"$name\\\"\\s*:\\s*(true|false)")
-        return regex.find(this)?.groupValues?.getOrNull(1)?.toBooleanStrictOrNull() ?: false
+    private fun JsonObject.readBooleanField(name: String): Boolean {
+        return get(name)?.takeUnless { it.isJsonNull }?.asBoolean ?: false
     }
 
     /**
@@ -76,20 +78,18 @@ class WebViewPlayerBridge {
      *
      * @return WebView 已缓存区间。
      */
-    private fun String.readCachedRanges(): List<WebViewCachedRange> {
-        val rangeRegex = Regex(
-            "\\{\\s*\\\"startMs\\\"\\s*:\\s*(\\d+)\\s*,\\s*\\\"endMs\\\"\\s*:\\s*(\\d+)\\s*}",
-        )
-        return rangeRegex.findAll(this)
-            .mapNotNull { match ->
-                val startMs = match.groupValues.getOrNull(1)?.toLongOrNull()
-                val endMs = match.groupValues.getOrNull(2)?.toLongOrNull()
-                if (startMs == null || endMs == null || endMs <= startMs) {
-                    null
-                } else {
-                    WebViewCachedRange(startMs = startMs, endMs = endMs)
+    private fun JsonObject.readCachedRanges(): List<WebViewCachedRange> {
+        val cachedRangesJson = getAsJsonArray("cachedRanges") ?: return emptyList()
+        return buildList {
+            for (index in 0 until cachedRangesJson.size()) {
+                // 单个缓存片段字段缺失时只跳过当前片段，不能把整条播放事件直接判废。
+                val rangeJson = cachedRangesJson.get(index)?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                val startMs = rangeJson.get("startMs")?.takeUnless { it.isJsonNull }?.asLong ?: -1L
+                val endMs = rangeJson.get("endMs")?.takeUnless { it.isJsonNull }?.asLong ?: -1L
+                if (startMs >= 0L && endMs > startMs) {
+                    add(WebViewCachedRange(startMs = startMs, endMs = endMs))
                 }
             }
-            .toList()
+        }
     }
 }
