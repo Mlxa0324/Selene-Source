@@ -34,6 +34,20 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
+     * 全屏播放器必须主动持有根焦点，并在菜单关闭后抢回焦点。
+     */
+    @Test
+    fun route_requests_root_focus_for_fullscreen_keyboard_controls() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("val playerRootFocusRequester = remember { FocusRequester() }")
+        assertThat(source).contains("LaunchedEffect(state.isMenuVisible)")
+        assertThat(source).contains("playerRootFocusRequester.requestFocus()")
+        assertThat(source).contains(".focusRequester(playerRootFocusRequester)")
+        assertThat(source).contains(".focusable()")
+    }
+
+    /**
      * 左右键长按 repeat 必须把 Android 原生按住时长传给 seek 规则，不能永远当短按处理。
      */
     @Test
@@ -82,6 +96,28 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
+     * 方向键 KeyUp 分支必须先停止连续 seek，再消费本次松手事件。
+     */
+    @Test
+    fun route_direction_key_up_branch_stops_continuous_seek_before_consuming_event() {
+        val source = readRouteSource()
+        val keyUpCondition =
+            "if (event.type == KeyEventType.KeyUp && event.key.isSeekDirectionKey()) {"
+        val keyUpBranchStart = source.indexOf(keyUpCondition)
+
+        assertThat(keyUpBranchStart).isAtLeast(0)
+
+        // 只截取方向键 KeyUp 分支，避免其它生命周期 stop 调用造成契约误判。
+        val keyUpBranchEnd = source.indexOf(
+            string = "return@onPreviewKeyEvent true",
+            startIndex = keyUpBranchStart,
+        )
+        assertThat(keyUpBranchEnd).isGreaterThan(keyUpBranchStart)
+        assertThat(source.substring(keyUpBranchStart, keyUpBranchEnd))
+            .contains("continuousSeekState.stop()")
+    }
+
+    /**
      * 左右键 seek 后必须显示中心进度提示，并在短暂停留后自动隐藏。
      */
     @Test
@@ -107,17 +143,18 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
-     * 返回键和 ESC 必须复刻 Flutter TV：菜单打开时关闭菜单，菜单隐藏时退出播放器。
+     * 系统返回键和键盘 ESC 必须复刻 Flutter TV，且不能由两套处理器重复消费。
      */
     @Test
     fun route_back_and_escape_close_menu_before_exit() {
         val source = readRouteSource()
 
         assertThat(source).contains("onExitRequested: () -> Unit = {}")
-        assertThat(source).contains("Key.Back")
+        assertThat(source).contains("BackHandler {")
         assertThat(source).contains("Key.Escape")
         assertThat(source).contains("viewModel.closeMenu()")
         assertThat(source).contains("onExitRequested()")
+        assertThat(source).doesNotContain("Key.Back,")
     }
 
     /**

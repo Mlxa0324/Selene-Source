@@ -62,6 +62,40 @@ class TvPlayerViewModelTest {
     }
 
     /**
+     * 共享播放器会话已经在播放同一媒体时，全屏页不能重复触发一次 load。
+     */
+    @Test
+    fun loadInitialRequest_skips_reload_when_engine_already_has_same_media() = runTest {
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-2",
+            url = "https://cdn.test/video.m3u8",
+            startPositionMs = 18_000L,
+        )
+        val engine = RecordingPlayerEngine(durationMs = 120_000L)
+        engine.emitState(
+            PlayerState.Paused(
+                snapshot = request.toTestSnapshot(
+                    positionMs = 36_000L,
+                    durationMs = 120_000L,
+                ),
+            ),
+        )
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+        )
+
+        viewModel.loadInitialRequest()
+
+        assertThat(engine.loadCalls).isEqualTo(0)
+        assertThat(viewModel.state.value.currentPositionMs).isEqualTo(36_000L)
+        assertThat(viewModel.state.value.durationMs).isEqualTo(120_000L)
+        assertThat(viewModel.state.value.playerErrorMessage).isNull()
+    }
+
+    /**
      * 播放器内核加载失败时应留在全屏页并展示错误状态。
      */
     @Test
@@ -928,6 +962,9 @@ private class RecordingPlayerEngine(
     private val loadError: Throwable? = null,
     private val durationMs: Long = 0L,
 ) : PlayerEngine {
+    /** load 调用次数。 */
+    var loadCalls: Int = 0
+
     /** 最近一次加载请求。 */
     var loadedRequest: PlaybackRequest? = null
 
@@ -954,6 +991,7 @@ private class RecordingPlayerEngine(
 
     /** 记录加载请求。 */
     override suspend fun load(request: PlaybackRequest) {
+        loadCalls += 1
         loadError?.let { error -> throw error }
         loadedRequest = request
         mutableState.value = PlayerState.Paused(snapshot = request.toSnapshot())

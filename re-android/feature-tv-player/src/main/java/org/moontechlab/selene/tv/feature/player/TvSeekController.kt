@@ -15,12 +15,11 @@ class TvSeekController {
             // 短按左右键对齐 Flutter TV，单次跳转 10 秒。
             return INITIAL_PRESS_SECONDS
         }
-        val longPressElapsedMs = holdMs - LONG_PRESS_START_MS
-        return if (longPressElapsedMs < ACCELERATION_THRESHOLD_MS) {
-            // 长按前 5 秒每 tick 推进 12 秒，保持分钟位滚动前的可控性。
+        return if (holdMs < ACCELERATION_TRIGGER_HOLD_MS) {
+            // 物理按住未满 4 秒时每个 tick 推进 12 秒，保留第一档可控性。
             NORMAL_REPEAT_STEP_SECONDS
         } else {
-            // 长按超过 5 秒后提升到 18 秒，贴近 Flutter TV 的快速拖动手感。
+            // 物理按住达到 4 秒后每个 tick 推进 22 秒，约 10 秒跨越 30 分钟。
             ACCELERATED_REPEAT_STEP_SECONDS
         }
     }
@@ -43,8 +42,8 @@ class TvSeekController {
         durationMs: Long,
     ): Long {
         val safeActualMs = actualPositionMs.coerceInDuration(durationMs)
-        if (direction == 0 || holdMs <= LONG_PRESS_START_MS || durationMs <= 0L) {
-            // 短按或无有效总时长时，展示时间直接跟随真实 seek 目标。
+        if (direction == 0 || holdMs < LONG_PRESS_START_MS || durationMs <= 0L) {
+            // 未达到连续 seek 门槛或无有效总时长时，展示时间直接跟随真实 seek 目标。
             return safeActualMs
         }
 
@@ -100,13 +99,13 @@ class TvSeekController {
         const val NORMAL_REPEAT_STEP_SECONDS = 12
 
         /** 长按第二档每个 tick 推进的视频秒数。 */
-        const val ACCELERATED_REPEAT_STEP_SECONDS = 18
+        const val ACCELERATED_REPEAT_STEP_SECONDS = 22
 
         /** 短按和长按的分界时间。 */
         const val LONG_PRESS_START_MS = 250L
 
-        /** 长按切入第二段加速的持续时间阈值。 */
-        const val ACCELERATION_THRESHOLD_MS = 5_000L
+        /** 从首次按下开始计算的第二档物理按住时长阈值。 */
+        const val ACCELERATION_TRIGGER_HOLD_MS = 4_000L
 
         /** 秒个位的取模基数。 */
         const val SECOND_ONES_DIVISOR = 10L

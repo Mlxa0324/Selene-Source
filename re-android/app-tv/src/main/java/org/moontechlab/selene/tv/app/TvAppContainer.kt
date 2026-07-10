@@ -1,5 +1,9 @@
 package org.moontechlab.selene.tv.app
 
+import android.content.Context
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.logging.Logger
 import org.moontechlab.selene.tv.core.data.model.TvDanmakuAnimePayload
 import org.moontechlab.selene.tv.core.data.model.TvDanmakuCommentPayload
 import org.moontechlab.selene.tv.core.data.model.TvDanmakuEpisodePayload
@@ -22,17 +26,25 @@ import org.moontechlab.selene.tv.core.data.repository.TvSearchRepository
 import org.moontechlab.selene.tv.core.data.repository.TvVideoLibraryRepository
 import org.moontechlab.selene.tv.core.data.storage.TvPreferencesStore
 import org.moontechlab.selene.tv.core.design.threading.AppDispatchers
+import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneDanmakuApi
 import org.moontechlab.selene.tv.core.network.SeleneDoubanApi
 import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
 import org.moontechlab.selene.tv.core.network.SeleneTvNetworkFactory
+import org.moontechlab.selene.tv.core.network.SeleneTvSearchStreamClient
+import org.moontechlab.selene.tv.core.network.SeleneTvSseSearchClient
 import org.moontechlab.selene.tv.core.network.SessionCookieStore
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.webview.WebViewPlayerEngine
 import org.moontechlab.selene.tv.core.player.webview.WebViewPlayerSession
+import org.moontechlab.selene.tv.core.player.exo.ExoPlayerEngine
+import org.moontechlab.selene.tv.core.player.exo.ExoPlayerFactory
 import org.moontechlab.selene.tv.feature.favorites.TvFavoritesViewModel
 import org.moontechlab.selene.tv.feature.detail.TvDetailEntry
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnostic
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticSink
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticStage
 import org.moontechlab.selene.tv.feature.detail.TvDetailResumeRecord
 import org.moontechlab.selene.tv.feature.detail.TvDetailViewModel
 import org.moontechlab.selene.tv.feature.history.TvHistoryViewModel
@@ -86,21 +98,198 @@ data class TvLocalGatewayConfig(
 }
 
 /**
+ * 按详情入口保存精确详情，避免异步回包跨页面串用豆瓣身份。
+ */
+internal class TvDetailExactDetailStore {
+    /** 以规范化 `source::videoId` 为键的精确详情。 */
+    private val detailsByEntry = ConcurrentHashMap<String, TvVideoDetail>()
+
+    /** 为全部精确详情请求生成单调递增版本。 */
+    private val requestVersion = AtomicLong(0L)
+
+    /** 每个详情入口当前允许完成写入的最新请求版本。 */
+    private val currentVersionByEntry = ConcurrentHashMap<String, Long>()
+
+    /**
+     * 开始指定入口的新精确详情请求。
+     *
+     * @param entry 详情入口。
+     * @return 当前请求的唯一版本 token。
+     */
+    fun beginRequest(entry: TvDetailEntry): Long {
+        val entryKey = entry.detailEntryKey()
+        val token = requestVersion.incrementAndGet()
+        currentVersionByEntry[entryKey] = token
+        return token
+    }
+
+    /**
+     * 完成指定入口的精确详情请求。
+     *
+     * 只有 token 仍是该入口最新版本时才允许更新缓存，避免旧请求晚到覆盖新结果。
+     *
+     * @param entry 详情入口。
+     * @param token [beginRequest] 返回的请求版本。
+     * @param detail 最新精确详情；为空时删除同入口旧值。
+     */
+    fun completeRequest(
+        entry: TvDetailEntry,
+        token: Long,
+        detail: TvVideoDetail?,
+    ) {
+        val entryKey = entry.detailEntryKey()
+        currentVersionByEntry.compute(entryKey) { _, currentToken ->
+            if (currentToken != token) {
+                // 同入口已有更新请求时，旧请求结果无论空或非空都必须忽略。
+                return@compute currentToken
+            }
+            if (detail == null) {
+                // 同入口最新请求返回空详情时删除旧身份，不能继续复用过期豆瓣 ID。
+                detailsByEntry.remove(entryKey)
+            } else {
+                detailsByEntry[entryKey] = detail
+            }
+            currentToken
+        }
+    }
+
+    /**
+     * 读取指定入口的精确详情。
+     *
+     * @param entry 当前详情入口。
+     * @return 仅当前入口键对应的精确详情。
+     */
+    fun find(entry: TvDetailEntry): TvVideoDetail? {
+        return detailsByEntry[entry.detailEntryKey()]
+    }
+}
+
+/**
+ * 按业务优先级解析详情推荐使用的豆瓣 ID。
+ *
+ * @param entry 当前详情入口。
+ * @param latestDetail ViewModel 当前最新详情。
+ * @param exactDetail 当前入口键对应的精确详情。
+ * @param resolveByTitle 标题和年份兜底解析器。
+ * @return 有效豆瓣 ID；全部候选无效时返回空。
+ */
+internal suspend fun resolveTvDetailRecommendDoubanId(
+    entry: TvDetailEntry,
+    latestDetail: TvVideoDetail?,
+    exactDetail: TvVideoDetail?,
+    resolveByTitle: suspend (TvVideoDetail?) -> String,
+): String? {
+    latestDetail?.doubanId.validDoubanIdOrNull()?.let { return it }
+    exactDetail?.doubanId.validDoubanIdOrNull()?.let { return it }
+
+    if (entry.source.trim().equals("douban", ignoreCase = true)) {
+        // 豆瓣资料入口的视频 ID 本身就是 subject ID，但空值和 0 仍必须拒绝。
+        entry.videoId.validDoubanIdOrNull()?.let { return it }
+    }
+
+    val lookupDetail = latestDetail.mergeRecommendLookupMetadata(exactDetail)
+        ?.copy(doubanId = "")
+    return resolveByTitle(lookupDetail).validDoubanIdOrNull()
+}
+
+/**
+ * 合并推荐身份解析需要的详情元数据。
+ *
+ * @param exactDetail 当前入口的精确详情。
+ * @return 优先保留最新详情字段、缺失时使用精确详情补齐的查询详情。
+ */
+private fun TvVideoDetail?.mergeRecommendLookupMetadata(exactDetail: TvVideoDetail?): TvVideoDetail? {
+    val latestDetail = this ?: return exactDetail
+    val fallbackDetail = exactDetail ?: return latestDetail
+    return latestDetail.copy(
+        title = latestDetail.title.ifBlank { fallbackDetail.title },
+        description = latestDetail.description.ifBlank { fallbackDetail.description },
+        posterUrl = latestDetail.posterUrl.ifBlank { fallbackDetail.posterUrl },
+        year = latestDetail.year.ifBlank { fallbackDetail.year },
+        sourceName = latestDetail.sourceName.ifBlank { fallbackDetail.sourceName },
+    )
+}
+
+/**
+ * 构造详情入口稳定键。
+ *
+ * @return 去除首尾空白后的 `source::videoId`。
+ */
+internal fun TvDetailEntry.detailEntryKey(): String {
+    return "${source.trim()}::${videoId.trim()}"
+}
+
+/**
+ * 规范化豆瓣 ID 并拒绝无效哨兵值。
+ *
+ * @return 有效豆瓣 ID；空值或 `0` 返回空。
+ */
+private fun String?.validDoubanIdOrNull(): String? {
+    return this?.trim()?.takeIf { value -> value.isNotEmpty() && value != "0" }
+}
+
+/** 详情推荐生产诊断日志。 */
+private val TV_DETAIL_RECOMMEND_LOGGER: Logger = Logger.getLogger("TvDetailRecommend")
+
+/** 生产环境默认的低频推荐诊断接收器。 */
+private val DEFAULT_TV_DETAIL_RECOMMEND_DIAGNOSTIC_SINK = TvDetailRecommendDiagnosticSink { event ->
+    val safeMessage = event.message.toSafeRecommendDiagnosticMessage()
+    TV_DETAIL_RECOMMEND_LOGGER.info(
+        "stage=${event.stage.name} entry=${event.entryKey} " +
+            "trigger=${event.trigger.ifBlank { "-" }} count=${event.count ?: -1} message=$safeMessage",
+    )
+}
+
+/**
+ * 过滤推荐诊断中的 HTML 和常见敏感字段，并限制日志长度。
+ *
+ * @return 可安全写入低频诊断日志的单行消息。
+ */
+private fun String?.toSafeRecommendDiagnosticMessage(): String {
+    val message = this.orEmpty().trim()
+    if (message.isEmpty()) {
+        return "-"
+    }
+    val sensitiveMarkers = listOf("<html", "cookie", "authorization", "password", "token")
+    if (sensitiveMarkers.any { marker -> message.contains(marker, ignoreCase = true) }) {
+        // 响应正文和鉴权信息统一省略，避免诊断链路泄露隐私数据。
+        return "[已省略敏感内容]"
+    }
+    return message.replace(Regex("""\s+"""), " ").take(MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH)
+}
+
+/** 推荐诊断消息最大字符数。 */
+private const val MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH = 160
+
+/**
  * TV 应用依赖容器。
  *
  * @property gatewayConfig 本地后台网关配置。
+ * @property appContext 应用级上下文，用于偏好持久化和播放器等长生命周期能力。
  * @property sessionCookieStore 会话存储。
  * @property preferencesStore TV 偏好存储。
  * @property gatewayClientFactory 后台客户端工厂。
+ * @property searchStreamClientFactory 后台 SSE 搜索客户端工厂。
  * @property danmakuApiFactory 弹幕服务接口工厂。
  * @property playerEngineFactory 播放器内核工厂。
+ * @property playerKernelResolver 运行时真实内核解析器。
+ * @property doubanApiFactory 豆瓣分类 API 工厂。
+ * @property doubanHtmlSourceFactory 豆瓣详情 HTML 数据源工厂。
+ * @property recommendDiagnosticSink 详情推荐诊断接收器。
  */
 class TvAppContainer(
     private val gatewayConfig: TvLocalGatewayConfig,
+    private val appContext: Context? = null,
     private val sessionCookieStore: SessionCookieStore = SessionCookieStore(),
-    private val preferencesStore: TvPreferencesStore = TvPreferencesStore(),
+    private val preferencesStore: TvPreferencesStore = TvPreferencesStore(appContext),
     private val gatewayClientFactory: (String, SessionCookieStore) -> SeleneTvGatewayClient = { baseUrl, store ->
         SeleneTvNetworkFactory.create(
+            rawBaseUrl = baseUrl,
+            sessionCookieStore = store,
+        )
+    },
+    private val searchStreamClientFactory: (String, SessionCookieStore) -> SeleneTvSearchStreamClient = { baseUrl, store ->
+        SeleneTvSseSearchClient(
             rawBaseUrl = baseUrl,
             sessionCookieStore = store,
         )
@@ -111,14 +300,28 @@ class TvAppContainer(
     private val playerEngineFactory: () -> PlayerEngine = {
         WebViewPlayerEngine(dispatchers = AppDispatchers.createDefault())
     },
+    private val playerKernelResolver: RuntimePlayerKernelResolver = RuntimePlayerKernelResolver(),
     private val doubanApiFactory: () -> SeleneDoubanApi = {
         SeleneTvNetworkFactory.createDoubanApi()
     },
+    private val doubanHtmlSourceFactory: () -> DoubanSubjectHtmlSource = {
+        SeleneTvNetworkFactory.createDoubanHtmlApi()
+    },
+    private val recommendDiagnosticSink: TvDetailRecommendDiagnosticSink = DEFAULT_TV_DETAIL_RECOMMEND_DIAGNOSTIC_SINK,
 ) {
     /** 后台客户端按需创建，避免缺配置时启动阶段直接抛错。 */
     private val gatewayClient: SeleneTvGatewayClient? by lazy {
         if (gatewayConfig.isComplete) {
             gatewayClientFactory(gatewayConfig.baseUrl, sessionCookieStore)
+        } else {
+            null
+        }
+    }
+
+    /** 标题补源 SSE 客户端，详情页用于边搜边追加线路。 */
+    private val searchStreamClient: SeleneTvSearchStreamClient? by lazy {
+        if (gatewayConfig.isComplete) {
+            searchStreamClientFactory(gatewayConfig.baseUrl, sessionCookieStore)
         } else {
             null
         }
@@ -141,9 +344,14 @@ class TvAppContainer(
         doubanApiFactory()
     }
 
+    /** 豆瓣详情页 HTML 抓取接口。 */
+    private val doubanHtmlSource by lazy {
+        doubanHtmlSourceFactory()
+    }
+
     /** 豆瓣分类数据仓库。 */
     internal val doubanRepository: DoubanRepository by lazy {
-        DoubanRepository(api = doubanApi)
+        DoubanRepository(api = doubanApi, htmlSource = doubanHtmlSource)
     }
 
     /**
@@ -260,35 +468,38 @@ class TvAppContainer(
             title = videoTitle,
             searchTitle = videoTitle,
         )
-        var exactFallbackDetail: TvVideoDetail? = null
+        val exactDetailStore = TvDetailExactDetailStore()
         return TvDetailViewModel(
             initialEntry = initialEntry,
             playerEngine = playerEngine,
+            recommendDiagnosticSink = recommendDiagnosticSink,
             loadExactSources = { entry ->
+                val requestToken = exactDetailStore.beginRequest(entry)
                 ensureSession()
                 val repo = TvDetailRepository(requireGatewayClient().tvApi)
                 // 精确详情即使没有剧集，也能提供标题、年份和封面给标题补源兜底。
                 val exactDetail = repo.loadDetail(source = entry.source, id = entry.videoId)
-                exactFallbackDetail = exactDetail
+                exactDetailStore.completeRequest(entry, requestToken, exactDetail)
                 exactDetail?.sources
                     .orEmpty()
                     .filter { videoSource -> videoSource.episodes.isNotEmpty() }
             },
             loadMoreSources = { entry, onIncremental ->
                 ensureSession()
-                val fallbackDetail = exactFallbackDetail
+                val fallbackDetail = exactDetailStore.find(entry)
                 val fallbackTitle = entry.resolvedSearchTitle
                     .ifBlank { fallbackDetail?.title.orEmpty() }
                     .ifBlank { entry.videoId }
-                val sources = TvDetailRepository(requireGatewayClient().tvApi)
+                TvDetailRepository(
+                    api = requireGatewayClient().tvApi,
+                    searchStreamClient = searchStreamClient,
+                )
                     .loadMoreSourcesByEntry(
                         title = fallbackTitle,
                         searchTitle = fallbackTitle,
                         year = entry.year.ifBlank { fallbackDetail?.year.orEmpty() },
+                        onIncremental = onIncremental,
                     )
-                // Kotlin 当前搜索接口是批量响应，通过同一增量入口回调一次，对齐 Flutter SSE 契约。
-                onIncremental(sources)
-                sources
             },
             loadFavoriteState = { entry ->
                 TvFavoritesRepository(requireGatewayClient().tvApi)
@@ -310,6 +521,40 @@ class TvAppContainer(
                         positionMs = card.playTime * 1000L,
                         sourceName = card.sourceName,
                     )
+                }
+            },
+            loadRecommends = { entry, detail ->
+                val exactDetail = exactDetailStore.find(entry)
+                val resolvedDoubanId = resolveTvDetailRecommendDoubanId(
+                    entry = entry,
+                    latestDetail = detail,
+                    exactDetail = exactDetail,
+                    resolveByTitle = { lookupDetail ->
+                        ensureSession()
+                        TvDetailRepository(requireGatewayClient().tvApi).resolveDoubanId(
+                            detail = lookupDetail,
+                            entrySource = "",
+                            entryVideoId = "",
+                            title = lookupDetail?.title.orEmpty().ifBlank { entry.title },
+                            searchTitle = entry.resolvedSearchTitle,
+                            year = lookupDetail?.year.orEmpty().ifBlank { entry.year },
+                        )
+                    },
+                )
+                if (resolvedDoubanId == null) {
+                    // 身份解析在 App 层完成，缺失事件也由同一层记录，避免 ViewModel 猜测业务 ID。
+                    runCatching {
+                        recommendDiagnosticSink.record(
+                            TvDetailRecommendDiagnostic(
+                                stage = TvDetailRecommendDiagnosticStage.MissingDoubanId,
+                                entryKey = entry.detailEntryKey(),
+                                trigger = "identity-resolution",
+                            ),
+                        )
+                    }
+                    emptyList()
+                } else {
+                    doubanRepository.loadDetailRecommends(resolvedDoubanId)
                 }
             },
         )
@@ -348,6 +593,80 @@ class TvAppContainer(
      */
     fun createWebViewPlayerSession(): WebViewPlayerSession {
         return WebViewPlayerSession(dispatchers = AppDispatchers.createDefault())
+    }
+
+    /**
+     * 创建 ExoPlayer 播放内核。
+     *
+     * @param context Android 上下文。
+     * @return ExoPlayer 内核引擎。
+     */
+    fun createExoPlayerEngine(context: Context): PlayerEngine {
+        val adapter = ExoPlayerFactory.create(context)
+        return ExoPlayerEngine(
+            player = adapter,
+            dispatchers = AppDispatchers.createDefault(),
+        )
+    }
+
+    /**
+     * 解析当前播放器偏好对应的真实运行内核。
+     *
+     * @param preferredKernel 用户保存的内核偏好。
+     * @return 当前环境下的真实运行内核决策。
+     */
+    internal fun resolvePlayerKernelDecision(preferredKernel: String): RuntimePlayerKernelDecision {
+        return playerKernelResolver.resolve(preferredKernel)
+    }
+
+    /**
+     * 读取当前播放内核设置的真实运行决策。
+     *
+     * @return 当前环境下的真实播放内核决策。
+     */
+    internal suspend fun getPlayerKernelDecision(): RuntimePlayerKernelDecision {
+        return resolvePlayerKernelDecision(preferencesStore.getPlayerKernel())
+    }
+
+    /**
+     * 读取当前播放内核设置的同步决策快照。
+     *
+     * @return 当前环境下的真实播放内核决策。
+     */
+    internal fun peekPlayerKernelDecision(): RuntimePlayerKernelDecision {
+        return resolvePlayerKernelDecision(preferencesStore.peekPlayerKernel())
+    }
+
+    /**
+     * 读取当前播放内核设置。
+     *
+     * @return 播放内核标识（exo 或 webview）。
+     */
+    suspend fun getPlayerKernel(): String {
+        return getPlayerKernelDecision().effectiveKernel
+    }
+
+    /**
+     * 读取当前播放内核设置的同步快照。
+     *
+     * 导航图首次组合时需要先拿到一个稳定默认值，
+     * 这里直接返回真实生效内核，避免高风险环境短暂误走 WebView 黑屏链路。
+     *
+     * @return 当前播放内核标识（exo 或 webview）。
+     */
+    fun peekPlayerKernel(): String {
+        return peekPlayerKernelDecision().effectiveKernel
+    }
+
+    /**
+     * 保存播放器内核偏好，并返回当前环境下真实会生效的内核。
+     *
+     * @param kernel 用户选择的内核标识。
+     * @return 当前环境下真实生效的内核。
+     */
+    suspend fun savePlayerKernel(kernel: String): String {
+        preferencesStore.savePlayerKernel(kernel)
+        return resolvePlayerKernelDecision(kernel).effectiveKernel
     }
 
     /**
@@ -554,12 +873,15 @@ class TvAppContainer(
             doubanRepository.clearCache()
         },
     ): TvSettingsViewModel {
+        val currentPlayerKernel = peekPlayerKernel()
         return TvSettingsViewModel(
             initialState = TvSettingsUiState(
                 serverUrl = gatewayConfig.baseUrl,
                 account = gatewayConfig.username,
                 password = gatewayConfig.password,
                 danmakuApi = gatewayConfig.danmakuBaseUrl,
+                // 设置页首屏展示必须与当前真实播放内核一致，避免界面显示 Exo、实际仍走 WebView。
+                playerKernelKey = currentPlayerKernel,
             ),
             loadCacheSize = loadCacheSize,
             clearCache = clearCache,
@@ -603,7 +925,7 @@ class TvAppContainer(
                 preferencesStore.saveFocusEffectKey(effectKey)
             },
             savePlayerKernel = { kernel ->
-                preferencesStore.savePlayerKernel(kernel)
+                savePlayerKernel(kernel)
             },
         )
     }

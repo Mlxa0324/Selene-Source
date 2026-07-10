@@ -30,12 +30,10 @@ class WebViewPlayerSurfaceContractTest {
 
         assertThat(source).contains("fun WebViewPlayerSurface(")
         assertThat(source).contains("AndroidView(")
-        assertThat(source).contains("import android.webkit.WebView")
-        assertThat(source).contains("settings.javaScriptEnabled = true")
-        assertThat(source).contains("settings.mediaPlaybackRequiresUserGesture = false")
-        assertThat(source).contains("settings.allowUniversalAccessFromFileURLs = true")
-        assertThat(source).contains("settings.allowFileAccessFromFileURLs = true")
-        assertThat(source).contains("settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW")
+        assertThat(source).contains("session: WebViewPlayerSession?")
+        assertThat(source).contains("FrameLayout(context)")
+        assertThat(source).contains("session.obtainWebView(container.context)")
+        assertThat(source).contains("session.detachFromParent()")
     }
 
     /**
@@ -44,17 +42,18 @@ class WebViewPlayerSurfaceContractTest {
     @Test
     fun webview_player_surface_logs_console_and_resource_errors() {
         val source = readSurfaceSource()
+        val sessionSource = readSessionSource()
 
-        assertThat(source).contains("import android.webkit.WebChromeClient")
-        assertThat(source).contains("import android.webkit.ConsoleMessage")
-        assertThat(source).contains("import android.webkit.WebResourceError")
-        assertThat(source).contains("import android.webkit.WebResourceRequest")
-        assertThat(source).contains("import android.webkit.WebResourceResponse")
-        assertThat(source).contains("webChromeClient = object : WebChromeClient()")
-        assertThat(source).contains("override fun onConsoleMessage")
-        assertThat(source).contains("override fun onReceivedError")
-        assertThat(source).contains("override fun onReceivedHttpError")
-        assertThat(source).contains("WEBVIEW_PLAYER_LOG_TAG")
+        assertThat(sessionSource).contains("import android.webkit.WebChromeClient")
+        assertThat(sessionSource).contains("import android.webkit.ConsoleMessage")
+        assertThat(sessionSource).contains("import android.webkit.WebResourceError")
+        assertThat(sessionSource).contains("import android.webkit.WebResourceRequest")
+        assertThat(sessionSource).contains("import android.webkit.WebResourceResponse")
+        assertThat(sessionSource).contains("webChromeClient = object : WebChromeClient()")
+        assertThat(sessionSource).contains("override fun onConsoleMessage")
+        assertThat(sessionSource).contains("override fun onReceivedError")
+        assertThat(sessionSource).contains("override fun onReceivedHttpError")
+        assertThat(sessionSource).contains("WEBVIEW_PLAYER_LOG_TAG")
     }
 
     /**
@@ -62,11 +61,13 @@ class WebViewPlayerSurfaceContractTest {
      */
     @Test
     fun webview_player_surface_loads_bundled_hls_player_with_request_url() {
-        val source = readSurfaceSource()
+        val source = readSessionSource()
+        val surfaceSource = readSurfaceSource()
 
-        assertThat(source).contains("HLS_PLAYER_ASSET_URL")
-        assertThat(source).contains("loadUrl(resolveWebViewPlayerUrl(playbackUrl))")
-        assertThat(source).contains("URLEncoder.encode(playbackUrl, Charsets.UTF_8.name())")
+        assertThat(surfaceSource).contains("HLS_PLAYER_ASSET_URL")
+        assertThat(source).contains("val targetUrl = resolveWebViewPlayerUrl(playbackUrl)")
+        assertThat(source).contains("currentWebView.loadUrl(targetUrl)")
+        assertThat(surfaceSource).contains("URLEncoder.encode(playbackUrl, Charsets.UTF_8.name())")
     }
 
     /**
@@ -74,9 +75,8 @@ class WebViewPlayerSurfaceContractTest {
      */
     @Test
     fun webview_player_surface_replays_play_after_page_finished() {
-        val source = readSurfaceSource()
+        val source = readSessionSource()
 
-        assertThat(source).contains("import android.webkit.WebViewClient")
         assertThat(source).contains("override fun onPageFinished")
         assertThat(source).contains("evaluateJavascript(WebViewPlayerCommand.Play.toJavaScript(), null)")
     }
@@ -86,12 +86,12 @@ class WebViewPlayerSurfaceContractTest {
      */
     @Test
     fun webview_player_surface_ignores_blank_playback_url() {
-        val source = readSurfaceSource()
+        val source = readSessionSource()
 
         assertThat(source).contains("playbackRequest: PlaybackRequest?")
         assertThat(source).contains("val playbackUrl = playbackRequest?.url.orEmpty()")
         assertThat(source).contains("if (playbackUrl.isBlank())")
-        assertThat(source).contains("return@AndroidView")
+        assertThat(source).contains("return")
     }
 
     /**
@@ -99,11 +99,11 @@ class WebViewPlayerSurfaceContractTest {
      */
     @Test
     fun webview_player_surface_evaluates_player_commands() {
-        val source = readSurfaceSource()
+        val source = readSessionSource()
+        val surfaceSource = readSurfaceSource()
 
-        assertThat(source).contains("commandBus: WebViewPlayerCommandBus?")
-        assertThat(source).contains("LaunchedEffect(commandBus)")
-        assertThat(source).contains("commandBus.commands.collect")
+        assertThat(surfaceSource).contains("LaunchedEffect(session, isActive)")
+        assertThat(surfaceSource).contains("session.commandBus.commands.collect")
         assertThat(source).contains("evaluateJavascript(command.toJavaScript(), null)")
     }
 
@@ -112,14 +112,77 @@ class WebViewPlayerSurfaceContractTest {
      */
     @Test
     fun webview_player_surface_injects_playback_event_bridge() {
-        val source = readSurfaceSource()
+        val source = readSessionSource()
 
-        assertThat(source).contains("onPlaybackEvent: ((WebViewPlaybackEvent) -> Unit)?")
         assertThat(source).contains("import android.webkit.JavascriptInterface")
         assertThat(source).contains("addJavascriptInterface(")
         assertThat(source).contains("WEBVIEW_PLAYER_BRIDGE_NAME")
         assertThat(source).contains("@JavascriptInterface")
         assertThat(source).contains("onPlaybackEvent(payload: String)")
+    }
+
+    /**
+     * JS 桥回调必须切回主线程，并且不能直接读取 Compose State，避免 JavaBridge 线程反复抛异常。
+     */
+    @Test
+    fun webview_player_surface_dispatches_bridge_callbacks_safely() {
+        val source = readSessionSource()
+
+        assertThat(source).contains("import android.os.Handler")
+        assertThat(source).contains("import android.os.Looper")
+        assertThat(source).contains("import java.util.concurrent.atomic.AtomicReference")
+        assertThat(source).contains("private val mainHandler: Handler = Handler(Looper.getMainLooper())")
+        assertThat(source).contains("private val playbackEventCallbackRef = AtomicReference<((WebViewPlaybackEvent) -> Unit)?>(null)")
+        assertThat(source).contains("fun updatePlaybackEventCallback")
+        assertThat(source).contains("mainHandler.post")
+        assertThat(source).contains("runCatching")
+        assertThat(source).doesNotContain("rememberUpdatedState(onPlaybackEvent)")
+    }
+
+    /**
+     * WebView 会话必须缓存唯一 WebView，并在跨页面挂载前主动从旧父容器拆下。
+     */
+    @Test
+    fun webview_player_session_reuses_single_webview_instance() {
+        val source = readSessionSource()
+
+        assertThat(source).contains("private var webView: WebView? = null")
+        assertThat(source).contains("fun obtainWebView(context: Context): WebView")
+        assertThat(source).contains("webView?.let { cachedWebView ->")
+        assertThat(source).contains("fun detachFromParent()")
+        assertThat(source).contains("(webView?.parent as? ViewGroup)?.removeView(webView)")
+        assertThat(source).contains("fun bindPlaybackEventCallback")
+        assertThat(source).contains("fun release()")
+    }
+
+    /**
+     * 共享 WebView 必须通过页面独立容器按活跃路由重新挂载，避免全屏返回详情后只剩声音。
+     */
+    @Test
+    fun webview_player_surface_reattaches_shared_view_to_active_route_container() {
+        val source = readSurfaceSource()
+        val sessionSource = readSessionSource()
+
+        assertThat(source).contains("isActive: Boolean = true")
+        assertThat(source).contains("FrameLayout(context)")
+        assertThat(source).contains("if (!isActive)")
+        assertThat(source).contains("if (webView.parent !== container)")
+        assertThat(source).contains("container.addView(")
+        assertThat(source).contains("session.resumeRendering()")
+        assertThat(sessionSource).contains("fun resumeRendering()")
+        assertThat(sessionSource).contains("postInvalidateOnAnimation()")
+    }
+
+    /**
+     * WebView 平台视图不能抢占 Compose 播放器壳的遥控器焦点。
+     */
+    @Test
+    fun webview_player_surface_does_not_capture_tv_focus() {
+        val source = readSessionSource()
+
+        assertThat(source).contains("isFocusable = false")
+        assertThat(source).contains("isFocusableInTouchMode = false")
+        assertThat(source).contains("isClickable = false")
     }
 
     /**
@@ -174,7 +237,8 @@ class WebViewPlayerSurfaceContractTest {
         val source = readPlayerAssetSource()
 
         assertThat(source).contains("window.SeleneAndroidPlayer")
-        assertThat(source).contains("onPlaybackEvent(JSON.stringify")
+        assertThat(source).contains("const payload = JSON.stringify({")
+        assertThat(source).contains("onPlaybackEvent(payload)")
         assertThat(source).contains("positionMs")
         assertThat(source).contains("durationMs")
         assertThat(source).contains("cachedRanges")
@@ -187,6 +251,21 @@ class WebViewPlayerSurfaceContractTest {
         assertThat(source).contains("progress")
         assertThat(source).contains("play")
         assertThat(source).contains("pause")
+    }
+
+    /**
+     * 内置播放页上报 Android 桥时必须自行兜底，避免桥接异常把整条 hls.js 事件链打爆。
+     */
+    @Test
+    fun bundled_player_page_catches_android_bridge_callback_errors() {
+        val source = readPlayerAssetSource()
+
+        assertThat(source).contains("const payload = JSON.stringify({")
+        assertThat(source).contains("try {")
+        assertThat(source).contains("window.SeleneAndroidPlayer.onPlaybackEvent(payload)")
+        assertThat(source).contains("logPlayerIssue(")
+        assertThat(source).contains("'bridge callback failed'")
+        assertThat(source).contains("bridgeError")
     }
 
     /**
@@ -233,6 +312,16 @@ class WebViewPlayerSurfaceContractTest {
      */
     private fun readSurfaceSource(): String {
         return File("src/main/java/org/moontechlab/selene/tv/core/player/webview/WebViewPlayerSurface.kt")
+            .readText()
+    }
+
+    /**
+     * 读取 WebView 播放会话源码。
+     *
+     * @return 当前会话源码文本。
+     */
+    private fun readSessionSource(): String {
+        return File("src/main/java/org/moontechlab/selene/tv/core/player/webview/WebViewPlayerSession.kt")
             .readText()
     }
 

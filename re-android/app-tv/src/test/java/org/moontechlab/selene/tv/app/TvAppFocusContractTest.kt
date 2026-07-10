@@ -114,6 +114,17 @@ class TvAppFocusContractTest {
     }
 
     /**
+     * TV 根壳创建容器时必须传入 applicationContext，
+     * 这样播放器内核设置等偏好才能在安装新包和进程重启后继续恢复。
+     */
+    @Test
+    fun app_shell_passes_application_context_into_container() {
+        val source = readAppSource()
+
+        assertThat(source).contains("appContext = context.applicationContext")
+    }
+
+    /**
      * 读取 TV 根壳源码。
      *
      * @return 当前 TvApp 源码文本。

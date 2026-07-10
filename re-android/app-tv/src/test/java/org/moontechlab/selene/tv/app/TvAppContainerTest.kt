@@ -5,11 +5,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
 import org.moontechlab.selene.tv.core.data.storage.TvPreferencesStore
+import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneTvApi
 import org.moontechlab.selene.tv.core.network.SeleneDanmakuApi
 import org.moontechlab.selene.tv.core.network.SeleneDoubanApi
 import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
+import org.moontechlab.selene.tv.core.network.SeleneTvSearchStreamClient
+import org.moontechlab.selene.tv.core.network.TvSearchCompleteEvent
+import org.moontechlab.selene.tv.core.network.TvSearchSourceResultEvent
 import org.moontechlab.selene.tv.core.network.SessionPayload
 import org.moontechlab.selene.tv.core.network.model.TvDanmakuCommentListResponse
 import org.moontechlab.selene.tv.core.network.model.TvDanmakuCommentResponse
@@ -33,6 +38,11 @@ import org.moontechlab.selene.tv.core.player.api.PlaybackSnapshot
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.api.PlayerState
 import org.moontechlab.selene.tv.core.player.api.TvResizeMode
+import org.moontechlab.selene.tv.feature.detail.TvDetailEntry
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnostic
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticSink
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticStage
+import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendLoadState
 
 /**
  * 校验 TV 应用容器的本地后台配置装配。
@@ -58,6 +68,63 @@ class TvAppContainerTest {
         assertThat(state.account).isEqualTo("demo")
         assertThat(state.password).isEqualTo("secret")
         assertThat(state.danmakuApi).isEqualTo("https://danmaku.example.com")
+        assertThat(state.playerKernelKey).isEqualTo("webview")
+    }
+
+    /**
+     * 设置页首屏必须展示当前真实播放内核，避免 UI 写着 Exo、实际运行仍是 WebView。
+     */
+    @Test
+    fun createSettingsViewModel_prefills_saved_player_kernel() = runTest {
+        val preferencesStore = TvPreferencesStore()
+        preferencesStore.savePlayerKernel("exo")
+        val container = TvAppContainer(
+            gatewayConfig = TvLocalGatewayConfig(
+                baseUrl = "http://127.0.0.1:3000",
+                username = "demo",
+                password = "secret",
+            ),
+            preferencesStore = preferencesStore,
+        )
+
+        val state = container.createSettingsViewModel().state.value
+
+        assertThat(state.playerKernelKey).isEqualTo("exo")
+    }
+
+    /**
+     * 模拟器命中 WebView 黑屏高风险环境时，
+     * 容器暴露给导航和设置页的内核必须自动回退到 Exo。
+     */
+    @Test
+    fun player_kernel_falls_back_to_exo_for_emulator_webview_runtime() = runTest {
+        val preferencesStore = TvPreferencesStore()
+        preferencesStore.savePlayerKernel("webview")
+        val container = TvAppContainer(
+            gatewayConfig = TvLocalGatewayConfig(
+                baseUrl = "http://127.0.0.1:3000",
+                username = "demo",
+                password = "secret",
+            ),
+            preferencesStore = preferencesStore,
+            playerKernelResolver = RuntimePlayerKernelResolver(
+                deviceInfo = TvPlaybackDeviceInfo(
+                    fingerprint = "samsung/p3sxxx/p3s:13/TQ2B.230505.005.A1/jenkins08312143:user/release-keys",
+                    model = "SM-G998B",
+                    manufacturer = "samsung",
+                    brand = "samsung",
+                    device = "p3s",
+                    hardware = "exynos2100",
+                    product = "p3sxxx",
+                    eglHardware = "emulation",
+                    blueStacksImeListenerPort = "9990",
+                ),
+            ),
+        )
+
+        assertThat(container.peekPlayerKernel()).isEqualTo("exo")
+        assertThat(container.getPlayerKernel()).isEqualTo("exo")
+        assertThat(container.createSettingsViewModel().state.value.playerKernelKey).isEqualTo("exo")
     }
 
     /**
@@ -288,6 +355,310 @@ class TvAppContainerTest {
     }
 
     /**
+     * 详情页标题补源接入 SSE 时，容器必须把增量线路直接推给 ViewModel，不能等批量搜索结束。
+     */
+    @Test
+    fun createDetailViewModel_streams_more_sources_incrementally() = runTest {
+        val queries = mutableListOf<String>()
+        val fakeClient = FakeGatewayClient(
+            detailHandler = { _, _ -> error("详情接口失败") },
+            searchHandler = { query ->
+                queries += query
+                TvSearchResponse(results = emptyList())
+            },
+        )
+        val container = TvAppContainer(
+            gatewayConfig = TvLocalGatewayConfig(
+                baseUrl = "http://127.0.0.1:3000",
+                username = "demo",
+                password = "secret",
+            ),
+            gatewayClientFactory = { _, _ -> fakeClient },
+            searchStreamClientFactory = { _, _ ->
+                object : SeleneTvSearchStreamClient {
+                    override suspend fun search(
+                        query: String,
+                        onEvent: (org.moontechlab.selene.tv.core.network.TvSearchStreamEvent) -> Unit,
+                    ) {
+                        onEvent(
+                            TvSearchSourceResultEvent(
+                                source = "source-sse",
+                                sourceName = "SSE 补源",
+                                results = listOf(
+                                    TvSearchResultResponse(
+                                        id = "search-video-sse",
+                                        title = "详情影片",
+                                        episodes = listOf("https://cdn.test/sse.m3u8"),
+                                        episodeTitles = listOf("正片"),
+                                        source = "source-sse",
+                                        sourceName = "SSE 补源",
+                                        year = "2026",
+                                    ),
+                                ),
+                                timestamp = 1L,
+                            ),
+                        )
+                        onEvent(
+                            TvSearchCompleteEvent(
+                                totalResults = 1,
+                                completedSources = 1,
+                                timestamp = 2L,
+                            ),
+                        )
+                    }
+                }
+            },
+        )
+        val viewModel = container.createDetailViewModel(
+            source = "source-a",
+            videoTitle = "详情影片",
+        )
+
+        viewModel.load(videoId = "video-1")
+
+        val state = viewModel.state.value
+        assertThat(queries).contains("详情影片")
+        assertThat(state.detail?.sources?.map { source -> source.id })
+            .containsExactly("source-sse::search-video-sse")
+        assertThat(state.currentSourceId).isEqualTo("source-sse::search-video-sse")
+        assertThat(state.playbackRequest?.url).isEqualTo("https://cdn.test/sse.m3u8")
+    }
+
+    /**
+     * 最新详情豆瓣 ID 有效时，应优先于精确详情、豆瓣入口和标题解析结果。
+     */
+    @Test
+    fun resolveTvDetailRecommendDoubanId_prefers_latest_detail_id() = runTest {
+        var resolverCalls = 0
+
+        val resolved = resolveTvDetailRecommendDoubanId(
+            entry = TvDetailEntry(source = "douban", videoId = "entry-id", title = "测试影片"),
+            latestDetail = detail(doubanId = " latest-id "),
+            exactDetail = detail(doubanId = "exact-id"),
+            resolveByTitle = {
+                resolverCalls += 1
+                "resolver-id"
+            },
+        )
+
+        assertThat(resolved).isEqualTo("latest-id")
+        assertThat(resolverCalls).isEqualTo(0)
+    }
+
+    /**
+     * 最新详情 ID 无效时，应使用当前入口键对应的精确详情豆瓣 ID。
+     */
+    @Test
+    fun resolveTvDetailRecommendDoubanId_uses_matching_exact_detail_id() = runTest {
+        val resolved = resolveTvDetailRecommendDoubanId(
+            entry = TvDetailEntry(source = "source-a", videoId = "video-a", title = "测试影片"),
+            latestDetail = detail(doubanId = "0"),
+            exactDetail = detail(doubanId = " exact-id "),
+            resolveByTitle = { "resolver-id" },
+        )
+
+        assertThat(resolved).isEqualTo("exact-id")
+    }
+
+    /**
+     * 详情 ID 都无效时，豆瓣资料入口应直接使用入口视频 ID。
+     */
+    @Test
+    fun resolveTvDetailRecommendDoubanId_uses_douban_entry_video_id() = runTest {
+        val resolved = resolveTvDetailRecommendDoubanId(
+            entry = TvDetailEntry(source = " DouBan ", videoId = " entry-id ", title = "测试影片"),
+            latestDetail = detail(doubanId = " "),
+            exactDetail = detail(doubanId = "0"),
+            resolveByTitle = { "resolver-id" },
+        )
+
+        assertThat(resolved).isEqualTo("entry-id")
+    }
+
+    /**
+     * 详情和入口身份均无效时，应使用标题年份解析结果并拒绝空值或零值。
+     */
+    @Test
+    fun resolveTvDetailRecommendDoubanId_uses_valid_title_resolver_result() = runTest {
+        val resolved = resolveTvDetailRecommendDoubanId(
+            entry = TvDetailEntry(source = "source-a", videoId = "video-a", title = "测试影片", year = "2026"),
+            latestDetail = detail(doubanId = "0", title = ""),
+            exactDetail = detail(doubanId = "", title = "精确标题"),
+            resolveByTitle = { lookupDetail ->
+                assertThat(lookupDetail?.title).isEqualTo("精确标题")
+                " resolver-id "
+            },
+        )
+
+        assertThat(resolved).isEqualTo("resolver-id")
+    }
+
+    /**
+     * 所有身份候选均为空或零值时，应记录缺失诊断且不能抓取豆瓣 HTML。
+     */
+    @Test
+    fun createDetailViewModel_reports_missing_douban_id_without_fetching_html() = runTest {
+        val diagnostics = mutableListOf<TvDetailRecommendDiagnostic>()
+        var htmlFetchCalls = 0
+        val fakeClient = FakeGatewayClient(
+            detailHandler = { source, id ->
+                TvSearchResultResponse(
+                    id = id,
+                    title = "无豆瓣身份影片",
+                    episodes = listOf("https://cdn.test/no-douban.m3u8"),
+                    episodeTitles = listOf("正片"),
+                    source = source,
+                    sourceName = "线路 A",
+                    year = "2026",
+                    doubanId = 0,
+                )
+            },
+            searchHandler = {
+                TvSearchResponse(
+                    results = listOf(
+                        TvSearchResultResponse(
+                            id = "search-no-douban",
+                            title = "无豆瓣身份影片",
+                            source = "source-b",
+                            year = "2026",
+                            doubanId = 0,
+                        ),
+                    ),
+                )
+            },
+        )
+        val container = TvAppContainer(
+            gatewayConfig = completeGatewayConfig(),
+            gatewayClientFactory = { _, _ -> fakeClient },
+            doubanApiFactory = { FakeHomeDoubanApi() },
+            doubanHtmlSourceFactory = {
+                DoubanSubjectHtmlSource {
+                    htmlFetchCalls += 1
+                    RECOMMENDATION_HTML
+                }
+            },
+            recommendDiagnosticSink = TvDetailRecommendDiagnosticSink { event -> diagnostics += event },
+        )
+        val viewModel = container.createDetailViewModel(
+            source = "source-a",
+            videoTitle = "无豆瓣身份影片",
+        )
+
+        viewModel.load(videoId = "video-no-douban")
+
+        assertThat(htmlFetchCalls).isEqualTo(0)
+        assertThat(viewModel.state.value.recommendLoadState)
+            .isEqualTo(TvDetailRecommendLoadState.Empty)
+        assertThat(diagnostics.map { event -> event.stage })
+            .contains(TvDetailRecommendDiagnosticStage.MissingDoubanId)
+    }
+
+    /**
+     * 精确详情携带豆瓣 ID 时，容器创建的 ViewModel 应通过假 HTML 数据源返回推荐卡片。
+     */
+    @Test
+    fun createDetailViewModel_returns_recommend_cards_from_fake_html_source() = runTest {
+        val fetchedIds = mutableListOf<String>()
+        val fakeClient = FakeGatewayClient(
+            detailHandler = { source, id ->
+                TvSearchResultResponse(
+                    id = id,
+                    title = "有推荐影片",
+                    episodes = listOf("https://cdn.test/recommend.m3u8"),
+                    episodeTitles = listOf("正片"),
+                    source = source,
+                    sourceName = "线路 A",
+                    year = "2026",
+                    doubanId = 1_292_052,
+                )
+            },
+        )
+        val container = TvAppContainer(
+            gatewayConfig = completeGatewayConfig(),
+            gatewayClientFactory = { _, _ -> fakeClient },
+            doubanApiFactory = { FakeHomeDoubanApi() },
+            doubanHtmlSourceFactory = {
+                DoubanSubjectHtmlSource { doubanId ->
+                    fetchedIds += doubanId
+                    RECOMMENDATION_HTML
+                }
+            },
+        )
+        val viewModel = container.createDetailViewModel(
+            source = "source-a",
+            videoTitle = "有推荐影片",
+        )
+
+        viewModel.load(videoId = "video-with-douban")
+
+        assertThat(fetchedIds).containsExactly("1292052")
+        assertThat(viewModel.state.value.recommendCards.map { card -> card.id })
+            .containsExactly("1111111", "2222222")
+            .inOrder()
+        assertThat(viewModel.state.value.recommendLoadState)
+            .isEqualTo(TvDetailRecommendLoadState.Loaded)
+    }
+
+    /**
+     * 上一个入口的精确详情晚到时，只能写入自己的键，不能给当前入口提供豆瓣 ID。
+     */
+    @Test
+    fun exact_detail_store_does_not_leak_late_previous_entry_identity() = runTest {
+        val store = TvDetailExactDetailStore()
+        val previousEntry = TvDetailEntry(source = "source-a", videoId = "previous-video")
+        val currentEntry = TvDetailEntry(source = "source-b", videoId = "current-video")
+
+        // 模拟切换当前入口后，上一入口的精确详情才晚到。
+        val previousToken = store.beginRequest(previousEntry)
+        store.completeRequest(
+            previousEntry,
+            previousToken,
+            detail(doubanId = "previous-douban-id"),
+        )
+        val resolved = resolveTvDetailRecommendDoubanId(
+            entry = currentEntry,
+            latestDetail = detail(doubanId = ""),
+            exactDetail = store.find(currentEntry),
+            resolveByTitle = { "" },
+        )
+
+        assertThat(store.find(previousEntry)?.doubanId).isEqualTo("previous-douban-id")
+        assertThat(resolved).isNull()
+    }
+
+    /**
+     * 同一入口后续精确详情为空时，应删除旧详情，避免复用过期豆瓣 ID。
+     */
+    @Test
+    fun exact_detail_store_removes_obsolete_identity_for_same_entry() {
+        val store = TvDetailExactDetailStore()
+        val entry = TvDetailEntry(source = "source-a", videoId = "video-a")
+
+        val firstToken = store.beginRequest(entry)
+        store.completeRequest(entry, firstToken, detail(doubanId = "old-douban-id"))
+        val refreshToken = store.beginRequest(entry)
+        store.completeRequest(entry, refreshToken, null)
+
+        assertThat(store.find(entry)).isNull()
+    }
+
+    /**
+     * 同一入口的旧请求晚于新请求完成时，旧非空结果不能覆盖新请求确认的空详情。
+     */
+    @Test
+    fun exact_detail_store_ignores_older_same_entry_completion() {
+        val store = TvDetailExactDetailStore()
+        val entry = TvDetailEntry(source = "source-a", videoId = "video-a")
+        val olderToken = store.beginRequest(entry)
+        val newerToken = store.beginRequest(entry)
+
+        store.completeRequest(entry, newerToken, null)
+        store.completeRequest(entry, olderToken, detail(doubanId = "stale-douban-id"))
+
+        assertThat(store.find(entry)).isNull()
+    }
+
+    /**
      * 弹幕手动匹配 ViewModel 必须接入真实弹幕搜索 API。
      */
     @Test
@@ -423,6 +794,57 @@ class TvAppContainerTest {
         assertThat(danmakuApi.lastCommentEpisodeId).isEqualTo(9005)
         assertThat(viewModel.state.value.currentDanmakuEpisodeId).isEqualTo(9005)
         assertThat(viewModel.state.value.danmakuComments.first().text).isEqualTo("播放器弹幕")
+    }
+
+    /**
+     * 构造完整本地后台配置。
+     *
+     * @return 可用于容器测试的完整配置。
+     */
+    private fun completeGatewayConfig(): TvLocalGatewayConfig {
+        return TvLocalGatewayConfig(
+            baseUrl = "http://127.0.0.1:3000",
+            username = "demo",
+            password = "secret",
+        )
+    }
+
+    /**
+     * 构造身份解析测试详情。
+     *
+     * @param doubanId 豆瓣条目 ID。
+     * @param title 详情标题。
+     * @return 不含播放源的详情模型。
+     */
+    private fun detail(
+        doubanId: String,
+        title: String = "测试影片",
+    ): TvVideoDetail {
+        return TvVideoDetail(
+            id = "detail-video",
+            doubanId = doubanId,
+            title = title,
+            description = "",
+            year = "2026",
+            sources = emptyList(),
+        )
+    }
+
+    private companion object {
+        /** App 容器推荐接线测试使用的固定豆瓣推荐 HTML。 */
+        val RECOMMENDATION_HTML = """
+            <div id="recommendations">
+              <div class="recommendations-bd">
+                <dl>
+                  <dt><a href="//movie.douban.com/subject/1111111/"><img alt="推荐甲" src="//img.test/a.jpg"></a></dt>
+                  <dd><span class="subject-rate">9.1</span></dd>
+                </dl>
+                <dl>
+                  <dt><a href="/subject/2222222/"><img src="https://img.test/b.jpg" alt="推荐乙"></a></dt>
+                </dl>
+              </div>
+            </div>
+        """.trimIndent()
     }
 }
 
