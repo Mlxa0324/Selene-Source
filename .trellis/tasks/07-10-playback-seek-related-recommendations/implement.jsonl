@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/tv-mode.md","reason":"Kotlin TV detail/player behavior, staged loading, focus, and validation contracts."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend and TV regression-test expectations."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Data/network module test and compatibility requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Recommendation flow crosses app, feature, data, and network layers."}
+{"file":".trellis/tasks/07-10-playback-seek-related-recommendations/research/current-implementation-audit.md","reason":"Baseline findings, current behavior, dirty-worktree overlap, and Flutter references."}

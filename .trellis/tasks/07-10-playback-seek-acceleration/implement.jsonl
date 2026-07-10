@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/tv-mode.md","reason":"TV remote input and player behavior contract."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Focused unit/contract test expectations for TV behavior changes."}
+{"file":".trellis/tasks/07-10-playback-seek-related-recommendations/research/current-implementation-audit.md","reason":"Current 100ms scheduler, 12/18 policy, and overlay digit findings."}

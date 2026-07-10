@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/tv-mode.md","reason":"Check recommendation timing, staged detail flow, and TV rendering compatibility."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Check focused tests and TV regression coverage."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check recommendation failures remain non-fatal."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Check diagnostics avoid sensitive or noisy output."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Check data/network tests and compatibility."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check identity, parser, state, and UI boundaries end to end."}

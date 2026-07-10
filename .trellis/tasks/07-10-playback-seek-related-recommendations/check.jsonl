@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/tv-mode.md","reason":"Verify final Kotlin TV behavior against the executable TV contract."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Verify focused tests, lint, and TV interaction coverage."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify data/network module compatibility and regression coverage."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify all recommendation layer boundaries and consumers were updated."}

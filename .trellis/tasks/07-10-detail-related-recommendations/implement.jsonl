@@ -1,0 +1,8 @@
+{"file":".trellis/spec/frontend/tv-mode.md","reason":"Kotlin TV staged detail loading and recommendation behavior contract."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"Route/ViewModel server-state and lifecycle ownership rules."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"TV visible behavior and focused test requirements."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Non-fatal request/parser failure and fallback requirements."}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"Safe diagnostic logging without response bodies or session data."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Data/network compatibility and test requirements."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Recommendation identity and data flow span app, feature, data, and network modules."}
+{"file":".trellis/tasks/07-10-playback-seek-related-recommendations/research/current-implementation-audit.md","reason":"Root-cause evidence, Flutter reference flow, and dirty-worktree inventory."}

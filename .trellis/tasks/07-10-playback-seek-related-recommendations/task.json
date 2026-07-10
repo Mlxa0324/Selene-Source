@@ -1,0 +1,29 @@
+{
+  "id": "playback-seek-related-recommendations",
+  "name": "playback-seek-related-recommendations",
+  "title": "优化播放快进快退与详情页相关推荐",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-07-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-10-playback-seek-acceleration",
+    "07-10-detail-related-recommendations"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

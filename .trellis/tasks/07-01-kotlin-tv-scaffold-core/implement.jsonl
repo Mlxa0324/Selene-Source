@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/frontend/tv-mode.md", "reason": "Existing TV behavior/contract spec (focus rules, routes, launch flow); scaffold-core routes/focus wiring must not contradict it, though visual/animation specifics defer to lib/tv_app/ source."}

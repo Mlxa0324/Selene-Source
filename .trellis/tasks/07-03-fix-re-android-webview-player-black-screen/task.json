@@ -1,0 +1,30 @@
+{
+  "id": "fix-re-android-webview-player-black-screen",
+  "name": "fix-re-android-webview-player-black-screen",
+  "title": "修复 re-android 播放器有声音无画面",
+  "description": "定位并修复 re-android 详情页预览播放器与全屏播放器出现“有声音无画面/像被图层挡住”的问题，优先排查 WebView 播放内核桥接链路，补齐回归测试和排障日志。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": "re-android",
+  "priority": "P1",
+  "creator": "Lx",
+  "assignee": "Lx",
+  "createdAt": "2026-07-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "tvtv",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "re-android/core-player-webview/src/main/java/org/moontechlab/selene/tv/core/player/webview/WebViewPlayerSurface.kt",
+    "re-android/core-player-webview/src/main/assets/player/hls_player.html",
+    "re-android/core-player-webview/src/test/java/org/moontechlab/selene/tv/core/player/webview/WebViewPlayerSurfaceContractTest.kt"
+  ],
+  "notes": "07-03 初步证据来自 adb logcat：SeleneWebViewPlayer 在 hls_player.html 第 76 行反复报 Java exception was raised during method invocation，说明 WebView JS -> Android 桥接存在异常。当前先修复桥接线程与异常兜底，后续继续观察是否还存在 AndroidView/缩放层面的黑屏。",
+  "meta": {}
+}

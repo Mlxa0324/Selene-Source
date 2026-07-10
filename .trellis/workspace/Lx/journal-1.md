@@ -580,3 +580,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 修复设置页方向键焦点导航
+
+**Date**: 2026-07-10
+**Task**: 修复设置页方向键焦点导航
+**Branch**: `tvtv`
+
+### Summary
+
+修复 TV 表单文本输入行在未配置上下焦点回调时错误消费方向键的问题，补充回归测试与 TV 焦点规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `33464c6` | (see git log) |
+| `f8ece29` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

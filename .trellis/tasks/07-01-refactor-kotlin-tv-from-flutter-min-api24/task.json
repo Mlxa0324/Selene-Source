@@ -18,7 +18,14 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "07-01-kotlin-tv-scaffold-core",
+    "07-01-kotlin-tv-feature-home",
+    "07-01-kotlin-tv-feature-detail",
+    "07-01-kotlin-tv-feature-player",
+    "07-01-kotlin-tv-feature-search",
+    "07-01-kotlin-tv-feature-settings-content"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
