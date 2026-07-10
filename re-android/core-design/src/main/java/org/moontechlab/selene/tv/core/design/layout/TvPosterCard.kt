@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import android.util.Log
@@ -102,7 +103,7 @@ fun TvPosterCard(
             text = item.subtitle.ifBlank { posterCaption(item.posterUrl) },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
             color = TvTokens.TextSecondary,
         )
     }

@@ -19,7 +19,7 @@ data class TvSettingsUiState(
     val imageSourceKey: String = "direct",
     // 播放
     val adFilterEnabled: Boolean = true,
-    val playerKernelKey: String = "exo",
+    val playerKernelKey: String = "webview",
     // 弹幕
     val danmakuApi: String = "",
     val danmakuEnabled: Boolean = true,
@@ -60,7 +60,7 @@ class TvSettingsViewModel(
     private val saveTheme: suspend (themeKey: String) -> Unit = {},
     private val saveBackground: suspend (backgroundKey: String) -> Unit = {},
     private val saveFocusEffect: suspend (effectKey: String) -> Unit = {},
-    private val savePlayerKernel: suspend (kernel: String) -> Unit = {},
+    private val savePlayerKernel: suspend (kernel: String) -> String = { it },
 ) {
     private val mutableState = MutableStateFlow(initialState)
     val state: StateFlow<TvSettingsUiState> = mutableState
@@ -136,7 +136,13 @@ class TvSettingsViewModel(
     }
 
     suspend fun performSavePlayerKernel() {
-        savePlayerKernel(mutableState.value.playerKernelKey)
+        val requestedKernel = mutableState.value.playerKernelKey
+        val effectiveKernel = savePlayerKernel(requestedKernel)
+        mutableState.value = mutableState.value.copy(playerKernelKey = effectiveKernel)
+        if (effectiveKernel != requestedKernel) {
+            // 高风险环境下真实运行内核被强制收口后，立即把结果反馈给设置页，避免用户误以为仍在走 WebView。
+            showNotice("当前环境下 WebView 可能黑屏，已自动切换为 ExoPlayer")
+        }
     }
 
     // ── 弹幕 ──

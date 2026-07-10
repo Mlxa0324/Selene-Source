@@ -1,0 +1,74 @@
+package uk.oxiang.ivy.tv.core.common.network
+
+/**
+ * TV 会话信息。
+ *
+ * @property baseUrl 服务器基础地址。
+ * @property account 当前账号。
+ * @property cookie 当前会话 Cookie。
+ */
+data class SessionPayload(
+    val baseUrl: String,
+    val account: String,
+    val cookie: String,
+)
+
+/**
+ * TV 会话 Cookie 存储。
+ *
+ * 首期提供内存实现，供 [SeleneTvNetworkClient] 在进程内维持登录态；
+ * 跨进程持久化由 `TvPreferencesStore` 的 session 相关 key 负责。
+ */
+class SessionCookieStore {
+    /**
+     * 当前内存会话。
+     */
+    private var session: SessionPayload? = null
+
+    /**
+     * 保存服务器会话。
+     *
+     * @param baseUrl 服务器基础地址。
+     * @param account 当前账号。
+     * @param cookie 当前会话 Cookie。
+     */
+    suspend fun saveSession(
+        baseUrl: String,
+        account: String,
+        cookie: String,
+    ) {
+        session = SessionPayload(
+            baseUrl = baseUrl,
+            account = account,
+            cookie = cookie,
+        )
+    }
+
+    /**
+     * 读取当前服务器会话。
+     *
+     * @return 当前会话；未配置时返回 null。
+     */
+    suspend fun readSession(): SessionPayload? = session
+
+    /**
+     * 同步读取当前会话。
+     *
+     * @return 当前会话；未配置时返回 null。
+     */
+    fun readSessionNow(): SessionPayload? = session
+
+    /**
+     * 同步读取当前 Cookie。
+     *
+     * @return 当前 Cookie；未登录时返回 null。
+     */
+    fun currentCookie(): String? = session?.cookie
+
+    /**
+     * 清空当前会话。
+     */
+    fun clear() {
+        session = null
+    }
+}

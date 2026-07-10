@@ -1,0 +1,52 @@
+package uk.oxiang.ivy.tv.core.common.model
+
+/**
+ * TV 影视详情模型。
+ *
+ * @property id 视频 ID。
+ * @property title 视频标题。
+ * @property description 剧情简介。
+ * @property posterUrl 封面地址。
+ * @property year 上映年份。
+ * @property sourceName 当前来源名称。
+ * @property sources 可播放来源列表。
+ */
+data class TvVideoDetail(
+    val id: String,
+    val title: String,
+    val description: String,
+    val posterUrl: String = "",
+    val year: String = "",
+    val sourceName: String = "",
+    val sources: List<TvVideoSource>,
+)
+
+/**
+ * TV 播放来源模型。
+ *
+ * @property id 页面内唯一线路 ID，格式为 `source::videoId`。
+ * @property source 后台播放来源标识。
+ * @property videoId 后台视频 ID。
+ * @property name 来源名称。
+ * @property episodes 剧集列表。
+ */
+data class TvVideoSource(
+    val id: String,
+    val source: String = id,
+    val videoId: String = "",
+    val name: String,
+    val episodes: List<TvEpisode>,
+)
+
+/**
+ * TV 剧集模型。
+ *
+ * @property id 剧集 ID。
+ * @property title 剧集标题。
+ * @property url 播放地址。
+ */
+data class TvEpisode(
+    val id: String,
+    val title: String,
+    val url: String,
+)

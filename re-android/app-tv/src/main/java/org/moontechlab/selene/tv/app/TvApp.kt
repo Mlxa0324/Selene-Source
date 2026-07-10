@@ -77,6 +77,7 @@ fun TvApp() {
             val appContainer = remember(serverConfigVersion) {
                 TvAppContainer(
                     gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
+                    appContext = context.applicationContext,
                 )
             }
 
@@ -84,6 +85,10 @@ fun TvApp() {
             LaunchedEffect(Unit) {
                 withContext(Dispatchers.IO) {
                     val customClient = OkHttpClient.Builder()
+                        // 图片加载也直连，避免系统代理拖慢封面请求。
+                        .proxy(java.net.Proxy.NO_PROXY)
+                        // 封面请求同样输出全局耗时日志，便于对比接口与图片谁更慢。
+                        .eventListenerFactory(org.moontechlab.selene.tv.core.network.ResponseTimingEventListenerFactory())
                         .addInterceptor { chain ->
                             val request = chain.request()
                             if (request.url.host.contains("doubanio.com")) {

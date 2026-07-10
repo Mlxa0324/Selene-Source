@@ -1,0 +1,86 @@
+package uk.oxiang.ivy.tv.core.design.layout
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Text
+import uk.oxiang.ivy.tv.core.design.TvTokens
+
+/**
+ * TV 页面公共壳。
+ *
+ * @param title 页面主标题，为空时只保留内容壳。
+ * @param subtitle 页面副标题。
+ * @param stats 页面头部统计项。
+ * @param modifier 外层修饰器。
+ * @param content 页面主体内容。
+ */
+@Composable
+fun TvPageScaffold(
+    title: String? = null,
+    subtitle: String? = null,
+    stats: List<TvPageStatChipData> = emptyList(),
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    top = if (title.isNullOrBlank()) 0.dp else TvTokens.PageTopPadding,
+                    bottom = TvTokens.PageBottomPadding,
+                ),
+            verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
+        ) {
+            if (!title.isNullOrBlank()) {
+                Column(
+                    modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = TvTokens.TextPrimary,
+                    )
+                    if (!subtitle.isNullOrBlank()) {
+                        // 副标题只补充页面语义，避免重新出现工程计划感。
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (stats.isNotEmpty()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            stats.forEach { stat ->
+                                TvPageStatChip(
+                                    label = stat.label,
+                                    value = stat.value,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            content()
+        }
+    }
+}

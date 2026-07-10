@@ -9,24 +9,21 @@ import org.junit.Test
  */
 class TvDesignCanvasContractTest {
     /**
-     * 画布必须先按设计稿固定测量，再以左上角为原点缩放放置，避免 1080P 下出现负坐标裁切。
+     * 画布必须通过 density 缩放整棵 Compose 树，避免 AndroidView / WebView / SurfaceView 在父级 graphicsLayer 下黑屏。
      */
     @Test
-    fun canvas_placesScaledLayerFromTopLeft() {
+    fun canvas_scales_through_density_instead_of_graphics_layer() {
         val source = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvDesignCanvas.kt")
             .readText()
 
         assertThat(source).contains(".fillMaxSize()")
-        assertThat(source).contains("Layout(")
-        assertThat(source).contains("Constraints.fixed(")
-        assertThat(source).contains("canvasPlaceable.placeWithLayer(0, 0)")
-        assertThat(source).contains("transformOrigin = TransformOrigin(0f, 0f)")
-
-        val measureIndex = source.indexOf("Constraints.fixed(")
-        val placeIndex = source.indexOf("canvasPlaceable.placeWithLayer(0, 0)")
-
-        assertThat(measureIndex).isAtLeast(0)
-        assertThat(placeIndex).isAtLeast(0)
-        assertThat(measureIndex).isLessThan(placeIndex)
+        assertThat(source).contains("CompositionLocalProvider(")
+        assertThat(source).contains("LocalTvDesignMetrics provides designMetrics")
+        assertThat(source).contains("LocalDensity provides scaledDensity")
+        assertThat(source).contains("Density(")
+        assertThat(source).contains("baseDensity.density * designMetrics.scale")
+        assertThat(source).doesNotContain("placeWithLayer(")
+        assertThat(source).doesNotContain("TransformOrigin")
+        assertThat(source).doesNotContain("Constraints.fixed(")
     }
 }

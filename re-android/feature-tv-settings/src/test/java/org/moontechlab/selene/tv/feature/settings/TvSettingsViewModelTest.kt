@@ -1,12 +1,20 @@
 package org.moontechlab.selene.tv.feature.settings
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /**
  * 校验 TV 设置状态管理契约。
  */
 class TvSettingsViewModelTest {
+    @Test
+    fun default_player_kernel_matches_persisted_storage_default() {
+        val viewModel = TvSettingsViewModel()
+
+        assertThat(viewModel.state.value.playerKernelKey).isEqualTo("webview")
+    }
+
     @Test
     fun init_prefills_server_config() {
         val viewModel = TvSettingsViewModel(
@@ -61,6 +69,27 @@ class TvSettingsViewModelTest {
         val state = viewModel.state.value
         assertThat(state.adFilterEnabled).isFalse()
         assertThat(state.imageSourceKey).isEqualTo("tencent_cdn")
+    }
+
+    /**
+     * 运行时解析后的真实内核必须回灌到设置状态，
+     * 避免用户选了 WebView 但当前环境实际已经自动切到 Exo。
+     */
+    @Test
+    fun performSavePlayerKernel_updates_state_with_effective_kernel() = runTest {
+        var savedKernel = ""
+        val viewModel = TvSettingsViewModel(
+            initialState = TvSettingsUiState(playerKernelKey = "webview"),
+            savePlayerKernel = { kernel ->
+                savedKernel = kernel
+                "exo"
+            },
+        )
+
+        viewModel.performSavePlayerKernel()
+
+        assertThat(savedKernel).isEqualTo("webview")
+        assertThat(viewModel.state.value.playerKernelKey).isEqualTo("exo")
     }
 
     @Test
