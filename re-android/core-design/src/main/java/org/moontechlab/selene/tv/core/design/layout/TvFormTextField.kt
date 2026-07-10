@@ -93,10 +93,17 @@ fun TvFormTextField(
             )
             .onPreviewKeyEvent { event ->
                 if (!enabled) return@onPreviewKeyEvent false
-                // 浏览态: UP/DOWN 在 KeyDown 即消费，阻止 Compose 空间导航"跳行"
-                if (!isEditing && (event.key == Key.DirectionUp || event.key == Key.DirectionDown)) {
+                // 浏览态仅在宿主提供自定义焦点链时接管上下方向键。
+                val arrowHandler = when (event.key) {
+                    Key.DirectionUp -> onArrowUp
+                    Key.DirectionDown -> onArrowDown
+                    else -> null
+                }
+                val hasArrowHandler = arrowHandler != null
+                if (!isEditing && hasArrowHandler) {
                     if (event.type == KeyEventType.KeyUp) return@onPreviewKeyEvent true
-                    if (event.key == Key.DirectionUp) onArrowUp?.invoke() else onArrowDown?.invoke()
+                    // 已绑定焦点链时由宿主决定相邻目标。
+                    arrowHandler.invoke()
                     return@onPreviewKeyEvent true
                 }
                 // 编辑态: Back 在 KeyDown 消费
