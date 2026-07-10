@@ -600,7 +600,7 @@ fun buildDetailLayoutSections(
         showSources = sources.isNotEmpty(),
         showEpisodes = episodes.isNotEmpty(),
         showRecommends = hasRecommends,
-        showBottomActions = hasRecommends,
+        showBottomActions = true,
     )
 }
 

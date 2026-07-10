@@ -44,6 +44,20 @@ class TvDetailRouteFocusContractTest {
     }
 
     /**
+     * Hero 首屏播放器和右侧介绍必须平分宽度，避免播放器在 TV 详情页显得过窄。
+     */
+    @Test
+    fun detail_hero_balances_preview_and_info_panel_widths() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("NcatPreviewPanel(")
+        assertThat(source).contains("modifier = Modifier.weight(1f)")
+        assertThat(source).contains("NcatInfoPanel(")
+        assertThat(source).contains("modifier = Modifier.weight(1f)")
+        assertThat(source).doesNotContain(".width(520.dp)")
+    }
+
+    /**
      * 详情页不再默认展示续播提醒条，避免遮挡首屏 Hero。
      */
     @Test

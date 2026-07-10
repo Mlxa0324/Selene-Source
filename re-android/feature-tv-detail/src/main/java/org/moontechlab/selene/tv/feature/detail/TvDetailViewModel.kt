@@ -1,10 +1,16 @@
 package org.moontechlab.selene.tv.feature.detail
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -15,6 +21,8 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoSource
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.api.PlayerState
+import org.moontechlab.selene.tv.core.player.api.matchesPlaybackRequest
+import org.moontechlab.selene.tv.core.player.api.toPlaybackIdentity
 
 /**
  * TV 详情页入口上下文。
@@ -59,12 +67,92 @@ data class TvDetailResumeRecord(
 )
 
 /**
+ * TV 详情页推荐加载状态。
+ */
+enum class TvDetailRecommendLoadState {
+    /** 尚未安排推荐请求。 */
+    Idle,
+
+    /** 推荐请求已经安排，等待延迟或调度执行。 */
+    Scheduled,
+
+    /** 推荐请求正在执行。 */
+    Loading,
+
+    /** 推荐请求成功并返回非空卡片。 */
+    Loaded,
+
+    /** 推荐请求成功但没有可展示卡片。 */
+    Empty,
+
+    /** 推荐请求执行失败。 */
+    Failed,
+}
+
+/**
+ * TV 详情页推荐诊断阶段。
+ */
+enum class TvDetailRecommendDiagnosticStage {
+    /** 推荐任务已经安排。 */
+    Scheduled,
+
+    /** 推荐加载器开始执行。 */
+    Loading,
+
+    /** 推荐身份解析后缺少有效豆瓣 ID。 */
+    MissingDoubanId,
+
+    /** 推荐加载成功且结果非空。 */
+    Success,
+
+    /** 推荐加载成功但结果为空。 */
+    Empty,
+
+    /** 推荐加载失败。 */
+    Failure,
+
+    /** 旧详情的异步推荐结果被忽略。 */
+    StaleIgnored,
+}
+
+/**
+ * TV 详情页推荐诊断事件。
+ *
+ * @property stage 当前诊断阶段。
+ * @property entryKey 详情入口稳定标识。
+ * @property trigger 推荐调度触发原因。
+ * @property count 推荐结果数量。
+ * @property message 简洁诊断信息。
+ */
+data class TvDetailRecommendDiagnostic(
+    val stage: TvDetailRecommendDiagnosticStage,
+    val entryKey: String,
+    val trigger: String = "",
+    val count: Int? = null,
+    val message: String? = null,
+)
+
+/**
+ * TV 详情页推荐诊断接收器。
+ */
+fun interface TvDetailRecommendDiagnosticSink {
+    /**
+     * 记录单个低频推荐诊断事件。
+     *
+     * @param event 推荐诊断事件。
+     */
+    fun record(event: TvDetailRecommendDiagnostic)
+}
+
+/**
  * TV 详情页 UI 状态。
  *
  * @property detail 当前详情聚合模型。
  * @property currentSourceId 当前选中线路 ID。
  * @property currentEpisodeId 当前选中剧集 ID。
  * @property recommendCards 推荐卡片列表。
+ * @property recommendLoadState 推荐加载状态。
+ * @property recommendErrorMessage 推荐加载错误说明。
  * @property isLoading 兼容旧 UI 的首屏加载标记。
  * @property isInitialLoading 首个可播源尚未确定时为 true。
  * @property isLoadingMoreSources 兼容旧 UI 的后台补源标记。
@@ -92,6 +180,8 @@ data class TvDetailUiState(
     val currentSourceId: String = "",
     val currentEpisodeId: String = "",
     val recommendCards: List<TvVideoCard> = emptyList(),
+    val recommendLoadState: TvDetailRecommendLoadState = TvDetailRecommendLoadState.Idle,
+    val recommendErrorMessage: String? = null,
     val isLoading: Boolean = false,
     val isInitialLoading: Boolean = false,
     val isLoadingMoreSources: Boolean = false,
@@ -142,7 +232,8 @@ data class TvDetailUiState(
             val episodeIndex = source.episodes.indexOfFirst { it.id == episode.id }
                 .takeIf { index -> index >= 0 }
                 ?: return null
-            if (episode.url.isBlank()) {
+            val playbackUrl = episode.url.trim()
+            if (playbackUrl.isBlank()) {
                 // 空 URL 不能进入播放器，避免 WebView 黑屏或重复加载无效地址。
                 return null
             }
@@ -153,7 +244,7 @@ data class TvDetailUiState(
                 episodeId = episode.id,
                 episodeIndex = episodeIndex,
                 episodeTitle = episode.title,
-                url = episode.url,
+                url = playbackUrl,
                 startPositionMs = previewPositionMs.takeIf { position -> position > 0L } ?: resumePositionMs,
             )
         }
@@ -187,6 +278,8 @@ data class TvDetailResumeTarget(
  * @property loadFavoriteState 收藏状态加载器。
  * @property saveFavoriteState 收藏状态保存器。
  * @property playerEngine 预览播放器内核。
+ * @property previewDispatcher 预览播放器协程调度器。
+ * @property recommendDiagnosticSink 推荐诊断接收器。
  */
 class TvDetailViewModel(
     initialEntry: TvDetailEntry? = null,
@@ -200,6 +293,8 @@ class TvDetailViewModel(
     private val loadFavoriteState: suspend (TvDetailEntry) -> Boolean = { false },
     private val saveFavoriteState: suspend (TvDetailEntry?, Boolean) -> Unit = { _, _ -> },
     private val playerEngine: PlayerEngine? = null,
+    private val previewDispatcher: CoroutineDispatcher = Dispatchers.Main,
+    private val recommendDiagnosticSink: TvDetailRecommendDiagnosticSink = TvDetailRecommendDiagnosticSink { },
 ) {
     /** 对外暴露的详情页状态。 */
     private val mutableState = MutableStateFlow(TvDetailUiState())
@@ -213,6 +308,21 @@ class TvDetailViewModel(
 
     /** 预览播放器状态监听任务。 */
     private var previewPlayerJob: Job? = null
+
+    /** 详情页数据加载任务，独立于页面组合生命周期，避免全屏返回时中途重跑。 */
+    private var detailLoadJob: Job? = null
+
+    /** 当前后台加载目标视频 ID。 */
+    private var activeLoadVideoId: String? = null
+
+    /** 详情页后台任务作用域。 */
+    private var backgroundScope: CoroutineScope? = null
+
+    /** 当前详情推荐任务。 */
+    private var recommendJob: Job? = null
+
+    /** 已经启动推荐调度的详情加载序号。 */
+    private var recommendStartedSerial: Long? = null
 
     /**
      * 兼容旧路由的详情加载入口。
@@ -233,12 +343,33 @@ class TvDetailViewModel(
     }
 
     /**
+     * 按当前详情入口启动加载。
+     *
+     * 该入口会把任务放到状态机自管作用域里，避免详情页暂时离开组合时整条加载链路被取消。
+     *
+     * @param videoId 当前视频 ID。
+     */
+    fun ensureLoaded(videoId: String) {
+        if (!shouldStartLoad(videoId)) {
+            return
+        }
+        activeLoadVideoId = videoId.trim()
+        detailLoadJob?.cancel()
+        detailLoadJob = getOrCreateBackgroundScope().launch {
+            load(videoId)
+        }
+    }
+
+    /**
      * 加载详情入口。
      *
      * @param entry 详情入口上下文。
      */
     suspend fun load(entry: TvDetailEntry) {
         val serial = ++loadSerial
+        recommendJob?.cancel()
+        recommendJob = null
+        recommendStartedSerial = null
         currentEntry = entry
         previewPlayerJob?.cancel()
         mutableState.value = TvDetailUiState(
@@ -323,13 +454,6 @@ class TvDetailViewModel(
                 return@coroutineScope
             }
             mutableState.value = mutableState.value.copy(isFavorite = favoriteDeferred.await())
-
-            // 推荐是次要链路，本阶段不允许影响首播和空态。
-            val recommends = runCatching { loadRecommends(entry, mutableState.value.detail) }
-                .getOrDefault(emptyList())
-            if (isActiveSerial(serial)) {
-                mutableState.value = mutableState.value.copy(recommendCards = recommends)
-            }
         }
     }
 
@@ -342,14 +466,14 @@ class TvDetailViewModel(
         val state = mutableState.value
         val source = state.detail?.sources?.firstOrNull { it.id == sourceId } ?: return
         val keepEpisodeIndex = state.currentSource
-            ?.episodes
+            ?.playableEpisodes()
             ?.indexOfFirst { episode -> episode.id == state.currentEpisodeId }
             ?.takeIf { index -> index >= 0 }
             ?: 0
-        val episodeId = source.episodes
+        val episodeId = source.playableEpisodes()
             .getOrNull(keepEpisodeIndex)
             ?.id
-            ?: source.firstEpisodeIdOrEmpty()
+            ?: source.firstPlayableEpisodeIdOrEmpty()
         mutableState.value = state.copy(
             currentSourceId = source.id,
             currentEpisodeId = episodeId,
@@ -480,14 +604,15 @@ class TvDetailViewModel(
         allowResumeFallback: Boolean,
         allowInitialSelection: Boolean = true,
     ) {
-        if (!isActiveSerial(serial) || incomingSources.isEmpty()) {
+        val sanitizedIncomingSources = incomingSources.toPlayableSources()
+        if (!isActiveSerial(serial) || sanitizedIncomingSources.isEmpty()) {
             refreshLoadingState()
             return
         }
         val state = mutableState.value
         val mergedSources = mergeSourceLists(
             currentSources = state.detail?.sources.orEmpty(),
-            incomingSources = incomingSources,
+            incomingSources = sanitizedIncomingSources,
         )
         val detail = state.detail.withSources(mergedSources, state.currentSourceId)
         val refreshedCurrentSource = mergedSources.firstOrNull { source -> source.id == state.currentSourceId }
@@ -503,7 +628,7 @@ class TvDetailViewModel(
         }
         maybeSelectInitialSource(
             preferIncoming = preferIncoming,
-            incomingSources = incomingSources,
+            incomingSources = sanitizedIncomingSources,
             allowResumeFallback = allowResumeFallback,
         )
     }
@@ -525,14 +650,14 @@ class TvDetailViewModel(
             refreshLoadingState()
             return
         }
-        val allSources = state.detail?.sources.orEmpty().filter { source -> source.episodes.isNotEmpty() }
+        val allSources = state.detail?.sources.orEmpty().filter { source -> source.hasPlayableEpisodes() }
         if (allSources.isEmpty()) {
             refreshLoadingState()
             return
         }
         val selectedSource = resolveInitialPlayableSource(
             state = state,
-            incomingSources = incomingSources.filter { source -> source.episodes.isNotEmpty() },
+            incomingSources = incomingSources.filter { source -> source.hasPlayableEpisodes() },
             allSources = allSources,
             preferIncoming = preferIncoming,
             allowResumeFallback = allowResumeFallback,
@@ -541,13 +666,14 @@ class TvDetailViewModel(
             return
         }
         val episodeId = selectedSource.resolveInitialEpisodeId(state)
+        val hasPlayableEpisodes = selectedSource.hasPlayableEpisodes()
         mutableState.value = state.copy(
             currentSourceId = selectedSource.id,
             currentEpisodeId = episodeId,
             resumeEpisodeId = episodeId.takeIf { it.isNotBlank() },
             selectedEpisodeGroup = episodeId.toEpisodeGroup(selectedSource),
-            previewPlaybackStarted = selectedSource.episodes.isNotEmpty(),
-            previewIsLoading = selectedSource.episodes.isNotEmpty(),
+            previewPlaybackStarted = hasPlayableEpisodes,
+            previewIsLoading = hasPlayableEpisodes,
         )
         refreshLoadingState()
         startPreviewPlayback()
@@ -601,8 +727,8 @@ class TvDetailViewModel(
         val state = mutableState.value
         val hasCurrentSource = state.currentSource != null
         val allLoaded = state.initialSourcesLoaded && state.moreSourcesLoaded
-        val hasPlayableSource = state.detail?.sources.orEmpty().any { source -> source.episodes.isNotEmpty() }
-        mutableState.value = state.copy(
+        val hasPlayableSource = state.detail?.sources.orEmpty().any { source -> source.hasPlayableEpisodes() }
+        val refreshedState = state.copy(
             isLoading = !hasCurrentSource && !allLoaded,
             isInitialLoading = !hasCurrentSource && !allLoaded,
             isLoadingMoreSources = !state.moreSourcesLoaded,
@@ -610,58 +736,376 @@ class TvDetailViewModel(
             emptyPlaybackCompleted = allLoaded && !hasPlayableSource,
             previewIsLoading = if (allLoaded && !hasCurrentSource) false else state.previewIsLoading,
         )
+        mutableState.value = refreshedState
+        if (refreshedState.emptyPlaybackCompleted) {
+            // 双路搜索完成仍无可播源时，真实 Playing 事件不会到达，立即走推荐兜底。
+            scheduleRecommends(
+                serial = loadSerial,
+                delayMs = 0L,
+                trigger = "empty-playback",
+            )
+        }
     }
 
     /**
      * 启动或刷新预览播放器状态。
      */
     private fun startPreviewPlayback() {
-        val engine = playerEngine ?: return
         val request = mutableState.value.playbackRequest ?: return
+        val serial = loadSerial
+        val engine = playerEngine
+        if (engine == null) {
+            // 已生成有效请求但没有播放器内核时，页面无法收到 Playing 状态，立即加载推荐。
+            scheduleRecommends(
+                serial = serial,
+                delayMs = 0L,
+                trigger = "missing-player-engine",
+            )
+            return
+        }
         previewPlayerJob?.cancel()
-        previewPlayerJob = CoroutineScope(Dispatchers.Main).launch {
-            mutableState.value = mutableState.value.copy(previewIsLoading = true)
-            runCatching { engine.load(request) }
-            engine.state.collect { playerState ->
-                val state = mutableState.value
-                when (playerState) {
-                    is PlayerState.Playing -> {
-                        val snapshot = playerState.snapshot
-                        mutableState.value = state.copy(
-                            previewPlayerReady = true,
-                            previewIsLoading = false,
-                            previewIsPlaying = true,
-                            previewPositionMs = snapshot.positionMs,
-                            previewDurationMs = snapshot.durationMs,
-                            previewNetworkSpeed = snapshot.networkSpeedBytesPerSecond,
-                            previewPlaybackStarted = true,
-                        )
-                    }
-                    is PlayerState.Paused -> {
-                        val snapshot = playerState.snapshot
-                        mutableState.value = state.copy(
-                            previewPlayerReady = snapshot != null || state.previewPlayerReady,
-                            previewIsLoading = false,
-                            previewIsPlaying = false,
-                            previewPositionMs = snapshot?.positionMs ?: state.previewPositionMs,
-                            previewDurationMs = snapshot?.durationMs ?: state.previewDurationMs,
-                        )
-                    }
-                    is PlayerState.Loading -> {
-                        mutableState.value = state.copy(
-                            previewIsLoading = true,
-                            previewIsPlaying = false,
-                        )
-                    }
-                    is PlayerState.Error -> {
-                        mutableState.value = state.copy(
-                            previewIsLoading = false,
-                            previewIsPlaying = false,
-                        )
-                    }
-                    is PlayerState.Idle -> Unit
+        previewPlayerJob = CoroutineScope(previewDispatcher).launch {
+            if (engine.state.value.matchesPlaybackRequest(request)) {
+                // 详情页重新接管共享会话时，如果底层仍是同一媒体，只同步状态，不重新 load。
+                applyPreviewPlayerState(
+                    playerState = engine.state.value,
+                    expectedRequest = request,
+                    serial = serial,
+                )
+            } else {
+                mutableState.value = mutableState.value.copy(previewIsLoading = true)
+                try {
+                    engine.load(request)
+                } catch (cancellation: CancellationException) {
+                    // 切源、切集和页面释放产生的协程取消不是播放器业务失败。
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // 真实预览起播失败时必须结束 loading，避免头图区域无限转圈。
+                    mutableState.value = mutableState.value.copy(
+                        previewIsLoading = false,
+                        previewIsPlaying = false,
+                    )
+                    scheduleRecommends(
+                        serial = serial,
+                        delayMs = 0L,
+                        trigger = "player-load-failure",
+                    )
+                    return@launch
                 }
             }
+            engine.state.collect { playerState ->
+                applyPreviewPlayerState(
+                    playerState = playerState,
+                    expectedRequest = request,
+                    serial = serial,
+                )
+            }
+        }
+    }
+
+    /**
+     * 将播放器内核状态同步到详情页预览状态。
+     *
+     * @param playerState 当前播放器状态。
+     * @param expectedRequest 当前监听任务对应的播放请求。
+     * @param serial 当前详情加载序号。
+     */
+    private fun applyPreviewPlayerState(
+        playerState: PlayerState,
+        expectedRequest: PlaybackRequest,
+        serial: Long,
+    ) {
+        if (!isActiveSerial(serial)) {
+            return
+        }
+        val state = mutableState.value
+        if (state.playbackRequest?.toPlaybackIdentity() != expectedRequest.toPlaybackIdentity()) {
+            // 当前页面已经切到其它线路或剧集时，旧监听任务的任何状态都不能回写预览区。
+            return
+        }
+        when (playerState) {
+            is PlayerState.Playing -> {
+                if (!playerState.matchesPlaybackRequest(expectedRequest)) {
+                    // 共享播放器正在播放其它媒体时，不能污染当前详情的播放状态和续播位置。
+                    return
+                }
+                val snapshot = playerState.snapshot
+                mutableState.value = state.copy(
+                    previewPlayerReady = true,
+                    previewIsLoading = false,
+                    previewIsPlaying = true,
+                    previewPositionMs = snapshot.positionMs,
+                    previewDurationMs = snapshot.durationMs,
+                    previewNetworkSpeed = snapshot.networkSpeedBytesPerSecond,
+                    previewPlaybackStarted = true,
+                )
+                // 只有当前媒体真实进入 Playing 后，才按 Flutter TV 契约延迟加载推荐。
+                scheduleRecommends(
+                    serial = serial,
+                    delayMs = RECOMMEND_PLAYING_DELAY_MS,
+                    trigger = "preview-playing",
+                )
+            }
+
+            is PlayerState.Paused -> {
+                val snapshot = playerState.snapshot
+                if (snapshot != null && !playerState.matchesPlaybackRequest(expectedRequest)) {
+                    // 共享会话的其它媒体暂停状态不能覆盖当前详情预览状态。
+                    return
+                }
+                mutableState.value = state.copy(
+                    previewPlayerReady = snapshot != null || state.previewPlayerReady,
+                    previewIsLoading = false,
+                    previewIsPlaying = false,
+                    previewPositionMs = snapshot?.positionMs ?: state.previewPositionMs,
+                    previewDurationMs = snapshot?.durationMs ?: state.previewDurationMs,
+                )
+            }
+
+            is PlayerState.Loading -> {
+                mutableState.value = state.copy(
+                    previewIsLoading = true,
+                    previewIsPlaying = false,
+                )
+            }
+
+            is PlayerState.Error -> {
+                mutableState.value = state.copy(
+                    previewIsLoading = false,
+                    previewIsPlaying = false,
+                )
+                // 当前媒体明确进入错误终态后，延迟 Playing 触发不再可能，立即加载推荐。
+                scheduleRecommends(
+                    serial = serial,
+                    delayMs = 0L,
+                    trigger = "player-error",
+                )
+            }
+
+            is PlayerState.Idle -> Unit
+        }
+    }
+
+    /**
+     * 安排当前详情的唯一推荐任务。
+     *
+     * @param serial 当前详情加载序号。
+     * @param delayMs 请求前等待毫秒数。
+     * @param trigger 推荐调度触发原因。
+     */
+    private fun scheduleRecommends(
+        serial: Long,
+        delayMs: Long,
+        trigger: String,
+    ) {
+        val entry = currentEntry ?: return
+        if (!isActiveSerial(serial) || recommendStartedSerial == serial) {
+            return
+        }
+        recommendStartedSerial = serial
+        mutableState.value = mutableState.value.copy(
+            recommendLoadState = TvDetailRecommendLoadState.Scheduled,
+            recommendErrorMessage = null,
+        )
+        recordRecommendDiagnostic(
+            stage = TvDetailRecommendDiagnosticStage.Scheduled,
+            entry = entry,
+            trigger = trigger,
+        )
+        recommendJob = getOrCreateBackgroundScope().launch(start = CoroutineStart.UNDISPATCHED) {
+            if (delayMs > 0L) {
+                delay(delayMs)
+            }
+            if (!isActiveSerial(serial)) {
+                recordRecommendDiagnostic(
+                    stage = TvDetailRecommendDiagnosticStage.StaleIgnored,
+                    entry = entry,
+                    trigger = trigger,
+                )
+                return@launch
+            }
+            mutableState.value = mutableState.value.copy(
+                recommendLoadState = TvDetailRecommendLoadState.Loading,
+                recommendErrorMessage = null,
+            )
+            recordRecommendDiagnostic(
+                stage = TvDetailRecommendDiagnosticStage.Loading,
+                entry = entry,
+                trigger = trigger,
+            )
+            try {
+                val cards = loadRecommends(entry, mutableState.value.detail)
+                applyRecommendSuccess(
+                    serial = serial,
+                    entry = entry,
+                    cards = cards,
+                    trigger = trigger,
+                )
+            } catch (throwable: Throwable) {
+                if (throwable is CancellationException) {
+                    // 页面释放或新详情接管产生的取消不属于业务失败。
+                    throw throwable
+                }
+                applyRecommendFailure(
+                    serial = serial,
+                    entry = entry,
+                    throwable = throwable,
+                    trigger = trigger,
+                )
+            }
+        }
+    }
+
+    /**
+     * 应用推荐成功结果。
+     *
+     * @param serial 结果所属详情加载序号。
+     * @param entry 结果所属详情入口。
+     * @param cards 推荐卡片列表。
+     * @param trigger 推荐调度触发原因。
+     */
+    private fun applyRecommendSuccess(
+        serial: Long,
+        entry: TvDetailEntry,
+        cards: List<TvVideoCard>,
+        trigger: String,
+    ) {
+        if (!isActiveSerial(serial)) {
+            recordRecommendDiagnostic(
+                stage = TvDetailRecommendDiagnosticStage.StaleIgnored,
+                entry = entry,
+                trigger = trigger,
+                count = cards.size,
+            )
+            return
+        }
+        val loadState = if (cards.isEmpty()) {
+            TvDetailRecommendLoadState.Empty
+        } else {
+            TvDetailRecommendLoadState.Loaded
+        }
+        mutableState.value = mutableState.value.copy(
+            recommendCards = cards,
+            recommendLoadState = loadState,
+            recommendErrorMessage = null,
+        )
+        recordRecommendDiagnostic(
+            stage = if (cards.isEmpty()) {
+                TvDetailRecommendDiagnosticStage.Empty
+            } else {
+                TvDetailRecommendDiagnosticStage.Success
+            },
+            entry = entry,
+            trigger = trigger,
+            count = cards.size,
+        )
+    }
+
+    /**
+     * 应用推荐失败结果。
+     *
+     * @param serial 结果所属详情加载序号。
+     * @param entry 结果所属详情入口。
+     * @param throwable 推荐加载异常。
+     * @param trigger 推荐调度触发原因。
+     */
+    private fun applyRecommendFailure(
+        serial: Long,
+        entry: TvDetailEntry,
+        throwable: Throwable,
+        trigger: String,
+    ) {
+        val diagnosticMessage = buildRecommendFailureMessage(throwable)
+        if (!isActiveSerial(serial)) {
+            recordRecommendDiagnostic(
+                stage = TvDetailRecommendDiagnosticStage.StaleIgnored,
+                entry = entry,
+                trigger = trigger,
+                message = diagnosticMessage,
+            )
+            return
+        }
+        mutableState.value = mutableState.value.copy(
+            recommendLoadState = TvDetailRecommendLoadState.Failed,
+            recommendErrorMessage = throwable.message
+                ?.trim()
+                ?.takeIf { message -> message.isNotEmpty() }
+                ?: "相关推荐加载失败",
+        )
+        recordRecommendDiagnostic(
+            stage = TvDetailRecommendDiagnosticStage.Failure,
+            entry = entry,
+            trigger = trigger,
+            message = diagnosticMessage,
+        )
+    }
+
+    /**
+     * 构造不包含响应正文或鉴权信息的失败诊断。
+     *
+     * @param throwable 推荐加载异常。
+     * @return 异常类型和简短消息。
+     */
+    private fun buildRecommendFailureMessage(throwable: Throwable): String {
+        val typeName = throwable::class.simpleName.orEmpty().ifBlank { "Throwable" }
+        val rawMessage = throwable.message.orEmpty().trim().ifBlank { "无错误说明" }
+        val message = if (RECOMMEND_DIAGNOSTIC_SENSITIVE_MARKERS.any { marker ->
+                rawMessage.contains(marker, ignoreCase = true)
+            }
+        ) {
+            // HTML 正文和常见鉴权字段不能进入结构化诊断事件。
+            "已省略敏感错误内容"
+        } else {
+            rawMessage.replace(Regex("""\s+"""), " ")
+                .take(MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH)
+        }
+        return "$typeName: $message"
+    }
+
+    /**
+     * 记录推荐诊断，诊断失败不能反向影响详情业务。
+     *
+     * @param stage 推荐诊断阶段。
+     * @param entry 详情入口。
+     * @param trigger 推荐调度触发原因。
+     * @param count 推荐结果数量。
+     * @param message 简洁诊断信息。
+     */
+    private fun recordRecommendDiagnostic(
+        stage: TvDetailRecommendDiagnosticStage,
+        entry: TvDetailEntry?,
+        trigger: String,
+        count: Int? = null,
+        message: String? = null,
+    ) {
+        val event = TvDetailRecommendDiagnostic(
+            stage = stage,
+            entryKey = entry.detailEntryKey(),
+            trigger = trigger,
+            count = count,
+            message = message,
+        )
+        runCatching { recommendDiagnosticSink.record(event) }
+    }
+
+    /**
+     * 构造推荐诊断使用的稳定详情标识。
+     *
+     * @return `source::videoId` 形式的入口标识。
+     */
+    private fun TvDetailEntry?.detailEntryKey(): String {
+        val entry = this ?: return "::"
+        return "${entry.source.trim()}::${entry.videoId.trim()}"
+    }
+
+    /**
+     * 获取或创建详情页后台任务作用域。
+     *
+     * @return 详情加载和推荐任务共享的后台作用域。
+     */
+    private fun getOrCreateBackgroundScope(): CoroutineScope {
+        return backgroundScope ?: CoroutineScope(SupervisorJob() + previewDispatcher).also { createdScope ->
+            backgroundScope = createdScope
         }
     }
 
@@ -676,6 +1120,45 @@ class TvDetailViewModel(
     }
 
     /**
+     * 判断当前是否需要再次发起详情加载。
+     *
+     * @param videoId 当前详情页视频 ID。
+     * @return 仍需发起加载时返回 true。
+     */
+    private fun shouldStartLoad(videoId: String): Boolean {
+        val normalizedVideoId = videoId.trim()
+        if (normalizedVideoId.isBlank()) {
+            return false
+        }
+        val currentLoadingVideoId = activeLoadVideoId.orEmpty()
+        if (currentLoadingVideoId == normalizedVideoId && detailLoadJob?.isActive == true) {
+            // 页面切到全屏后立即返回时，仍在执行的同视频加载任务必须继续复用。
+            return false
+        }
+        val currentVideoId = currentEntry?.videoId.orEmpty()
+        val isSameEntry = currentVideoId == normalizedVideoId
+        if (!isSameEntry) {
+            return true
+        }
+        val state = mutableState.value
+        return state.detail == null ||
+            (!state.initialSourcesLoaded && !state.moreSourcesLoaded && state.currentSourceId.isBlank())
+    }
+
+    /**
+     * 释放详情页内部持有的后台任务。
+     */
+    fun release() {
+        detailLoadJob?.cancel()
+        previewPlayerJob?.cancel()
+        recommendJob?.cancel()
+        activeLoadVideoId = null
+        recommendStartedSerial = null
+        backgroundScope?.cancel()
+        backgroundScope = null
+    }
+
+    /**
      * 合并播放源列表。
      *
      * @param currentSources 当前播放源。
@@ -687,7 +1170,7 @@ class TvDetailViewModel(
         incomingSources: List<TvVideoSource>,
     ): List<TvVideoSource> {
         val merged = linkedMapOf<String, TvVideoSource>()
-        (currentSources + incomingSources).forEach { source ->
+        (currentSources + incomingSources).toPlayableSources().forEach { source ->
             val key = source.matchKey()
             val existing = merged[key]
             merged[key] = when {
@@ -749,7 +1232,7 @@ class TvDetailViewModel(
      */
     private fun TvVideoSource.resolveInitialEpisodeId(state: TvDetailUiState): String {
         val resumeIndex = state.resumeEpisodeIndex()
-        return episodes.getOrNull(resumeIndex)?.id ?: firstEpisodeIdOrEmpty()
+        return playableEpisodes().getOrNull(resumeIndex)?.id ?: firstPlayableEpisodeIdOrEmpty()
     }
 
     /**
@@ -760,8 +1243,8 @@ class TvDetailViewModel(
      */
     private fun TvVideoSource?.resolveRefreshedEpisodeId(currentEpisodeId: String): String {
         if (this == null) return currentEpisodeId
-        return episodes.firstOrNull { episode -> episode.id == currentEpisodeId }?.id
-            ?: episodes.firstOrNull()?.id.orEmpty()
+        return playableEpisodes().firstOrNull { episode -> episode.id == currentEpisodeId }?.id
+            ?: firstPlayableEpisodeIdOrEmpty()
     }
 
     /**
@@ -777,12 +1260,52 @@ class TvDetailViewModel(
     }
 
     /**
-     * 获取线路第一集 ID。
+     * 获取线路中的可播放剧集。
      *
-     * @return 第一集 ID。
+     * @return 已过滤空地址后的剧集列表。
      */
-    private fun TvVideoSource.firstEpisodeIdOrEmpty(): String {
-        return episodes.firstOrNull()?.id.orEmpty()
+    private fun TvVideoSource.playableEpisodes(): List<TvEpisode> {
+        return episodes.filter { episode -> episode.hasPlayableUrl() }
+    }
+
+    /**
+     * 判断线路是否仍然存在真实可播放剧集。
+     *
+     * @return 至少一集有真实地址时返回 true。
+     */
+    private fun TvVideoSource.hasPlayableEpisodes(): Boolean {
+        return playableEpisodes().isNotEmpty()
+    }
+
+    /**
+     * 获取线路首个可播放剧集 ID。
+     *
+     * @return 首个可播放剧集 ID。
+     */
+    private fun TvVideoSource.firstPlayableEpisodeIdOrEmpty(): String {
+        return playableEpisodes().firstOrNull()?.id.orEmpty()
+    }
+
+    /**
+     * 判断当前剧集是否具备真实播放地址。
+     *
+     * @return 地址非空时返回 true。
+     */
+    private fun TvEpisode.hasPlayableUrl(): Boolean {
+        return url.trim().isNotBlank()
+    }
+
+    /**
+     * 把线路列表收口为仅包含可播放剧集的版本。
+     *
+     * @return 已过滤空地址剧集与空线路的列表。
+     */
+    private fun List<TvVideoSource>.toPlayableSources(): List<TvVideoSource> {
+        return map { source ->
+            source.copy(episodes = source.playableEpisodes())
+        }.filter { source ->
+            source.episodes.isNotEmpty()
+        }
     }
 
     /**
@@ -897,5 +1420,20 @@ class TvDetailViewModel(
     private companion object {
         /** 选集分组大小。 */
         const val EPISODE_GROUP_SIZE = 20
+
+        /** 真实预览开始后等待推荐加载的毫秒数。 */
+        const val RECOMMEND_PLAYING_DELAY_MS = 2_000L
+
+        /** 推荐失败诊断允许保留的最大消息长度。 */
+        const val MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH = 160
+
+        /** 推荐失败诊断需要过滤的 HTML 与鉴权标记。 */
+        val RECOMMEND_DIAGNOSTIC_SENSITIVE_MARKERS = listOf(
+            "<html",
+            "cookie",
+            "authorization",
+            "password",
+            "token",
+        )
     }
 }

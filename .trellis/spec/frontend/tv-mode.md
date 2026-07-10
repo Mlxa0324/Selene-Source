@@ -226,6 +226,7 @@ class TvDetailViewModel(
 
 - `loadExactSources(source, id)` owns the exact `source + id` request path. Blank input and资料源 (`douban`, `bangumi`) must short-circuit to an empty list.
 - `loadMoreSourcesByEntry(title, searchTitle, year)` owns the title fallback path. `searchTitle` wins; `title` is the fallback.
+- Kotlin TV title fallback search should prefer the backend SSE stream when available. Each `source_result` event must be filtered and merged incrementally before the full stream completes.
 - `loadMoreSources` must call `onIncrementalResults` as soon as a playable batch arrives, even if the final list is still being assembled.
 - `initialSourcesLoaded` and `moreSourcesLoaded` are per-lane completion flags. `emptyPlaybackCompleted` becomes true only when both lanes are done and no playable source exists.
 - `isInitialLoading` stops when the first playable source is selected or when both lanes complete with no source. `isMoreSourcesLoading` tracks the fallback lane only.
@@ -236,6 +237,7 @@ class TvDetailViewModel(
 
 - Exact lane fails, more lane succeeds -> keep playing, no fatal error.
 - More lane fails, exact lane succeeds -> keep playing, no fatal error.
+- SSE stream fails before any playable batch arrives -> title fallback may degrade to batch `api.search(query)`, but once incremental batches have arrived they must remain visible and usable.
 - Both lanes finish with no playable source -> set `emptyPlaybackCompleted=true` and show the completed empty state.
 - Resume target exists but does not match any current source -> do not auto-pick a wrong source before both lanes finish.
 - Duplicate `source + id` with more episodes -> keep the source with the larger episode list.
@@ -250,6 +252,7 @@ class TvDetailViewModel(
 
 - `TvDetailViewModelTest` must cover exact-first, more-first, exact-failure-then-more-success, dual-empty completion, duplicate merge, resume wait, and playback request refresh.
 - `TvDetailRepositoryTest` must cover `hasPlayableIdentity`, exact source loading, and title fallback source loading.
+- `TvDetailRepositoryTest` must also cover SSE incremental source emission and the batch-search fallback when the SSE connection fails before the first result.
 - `TvAppContainerTest` must cover loader injection and old `source::id::title` compatibility.
 - `git diff --check` must pass for the files in the task batch.
 
@@ -268,6 +271,102 @@ val more = loadMoreSources(videoId, detail)
 val exactSources = loadExactSources(entry)
 val moreSources = loadMoreSources(entry) { incremental ->
   mergeSources(incremental)
+}
+```
+
+### 3.3.2 Kotlin TV 详情页相关推荐契约
+
+#### 1. Scope / Trigger
+
+- Trigger: 修改 Kotlin TV 详情页推荐调度、豆瓣身份解析、豆瓣详情 HTML 抓取/解析或推荐列表回写。
+- Scope: `re-android/core-network`、`re-android/core-data`、`re-android/feature-tv-detail`、`re-android/app-tv`。
+- 推荐属于独立次要任务，不得等待标题补源、收藏态或其它非首播任务完成，也不得反向改写播放源、首播空态或收藏状态。
+
+#### 2. Signatures
+
+```kotlin
+fun interface DoubanSubjectHtmlSource {
+  suspend fun fetchSubjectHtml(doubanId: String): String
+}
+
+enum class TvDetailRecommendLoadState {
+  Idle,
+  Scheduled,
+  Loading,
+  Loaded,
+  Empty,
+  Failed,
+}
+
+suspend fun DoubanRepository.loadDetailRecommends(
+  doubanId: String,
+): List<TvVideoCard>
+
+internal suspend fun resolveTvDetailRecommendDoubanId(
+  entry: TvDetailEntry,
+  latestDetail: TvVideoDetail?,
+  exactDetail: TvVideoDetail?,
+  resolveByTitle: suspend (TvVideoDetail?) -> String,
+): String?
+```
+
+#### 3. Contracts
+
+- 有有效预览播放器时，只在当前媒体真实进入 `PlayerState.Playing` 后安排推荐，并固定延迟 `2_000ms` 执行；普通 `Loading` 不能提前走兜底。
+- 以下终态无法再等待正常 `Playing` 时立即加载推荐：双源链路完成仍无可播源、未注入播放器内核、`engine.load(request)` 真实失败、当前播放器进入 `PlayerState.Error`。
+- 同一详情加载序号只能安排一个推荐任务；切换详情必须取消旧任务、清空旧推荐、重置为 `Idle`，并用 `loadSerial` 拒绝旧回包。
+- 协程正常取消必须继续抛出 `CancellationException`，不能写成 `Failed` 或误记业务失败。
+- 豆瓣 ID 优先级固定为：当前最新详情 `doubanId` → 同入口精确详情 `doubanId` → 豆瓣入口 `videoId` → 标题/年份解析；空字符串和哨兵值 `"0"` 都属于无效 ID。
+- 精确详情只能按规范化 `source::videoId` 保存；同入口并发请求必须使用单调递增 token，旧请求晚到不得覆盖新详情或恢复已删除的豆瓣身份。
+- `SeleneDoubanHtmlApi` 保留豆瓣直连、PoW 验证和镜像回退；`DoubanSubjectHtmlSource` 是仓库测试注入边界。
+- `DoubanDetailsParser` 必须平衡扫描完整 `div#recommendations`，支持单双引号、属性乱序、绝对/协议相对/站内相对 subject 链接、可选评分，并把协议相对海报补为 HTTPS。
+- HTML 抓取异常必须传播到 ViewModel 推荐边界；解析空列表写成 `Empty`，异常写成 `Failed`，二者都不得清除已经发现的播放源。
+- 诊断只记录阶段、入口键、触发原因、数量和短错误说明；HTML 正文、Cookie、Authorization、密码和 token 不得进入日志。
+
+#### 4. Validation & Error Matrix
+
+- 当前媒体 `Playing`，标题补源仍未结束 -> 延迟 2 秒独立加载推荐并允许回写列表。
+- 有可播源且播放器仍为正常 `Loading` -> 保持 `Scheduled` 之前状态，继续等待真实 `Playing`。
+- 双源为空、无播放器、真实 load 失败或播放器错误 -> 不等待 2 秒，立即执行唯一兜底任务。
+- 推荐抓取/解析抛异常 -> `recommendLoadState=Failed`，保留播放请求、线路列表、首播空态和收藏态。
+- 推荐 HTML 合法但没有完整卡片 -> `recommendLoadState=Empty`，推荐轨道继续隐藏。
+- 第二个详情已加载，首个详情推荐晚到 -> 记录 `StaleIgnored` 并丢弃结果，不覆盖当前页面。
+- 延迟推荐任务因切换详情或页面释放被正常取消 -> 不写 `Failure`，也不额外写 `StaleIgnored`。
+- 当前共享播放器上报其它媒体的 Playing/Paused -> 不修改当前预览状态，不触发当前详情推荐。
+
+#### 5. Good/Base/Bad Cases
+
+- Good: 当前影片真实起播后延迟 2 秒抓取豆瓣详情 HTML，标题补源仍在后台继续，推荐卡片先独立显示。
+- Base: 当前影片没有可播源，但入口能解析出豆瓣 ID；双源链路收敛后立即加载推荐，页面仍可展示推荐列表。
+- Bad: 把推荐放到精确源、全量标题补源和收藏全部完成之后，或用 `runCatching(...).getOrDefault(emptyList())` 把网络失败静默伪装成空结果。
+
+#### 6. Tests Required
+
+- `TvDetailViewModelTest` 必须覆盖 Playing 后 2 秒独立加载、Loading 不提前兜底、四类终态兜底、单任务去重、失败状态隔离、错误媒体隔离和旧结果拒绝。
+- `DoubanDetailsParserTest` 必须覆盖嵌套容器、支持的链接形态、缺失评分、无推荐区、标签不平衡和不完整条目。
+- `DoubanRepositoryTest` 必须覆盖 HTML 数据源注入、解析成功、未注入数据源和抓取异常传播。
+- `TvAppContainerTest` 必须覆盖豆瓣 ID 优先级、空值/`0` 拒绝、假 HTML 推荐接线、跨入口隔离和同入口 token 版本保护。
+- `TvDetailPresentationTest` 必须覆盖非空推荐展示轨道、空推荐隐藏轨道但保留底部操作。
+
+#### 7. Wrong vs Correct
+
+**Wrong**
+
+```kotlin
+val recommends = runCatching {
+  loadRecommends(entry, detail)
+}.getOrDefault(emptyList())
+```
+
+**Correct**
+
+```kotlin
+if (playerState.matchesPlaybackRequest(expectedRequest)) {
+  scheduleRecommends(
+    serial = serial,
+    delayMs = 2_000L,
+    trigger = "preview-playing",
+  )
 }
 ```
 
@@ -348,18 +447,19 @@ class TvPlayRecordService {
 实现要求：
 
 - 左右键短按保持单次 10 秒 seek。
-- 左右键长按必须先经过 250ms 短按保护阈值，进入连续 seek 后前 5 秒按每真实秒推进 120 视频秒计算。
-- 长按有效时长超过 5 秒后，连续 seek 按每真实秒推进 180 视频秒计算。
-- 内部 tick 可以按 100ms 调度；第一档每 tick 下发 12 视频秒，第二档每 tick 下发 18 视频秒。
+- 左右键长按必须先经过 250ms 短按保护阈值；进入连续 seek 后，从首次按下到未满 4 秒使用第一档。
+- 物理按住达到 4 秒后切换第二档；内部 tick 固定按 100ms 调度，第一档每 tick 下发 12 视频秒，第二档每 tick 下发 22 视频秒。
+- 按住 10 秒的累计目标约为 30 分钟；按现有 250ms 启动、100ms tick 计算，包含首次 10 秒短按时累计为 1786 视频秒（29 分 46 秒）。
 - 实际 `seekTo` 目标、底部进度条和 seek 后 loading 恢复锚点必须使用真实 seek 目标，不能使用中心提示的装饰性展示时间。
-- 中心 seek 提示允许单独计算展示时间：秒个位按真实秒慢速变化，秒十位继续跟随真实 seek 目标快速变化，用于提升长按时的数字可读性。
+- 中心 seek 提示允许单独计算展示时间：秒个位每个物理秒只变化一次，秒十位继续跟随真实 seek 目标快速变化，用于提升长按时的数字可读性。
+- 左右方向键 `KeyUp` 必须先停止内部连续 seek 任务，再消费按键事件，避免松手后继续跳转。
 
 测试要求：
 
 - 测试必须覆盖短按 10 秒不变。
-- 测试必须覆盖长按前 5 秒的 120 视频秒/真实秒推进。
-- 测试必须覆盖长按 5 秒后的 180 视频秒/真实秒推进。
+- 测试必须覆盖 250ms 进入第一档、4 秒切换到第二档，以及 10 秒累计约 30 分钟。
 - 测试必须覆盖中心提示展示时间与真实 seek 目标分离，避免后续把装饰性展示时间误用于 `seekTo` 或 loading 锚点。
+- 测试必须覆盖秒个位按物理秒变化、250ms 边界平滑衔接和 `KeyUp` 立即停止连续 seek。
 
 ### 3.6 原生 TV 数据与网络层契约
 
@@ -765,7 +865,7 @@ Future<void> _handleDetailBackPressed() async {
 | 底部进度条缓冲段 | 在已播放轨道和背景轨道之间叠加浅灰色缓冲段（`Colors.white.withValues(alpha: 0.24)`），数据来自 `TvFullscreenPlaybackController.cachedRanges`，通过 `resolvePlayerCachedProgressSegments()` 计算分段位置；缓冲显示范围截断至当前播放位置 + 3 分钟 |
 | 底部进度条尺寸 | 轨道高度 6px，当前时间圆点 15x15；圆点居中偏移量 `knobLeft = (playedWidth - 7.5).clamp(0.0, trackWidth - 15.0)` |
 | 菜单未弹出时确认键 | 切换播放和暂停，不弹出底部菜单 |
-| 菜单未弹出时左右键 | 执行进度跳转，前 5 秒固定 5 秒步进，之后平滑加速到 19 秒封顶 |
+| 菜单未弹出时左右键 | 短按跳转 10 秒；长按 250ms 后按 100ms tick 连续跳转，未满 4 秒每 tick 12 秒，达到 4 秒后每 tick 22 秒，按住 10 秒约跨越 30 分钟 |
 | 左右键进度提示 | 屏幕中心展示浅灰圆角时间提示，格式为 `当前时间 / 总时长` |
 | seek 后 loading | 短按或长按 seek 后应显示无背景的 `tv-fullscreen-loading` 与网速反馈；长按松手后先收起 seek 中心提示和底部进度壳层；只有当前播放时间点从本轮 seek/loading 锚点向前推进后才能收起，`ready`、`play`、`isPlaying` 或 `isLoading=false` 不得单独清理；复用详情页播放器时全屏壳必须监听真实 `VideoPlayerWidgetController` 的进度事件，避免底层 `isLoading` 滞留或缺少全屏页本地 controller 时转圈永久残留；网速优先复用播放器控制器真实下载速度，未知或暂无样本时才回退 `0KB/s` |
 | 底部提醒 | 菜单未弹出时展示返回键、下键和安全提醒文案 |
@@ -802,7 +902,8 @@ data class PlaybackSnapshot(
 - `core-player-api` 只定义播放器协议、播放请求、播放快照、状态和画面比例枚举，不依赖 ExoPlayer 或 WebView。
 - `core-player-exo` 是 ExoPlayer 主内核实现，必须依赖 `DispatcherProvider.playback` 执行 `load / play / pause / seekTo / restoreSnapshot / release` 等播放控制动作。
 - `PlaybackSnapshot` 必须保留 `videoId / sourceId / episodeId / url / positionMs / durationMs / playbackSpeed / resizeMode`，用于全屏切内核后恢复当前线路、剧集、进度、倍速和画面比例。
-- `TvSeekController.computeDeltaSeconds(holdMs)` 的规则必须对齐 Flutter TV 全屏播放器：长按初期固定 5 秒，小步进后平滑加速，最大 19 秒封顶。
+- `TvSeekController.computeDeltaSeconds(holdMs)` 的规则固定为：`holdMs < 250` 返回 10 秒，`250 <= holdMs < 4000` 返回 12 秒，`holdMs >= 4000` 返回 22 秒。
+- `TvSeekController.computeDisplayPositionMs(...)` 只负责中心提示的可读性：秒个位按物理秒慢变，真实 seek 目标、进度条和 loading 锚点仍使用实际位置。
 - ExoPlayer 和 WebView 兜底内核都必须实现 `PlayerEngine`，全屏播放器壳只依赖协议，不直接引用具体内核类。
 - 全屏播放器底部弹框进入「其它」后，必须展示 `内核切换` 入口；切换状态机要先从当前内核 `captureSnapshot()`，再对目标内核执行 `load + restoreSnapshot`，最后释放旧内核。
 - WebView 兜底链路的 JS 桥至少要上报 `positionMs / durationMs / isPlaying` 三个字段，原生桥接层负责把 JSON 映射成可驱动 UI 的播放事件。
@@ -811,10 +912,123 @@ data class PlaybackSnapshot(
 
 - `PlaybackSnapshotTest.snapshot_keeps_source_episode_position_speed_and_resize_mode` 覆盖快照恢复字段。
 - `ExoPlayerEngineTest.seekTo_runs_on_playback_dispatcher` 覆盖 seek 不在主线程直接执行。
-- `TvSeekControllerTest.longPress_seek_delta_accelerates_after_threshold` 覆盖长按加速。
-- `TvSeekControllerTest.longPress_seek_delta_caps_at_max_step` 覆盖 19 秒封顶。
+- `TvSeekControllerTest.longPress_seek_delta_changes_gear_at_four_physical_seconds` 覆盖 4 秒换挡。
+- `TvSeekControllerTest.continuousSeek_ten_second_hold_travels_about_thirty_minutes` 覆盖 10 秒累计约 30 分钟。
+- `TvSeekControllerTest.displayPosition_seconds_ones_advances_once_per_physical_second` 覆盖秒个位慢变。
+- `TvPlayerRouteControlContractTest.route_direction_key_up_branch_stops_continuous_seek_before_consuming_event` 覆盖松手立即停止内部任务。
 - `TvPlayerEngineSwitcherTest.switchEngine_restores_snapshot_on_target_engine` 覆盖 Exo -> WebView 切换恢复。
 - `WebViewPlayerBridgeTest.onPlaybackEvent_maps_js_payload_to_player_state` 覆盖 JS 事件桥接。
+
+#### 原生共享播放会话契约
+
+##### 1. Scope / Trigger
+
+- Trigger: 修改 Kotlin TV 详情页预览、全屏播放器、播放器导航、WebView 播放页复用或播放器会话释放边界。
+- Scope: `re-android/app-tv`、`re-android/feature-tv-detail`、`re-android/feature-tv-player`、`re-android/core-player-api`、`re-android/core-player-webview`。
+- This contract exists to keep detail preview -> fullscreen transition smooth without merging the two pages into one file.
+
+##### 2. Signatures
+
+```kotlin
+data class TvSharedPlaybackContext(
+  val request: PlaybackRequest,
+  val sources: List<PlaybackSource> = emptyList(),
+  val episodes: List<PlaybackEpisode> = emptyList(),
+)
+
+class TvSharedPlayerSession(
+  val kernel: String,
+  val playerEngine: PlayerEngine,
+  val exoEngine: ExoPlayerEngine? = null,
+  val webViewSession: WebViewPlayerSession? = null,
+)
+
+class TvSharedPlayerHost(
+  createExoSession: () -> TvSharedPlayerSession,
+  createWebViewSession: () -> TvSharedPlayerSession,
+) {
+  var currentKernel: String?
+  var currentContext: TvSharedPlaybackContext?
+
+  fun openOrReuseSession(kernel: String): TvSharedPlayerSession
+  fun updatePlaybackContext(
+    request: PlaybackRequest,
+    sources: List<PlaybackSource> = emptyList(),
+    episodes: List<PlaybackEpisode> = emptyList(),
+  )
+  suspend fun clearPlaybackFlow()
+}
+
+fun PlaybackRequest.toPlaybackIdentity(): PlaybackIdentity
+fun PlaybackSnapshot.toPlaybackIdentity(): PlaybackIdentity
+fun PlaybackRequest.matchesPlaybackSnapshot(snapshot: PlaybackSnapshot?): Boolean
+fun PlayerState.snapshotOrNull(): PlaybackSnapshot?
+fun PlayerState.matchesPlaybackRequest(request: PlaybackRequest): Boolean
+```
+
+##### 3. Contracts
+
+- 详情页和全屏页继续保持独立 route、独立文件、独立 ViewModel；共享的是播放器会话，不是把两页 UI 合并成一个页面。
+- `TvNavGraph` 顶层必须持有唯一 `TvSharedPlayerHost`，详情页和全屏页都从宿主读取同一份 `TvSharedPlayerSession`。
+- `TvSharedPlayerHost.currentContext` 是当前播放流的主上下文来源；旧的 `TvPlaybackRequestStore` 只能作为过渡回退，命中后要回写宿主。
+- 详情页预览起播前和全屏页 `loadInitialRequest()` 前，都必须先用 `PlayerState.matchesPlaybackRequest(request)` 判断当前引擎是否已经承载同一媒体。
+- “同一媒体”只比较 `videoId / sourceId / episodeId / url`；`startPositionMs`、倍速、画面比例不参与“是否重载”的身份判断。
+- WebView 链路必须复用 `WebViewPlayerSession` 持有的唯一 `WebView`；同一 `playbackUrl` 只允许重新挂载 View，不允许再次 `loadUrl(...)`。
+- `WebViewPlayerSurface` 只负责消费共享 session、挂载 WebView 和分发命令；WebView 设置、JS bridge、资源错误日志和页面 reload 判定都归 `WebViewPlayerSession`。
+- 详情页和全屏页同时处于导航过渡组合树时，只有当前活跃 route 可以持有播放器画面输出；`ExoPlayerSurface` 必须先解绑失活 `PlayerView`，再由活跃页面下一帧接管，`WebViewPlayerSurface` 必须把共享 `WebView` 重新挂到活跃页面的独立容器。
+- 全屏播放器根节点必须主动请求焦点，菜单关闭后必须把焦点交还根节点；`PlayerView`、`WebView` 等平台画面层不得抢占遥控器或键盘焦点。
+- 系统返回键只能由 `BackHandler` 处理一次；键盘 `Esc` 可以走 Compose 按键链路，但不得同时再监听 `Key.Back` 导致菜单关闭和退出连续执行。
+- 共享会话只允许在离开整条播放流后释放；播放流内允许保活的 route 至少包含 `detail`、`player`、`danmakuMatch`。
+
+##### 4. Validation & Error Matrix
+
+- 当前 `PlayerState` 与目标 `PlaybackRequest` 媒体身份一致 -> 只同步状态，不调用新的 `engine.load(...)`。
+- `PlaybackRequest.url` 为空或空白 -> `WebViewPlayerSession.attachPlaybackRequest()` 直接返回，不触发 `loadUrl(...)`。
+- `sharedPlayerHost.currentContext == null` 且 `TvPlaybackRequestStore` 命中 -> 允许回退恢复，但必须立即 `updatePlaybackContext(...)` 回写宿主。
+- 详情页或全屏页在播放流内部切换 route -> 不得调用 `clearPlaybackFlow()`，否则会导致预览 -> 全屏重新建播放器。
+- 全屏返回详情页且媒体身份未变化 -> 不重新 `load(...)`，但必须重新绑定活跃画面输出并触发平台视图重绘，不能出现声音继续、画面黑屏。
+- 当前 route 离开播放流集合 -> 必须 `clearPlaybackFlow()`，统一释放 Exo/WebView 会话和播放上下文，避免串到下一部片。
+- `WebView` JS bridge 回调抛异常或 JSON 映射失败 -> 只记日志，不得打断整个 HLS 页面事件链。
+
+##### 5. Good/Base/Bad Cases
+
+- Good: 详情页预览已经在播第 3 集，进入全屏时全屏页直接接管同一会话，画面不中断，也不重新缓冲。
+- Base: 全屏页首次打开时宿主上下文为空，但旧 `requestId` store 仍有数据，播放器页先用回退上下文起播，再把上下文回写到宿主。
+- Bad: 详情页和全屏页各自创建一套 WebView / PlayerEngine，或把 `startPositionMs` 变化误判成新媒体，导致切全屏时再次 `load(...)`。
+
+##### 6. Tests Required
+
+- `TvSharedPlayerHostTest.openOrReuseSession_reuses_existing_session_for_same_kernel` 覆盖同内核会话复用。
+- `TvSharedPlayerHostTest.clearPlaybackFlow_releases_cached_sessions_and_context` 覆盖离开播放流后的统一释放。
+- `TvDetailViewModelTest.load_skips_preview_reload_when_engine_already_has_same_media` 覆盖详情页预览幂等加载。
+- `TvPlayerViewModelTest.loadInitialRequest_skips_reload_when_engine_already_has_same_media` 覆盖全屏页幂等加载。
+- `WebViewPlayerSurfaceContractTest.webview_player_session_reuses_single_webview_instance` 覆盖 WebView 单实例复用。
+- `WebViewPlayerSurfaceContractTest.webview_player_surface_reattaches_shared_view_to_active_route_container` 覆盖 WebView 返回页面后的重新挂载。
+- `ExoPlayerSurfaceContractTest.exo_surface_rebinds_video_output_when_route_becomes_active` 覆盖 Exo 画面输出所有权交接。
+- `TvPlayerRouteControlContractTest.route_requests_root_focus_for_fullscreen_keyboard_controls` 覆盖全屏按键焦点。
+- `TvNavGraphPlayerContractTest.player_route_shares_webview_session_between_view_model_and_surface` 覆盖导航层共享会话接线。
+
+##### 7. Wrong vs Correct
+
+**Wrong**
+
+```kotlin
+val detailSession = appContainer.createWebViewPlayerSession()
+val playerSession = appContainer.createWebViewPlayerSession()
+
+detailSession.engine.load(request)
+playerSession.engine.load(request)
+```
+
+**Correct**
+
+```kotlin
+val sharedSession = sharedPlayerHost.openOrReuseSession(playerKernel)
+
+if (!sharedSession.playerEngine.state.value.matchesPlaybackRequest(request)) {
+  sharedSession.playerEngine.load(request)
+}
+```
 
 ### 4.5 TV 设置输入框契约
 

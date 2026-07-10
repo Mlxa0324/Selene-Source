@@ -4,15 +4,19 @@ import org.moontechlab.selene.tv.core.data.model.TvEpisode
 import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
 import org.moontechlab.selene.tv.core.data.model.TvVideoSource
 import org.moontechlab.selene.tv.core.network.SeleneTvApi
+import org.moontechlab.selene.tv.core.network.SeleneTvSearchStreamClient
+import org.moontechlab.selene.tv.core.network.TvSearchSourceResultEvent
 import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
 
 /**
  * TV 详情仓库。
  *
  * @property api TV 服务端接口。
+ * @property searchStreamClient TV 流式搜索客户端。
  */
 class TvDetailRepository(
     private val api: SeleneTvApi,
+    private val searchStreamClient: SeleneTvSearchStreamClient? = null,
 ) {
     /**
      * 判断入口身份是否可以直接请求详情接口。
@@ -120,6 +124,7 @@ class TvDetailRepository(
         } ?: matchedResults.first()
         return TvVideoDetail(
             id = primarySource.videoId.ifBlank { fallbackId.trim() },
+            doubanId = primaryResult.resolvedDoubanId().orEmpty(),
             title = primaryResult.title.orEmpty().trim().ifBlank { query },
             description = primaryResult.description.orEmpty(),
             posterUrl = primaryResult.poster.orEmpty().ifBlank { posterUrl },
@@ -139,12 +144,11 @@ class TvDetailRepository(
      * @return 与当前影片同标题和年份的播放源列表。
      */
     suspend fun loadMoreSources(detail: TvVideoDetail): List<TvVideoSource> {
-        val query = detail.searchTitle().ifBlank { detail.title.trim() }
-        if (query.isBlank()) return emptyList()
-        return api.search(query)
-            .results.orEmpty()
-            .filter { result -> result.matchesDetail(detail) }
-            .toDistinctPlayableSources()
+        return loadMoreSourcesByEntry(
+            title = detail.title,
+            searchTitle = detail.searchTitle(),
+            year = detail.year,
+        )
     }
 
     /**
@@ -153,15 +157,50 @@ class TvDetailRepository(
      * @param title 展示标题。
      * @param searchTitle 搜索标题，空时回退 title。
      * @param year 年份过滤。
+     * @param onIncremental SSE 增量结果回调。
      * @return 匹配入口影片的播放源。
      */
     suspend fun loadMoreSourcesByEntry(
         title: String,
         searchTitle: String = "",
         year: String = "",
+        onIncremental: ((List<TvVideoSource>) -> Unit)? = null,
     ): List<TvVideoSource> {
         val query = searchTitle.trim().ifBlank { title.trim() }
         if (query.isBlank()) return emptyList()
+        val streamClient = searchStreamClient
+        if (streamClient != null && onIncremental != null) {
+            val streamedSources = linkedMapOf<String, TvVideoSource>()
+            val streamedResult = runCatching {
+                streamClient.search(query) { event ->
+                    if (event is TvSearchSourceResultEvent) {
+                        val incrementalSources = event.results
+                            .filter { result ->
+                                result.matchesTitleAndYear(
+                                    title = title.ifBlank { query },
+                                    year = year,
+                                )
+                            }
+                            .toDistinctPlayableSources()
+                        if (incrementalSources.isEmpty()) {
+                            return@search
+                        }
+                        incrementalSources.forEach { source ->
+                            val key = source.matchKey()
+                            val existing = streamedSources[key]
+                            if (existing == null || source.episodes.size > existing.episodes.size) {
+                                // 流式搜索可能对同一 source+id 后续补回更多剧集，最终仍保留更完整的一条。
+                                streamedSources[key] = source
+                            }
+                        }
+                        onIncremental(incrementalSources)
+                    }
+                }
+            }
+            if (streamedResult.isSuccess || streamedSources.isNotEmpty()) {
+                return streamedSources.values.toList()
+            }
+        }
         return api.search(query)
             .results.orEmpty()
             .filter { result -> result.matchesTitleAndYear(title = title.ifBlank { query }, year = year) }
@@ -179,6 +218,68 @@ class TvDetailRepository(
         return api.search(query)
             .results.orEmpty()
             .toDistinctPlayableSources()
+    }
+
+    /**
+     * 解析详情页对应的豆瓣条目 ID。
+     *
+     * 对齐 Flutter 手机端逻辑：
+     * 1. 优先使用详情接口已返回的 `doubanId`；
+     * 2. 豆瓣资料卡入口直接复用入口视频 ID；
+     * 3. 仍缺失时，再按标题搜索并取命中结果里出现次数最多的 `doubanId`。
+     *
+     * @param detail 当前详情模型。
+     * @param entrySource 详情入口来源。
+     * @param entryVideoId 详情入口视频 ID。
+     * @param title 详情标题。
+     * @param searchTitle 标题补源搜索词。
+     * @param year 年份过滤条件。
+     * @return 真实豆瓣条目 ID；无法还原时返回空字符串。
+     */
+    suspend fun resolveDoubanId(
+        detail: TvVideoDetail?,
+        entrySource: String,
+        entryVideoId: String,
+        title: String,
+        searchTitle: String = "",
+        year: String = "",
+    ): String {
+        detail?.doubanId
+            ?.trim()
+            ?.takeIf { doubanId -> doubanId.isNotBlank() }
+            ?.let { return it }
+
+        if (entrySource.trim().lowercase() == UNPLAYABLE_SOURCE_DOUBAN) {
+            // 豆瓣资料卡入口本身就以豆瓣 subject id 作为 videoId。
+            return entryVideoId.trim()
+        }
+
+        val resolvedTitle = title.trim().ifBlank { detail?.title.orEmpty().trim() }
+        val resolvedSearchTitle = searchTitle.trim().ifBlank { resolvedTitle }
+        if (resolvedSearchTitle.isBlank()) {
+            return ""
+        }
+        val resolvedYear = year.trim().ifBlank { detail?.year.orEmpty().trim() }
+        val matchedResults = api.search(resolvedSearchTitle)
+            .results
+            .orEmpty()
+            .filter { result ->
+                result.matchesTitleAndYear(
+                    title = resolvedTitle.ifBlank { resolvedSearchTitle },
+                    year = resolvedYear,
+                )
+            }
+
+        val doubanIdCounts = linkedMapOf<String, Int>()
+        for (result in matchedResults) {
+            val doubanId = result.resolvedDoubanId() ?: continue
+            // 保持第一次出现顺序，确保同票时结果稳定。
+            doubanIdCounts[doubanId] = (doubanIdCounts[doubanId] ?: 0) + 1
+        }
+        return doubanIdCounts.entries
+            .maxByOrNull { (_, count) -> count }
+            ?.key
+            .orEmpty()
     }
 
     /**
@@ -239,6 +340,7 @@ class TvDetailRepository(
         )
         return TvVideoDetail(
             id = videoSource.videoId,
+            doubanId = resolvedDoubanId().orEmpty(),
             title = title.orEmpty(),
             description = description.orEmpty(),
             posterUrl = poster.orEmpty(),
@@ -267,11 +369,16 @@ class TvDetailRepository(
             source = resolvedSource,
             videoId = resolvedId,
             name = sourceName.orEmpty().ifBlank { resolvedSource },
-            episodes = episodes.orEmpty().mapIndexed { index, url ->
+            episodes = episodes.orEmpty().mapIndexedNotNull { index, url ->
+                val normalizedUrl = url.trim()
+                if (normalizedUrl.isBlank()) {
+                    // 空播放地址不能继续透传到详情页，否则会把黑色真播放器容器误判成可播预览。
+                    return@mapIndexedNotNull null
+                }
                 TvEpisode(
                     id = "$sourceIdentity-$index",
                     title = episodeTitleAt(index),
-                    url = url,
+                    url = normalizedUrl,
                 )
             },
         )
@@ -285,6 +392,19 @@ class TvDetailRepository(
      */
     private fun TvSearchResultResponse.matchesDetail(detail: TvVideoDetail): Boolean {
         return matchesTitleAndYear(title = detail.title, year = detail.year)
+    }
+
+    /**
+     * 提取当前条目携带的豆瓣 ID。
+     *
+     * @return 合法豆瓣 ID；无值时返回 null。
+     */
+    private fun TvSearchResultResponse.resolvedDoubanId(): String? {
+        return doubanId
+            ?.takeIf { value -> value > 0 }
+            ?.toString()
+            ?.trim()
+            ?.takeIf { value -> value.isNotBlank() }
     }
 
     /**

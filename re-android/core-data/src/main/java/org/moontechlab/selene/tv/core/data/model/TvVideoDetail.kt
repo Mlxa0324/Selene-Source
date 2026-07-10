@@ -4,6 +4,7 @@ package org.moontechlab.selene.tv.core.data.model
  * TV 影视详情模型。
  *
  * @property id 视频 ID。
+ * @property doubanId 豆瓣条目 ID，用于资料页相关推荐抓取。
  * @property title 视频标题。
  * @property description 剧情简介。
  * @property posterUrl 封面地址。
@@ -13,6 +14,7 @@ package org.moontechlab.selene.tv.core.data.model
  */
 data class TvVideoDetail(
     val id: String,
+    val doubanId: String = "",
     val title: String,
     val description: String,
     val posterUrl: String = "",
