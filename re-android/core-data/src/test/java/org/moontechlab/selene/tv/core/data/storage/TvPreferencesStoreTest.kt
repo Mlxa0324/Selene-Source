@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.data.storage
 
 import com.google.common.truth.Truth.assertThat
+import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
@@ -8,6 +9,30 @@ import org.junit.Test
  * 校验 TV 偏好存储契约。
  */
 class TvPreferencesStoreTest {
+    /**
+     * 播放器内核默认值必须回到 WebView，优先对齐 Flutter TV 的兼容播放链路。
+     */
+    @Test
+    fun player_kernel_defaults_to_webview() = runTest {
+        val store = TvPreferencesStore()
+
+        assertThat(store.peekPlayerKernel()).isEqualTo("webview")
+        assertThat(store.getPlayerKernel()).isEqualTo("webview")
+    }
+
+    /**
+     * 播放器内核必须可保存并同步读取，供导航图首次组合避免误走默认链路。
+     */
+    @Test
+    fun player_kernel_can_be_saved_and_peeked() = runTest {
+        val store = TvPreferencesStore()
+
+        store.savePlayerKernel("exo")
+
+        assertThat(store.peekPlayerKernel()).isEqualTo("exo")
+        assertThat(store.getPlayerKernel()).isEqualTo("exo")
+    }
+
     /**
      * 片头片尾跳过秒数必须可保存并读取，供全屏播放器菜单复用。
      */
@@ -31,5 +56,29 @@ class TvPreferencesStoreTest {
 
         assertThat(store.getSkipIntroSeconds()).isEqualTo(0)
         assertThat(store.getSkipOutroSeconds()).isEqualTo(0)
+    }
+
+    /**
+     * 播放器内核设置不能只停留在内存里，否则安装新包或进程重启后会悄悄回退到默认内核，
+     * 直接干扰 Exo/WebView 真正的运行态排障。
+     */
+    @Test
+    fun player_kernel_source_declares_persistent_backing_store() = runTest {
+        val source = readStoreSource()
+
+        assertThat(source).contains("Context? = null")
+        assertThat(source).contains("getSharedPreferences(")
+        assertThat(source).contains("KEY_PLAYER_KERNEL")
+        assertThat(source).contains("putString(KEY_PLAYER_KERNEL")
+    }
+
+    /**
+     * 读取偏好存储源码。
+     *
+     * @return 当前偏好存储源码文本。
+     */
+    private fun readStoreSource(): String {
+        return File("src/main/java/org/moontechlab/selene/tv/core/data/storage/TvPreferencesStore.kt")
+            .readText()
     }
 }

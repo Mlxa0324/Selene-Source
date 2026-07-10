@@ -9,10 +9,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 
 /**
  * 当前 TV 设计视口标尺。
@@ -32,10 +30,14 @@ val LocalTvDesignMetrics = compositionLocalOf {
 /**
  * TV 设计稿画布。
  *
- * 固定使用指定设计稿尺寸作为逻辑坐标系：
+ * 固定使用指定设计稿尺寸作为视觉基准：
  * - 当前视口小于设计稿时等比缩小；
  * - 当前视口大于设计稿时等比放大；
  * - 所有页面共享同一套逻辑宽高，避免 1080P 切到另一套更紧凑的版式。
+ *
+ * 这里不再对整棵树做 graphicsLayer 缩放，而是改成缩放 `LocalDensity`。
+ * 原因是 WebView / SurfaceView / 其它 AndroidView 在父级 layer 变换下，BlueStacks 等环境里容易出现
+ * “有声音无画面”的黑屏现象；density 缩放可以保持视觉比例，同时让平台视图走原生测量与绘制链路。
  *
  * @param preset 设计稿预设。
  * @param modifier 外层修饰器。
@@ -52,9 +54,9 @@ fun TvDesignCanvas(
             .fillMaxSize()
             .clipToBounds(),
     ) {
-        val density = LocalDensity.current
-        val viewportWidthPx = with(density) { maxWidth.toPx() }
-        val viewportHeightPx = with(density) { maxHeight.toPx() }
+        val baseDensity = LocalDensity.current
+        val viewportWidthPx = with(baseDensity) { maxWidth.toPx() }
+        val viewportHeightPx = with(baseDensity) { maxHeight.toPx() }
         val designMetrics = remember(preset, viewportWidthPx, viewportHeightPx) {
             TvDesignMetrics.fromViewport(
                 preset = preset,
@@ -62,35 +64,23 @@ fun TvDesignCanvas(
                 viewportHeight = viewportHeightPx,
             )
         }
+        val scaledDensity = remember(baseDensity, designMetrics.scale) {
+            Density(
+                density = baseDensity.density * designMetrics.scale,
+                fontScale = baseDensity.fontScale,
+            )
+        }
 
-        CompositionLocalProvider(LocalTvDesignMetrics provides designMetrics) {
-            Layout(
+        CompositionLocalProvider(
+            LocalTvDesignMetrics provides designMetrics,
+            LocalDensity provides scaledDensity,
+        ) {
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clipToBounds(),
-                content = {
-                    Box {
-                        content()
-                    }
-                },
-            ) { measurables, constraints ->
-                val canvasPlaceable = measurables.single().measure(
-                    Constraints.fixed(
-                        width = designMetrics.effectiveDesignWidth,
-                        height = designMetrics.effectiveDesignHeight,
-                    ),
-                )
-                layout(
-                    width = constraints.maxWidth,
-                    height = constraints.maxHeight,
-                ) {
-                    // 画布固定从左上角放置，避免 Box + graphicsLayer 组合把缩小后的内容居中成负坐标。
-                    canvasPlaceable.placeWithLayer(0, 0) {
-                        scaleX = designMetrics.scale
-                        scaleY = designMetrics.scale
-                        transformOrigin = TransformOrigin(0f, 0f)
-                    }
-                }
+            ) {
+                content()
             }
         }
     }

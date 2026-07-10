@@ -1,5 +1,7 @@
 package org.moontechlab.selene.tv.core.data.storage
 
+import android.content.Context
+
 /**
  * TV 服务器配置。
  *
@@ -25,9 +27,19 @@ data class TvDanmakuManualMatchRecord(
 )
 
 /**
- * TV 偏好内存存储实现。
+ * TV 偏好存储。
+ *
+ * 关键播放配置优先落到 SharedPreferences，避免安装新包或进程重启后丢失；
+ * 当没有 Android Context 时回退到内存实现，供 JVM 单测和纯源码契约测试复用。
  */
-class TvPreferencesStore {
+class TvPreferencesStore(
+    private val appContext: Context? = null,
+) {
+    /** 持久化偏好句柄；纯 JVM 场景允许为空并退回内存值。 */
+    private val sharedPreferences by lazy {
+        appContext?.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    }
+
     /** 当前服务器配置。 */
     private var serverConfig: TvServerConfig? = null
 
@@ -210,11 +222,29 @@ class TvPreferencesStore {
     /** 弹幕速度同步开关。 */
     private var danmakuSyncVideoSpeed: Boolean = false
 
-    /** 播放器内核标识（exo / webview）。 */
-    private var playerKernel: String = DEFAULT_PLAYER_KERNEL
+    /** 播放器内核标识（exo / webview）。启动时先从持久化恢复，保证导航首次组合不误判。 */
+    private var playerKernel: String = normalizePlayerKernel(
+        sharedPreferences?.getString(KEY_PLAYER_KERNEL, DEFAULT_PLAYER_KERNEL),
+    )
 
     suspend fun getPlayerKernel(): String = playerKernel
-    suspend fun savePlayerKernel(kernel: String) { playerKernel = kernel }
+    fun peekPlayerKernel(): String = playerKernel
+
+    /**
+     * 保存播放器内核设置。
+     *
+     * @param kernel 播放器内核标识。
+     */
+    suspend fun savePlayerKernel(kernel: String) {
+        val normalizedKernel = normalizePlayerKernel(kernel)
+        // 先更新内存快照，确保当前进程内的同步 peek 能立刻拿到最新值。
+        playerKernel = normalizedKernel
+        // 再写入 SharedPreferences，让重启后的首次组合也拿到同一内核。
+        sharedPreferences
+            ?.edit()
+            ?.putString(KEY_PLAYER_KERNEL, normalizedKernel)
+            ?.apply()
+    }
 
     suspend fun getThemeKey(): String = themeKey
     suspend fun saveThemeKey(key: String) { themeKey = key }
@@ -278,7 +308,33 @@ class TvPreferencesStore {
         return title.trim().lowercase().replace(Regex("\\s+"), " ")
     }
 
+    /**
+     * 规整播放器内核标识。
+     *
+     * @param kernel 原始内核值。
+     * @return 规整后的受支持内核。
+     */
+    private fun normalizePlayerKernel(kernel: String?): String {
+        return when (kernel?.trim()?.lowercase()) {
+            PLAYER_KERNEL_EXO -> PLAYER_KERNEL_EXO
+            PLAYER_KERNEL_WEBVIEW -> PLAYER_KERNEL_WEBVIEW
+            else -> DEFAULT_PLAYER_KERNEL
+        }
+    }
+
     companion object {
+        /** SharedPreferences 文件名。 */
+        private const val PREFERENCES_NAME = "selene_tv_preferences"
+
+        /** 播放器内核持久化键。 */
+        private const val KEY_PLAYER_KERNEL = "player_kernel"
+
+        /** ExoPlayer 内核标识。 */
+        private const val PLAYER_KERNEL_EXO = "exo"
+
+        /** WebView 内核标识。 */
+        private const val PLAYER_KERNEL_WEBVIEW = "webview"
+
         private const val DEFAULT_THEME_KEY = "teal"
         private const val DEFAULT_BACKGROUND_KEY = "deep_blue"
         private const val DEFAULT_FOCUS_EFFECT_KEY = "smooth_border"
@@ -286,6 +342,6 @@ class TvPreferencesStore {
         private const val DEFAULT_DANMAKU_OPACITY = 0.8f
         private const val DEFAULT_DANMAKU_FONT_SCALE = 1.0f
         private const val DEFAULT_DANMAKU_DISPLAY_AREA = 1.0f
-        private const val DEFAULT_PLAYER_KERNEL = "exo"
+        private const val DEFAULT_PLAYER_KERNEL = "webview"
     }
 }

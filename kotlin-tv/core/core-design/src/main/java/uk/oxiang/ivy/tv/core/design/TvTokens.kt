@@ -1,0 +1,170 @@
+package uk.oxiang.ivy.tv.core.design
+
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+
+/**
+ * TV 端视觉 token 集合。
+ *
+ * 颜色相关的可切换维度（主题色/背景色/焦点效果）见 [uk.oxiang.ivy.tv.core.design.theme]
+ * 包下的 `TvThemePaletteCatalog`/`TvThemeBackgroundCatalog`/`TvFocusEffectMode`；
+ * 这里只保留与主题无关的中性 token 和尺寸常量。
+ */
+object TvTokens {
+    /**
+     * TV 端分割线与描边颜色。
+     */
+    val Outline = Color(0xFF4B515C)
+
+    /**
+     * TV 错误状态颜色。
+     */
+    val Danger = Color(0xFFE25555)
+
+    /**
+     * TV 主要文字颜色。
+     */
+    val TextPrimary = Color(0xFFF7F8FA)
+
+    /**
+     * TV 次级文字颜色。
+     */
+    val TextSecondary = Color(0xFFB6C2BF)
+
+    /**
+     * TV 端页面卡片背景色。
+     */
+    val Surface = Color(0xFF272C30)
+
+    /**
+     * TV 端页面悬浮背景色。
+     */
+    val SurfaceElevated = Color(0xFF343946)
+
+    /**
+     * TV 焦点描边宽度。
+     */
+    val FocusBorderWidth = 3.dp
+
+    /**
+     * TV 卡片圆角。
+     */
+    val CardRadius = 8.dp
+
+    /**
+     * TV 页面水平安全边距。
+     */
+    val PageHorizontalPadding = 46.dp
+
+    /**
+     * TV 页面顶部留白。
+     */
+    val PageTopPadding = 24.dp
+
+    /**
+     * TV 页面区块纵向间距。
+     */
+    val SectionSpacing = 28.dp
+
+    /**
+     * TV 页面卡片间距。
+     */
+    val CardSpacing = 18.dp
+
+    /**
+     * TV 页面纵向内容底部留白。
+     */
+    val PageBottomPadding = 32.dp
+
+    /**
+     * TV 海报卡片宽度，对齐 Flutter `TvVideoCard.width`。
+     */
+    val PosterWidth = 158.dp
+
+    /**
+     * TV 海报卡片整体高度，对齐 Flutter `TvVideoCard.height`。
+     */
+    val PosterHeight = 300.dp
+
+    /**
+     * TV 海报封面高度，对齐 Flutter `TvVideoCard.coverHeight`。
+     */
+    val PosterCoverHeight = 237.dp
+
+    /**
+     * TV 海报卡片获焦缩放比例，对齐 Flutter `TvVideoCard.focusedScale`。
+     */
+    const val PosterFocusedScale = 1.08f
+
+    /**
+     * TV 海报卡片获焦缩放动画时长，对齐 Flutter `AnimatedScale` 140ms。
+     */
+    const val PosterFocusScaleDurationMs = 140
+
+    /**
+     * TV 顶部快捷入口高度。
+     */
+    val TopActionHeight = 44.dp
+
+    /**
+     * TV 顶部快捷入口圆角。
+     */
+    val TopActionRadius = 22.dp
+
+    /**
+     * TV 弹窗水平内边距。
+     */
+    val DialogHorizontalPadding = 34.dp
+
+    /**
+     * TV 弹窗垂直内边距。
+     */
+    val DialogVerticalPadding = 28.dp
+
+    /**
+     * TV 弹窗内容间距。
+     */
+    val DialogContentSpacing = 18.dp
+
+    /**
+     * TV 弹窗按钮间距。
+     */
+    val DialogButtonSpacing = 14.dp
+
+    // ── 表单专用 Token ──
+
+    /**
+     * TV 表单输入框/开关/滑杆背景色。
+     */
+    val FormFieldBackground = Color(0xFF0E1112)
+
+    /**
+     * TV 表单分区面板背景色。
+     */
+    val FormCardBackground = Color(0xFF15191B)
+
+    /**
+     * TV 表单默认边框色。
+     */
+    val FormBorder = Color(0xFF293136)
+
+    /**
+     * TV 表单标签/提示文字颜色。
+     */
+    val FormTextSecondary = Color(0xFF98A2A8)
+
+    /**
+     * TV 表单单行高度。
+     */
+    val FormRowHeight = 52.dp
+
+    /**
+     * TV 表单分区内边距。
+     */
+    val FormPanelPadding = 24.dp
+
+    /**
+     * TV 表单行水平内边距。
+     */
+    val FormRowHorizontalPadding = 20.dp
+}

@@ -1,0 +1,130 @@
+package uk.oxiang.ivy.tv.app.navigation
+
+import com.google.common.truth.Truth.assertThat
+import org.junit.Test
+
+/**
+ * 校验 TV 顶级路由的公开契约。
+ */
+class TvDestinationTest {
+    /**
+     * 确认顶部导航暴露的路由顺序与设计一致。
+     */
+    @Test
+    fun topLevelDestinations_expose_expected_routes() {
+        val routes = TvDestination.topLevelDestinations.map { it.route }
+
+        assertThat(routes).containsExactly(
+            "home",
+            "library/movie",
+            "library/tv",
+            "library/anime",
+            "library/show",
+            "live",
+            "search",
+            "history",
+            "favorites",
+            "settings",
+        ).inOrder()
+    }
+
+    /**
+     * 确认全屏播放器路由不会泄露到顶部导航。
+     */
+    @Test
+    fun fullscreen_player_route_is_hidden_from_top_level_tabs() {
+        assertThat(TvDestination.Player.route).isEqualTo("player/{requestId}")
+        assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.Player)
+    }
+
+    /**
+     * 确认播放器提供播放请求 ID 参数和路由构造方法，且能安全编码特殊字符。
+     */
+    @Test
+    fun player_route_builder_encodes_request_id() {
+        assertThat(TvDestination.Player.requestIdArg).isEqualTo("requestId")
+        assertThat(
+            TvDestination.Player.createRoute("playback/id?seq=01 中文"),
+        ).isEqualTo("player/playback%2Fid%3Fseq%3D01%20%E4%B8%AD%E6%96%87")
+    }
+
+    /**
+     * 确认详情路由不会泄露到顶部导航，且能安全编码视频 ID。
+     */
+    @Test
+    fun detail_route_is_hidden_from_top_level_tabs_and_encodes_video_id() {
+        assertThat(TvDestination.Detail.route).isEqualTo("detail/{videoId}")
+        assertThat(TvDestination.topLevelDestinations).doesNotContain(TvDestination.Detail)
+        assertThat(TvDestination.Detail.videoIdArg).isEqualTo("videoId")
+        assertThat(TvDestination.Detail.createRoute("测试 影片/第2集"))
+            .isEqualTo("detail/%E6%B5%8B%E8%AF%95%20%E5%BD%B1%E7%89%87%2F%E7%AC%AC2%E9%9B%86")
+    }
+
+    /**
+     * 确认首页与直播属于左侧主菜单。
+     */
+    @Test
+    fun primary_menu_destinations_expose_home_and_live() {
+        val routes = TvDestination.primaryMenuDestinations.map { it.route }
+
+        assertThat(routes).containsExactly(
+            "home",
+            "library/movie",
+            "library/tv",
+            "library/anime",
+            "library/show",
+            "live",
+        ).inOrder()
+    }
+
+    /**
+     * 确认搜索与工具页属于右上角快捷入口。
+     */
+    @Test
+    fun quick_access_destinations_expose_expected_routes() {
+        val routes = TvDestination.quickAccessDestinations.map { it.route }
+
+        assertThat(routes).containsExactly(
+            "search",
+            "history",
+            "favorites",
+            "settings",
+        ).inOrder()
+    }
+
+    /**
+     * 确认快捷入口暴露图标符号，供顶部按钮渲染图标加文字。
+     */
+    @Test
+    fun quick_access_destinations_expose_icon_glyphs() {
+        val iconGlyphs = TvDestination.quickAccessDestinations.map { it.iconGlyph }
+
+        assertThat(iconGlyphs).containsExactly(
+            "⌕",
+            "↺",
+            "♥",
+            "⚙",
+        ).inOrder()
+    }
+
+    /**
+     * 确认导航展示文案对齐 Flutter TV 顶部入口。
+     */
+    @Test
+    fun topLevelDestinations_expose_tv_labels() {
+        val labels = TvDestination.topLevelDestinations.map { it.label }
+
+        assertThat(labels).containsExactly(
+            "首页",
+            "电影",
+            "剧集",
+            "动漫",
+            "综艺",
+            "直播",
+            "搜索",
+            "播放历史",
+            "收藏夹",
+            "设置",
+        ).inOrder()
+    }
+}
