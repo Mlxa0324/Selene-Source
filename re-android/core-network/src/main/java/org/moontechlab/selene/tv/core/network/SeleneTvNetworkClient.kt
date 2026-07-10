@@ -206,10 +206,7 @@ object SeleneTvNetworkFactory {
      */
     fun createDanmakuApi(rawBaseUrl: String): SeleneDanmakuApi {
         val baseUrl = normalizeBaseUrl(rawBaseUrl)
-        val okHttpClient = OkHttpClient.Builder()
-            // 弹幕 API 是独立服务，不走后台登录 Cookie，也避免系统代理改写目标。
-            .proxy(Proxy.NO_PROXY)
-            .build()
+        val okHttpClient = createBaseOkHttpClientBuilder().build()
         return Retrofit.Builder()
             .baseUrl(baseUrl)
             .client(okHttpClient)
@@ -225,9 +222,7 @@ object SeleneTvNetworkFactory {
      * @return 直连后台的 OkHttp 客户端。
      */
     internal fun createOkHttpClient(sessionCookieStore: SessionCookieStore): OkHttpClient {
-        return OkHttpClient.Builder()
-            // 后台 API 必须直连，避免模拟器或系统代理把公网域名劫持到旧内网地址。
-            .proxy(Proxy.NO_PROXY)
+        return createBaseOkHttpClientBuilder()
             .addInterceptor(
                 AuthInterceptor(
                     cookieProvider = { sessionCookieStore.currentCookie() },
@@ -243,8 +238,7 @@ object SeleneTvNetworkFactory {
      */
     fun createDoubanApi(): SeleneDoubanApi {
         val baseUrl = normalizeBaseUrl(DOUBAN_BASE_URL)
-        val okHttpClient = OkHttpClient.Builder()
-            .proxy(Proxy.NO_PROXY)
+        val okHttpClient = createBaseOkHttpClientBuilder()
             .addInterceptor(DoubanHeaderInterceptor())
             .build()
         return Retrofit.Builder()
@@ -253,6 +247,43 @@ object SeleneTvNetworkFactory {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(SeleneDoubanApi::class.java)
+    }
+
+    /**
+     * 创建豆瓣详情页 HTML 抓取接口。
+     *
+     * @return 豆瓣 HTML 抓取接口。
+     */
+    fun createDoubanHtmlApi(): SeleneDoubanHtmlApi {
+        val verifyService = createDoubanVerifyService()
+        return SeleneDoubanHtmlApi(verifyService = verifyService)
+    }
+
+    /**
+     * 创建豆瓣 PoW 验证绕过服务。
+     *
+     * @return PoW 验证绕过服务。
+     */
+    fun createDoubanVerifyService(): DoubanVerifyService {
+        val client = createBaseOkHttpClientBuilder().build()
+        return DoubanVerifyService(client = client)
+    }
+
+    /**
+     * 创建默认直连 OkHttp 构建器。
+     *
+     * 统一注入：
+     * 1. `Proxy.NO_PROXY`，避免系统代理劫持；
+     * 2. 全局请求耗时 EventListener，方便排查首页/详情慢请求。
+     *
+     * @return 已配置默认策略的 OkHttp 构建器。
+     */
+    internal fun createBaseOkHttpClientBuilder(): OkHttpClient.Builder {
+        return OkHttpClient.Builder()
+            // 后台 / 豆瓣 / 弹幕都必须直连，避免模拟器或系统代理改写目标地址。
+            .proxy(Proxy.NO_PROXY)
+            // 全局统计整次 HTTP 调用耗时，覆盖 JSON 接口和 SSE 长连接。
+            .eventListenerFactory(ResponseTimingEventListenerFactory())
     }
 
     /**

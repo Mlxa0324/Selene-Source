@@ -184,6 +184,8 @@ fun TvDetailRoute(
         LazyListState()
     }
     val recommendListState = rememberLazyListState()
+    val detailScrollState = rememberScrollState()
+    val detailScrollScope = rememberCoroutineScope()
 
     Box(
         modifier = Modifier
@@ -193,8 +195,8 @@ fun TvDetailRoute(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 58.dp),
+                .verticalScroll(detailScrollState)
+                .padding(bottom = 80.dp),
         ) {
             NcatDetailTopBar(
                 focusTargets = focusTargets,
@@ -268,7 +270,11 @@ fun TvDetailRoute(
                 NcatBottomActions(
                     focusTargets = focusTargets,
                     hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
-                    onHistoryClick = onHistoryClick,
+                    onBackToTop = {
+                        detailScrollScope.launch {
+                            detailScrollState.animateScrollTo(0)
+                        }
+                    },
                     onExitClick = onExitClick,
                 )
             }
@@ -359,7 +365,7 @@ private fun NcatDetailTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 46.dp, end = 46.dp, top = 54.dp, bottom = 30.dp),
+            .padding(start = 31.dp, end = 31.dp, top = 36.dp, bottom = 20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -370,21 +376,21 @@ private fun NcatDetailTopBar(
             Text(
                 text = "网飞猫",
                 color = Color.White,
-                fontSize = 30.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold,
             )
-            Spacer(Modifier.width(22.dp))
+            Spacer(Modifier.width(15.dp))
             Text(
                 text = "按返回键返回上一页 | 全屏时[向下键]可进行播放设置（内核，倍数，其它）",
                 color = NcatMutedText,
-                fontSize = 18.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NcatTopPill(
@@ -410,7 +416,7 @@ private fun NcatDetailTopBar(
             Text(
                 text = remember { LocalTime.now().format(NcatTimeFormatter) },
                 color = Color.White.copy(alpha = 0.86f),
-                fontSize = 26.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -435,7 +441,7 @@ private fun NcatTopPill(
 ) {
     TvFocusableCard(
         modifier = modifier
-            .height(54.dp)
+            .height(36.dp)
             .width(width),
         focusRequesters = listOf(focusRequester),
         onPressed = onClick,
@@ -443,14 +449,14 @@ private fun NcatTopPill(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF343840), RoundedCornerShape(28.dp))
-                .padding(horizontal = 22.dp),
+                .background(Color(0xFF343840), RoundedCornerShape(19.dp))
+                .padding(horizontal = 15.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = label,
                 color = Color.White,
-                fontSize = 22.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
@@ -480,11 +486,12 @@ private fun NcatDetailHero(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 46.dp),
+            .padding(horizontal = 31.dp),
         horizontalArrangement = Arrangement.spacedBy(42.dp),
         verticalAlignment = Alignment.Top,
     ) {
         NcatPreviewPanel(
+            modifier = Modifier.weight(1f),
             title = state.currentEpisode?.title ?: state.detail?.title.orEmpty(),
             sourceName = state.currentSource?.name.orEmpty(),
             posterUrl = state.detail?.posterUrl.orEmpty(),
@@ -516,6 +523,7 @@ private fun NcatDetailHero(
  * @param title 当前标题。
  * @param sourceName 当前线路名称。
  * @param posterUrl 海报兜底地址。
+ * @param modifier 外层修饰器。
  * @param focusTargets 焦点请求器。
  * @param currentSourceFocusRequester 当前线路焦点。
  * @param onPlayPressed 播放回调。
@@ -532,6 +540,7 @@ private fun NcatPreviewPanel(
     title: String,
     sourceName: String,
     posterUrl: String,
+    modifier: Modifier = Modifier,
     focusTargets: TvDetailFocusTargets,
     currentSourceFocusRequester: FocusRequester?,
     onPlayPressed: (() -> Unit)?,
@@ -546,12 +555,11 @@ private fun NcatPreviewPanel(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     Box(
-        modifier = Modifier
-            .width(650.dp)
+        modifier = modifier
             .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(0.dp))
             .border(
-                width = if (isFocused) 3.dp else 0.dp,
+                width = if (isFocused) 2.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent,
             )
             .focusRequester(focusTargets.player)
@@ -629,32 +637,32 @@ private fun NcatPreviewPlaceholder(
         Column(
             modifier = Modifier
                 .align(Alignment.Center)
-                .padding(horizontal = 28.dp),
+                .padding(horizontal = 19.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
                 text = "NCAT.APP",
                 color = TvTokens.Accent,
-                fontSize = 20.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.ExtraBold,
             )
             Text(
                 text = "网飞猫",
                 color = Color.White,
-                fontSize = 42.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Black,
             )
             Box(
                 modifier = Modifier
-                    .width(360.dp)
-                    .height(2.dp)
+                    .width(240.dp)
+                    .height(1.dp)
                     .background(TvTokens.Accent.copy(alpha = 0.45f)),
             )
             Text(
                 text = if (sourceName.isBlank()) "精彩马上开始" else "精彩马上开始 · $sourceName",
                 color = Color.White.copy(alpha = 0.9f),
-                fontSize = 20.sp,
+                fontSize = 13.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -662,10 +670,10 @@ private fun NcatPreviewPlaceholder(
         Text(
             text = "提醒：请勿随意相信视频上广告、网址、电影、二维码等！",
             color = Color.White.copy(alpha = 0.86f),
-            fontSize = 18.sp,
+            fontSize = 12.sp,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 34.dp, bottom = 30.dp),
+                .padding(start = 23.dp, bottom = 20.dp),
         )
     }
 }
@@ -686,13 +694,13 @@ private fun NcatPreviewLoadingOverlay(previewNetworkSpeed: Long) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(
                 color = TvTokens.Accent,
-                modifier = Modifier.size(38.dp),
-                strokeWidth = 3.dp,
+                modifier = Modifier.size(25.dp),
+                strokeWidth = 2.dp,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = if (previewNetworkSpeed > 0L) formatSpeed(previewNetworkSpeed) else "加载中",
-                fontSize = 15.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White.copy(alpha = 0.94f),
             )
@@ -718,30 +726,30 @@ private fun BoxScope.NcatPreviewProgressBar(
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-            .height(20.dp),
+            .padding(horizontal = 9.dp, vertical = 7.dp)
+            .height(13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(if (isPlaying) "▶" else "⏸", color = Color.White, fontSize = 12.sp)
-        Spacer(Modifier.width(8.dp))
-        Text(formatTime(positionMs), color = Color.White.copy(alpha = 0.96f), fontSize = 12.sp)
-        Spacer(Modifier.width(8.dp))
+        Text(if (isPlaying) "▶" else "⏸", color = Color.White, fontSize = 8.sp)
+        Spacer(Modifier.width(5.dp))
+        Text(formatTime(positionMs), color = Color.White.copy(alpha = 0.96f), fontSize = 8.sp)
+        Spacer(Modifier.width(5.dp))
         Box(
             modifier = Modifier
                 .weight(1f)
-                .height(4.dp)
-                .clip(RoundedCornerShape(2.dp))
+                .height(3.dp)
+                .clip(RoundedCornerShape(1.dp))
                 .background(Color.White.copy(alpha = 0.3f)),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(progress)
-                    .height(4.dp)
-                    .background(TvTokens.Accent, RoundedCornerShape(2.dp)),
+                    .height(3.dp)
+                    .background(TvTokens.Accent, RoundedCornerShape(1.dp)),
             )
         }
-        Spacer(Modifier.width(8.dp))
-        Text(formatTime(durationMs), color = Color.White.copy(alpha = 0.54f), fontSize = 12.sp)
+        Spacer(Modifier.width(5.dp))
+        Text(formatTime(durationMs), color = Color.White.copy(alpha = 0.54f), fontSize = 8.sp)
     }
 }
 
@@ -766,19 +774,19 @@ private fun NcatInfoPanel(
 ) {
     val detail = state.detail ?: return
     Column(
-        modifier = modifier.height(366.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        modifier = modifier.height(244.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             text = detail.title,
             color = Color.White,
-            fontSize = 32.sp,
+            fontSize = 21.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
         Row(
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NcatMetaBadge(label = "豆瓣：暂无评分", accent = true)
@@ -791,29 +799,29 @@ private fun NcatInfoPanel(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(104.dp)
-                .background(NcatSurface, RoundedCornerShape(6.dp)),
+                .height(83.dp)
+                .background(NcatSurface, RoundedCornerShape(4.dp)),
         ) {
             Text(
                 text = detail.description.ifBlank { "暂无简介" },
                 color = Color.White.copy(alpha = 0.78f),
-                fontSize = 18.sp,
-                lineHeight = 28.sp,
+                fontSize = 12.sp,
+                lineHeight = 19.sp,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
+                modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
             )
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(topStart = 4.dp))
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                    .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(topStart = 3.dp))
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
             ) {
-                Text(text = "更多", color = Color.White.copy(alpha = 0.72f), fontSize = 16.sp)
+                Text(text = "更多", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
             }
         }
         Row(
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NcatActionTile(
@@ -872,15 +880,15 @@ private fun NcatMetaBadge(
 ) {
     Box(
         modifier = Modifier
-            .height(40.dp)
-            .background(if (accent) TvTokens.Accent else NcatSurface, RoundedCornerShape(5.dp))
-            .padding(horizontal = 18.dp),
+            .height(27.dp)
+            .background(if (accent) TvTokens.Accent else NcatSurface, RoundedCornerShape(3.dp))
+            .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = Color.White,
-            fontSize = 18.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
         )
@@ -912,10 +920,10 @@ private fun NcatActionTile(
     val borderColor = if (isFocused) Color.White else Color.Transparent
     Column(
         modifier = modifier
-            .width(92.dp)
-            .height(102.dp)
+            .width(61.dp)
+            .height(68.dp)
             .background(background, RoundedCornerShape(NcatRadius))
-            .border(BorderStroke(3.dp, borderColor), RoundedCornerShape(NcatRadius))
+            .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(NcatRadius))
             .focusRequester(focusRequester)
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
@@ -928,13 +936,13 @@ private fun NcatActionTile(
                     false
                 }
             }
-            .padding(vertical = 14.dp),
+            .padding(vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(text = icon, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(text = label, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        Text(text = icon, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -963,7 +971,7 @@ private fun NcatSourceRail(
     NcatSectionHeader(
         title = "切换线路",
         hint = "遇播放卡顿，音画不同步或无法播放时，请切换播放线路或播放内核",
-        topPadding = 48.dp,
+        topPadding = 32.dp,
     )
     if (sourceOptions.isEmpty()) {
         val message = when {
@@ -981,9 +989,9 @@ private fun NcatSourceRail(
     }
     LazyRow(
         state = listState,
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-        contentPadding = PaddingValues(start = 46.dp, end = 46.dp),
-        modifier = Modifier.height(116.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+        modifier = Modifier.height(77.dp),
     ) {
         items(sourceOptions.size, key = { index -> sourceOptions[index].sourceId }) { index ->
             val option = sourceOptions[index]
@@ -1038,11 +1046,11 @@ private fun NcatSourceCard(
     val label = "${option.label}${option.trailingText}"
     Box(
         modifier = modifier
-            .width(244.dp)
-            .height(104.dp)
+            .width(163.dp)
+            .height(69.dp)
             .background(if (selected) TvTokens.Accent else NcatSurface, RoundedCornerShape(NcatRadius))
             .border(
-                width = if (isFocused) 3.dp else 0.dp,
+                width = if (isFocused) 2.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent,
                 shape = RoundedCornerShape(NcatRadius),
             )
@@ -1065,33 +1073,33 @@ private fun NcatSourceCard(
                     .align(Alignment.TopStart)
                     .background(
                         color = if (selected) Color(0xFFD0171D) else Color(0xFFB73138),
-                        shape = RoundedCornerShape(topStart = NcatRadius, bottomEnd = 2.dp),
+                        shape = RoundedCornerShape(topStart = NcatRadius, bottomEnd = 1.dp),
                     )
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                    .padding(horizontal = 7.dp, vertical = 3.dp),
             ) {
-                Text(text = "待加速", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(text = "待加速", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 24.dp),
+                .padding(top = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 text = label,
                 color = if (selected) Color.White else Color.White.copy(alpha = 0.48f),
-                fontSize = 24.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(5.dp))
             Text(
                 text = if (option.selected) "秒播/4K" else sourceDescription(option),
                 color = if (selected) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.46f),
-                fontSize = 18.sp,
+                fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1147,9 +1155,9 @@ private fun NcatEpisodeGroupRail(
     if (showGroupChoices) {
         LazyRow(
             state = episodeGroupListState,
-            horizontalArrangement = Arrangement.spacedBy(26.dp),
-            contentPadding = PaddingValues(start = 46.dp, end = 46.dp),
-            modifier = Modifier.height(92.dp),
+            horizontalArrangement = Arrangement.spacedBy(17.dp),
+            contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+            modifier = Modifier.height(61.dp),
         ) {
             items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
                 val group = groups[index]
@@ -1190,10 +1198,10 @@ private fun NcatEpisodeGroupRail(
     LazyRow(
         state = episodeListState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(start = 46.dp, end = 46.dp),
+        contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
         modifier = Modifier
-            .height(76.dp)
-            .padding(top = 4.dp),
+            .height(62.dp)
+            .padding(top = 3.dp),
     ) {
         items(selectedGroup.episodes.size, key = { index -> selectedGroup.episodes[index].episodeId }) { index ->
             val episode = selectedGroup.episodes[index]
@@ -1258,7 +1266,7 @@ private fun NcatEpisodeGroupChoice(
     )
     Column(
         modifier = modifier
-            .width(180.dp)
+            .widthIn(min = 60.dp)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
@@ -1277,24 +1285,24 @@ private fun NcatEpisodeGroupChoice(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp)
-                .padding(top = 8.dp)
-                .background(NcatSurface, RoundedCornerShape(3.dp)),
+                .height(13.dp)
+                .padding(top = 5.dp)
+                .background(NcatSurface, RoundedCornerShape(2.dp)),
         ) {
             if (active) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(1f)
-                        .height(20.dp)
-                        .background(TvTokens.Accent, RoundedCornerShape(3.dp)),
+                        .height(13.dp)
+                        .background(TvTokens.Accent, RoundedCornerShape(2.dp)),
                 )
             }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(12.dp))
         Text(
             text = label,
             color = if (active) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
-            fontSize = 24.sp,
+            fontSize = 16.sp,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
         )
     }
@@ -1322,11 +1330,11 @@ private fun NcatEpisodeChip(
     val active = selected || isFocused
     Box(
         modifier = modifier
-            .widthIn(min = 82.dp, max = 170.dp)
-            .height(54.dp)
+            .widthIn(min = 56.dp)
+            .height(48.dp)
             .background(if (active) TvTokens.Accent else NcatSurface, RoundedCornerShape(NcatRadius))
             .border(
-                width = if (isFocused) 3.dp else 0.dp,
+                width = if (isFocused) 2.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent,
                 shape = RoundedCornerShape(NcatRadius),
             )
@@ -1342,16 +1350,14 @@ private fun NcatEpisodeChip(
                     false
                 }
             }
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             color = Color.White,
-            fontSize = 18.sp,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -1375,13 +1381,13 @@ private fun NcatRecommendRail(
     NcatSectionHeader(
         title = "好片推荐",
         hint = null,
-        topPadding = 34.dp,
+        topPadding = 23.dp,
     )
     LazyRow(
         state = listState,
-        horizontalArrangement = Arrangement.spacedBy(26.dp),
-        contentPadding = PaddingValues(start = 46.dp, end = 46.dp),
-        modifier = Modifier.height(320.dp),
+        horizontalArrangement = Arrangement.spacedBy(17.dp),
+        contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+        modifier = Modifier.height(213.dp),
     ) {
         items(cards.size, key = { index -> cards[index].source + "::" + cards[index].id + "::" + index }) { index ->
             val card = cards[index]
@@ -1438,19 +1444,19 @@ private fun NcatRecommendCard(
     )
     Column(
         modifier = modifier
-            .width(170.dp)
+            .width(113.dp)
             .scale(scale),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Box(
             modifier = Modifier
-                .width(170.dp)
-                .height(240.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .width(113.dp)
+                .height(160.dp)
+                .clip(RoundedCornerShape(7.dp))
                 .border(
-                    width = if (isFocused) 3.dp else 0.dp,
+                    width = if (isFocused) 2.dp else 0.dp,
                     color = if (isFocused) Color.White else Color.Transparent,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(7.dp),
                 )
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .focusable(interactionSource = interactionSource),
@@ -1469,7 +1475,7 @@ private fun NcatRecommendCard(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(37.dp)
                     .background(
                         Brush.verticalGradient(
                             listOf(Color.Transparent, Color.Black.copy(alpha = 0.72f)),
@@ -1479,19 +1485,19 @@ private fun NcatRecommendCard(
             Text(
                 text = cardEpisodeText(card),
                 color = Color.White,
-                fontSize = 16.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 14.dp, bottom = 10.dp, end = 10.dp),
+                    .padding(start = 9.dp, bottom = 7.dp, end = 7.dp),
             )
         }
         Text(
             text = card.title,
             color = Color.White,
-            fontSize = 20.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1513,7 +1519,7 @@ private fun NcatPosterPlaceholder() {
         Text(
             text = "网飞猫",
             color = Color(0xFFCACDD2),
-            fontSize = 24.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.ExtraBold,
         )
     }
@@ -1531,19 +1537,18 @@ private fun NcatPosterPlaceholder() {
 private fun NcatBottomActions(
     focusTargets: TvDetailFocusTargets,
     hasEpisodeGroupChoices: Boolean,
-    onHistoryClick: (() -> Unit)?,
+    onBackToTop: () -> Unit,
     onExitClick: (() -> Unit)?,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 18.dp, bottom = 22.dp),
+            .padding(top = 24.dp, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(30.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
             NcatBottomPill(
-                label = "♤ 返回顶部",
+                label = "回到顶部",
                 focusRequester = focusTargets.backTop,
                 modifier = Modifier.focusProperties {
                     up = focusTargets.recommends.firstOrNull()
@@ -1552,10 +1557,10 @@ private fun NcatBottomActions(
                         ?: FocusRequester.Default
                     right = focusTargets.random
                 },
-                onClick = { onHistoryClick?.invoke() },
+                onClick = onBackToTop,
             )
             NcatBottomPill(
-                label = "⦿ 随便看看",
+                label = "返回上一页",
                 focusRequester = focusTargets.random,
                 modifier = Modifier.focusProperties {
                     up = focusTargets.recommends.firstOrNull()
@@ -1567,11 +1572,6 @@ private fun NcatBottomActions(
                 onClick = { onExitClick?.invoke() },
             )
         }
-        Text(
-            text = "按遥控器[返回键]回到顶部导航",
-            color = Color.White.copy(alpha = 0.38f),
-            fontSize = 18.sp,
-        )
     }
 }
 
@@ -1592,21 +1592,21 @@ private fun NcatBottomPill(
 ) {
     TvFocusableCard(
         modifier = modifier
-            .height(54.dp)
-            .width(170.dp),
+            .height(36.dp)
+            .width(113.dp),
         focusRequesters = listOf(focusRequester),
         onPressed = onClick,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF555963), RoundedCornerShape(28.dp)),
+                .background(Color(0xFF555963), RoundedCornerShape(19.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 text = label,
                 color = Color.White.copy(alpha = 0.64f),
-                fontSize = 20.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -1629,21 +1629,21 @@ private fun NcatSectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 46.dp, end = 46.dp, top = topPadding, bottom = 20.dp),
+            .padding(start = 31.dp, end = 31.dp, top = topPadding, bottom = 13.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         Text(
             text = title,
             color = Color.White,
-            fontSize = 30.sp,
+            fontSize = 20.sp,
             fontWeight = FontWeight.ExtraBold,
         )
         if (!hint.isNullOrBlank()) {
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(4.dp))
             Text(
                 text = hint,
                 color = NcatMutedText,
-                fontSize = 20.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1691,18 +1691,18 @@ private fun NcatSmallPill(
 ) {
     TvFocusableCard(
         modifier = Modifier
-            .height(40.dp)
-            .widthIn(min = 82.dp),
+            .height(27.dp)
+            .widthIn(min = 55.dp),
         onPressed = onClick,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .background(if (accent) TvTokens.Accent else NcatSurface, RoundedCornerShape(20.dp))
-                .padding(horizontal = 18.dp),
+                .background(if (accent) TvTokens.Accent else NcatSurface, RoundedCornerShape(13.dp))
+                .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(text = label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(text = label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

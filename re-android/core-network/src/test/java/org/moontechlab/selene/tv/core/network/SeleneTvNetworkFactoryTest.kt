@@ -68,4 +68,15 @@ class SeleneTvNetworkFactoryTest {
 
         assertThat(client.proxy).isEqualTo(Proxy.NO_PROXY)
     }
+
+    /**
+     * 基础客户端应挂上全局耗时监听工厂。
+     */
+    @Test
+    fun createBaseOkHttpClientBuilder_attaches_timing_event_listener_factory() {
+        val client = SeleneTvNetworkFactory.createBaseOkHttpClientBuilder().build()
+
+        assertThat(client.eventListenerFactory)
+            .isInstanceOf(ResponseTimingEventListenerFactory::class.java)
+    }
 }

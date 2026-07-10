@@ -4,6 +4,11 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
+import org.moontechlab.selene.tv.core.network.SeleneTvSearchStreamClient
+import org.moontechlab.selene.tv.core.network.TvSearchCompleteEvent
+import org.moontechlab.selene.tv.core.network.TvSearchSourceResultEvent
+import org.moontechlab.selene.tv.core.network.TvSearchStartEvent
+import org.moontechlab.selene.tv.core.network.TvSearchStreamEvent
 import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
 
@@ -34,6 +39,7 @@ class TvDetailRepositoryTest {
                         sourceName = "线路 A",
                         year = "2026",
                         description = "剧情简介",
+                        doubanId = 35267208,
                     )
                 }
             },
@@ -46,6 +52,7 @@ class TvDetailRepositoryTest {
         assertThat(detail?.title).isEqualTo("详情影片")
         assertThat(detail?.posterUrl).isEqualTo("https://img.test/poster.jpg")
         assertThat(detail?.year).isEqualTo("2026")
+        assertThat(detail?.doubanId).isEqualTo("35267208")
         assertThat(detail?.sourceName).isEqualTo("线路 A")
         assertThat(detail?.description).isEqualTo("剧情简介")
         assertThat(detail?.sources?.first()?.id).isEqualTo("source-a::video-1")
@@ -57,6 +64,37 @@ class TvDetailRepositoryTest {
         assertThat(detail?.sources?.first()?.episodes?.map { episode -> episode.url })
             .containsExactly("https://cdn.test/1.m3u8", "https://cdn.test/2.m3u8")
             .inOrder()
+    }
+
+    /**
+     * 详情映射必须过滤空播放地址，避免详情页把脏剧集误判成可播线路。
+     */
+    @Test
+    fun loadDetail_filters_blank_episode_urls_from_remote_detail() = runTest {
+        val repository = TvDetailRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getDetail(
+                    source: String,
+                    id: String,
+                ): TvSearchResultResponse {
+                    return TvSearchResultResponse(
+                        id = "video-blank",
+                        title = "空地址影片",
+                        episodes = listOf("", "   ", "https://cdn.test/3.m3u8"),
+                        episodeTitles = listOf("无效 1", "无效 2", "正片"),
+                        source = "source-a",
+                        sourceName = "线路 A",
+                    )
+                }
+            },
+        )
+
+        val detail = repository.loadDetail(source = "source-a", id = "video-blank")
+
+        assertThat(detail?.sources?.first()?.episodes?.map { episode -> episode.title })
+            .containsExactly("正片")
+        assertThat(detail?.sources?.first()?.episodes?.map { episode -> episode.url })
+            .containsExactly("https://cdn.test/3.m3u8")
     }
 
     /**
@@ -114,6 +152,7 @@ class TvDetailRepositoryTest {
                                 sourceName = "线路 B",
                                 year = "2026",
                                 description = "搜索详情简介",
+                                doubanId = 35267208,
                             ),
                         ),
                     )
@@ -134,6 +173,7 @@ class TvDetailRepositoryTest {
         assertThat(fallbackDetail?.title).isEqualTo("详情影片")
         assertThat(fallbackDetail?.description).isEqualTo("搜索详情简介")
         assertThat(fallbackDetail?.posterUrl).isEqualTo("https://img.test/search.jpg")
+        assertThat(fallbackDetail?.doubanId).isEqualTo("35267208")
         assertThat(fallbackDetail?.sources?.map { source -> source.id })
             .containsExactly("source-b::search-video-1")
     }
@@ -243,6 +283,234 @@ class TvDetailRepositoryTest {
         assertThat(sources.map { source -> source.name })
             .containsExactly("线路 A", "线路 A 备用")
             .inOrder()
+    }
+
+    /**
+     * 标题补源接入 SSE 后，应在事件到达时先回调增量线路，再收敛最终列表。
+     */
+    @Test
+    fun loadMoreSourcesByEntry_emits_incremental_sources_from_sse_stream() = runTest {
+        val incrementalBatches = mutableListOf<List<String>>()
+        val repository = TvDetailRepository(
+            api = FakeSeleneTvApi(),
+            searchStreamClient = object : SeleneTvSearchStreamClient {
+                override suspend fun search(
+                    query: String,
+                    onEvent: (TvSearchStreamEvent) -> Unit,
+                ) {
+                    onEvent(TvSearchStartEvent(query = query, totalSources = 2, timestamp = 1L))
+                    onEvent(
+                        TvSearchSourceResultEvent(
+                            source = "source-a",
+                            sourceName = "线路 A",
+                            results = listOf(
+                                TvSearchResultResponse(
+                                    id = "video-1",
+                                    title = "详情影片",
+                                    episodes = listOf("https://cdn-a.test/1.m3u8"),
+                                    source = "source-a",
+                                    sourceName = "线路 A",
+                                    year = "2026",
+                                ),
+                            ),
+                            timestamp = 2L,
+                        ),
+                    )
+                    onEvent(
+                        TvSearchSourceResultEvent(
+                            source = "source-other",
+                            sourceName = "无关线路",
+                            results = listOf(
+                                TvSearchResultResponse(
+                                    id = "video-other",
+                                    title = "别的影片",
+                                    episodes = listOf("https://cdn-other.test/1.m3u8"),
+                                    source = "source-other",
+                                    sourceName = "无关线路",
+                                    year = "2026",
+                                ),
+                            ),
+                            timestamp = 3L,
+                        ),
+                    )
+                    onEvent(
+                        TvSearchSourceResultEvent(
+                            source = "source-b",
+                            sourceName = "线路 B",
+                            results = listOf(
+                                TvSearchResultResponse(
+                                    id = "video-2",
+                                    title = "详情影片",
+                                    episodes = listOf(
+                                        "https://cdn-b.test/1.m3u8",
+                                        "https://cdn-b.test/2.m3u8",
+                                    ),
+                                    source = "source-b",
+                                    sourceName = "线路 B",
+                                    year = "2026",
+                                ),
+                            ),
+                            timestamp = 4L,
+                        ),
+                    )
+                    onEvent(TvSearchCompleteEvent(totalResults = 2, completedSources = 2, timestamp = 5L))
+                }
+            },
+        )
+
+        val sources = repository.loadMoreSourcesByEntry(
+            title = "详情影片",
+            searchTitle = "详情影片",
+            year = "2026",
+            onIncremental = { batch ->
+                incrementalBatches += batch.map { source -> source.id }
+            },
+        )
+
+        assertThat(incrementalBatches)
+            .containsExactly(
+                listOf("source-a::video-1"),
+                listOf("source-b::video-2"),
+            )
+            .inOrder()
+        assertThat(sources.map { source -> source.id })
+            .containsExactly("source-a::video-1", "source-b::video-2")
+            .inOrder()
+    }
+
+    /**
+     * SSE 建链失败且未收到任何结果时，标题补源必须回退批量搜索，避免整条链路直接报废。
+     */
+    @Test
+    fun loadMoreSourcesByEntry_falls_back_to_batch_search_when_sse_fails_before_results() = runTest {
+        val queries = mutableListOf<String>()
+        val repository = TvDetailRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun search(query: String): TvSearchResponse {
+                    queries += query
+                    return TvSearchResponse(
+                        results = listOf(
+                            TvSearchResultResponse(
+                                id = "video-1",
+                                title = "详情影片",
+                                episodes = listOf("https://cdn-a.test/1.m3u8"),
+                                source = "source-a",
+                                sourceName = "线路 A",
+                                year = "2026",
+                            ),
+                        ),
+                    )
+                }
+            },
+            searchStreamClient = object : SeleneTvSearchStreamClient {
+                override suspend fun search(
+                    query: String,
+                    onEvent: (TvSearchStreamEvent) -> Unit,
+                ) {
+                    error("SSE 连接失败")
+                }
+            },
+        )
+
+        val sources = repository.loadMoreSourcesByEntry(
+            title = "详情影片",
+            searchTitle = "详情影片",
+            year = "2026",
+            onIncremental = {},
+        )
+
+        assertThat(queries).containsExactly("详情影片")
+        assertThat(sources.map { source -> source.id }).containsExactly("source-a::video-1")
+    }
+
+    /**
+     * 已有详情豆瓣 ID 时，不应再次发起搜索还原。
+     */
+    @Test
+    fun resolveDoubanId_prefers_detail_douban_id_without_search() = runTest {
+        var searchCalls = 0
+        val repository = TvDetailRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun search(query: String): TvSearchResponse {
+                    searchCalls += 1
+                    return TvSearchResponse(results = emptyList())
+                }
+            },
+        )
+        val detail = TvVideoDetail(
+            id = "video-1",
+            doubanId = "35267208",
+            title = "详情影片",
+            description = "剧情简介",
+            sources = emptyList(),
+        )
+
+        val doubanId = repository.resolveDoubanId(
+            detail = detail,
+            entrySource = "source-a",
+            entryVideoId = "video-1",
+            title = "详情影片",
+            searchTitle = "详情影片",
+            year = "2026",
+        )
+
+        assertThat(doubanId).isEqualTo("35267208")
+        assertThat(searchCalls).isEqualTo(0)
+    }
+
+    /**
+     * 详情未携带豆瓣 ID 时，应按 Flutter 手机端逻辑从同名搜索结果中还原出现次数最多的豆瓣 ID。
+     */
+    @Test
+    fun resolveDoubanId_uses_most_common_search_result_douban_id() = runTest {
+        val queries = mutableListOf<String>()
+        val repository = TvDetailRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun search(query: String): TvSearchResponse {
+                    queries += query
+                    return TvSearchResponse(
+                        results = listOf(
+                            TvSearchResultResponse(
+                                id = "video-a",
+                                title = "测试影片",
+                                year = "2026",
+                                doubanId = 10101,
+                            ),
+                            TvSearchResultResponse(
+                                id = "video-b",
+                                title = "测试影片",
+                                year = "2026",
+                                doubanId = 20202,
+                            ),
+                            TvSearchResultResponse(
+                                id = "video-c",
+                                title = "测试影片",
+                                year = "2026",
+                                doubanId = 10101,
+                            ),
+                            TvSearchResultResponse(
+                                id = "video-d",
+                                title = "别的影片",
+                                year = "2026",
+                                doubanId = 99999,
+                            ),
+                        ),
+                    )
+                }
+            },
+        )
+
+        val doubanId = repository.resolveDoubanId(
+            detail = null,
+            entrySource = "source-a",
+            entryVideoId = "video-1",
+            title = "测试影片",
+            searchTitle = "测试影片 原名",
+            year = "2026",
+        )
+
+        assertThat(queries).containsExactly("测试影片 原名")
+        assertThat(doubanId).isEqualTo("10101")
     }
 
     /**

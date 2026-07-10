@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.data.repository
 
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
+import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneDoubanApi
 import org.moontechlab.selene.tv.core.network.model.DoubanMovieItem
 
@@ -10,9 +11,11 @@ import org.moontechlab.selene.tv.core.network.model.DoubanMovieItem
  * 提供会话级内存 LRU 缓存，同一 session 内相同筛选参数不重复请求。
  *
  * @property api 豆瓣代理 API 接口。
+ * @property htmlSource 豆瓣详情页 HTML 数据源。
  */
 class DoubanRepository(
     private val api: SeleneDoubanApi,
+    private val htmlSource: DoubanSubjectHtmlSource? = null,
 ) {
     /** 会话级 LRU 缓存，最多保留 [MAX_CACHE_ENTRIES] 组查询结果。 */
     private val cache = object : LinkedHashMap<String, List<TvVideoCard>>(
@@ -47,6 +50,18 @@ class DoubanRepository(
      */
     fun clearCache() {
         cache.clear()
+    }
+
+    /**
+     * 从豆瓣详情页抓取并解析「相关推荐」。
+     *
+     * @param doubanId 豆瓣条目 ID。
+     * @return 推荐影视卡片列表；未注入 HTML 数据源时返回空列表。
+     */
+    suspend fun loadDetailRecommends(doubanId: String): List<TvVideoCard> {
+        val source = htmlSource ?: return emptyList()
+        val html = source.fetchSubjectHtml(doubanId)
+        return DoubanDetailsParser.parseRecommends(html)
     }
 
     /**

@@ -3,6 +3,7 @@ package org.moontechlab.selene.tv.feature.detail
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvEpisode
+import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.data.model.TvVideoSource
 
 /**
@@ -85,10 +86,10 @@ class TvDetailPresentationTest {
     }
 
     /**
-     * 推荐为空时，布局不渲染推荐区和底部动作。
+     * 推荐为空时，推荐区不展示但底部动作始终展示。
      */
     @Test
-    fun buildDetailLayoutSections_hides_recommend_and_bottom_actions_when_recommends_are_empty() {
+    fun buildDetailLayoutSections_hides_recommend_but_keeps_bottom_actions_when_recommends_are_empty() {
         val sections = buildDetailLayoutSections(
             sources = listOf(source(id = "a", episodeCount = 1)),
             episodes = episodes(count = 1),
@@ -98,7 +99,29 @@ class TvDetailPresentationTest {
         assertThat(sections.showSources).isTrue()
         assertThat(sections.showEpisodes).isTrue()
         assertThat(sections.showRecommends).isFalse()
-        assertThat(sections.showBottomActions).isFalse()
+        assertThat(sections.showBottomActions).isTrue()
+    }
+
+    /**
+     * 推荐非空时，应同时展示推荐区和底部动作区。
+     */
+    @Test
+    fun buildDetailLayoutSections_shows_recommends_and_bottom_actions_when_recommends_are_present() {
+        val sections = buildDetailLayoutSections(
+            sources = listOf(source(id = "a", episodeCount = 1)),
+            episodes = episodes(count = 1),
+            recommends = listOf(
+                TvVideoCard(
+                    id = "recommend-1",
+                    source = "douban",
+                    title = "推荐影片",
+                    posterUrl = "https://img.test/recommend.jpg",
+                ),
+            ),
+        )
+
+        assertThat(sections.showRecommends).isTrue()
+        assertThat(sections.showBottomActions).isTrue()
     }
 
     /**
