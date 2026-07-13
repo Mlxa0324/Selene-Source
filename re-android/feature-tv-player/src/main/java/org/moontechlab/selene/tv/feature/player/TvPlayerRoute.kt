@@ -70,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -386,15 +387,20 @@ fun TvPlayerRoute(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(0xFF0E141D).copy(alpha = 0.20f),
-                                Color(0xFF0B1018).copy(alpha = 0.78f),
-                                Color(0xFF05080D).copy(alpha = 0.92f),
+                                Color.Transparent,
+                                Color(0xCC0A0F16),
+                                Color(0xF205090E),
                             ),
                         ),
                     )
-                    // start=0：二级列表贴左滚动；一级菜单自行补左右安全边。
-                    .padding(start = 0.dp, top = 24.dp, end = 0.dp, bottom = 26.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
+                    // 整组菜单统一左右安全边，避免二级贴边、一级内缩两套规则。
+                    .padding(
+                        start = 0.dp,
+                        top = 20.dp,
+                        end = 0.dp,
+                        bottom = 22.dp,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 when (state.selectedTopMenu) {
                     PLAYER_MENU_PLAYLIST -> {
@@ -471,10 +477,9 @@ fun TvPlayerRoute(
                         )
                     }
                 }
-                // 一级菜单保留左右安全边；二级线路列表允许贴边。
+                // 一级菜单：左右切换分类，上键回二级，下键停在一级。
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    // 一级菜单左右与全局页面边距一致，避免贴屏或过空。
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.padding(
                         start = TvTokens.PageHorizontalPadding,
                         end = TvTokens.PageHorizontalPadding,
@@ -489,11 +494,20 @@ fun TvPlayerRoute(
                         TvPlayerMenuChip(
                             label = menu,
                             selected = state.selectedTopMenu == menu,
+                            // 一级用更克制的视觉，突出当前分类而非抢二级焦点。
+                            compact = true,
                             modifier = primaryMenuModifier.focusRequester(primaryMenuFocusRequesters[index]),
-                            onFocused = { viewModel.openMenu(menu) },
+                            onFocused = {
+                                // 焦点移入即切换二级内容，避免再按确认。
+                                if (state.selectedTopMenu != menu) {
+                                    viewModel.openMenu(menu)
+                                }
+                            },
                             onArrowUp = requestSelectedSecondaryMenuFocus,
-                            onArrowDown = requestSelectedPrimaryMenuFocus,
-                            onClick = { viewModel.openMenu(menu) },
+                            onClick = {
+                                viewModel.openMenu(menu)
+                                requestSelectedSecondaryMenuFocus()
+                            },
                         )
                     }
                 }
@@ -583,8 +597,11 @@ private fun TvPlayerPlaylistMenu(
 ) {
     if (episodes.isEmpty()) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(start = TvTokens.PageHorizontalPadding),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(
+                start = TvTokens.PageHorizontalPadding,
+                end = TvTokens.PageHorizontalPadding,
+            ),
         ) {
             val emptyModifier = (focusRequester ?: focusRequesters.firstOrNull())?.let {
                 Modifier.focusRequester(it)
@@ -616,26 +633,39 @@ private fun TvPlayerPlaylistMenu(
             ?: focusRequesters.firstOrNull()
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(start = TvTokens.PageHorizontalPadding),
         ) {
             if (groups.size > 1) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 分组条：左右相邻切换，到边界停住，不循环跳。
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(
+                        start = TvTokens.PageHorizontalPadding,
+                        end = TvTokens.PageHorizontalPadding,
+                    ),
+                ) {
                     items(groups.size) { gi ->
                         val start = gi * 20 + 1
                         val end = minOf((gi + 1) * 20, episodes.size)
                         TvPlayerMenuChip(
                             label = "$start-$end",
                             selected = gi == safeGroup,
+                            compact = true,
                             onClick = { selectedGroup = gi },
                             onArrowDown = onArrowDown,
                             onArrowUp = onArrowUp,
-                            onArrowLeft = if (gi == 0) { { selectedGroup = groups.lastIndex } } else null,
-                            onArrowRight = if (gi == groups.lastIndex) { { selectedGroup = 0 } } else null,
+                            onArrowLeft = if (gi > 0) {{ selectedGroup = gi - 1 }} else null,
+                            onArrowRight = if (gi < groups.lastIndex) {{ selectedGroup = gi + 1 }} else null,
                         )
                     }
                 }
             }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(
+                    start = TvTokens.PageHorizontalPadding,
+                    end = TvTokens.PageHorizontalPadding,
+                ),
+            ) {
                 items(group.size) { i ->
                     val ep = group[i]
                     val isFirst = i == 0
@@ -704,9 +734,8 @@ private fun TvPlayerSourceMenu(
             state = listState,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(
-                // 与一级菜单左缘对齐。
-                start = 0.dp,
-                // 滚到最右时末卡与屏边保留边距；中途滚动允许贴边裁切未获焦项。
+                // 二级线路与一级菜单左右安全边对齐，滚动仍由 LazyRow 单独控制。
+                start = TvTokens.PageHorizontalPadding,
                 end = PLAYER_MENU_LIST_END_PADDING,
                 top = sourceChipOverflowY,
                 bottom = sourceChipOverflowY,
@@ -788,7 +817,13 @@ private fun TvPlayerAspectRatioMenu(
     onArrowDown: () -> Unit,
     onResizeModeSelected: (TvResizeMode) -> Unit,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(
+            start = TvTokens.PageHorizontalPadding,
+            end = TvTokens.PageHorizontalPadding,
+        ),
+    ) {
         PLAYER_ASPECT_RATIO_OPTIONS.forEachIndexed { index, option ->
             val resizeMode = option.toPlayerResizeMode()
             val itemModifier = focusRequesters.getOrNull(index)?.let { requester ->
@@ -820,7 +855,13 @@ private fun TvPlayerSpeedMenu(
     onArrowDown: () -> Unit,
     onPlaybackSpeedSelected: (Float) -> Unit,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(
+            start = TvTokens.PageHorizontalPadding,
+            end = TvTokens.PageHorizontalPadding,
+        ),
+    ) {
         PLAYER_SPEED_OPTIONS.forEachIndexed { index, option ->
             val playbackSpeed = option.toPlayerSpeed()
             val itemModifier = focusRequesters.getOrNull(index)?.let { requester ->
@@ -867,14 +908,18 @@ private fun TvPlayerOtherMenu(
     onDanmakuMatchRequested: () -> Unit,
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(
+            start = TvTokens.PageHorizontalPadding,
+            end = TvTokens.PageHorizontalPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "确认/空格/Enter 设置当前时间，长按清空",
+            text = "确认设置当前时间 · 长按清空",
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = 0.64f),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PLAYER_OTHER_MENU_ITEMS.forEachIndexed { index, item ->
                 val label = when (item) {
                     PLAYER_OTHER_INTRO -> "片头 ${formatPlayerDuration(skipIntroSeconds * 1_000L)}"
@@ -1649,6 +1694,10 @@ private fun TvPlayerMenuChip(
     modifier: Modifier = Modifier,
     selected: Boolean = false,
     /**
+     * 一级菜单更扁更窄，二级选项稍大，避免整组按钮视觉打架。
+     */
+    compact: Boolean = false,
+    /**
      * 获焦放大锚点。
      *
      * 列表首项用左锚、末项用右锚，放大时向列表内侧扩展，避免贴边裁切。
@@ -1672,17 +1721,20 @@ private fun TvPlayerMenuChip(
         animationSpec = tween(durationMillis = PLAYER_MENU_FOCUS_ANIMATION_MS),
         label = "tvPlayerMenuChipScale",
     )
-    val shape = RoundedCornerShape(12.dp)
-    // 与详情页线路/选集一致：选中主题底；焦点只加白边，不换背景。
+    val shape = RoundedCornerShape(if (compact) 10.dp else 12.dp)
+    // 选中=主题红；未选中=半透明深灰；获焦只加白边，不改底色。
     val backgroundColor = when {
         selected -> TvTokens.Accent
-        else -> TvTokens.Surface.copy(alpha = 0.88f)
+        else -> Color(0xCC2A303A)
     }
+    val chipHeight = if (compact) PLAYER_MENU_PRIMARY_CHIP_HEIGHT else PLAYER_MENU_CHIP_HEIGHT
+    val minWidth = if (compact) 96.dp else 104.dp
+    val horizontalPadding = if (compact) 16.dp else 18.dp
 
     Box(
         modifier = modifier
-            .height(PLAYER_MENU_CHIP_HEIGHT)
-            .widthIn(min = 108.dp)
+            .height(chipHeight)
+            .widthIn(min = minWidth)
             // 布局占位固定，按锚点向内侧视觉放大，配合列表 end/top padding 不裁切不抖动。
             .graphicsLayer {
                 scaleX = scale
@@ -1694,7 +1746,7 @@ private fun TvPlayerMenuChip(
             .background(backgroundColor)
             .onFocusChanged { focusState ->
                 if (focusState.isFocused) {
-                    // 一级菜单复刻 Flutter TV：焦点移入即切换当前二级菜单。
+                    // 一级菜单：焦点移入即切换当前二级菜单。
                     onFocused?.invoke()
                 }
             }
@@ -1719,7 +1771,8 @@ private fun TvPlayerMenuChip(
                     }
                     return@onPreviewKeyEvent true
                 }
-                if (event.type != KeyEventType.KeyDown) {
+                // 方向键只在 KeyUp 处理一次，避免 KeyDown+KeyUp 双触发导致跳项/闪切。
+                if (event.type != KeyEventType.KeyUp) {
                     return@onPreviewKeyEvent false
                 }
                 when (event.key) {
@@ -1731,8 +1784,8 @@ private fun TvPlayerMenuChip(
                 }
             }
             .border(
-                width = 2.dp,
-                color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) Color.White else Color.White.copy(alpha = 0.10f),
                 shape = shape,
             )
             .clickable(
@@ -1741,12 +1794,15 @@ private fun TvPlayerMenuChip(
                 onClick = onClick,
             )
             .focusable(interactionSource = interactionSource)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = horizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = if (selected || isFocused) FontWeight.SemiBold else FontWeight.Medium,
+                fontSize = if (compact) 14.sp else 15.sp,
+            ),
             color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -1902,13 +1958,16 @@ private const val CONTINUOUS_SEEK_TICK_MS = 100L
 private const val TOP_DECORATION_CLOCK_REFRESH_MS = 30_000L
 
 /** 播放器菜单获焦放大比例，对齐 Flutter TV 的 TvVideoCard.focusedScale。 */
-private const val PLAYER_MENU_FOCUSED_SCALE = 1.08f
+private const val PLAYER_MENU_FOCUSED_SCALE = 1.05f
 
 /** 播放器菜单获焦放大动画时长。 */
 private const val PLAYER_MENU_FOCUS_ANIMATION_MS = 140
 
 /** 播放器菜单 chip 固定高度。 */
-private val PLAYER_MENU_CHIP_HEIGHT = 48.dp
+private val PLAYER_MENU_CHIP_HEIGHT = 46.dp
+
+/** 一级菜单 chip 高度，略矮于二级，形成层级。 */
+private val PLAYER_MENU_PRIMARY_CHIP_HEIGHT = 42.dp
 
 /**
  * 线路 chip 水平安全宽度估算。

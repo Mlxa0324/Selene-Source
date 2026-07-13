@@ -396,7 +396,7 @@ class TvPlayerRouteControlContractTest {
         val viewModelSource = readViewModelSource()
 
         assertThat(source).contains("PLAYER_PRIMARY_MENU_ITEMS.forEach")
-        assertThat(source).contains("onClick = { viewModel.openMenu(menu) }")
+        assertThat(source).contains("viewModel.openMenu(menu)")
         assertThat(viewModelSource).contains("PLAYER_MENU_PLAYLIST")
         assertThat(viewModelSource).contains("PLAYER_MENU_SOURCES")
         assertThat(viewModelSource).contains("PLAYER_MENU_ASPECT_RATIO")
@@ -412,9 +412,9 @@ class TvPlayerRouteControlContractTest {
     fun route_bottom_primary_menu_switches_secondary_menu_on_focus() {
         val source = readRouteSource()
         val menuChipSource = source.substringAfter("private fun TvPlayerMenuChip(")
-            .substringBefore("/** 连续 seek 进入长按态前的短按保护时间。")
+            .substringBefore("private fun rememberPlayerMenuFocusRequesters")
 
-        assertThat(source).contains("onFocused = { viewModel.openMenu(menu) }")
+        assertThat(source).contains("viewModel.openMenu(menu)")
         assertThat(menuChipSource).contains("onFocused: (() -> Unit)? = null")
         assertThat(source).contains("import androidx.compose.ui.focus.onFocusChanged")
         assertThat(menuChipSource).contains(".onFocusChanged { focusState ->")
@@ -429,7 +429,7 @@ class TvPlayerRouteControlContractTest {
     fun route_bottom_menu_moves_focus_between_primary_and_secondary_rows() {
         val source = readRouteSource()
         val menuChipSource = source.substringAfter("private fun TvPlayerMenuChip(")
-            .substringBefore("/** 连续 seek 进入长按态前的短按保护时间。")
+            .substringBefore("private fun rememberPlayerMenuFocusRequesters")
 
         assertThat(source).contains("import androidx.compose.ui.focus.FocusRequester")
         assertThat(source).contains("import androidx.compose.ui.focus.focusRequester")
@@ -451,12 +451,12 @@ class TvPlayerRouteControlContractTest {
     fun route_menu_chip_scales_like_flutter_tv_video_card_when_focused() {
         val source = readRouteSource()
         val menuChipSource = source.substringAfter("private fun TvPlayerMenuChip(")
-            .substringBefore("/** 连续 seek 进入长按态前的短按保护时间。")
+            .substringBefore("private fun rememberPlayerMenuFocusRequesters")
 
         assertThat(source).contains("import androidx.compose.animation.core.animateFloatAsState")
         assertThat(source).contains("import androidx.compose.animation.core.tween")
         assertThat(source).contains("import androidx.compose.ui.graphics.graphicsLayer")
-        assertThat(source).contains("private const val PLAYER_MENU_FOCUSED_SCALE = 1.08f")
+        assertThat(source).contains("private const val PLAYER_MENU_FOCUSED_SCALE = 1.05f")
         assertThat(source).contains("private const val PLAYER_MENU_FOCUS_ANIMATION_MS = 140")
         assertThat(menuChipSource).contains("val scale by animateFloatAsState(")
         assertThat(menuChipSource).contains("targetValue = if (isFocused) PLAYER_MENU_FOCUSED_SCALE else 1f")
@@ -479,7 +479,7 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("private val PLAYER_MENU_LIST_END_PADDING = TvTokens.PageHorizontalPadding")
         assertThat(source).contains("private val PLAYER_MENU_CHIP_SAFE_WIDTH = 160.dp")
         assertThat(sourceMenu).contains("end = PLAYER_MENU_LIST_END_PADDING")
-        assertThat(sourceMenu).contains("start = 0.dp")
+        assertThat(sourceMenu).contains("start = TvTokens.PageHorizontalPadding")
         assertThat(sourceMenu).contains("fillMaxWidth()")
         assertThat(sourceMenu).contains("scrollPlayerMenuChipIntoView(")
         assertThat(sourceMenu).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
@@ -488,7 +488,8 @@ class TvPlayerRouteControlContractTest {
         assertThat(sourceMenu).contains("TransformOrigin(1f, 0.5f)")
         assertThat(sourceMenu).contains("TransformOrigin(0f, 0.5f)")
         assertThat(sourceMenu).contains("focusScaleOrigin = when {")
-        assertThat(source).contains(".padding(start = 0.dp, top = 24.dp, end = 0.dp, bottom = 26.dp)")
+        assertThat(source).contains("top = 20.dp")
+        assertThat(source).contains("bottom = 22.dp")
         assertThat(source).contains("start = TvTokens.PageHorizontalPadding")
         assertThat(source).contains("end = TvTokens.PageHorizontalPadding")
     }
@@ -580,7 +581,7 @@ class TvPlayerRouteControlContractTest {
 
         assertThat(source).contains("TvPlayerOtherMenu")
         assertThat(otherMenuSource).contains("PLAYER_OTHER_MENU_ITEMS")
-        assertThat(otherMenuSource).contains("确认/空格/Enter 设置当前时间，长按清空")
+        assertThat(otherMenuSource).contains("确认设置当前时间 · 长按清空")
         assertThat(otherMenuSource).doesNotContain("state.selectedOtherMenuItem")
         assertThat(otherMenuSource).doesNotContain("PLAYER_OTHER_ENGINE_SWITCH")
         assertThat(otherMenuSource).doesNotContain("清晰度")
