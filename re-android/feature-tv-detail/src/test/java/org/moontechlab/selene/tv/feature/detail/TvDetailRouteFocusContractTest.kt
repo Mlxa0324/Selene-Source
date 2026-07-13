@@ -53,7 +53,7 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("fontSize = 28.sp")
         assertThat(source).contains(".width(width)")
         assertThat(source).doesNotContain(".widthIn(min = 118.dp)")
-        assertThat(source).contains("contentPadding = PaddingValues(start = 33.dp, end = 43.dp)")
+        assertThat(source).contains("contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding)")
         assertThat(source).contains("width = 88.dp")
     }
 
@@ -67,6 +67,10 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("NcatInfoPanel(")
         assertThat(source).contains("NcatFullscreenGlyph(")
         assertThat(source).contains("NcatFavoriteGlyph(")
+        assertThat(source).contains("label = \"全屏\"")
+        assertThat(source).contains("label = if (state.isFavorite) \"已收藏\" else \"收藏\"")
+        assertThat(source).contains("NcatContentStartPadding")
+        assertThat(source).contains("NcatContentEndPadding")
         assertThat(source).contains("StrokeCap.Square")
         assertThat(source).contains("StrokeJoin.Miter")
         assertThat(source).contains("val stroke = 2.dp.toPx()")
@@ -136,8 +140,8 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("resolvePosterRailItemWidth(")
         assertThat(source).contains("start = recommendStartPadding")
         assertThat(source).contains("end = recommendEndPadding")
-        assertThat(source).contains("RailStartPadding")
-        assertThat(source).contains("RailEndPadding")
+        assertThat(source).contains("NcatContentStartPadding")
+        assertThat(source).contains("NcatContentEndPadding")
         assertThat(source).doesNotContain("width(113.dp)")
         assertThat(source).doesNotContain("height(160.dp)")
     }

@@ -102,6 +102,22 @@ private val NcatMutedText = Color(0xFF9A9AA3)
 /** TV 详情页截图版圆角。 */
 private val NcatRadius = 8.dp
 
+/**
+ * 详情页左侧对齐竖线。
+ *
+ * Logo、预览播放器、区块标题、横向列表首卡共用。
+ * 列表不通过外层 page padding 控制横向滚动，只靠 LazyRow contentPadding，
+ * 因此向左滚出首屏时不会被页面边距二次夹死。
+ */
+private val NcatContentStartPadding = 32.dp
+
+/**
+ * 详情页右侧边距。
+ *
+ * 横向列表 end contentPadding 与之相同：滚到最右侧时末卡不贴屏。
+ */
+private val NcatContentEndPadding = 32.dp
+
 /** TV 详情页顶部右侧时间格式。 */
 private val NcatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -450,7 +466,12 @@ private fun NcatDetailTopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 31.dp, end = 31.dp, top = 36.dp, bottom = 20.dp),
+            .padding(
+                start = NcatContentStartPadding,
+                end = NcatContentEndPadding,
+                top = 36.dp,
+                bottom = 20.dp,
+            ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -553,7 +574,7 @@ private fun NcatDetailHero(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 31.dp),
+            .padding(start = NcatContentStartPadding, end = NcatContentEndPadding),
         horizontalArrangement = Arrangement.spacedBy(28.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -989,13 +1010,14 @@ private fun NcatMetaBadge(
 }
 
 /**
- * Hero 大方块操作。
+ * Hero 操作按钮：上方图标，下方文案。
  *
- * @param label 展示文案。
- * @param icon 简洁图标。
- * @param selected 是否选中。
+ * @param label 按钮下方文案，例如“全屏”“收藏”“已收藏”。
+ * @param selected 是否选中（收藏态）。
  * @param focusRequester 焦点请求器。
  * @param modifier 外层修饰器。
+ * @param icon 可选字符图标。
+ * @param iconContent 自定义矢量图标。
  * @param onPressed 确认回调。
  */
 @Composable
@@ -1016,10 +1038,11 @@ private fun NcatActionTile(
         selected -> Color.White.copy(alpha = 0.22f)
         else -> Color.White.copy(alpha = 0.06f)
     }
+    // 固定宽高：上方图标、下方文案（全屏 / 收藏 / 已收藏）。
     Column(
         modifier = modifier
-            .width(72.dp)
-            .height(72.dp)
+            .width(76.dp)
+            .height(78.dp)
             .background(background, RoundedCornerShape(NcatRadius))
             .border(BorderStroke(if (isFocused) 2.dp else 1.dp, borderColor), RoundedCornerShape(NcatRadius))
             .focusRequester(focusRequester)
@@ -1031,13 +1054,36 @@ private fun NcatActionTile(
                     onPressed(); true
                 } else false
             }
-            .padding(vertical = 9.dp),
+            .padding(top = 12.dp, bottom = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.Top,
     ) {
-        if (iconContent != null) iconContent() else if (icon != null) Text(text = icon, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(5.dp))
-        Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        // 图标区固定高度，保证文案始终在按钮下半区可见。
+        Box(
+            modifier = Modifier
+                .height(28.dp)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (iconContent != null) {
+                iconContent()
+            } else if (icon != null) {
+                Text(
+                    text = icon,
+                    color = Color.White,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1086,7 +1132,7 @@ private fun NcatSourceRail(
     LazyRow(
         state = listState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
+        contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
         modifier = Modifier.height(77.dp),
     ) {
         items(sourceOptions.size, key = { index -> sourceOptions[index].sourceId }) { index ->
@@ -1283,7 +1329,7 @@ private fun NcatEpisodeGroupRail(
     LazyRow(
         state = episodeListState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
+        contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
         modifier = Modifier
             .height(62.dp)
             .padding(top = 3.dp),
@@ -1335,7 +1381,7 @@ private fun NcatEpisodeGroupRail(
         LazyRow(
             state = episodeGroupListState,
             horizontalArrangement = Arrangement.spacedBy(17.dp),
-            contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
+            contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
             modifier = Modifier
                 .height(61.dp)
                 .padding(top = 12.dp),
@@ -1535,8 +1581,9 @@ private fun NcatRecommendRail(
     val scrollScope = rememberCoroutineScope()
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     // 相关推荐左右边距对齐全局横向列表契约，首屏刚好放下 PosterColumns 列。
-    val recommendStartPadding = TvListLayoutMetrics.RailStartPadding
-    val recommendEndPadding = TvListLayoutMetrics.RailEndPadding
+    // 相关推荐与线路/选集共用详情页内容竖线，滚动由 LazyRow contentPadding 单独控制。
+    val recommendStartPadding = NcatContentStartPadding
+    val recommendEndPadding = NcatContentEndPadding
     val recommendSpacing = TvTokens.CardSpacing
     NcatSectionHeader(
         title = "相关推荐",
@@ -1831,8 +1878,8 @@ private fun NcatSectionHeader(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                start = TvListLayoutMetrics.RailStartPadding,
-                end = TvListLayoutMetrics.RailEndPadding,
+                start = NcatContentStartPadding,
+                end = NcatContentEndPadding,
                 top = topPadding,
                 bottom = 14.dp,
             ),
@@ -1887,7 +1934,7 @@ private fun NcatStateBlock(
         kind = kind,
         title = title,
         message = message,
-        modifier = Modifier.padding(horizontal = 46.dp),
+        modifier = Modifier.padding(start = NcatContentStartPadding, end = NcatContentEndPadding),
         contentFocusRequester = focusRequester,
     )
 }
