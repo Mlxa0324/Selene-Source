@@ -58,6 +58,7 @@ import org.moontechlab.selene.tv.core.design.layout.TvDesignCanvas
 import org.moontechlab.selene.tv.core.design.layout.TvDesignPreset
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
+import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -154,7 +155,12 @@ fun TvApp() {
                             }
                         },
                         onFilterToggle = {
-                            showCategoryFilter = !showCategoryFilter
+                            val opening = !showCategoryFilter
+                            showCategoryFilter = opening
+                            if (opening) {
+                                // 弹出筛选后把焦点下探到内容区，方便遥控器直接操作筛选项。
+                                contentFocusRequester.requestFocus()
+                            }
                         },
                     )
                 }
@@ -312,6 +318,7 @@ private fun TvDestinationGroup(
                 label = destination.label,
                 iconGlyph = destination.iconGlyph,
                 selected = isSelected,
+                supportsCategoryFilter = destination.supportsCategoryFilter(),
                 contentFocusRequester = contentFocusRequester,
                 focusRequester = topDestinationFocusRequesters[destination.route],
                 onFocused = {
@@ -358,6 +365,7 @@ private fun TvNavigationPill(
     label: String,
     iconGlyph: String?,
     selected: Boolean,
+    supportsCategoryFilter: Boolean = false,
     contentFocusRequester: FocusRequester,
     focusRequester: FocusRequester?,
     onFocused: () -> Unit,
@@ -410,7 +418,7 @@ private fun TvNavigationPill(
                     }
                     return@onPreviewKeyEvent true
                 }
-                if (event.key != Key.DirectionCenter && event.key != Key.Enter) {
+                if (!event.key.isTvConfirmKey()) {
                     return@onPreviewKeyEvent false
                 }
                 val action = when (event.type) {
@@ -421,11 +429,12 @@ private fun TvNavigationPill(
                     else -> TvRemotePressAction.None
                 }
                 if (action == TvRemotePressAction.ShortPress) {
-                    // 已选中分类 tab 的确认键切换筛选面板；未选中的保持导航行为。
-                    if (selected) {
-                        onFilterToggle()
-                    } else {
-                        onClick()
+                    // 对齐 Flutter：电影/剧集/动漫/综艺在当前 tab 确认键向下弹出分类筛选。
+                    // 首页等非分类 tab 不处理为筛选，交给默认导航/下探。
+                    when {
+                        selected && supportsCategoryFilter -> onFilterToggle()
+                        !selected -> onClick()
+                        else -> Unit
                     }
                 }
                 true
@@ -517,4 +526,17 @@ private fun TvClockText() {
  */
 private fun formatCurrentTime(): String {
     return LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
+}
+
+
+/**
+ * 是否支持分类筛选面板。
+ *
+ * 对齐 Flutter TV：电影 / 剧集 / 动漫 / 综艺在当前 tab 确认键弹出筛选。
+ */
+private fun TvDestination.supportsCategoryFilter(): Boolean {
+    return this is TvDestination.Movie ||
+        this is TvDestination.Tv ||
+        this is TvDestination.Anime ||
+        this is TvDestination.Show
 }

@@ -15,6 +15,7 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
 import org.moontechlab.selene.tv.core.player.api.PlaybackEpisode
 import org.moontechlab.selene.tv.core.player.api.PlaybackSource
 import org.moontechlab.selene.tv.core.data.repository.DoubanCategoryParams
+import org.moontechlab.selene.tv.core.data.repository.BangumiRepository
 import org.moontechlab.selene.tv.core.data.repository.DoubanRepository
 import org.moontechlab.selene.tv.core.data.repository.TvDanmakuManualMatchRepository
 import org.moontechlab.selene.tv.core.data.repository.TvDanmakuRepository
@@ -28,6 +29,7 @@ import org.moontechlab.selene.tv.core.data.storage.TvPreferencesStore
 import org.moontechlab.selene.tv.core.design.threading.AppDispatchers
 import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneDanmakuApi
+import org.moontechlab.selene.tv.core.network.SeleneBangumiApi
 import org.moontechlab.selene.tv.core.network.SeleneDoubanApi
 import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
 import org.moontechlab.selene.tv.core.network.SeleneTvNetworkFactory
@@ -48,12 +50,17 @@ import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticStage
 import org.moontechlab.selene.tv.feature.detail.TvDetailResumeRecord
 import org.moontechlab.selene.tv.feature.detail.TvDetailViewModel
 import org.moontechlab.selene.tv.feature.history.TvHistoryViewModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import org.moontechlab.selene.tv.feature.detail.TvDetailSourcesResult
+import org.moontechlab.selene.tv.feature.home.TvHomeSectionProgress
 import org.moontechlab.selene.tv.feature.home.TvHomeViewModel
 import org.moontechlab.selene.tv.feature.home.TvVideoLibraryUiState
 import org.moontechlab.selene.tv.feature.home.TvVideoLibraryViewModel
 import org.moontechlab.selene.tv.feature.player.TvPlayerViewModel
 import org.moontechlab.selene.tv.feature.player.TvPlayerDanmakuComment
 import org.moontechlab.selene.tv.feature.player.TvPlayerDanmakuLoadResult
+import org.moontechlab.selene.tv.feature.search.TvSearchBootstrapData
 import org.moontechlab.selene.tv.feature.search.TvSearchViewModel
 import org.moontechlab.selene.tv.feature.settings.TvDanmakuMatchViewModel
 import org.moontechlab.selene.tv.feature.settings.TvDanmakuSearchAnime
@@ -206,6 +213,15 @@ private fun TvVideoDetail?.mergeRecommendLookupMetadata(exactDetail: TvVideoDeta
         description = latestDetail.description.ifBlank { fallbackDetail.description },
         posterUrl = latestDetail.posterUrl.ifBlank { fallbackDetail.posterUrl },
         year = latestDetail.year.ifBlank { fallbackDetail.year },
+        typeName = latestDetail.typeName.ifBlank { fallbackDetail.typeName },
+        categories = if (latestDetail.categories.size >= fallbackDetail.categories.size) {
+            latestDetail.categories.ifEmpty { fallbackDetail.categories }
+        } else {
+            fallbackDetail.categories
+        },
+        remarks = latestDetail.remarks.ifBlank { fallbackDetail.remarks },
+        qualityTag = latestDetail.qualityTag.ifBlank { fallbackDetail.qualityTag },
+        rating = latestDetail.rating.ifBlank { fallbackDetail.rating },
         sourceName = latestDetail.sourceName.ifBlank { fallbackDetail.sourceName },
     )
 }
@@ -274,6 +290,7 @@ private const val MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH = 160
  * @property playerEngineFactory 播放器内核工厂。
  * @property playerKernelResolver 运行时真实内核解析器。
  * @property doubanApiFactory 豆瓣分类 API 工厂。
+ * @property bangumiApiFactory Bangumi 日历 API 工厂。
  * @property doubanHtmlSourceFactory 豆瓣详情 HTML 数据源工厂。
  * @property recommendDiagnosticSink 详情推荐诊断接收器。
  */
@@ -303,6 +320,9 @@ class TvAppContainer(
     private val playerKernelResolver: RuntimePlayerKernelResolver = RuntimePlayerKernelResolver(),
     private val doubanApiFactory: () -> SeleneDoubanApi = {
         SeleneTvNetworkFactory.createDoubanApi()
+    },
+    private val bangumiApiFactory: () -> SeleneBangumiApi = {
+        SeleneTvNetworkFactory.createBangumiApi()
     },
     private val doubanHtmlSourceFactory: () -> DoubanSubjectHtmlSource = {
         SeleneTvNetworkFactory.createDoubanHtmlApi()
@@ -354,11 +374,22 @@ class TvAppContainer(
         DoubanRepository(api = doubanApi, htmlSource = doubanHtmlSource)
     }
 
+    /** Bangumi 日历 API 接口。 */
+    private val bangumiApi by lazy {
+        bangumiApiFactory()
+    }
+
+    /** Bangumi 新番放送仓库。 */
+    internal val bangumiRepository: BangumiRepository by lazy {
+        BangumiRepository(api = bangumiApi)
+    }
+
     /**
      * 清除豆瓣仓库内存缓存。
      */
     fun clearDoubanCache() {
         doubanRepository.clearCache()
+        bangumiRepository.clearCache()
     }
 
     /**
@@ -367,7 +398,11 @@ class TvAppContainer(
      * @return 首页 ViewModel。
      */
     fun createHomeViewModel(): TvHomeViewModel {
-        return TvHomeViewModel(loadHome = ::loadHome)
+        return TvHomeViewModel(
+            loadHome = ::loadHome,
+            // 分区流式回填：哪个接口先返回就先展示哪块。
+            observeHome = ::observeHome,
+        )
     }
 
     /**
@@ -377,13 +412,53 @@ class TvAppContainer(
      */
     fun createSearchViewModel(): TvSearchViewModel {
         return TvSearchViewModel(
-            search = { query ->
+            loadBootstrap = {
                 ensureSession()
-                TvSearchRepository(requireGatewayClient().tvApi).search(query)
+                val repository = TvSearchRepository(requireGatewayClient().tvApi)
+                val history = runCatching { repository.readSearchHistory() }.getOrDefault(emptyList())
+                // 搜索页推荐优先复用豆瓣热门分类，对齐 Flutter 首页缓存兜底语义。
+                val recommends = runCatching {
+                    doubanRepository.loadCategory(
+                        DoubanCategoryParams(
+                            kind = "tv",
+                            category = "热门",
+                            type = "tv",
+                        ),
+                    )
+                }.getOrDefault(emptyList())
+                TvSearchBootstrapData(
+                    searchHistory = history,
+                    // Flutter 当前热词暂为空，Kotlin 先提供稳定兜底词方便遥控操作。
+                    hotQueries = listOf("热门电影", "高分剧集", "动漫新番", "综艺更新"),
+                    recommendCards = recommends.take(20),
+                )
             },
-            loadSearchHistory = {
+            loadSuggestions = { query ->
+                // 后端暂无首字母联想接口时，先用历史 + 热词本地过滤，保证交互链路完整。
+                val currentHistory = runCatching {
+                    ensureSession()
+                    TvSearchRepository(requireGatewayClient().tvApi).readSearchHistory()
+                }.getOrDefault(emptyList())
+                val seeds = currentHistory + listOf(
+                    "热门电影", "高分剧集", "动漫新番", "综艺更新",
+                    "庆余年", "繁花", "三体", "漫长的季节", "狂飙",
+                )
+                seeds.filter { word ->
+                    word.replace(" ", "").contains(query, ignoreCase = true) ||
+                        pinyinInitialsMatch(word, query)
+                }.distinct().take(18)
+            },
+            searchStream = searchStreamClient,
+            batchSearch = { query ->
                 ensureSession()
-                TvSearchRepository(requireGatewayClient().tvApi).readSearchHistory()
+                TvSearchRepository(requireGatewayClient().tvApi).search(query).results
+            },
+            clearSearchHistory = {
+                // 远端暂无清空接口时，本地清空 UI 历史即可。
+                true
+            },
+            saveSearchHistory = {
+                // 历史写入依赖后端接口，当前先保留 UI 内状态。
             },
         )
     }
@@ -477,12 +552,15 @@ class TvAppContainer(
                 val requestToken = exactDetailStore.beginRequest(entry)
                 ensureSession()
                 val repo = TvDetailRepository(requireGatewayClient().tvApi)
-                // 精确详情即使没有剧集，也能提供标题、年份和封面给标题补源兜底。
+                // 精确详情即使没有剧集，也能提供标题、年份、简介和封面。
                 val exactDetail = repo.loadDetail(source = entry.source, id = entry.videoId)
                 exactDetailStore.completeRequest(entry, requestToken, exactDetail)
-                exactDetail?.sources
-                    .orEmpty()
-                    .filter { videoSource -> videoSource.episodes.isNotEmpty() }
+                TvDetailSourcesResult(
+                    sources = exactDetail?.sources
+                        .orEmpty()
+                        .filter { videoSource -> videoSource.episodes.isNotEmpty() },
+                    detail = exactDetail,
+                )
             },
             loadMoreSources = { entry, onIncremental ->
                 ensureSession()
@@ -490,16 +568,33 @@ class TvAppContainer(
                 val fallbackTitle = entry.resolvedSearchTitle
                     .ifBlank { fallbackDetail?.title.orEmpty() }
                     .ifBlank { entry.videoId }
-                TvDetailRepository(
+                val repo = TvDetailRepository(
                     api = requireGatewayClient().tvApi,
                     searchStreamClient = searchStreamClient,
                 )
-                    .loadMoreSourcesByEntry(
-                        title = fallbackTitle,
-                        searchTitle = fallbackTitle,
-                        year = entry.year.ifBlank { fallbackDetail?.year.orEmpty() },
-                        onIncremental = onIncremental,
-                    )
+                val sources = repo.loadMoreSourcesByEntry(
+                    title = fallbackTitle,
+                    searchTitle = fallbackTitle,
+                    year = entry.year.ifBlank { fallbackDetail?.year.orEmpty() },
+                    onIncremental = onIncremental,
+                )
+                // 精确详情缺简介时，用标题搜索结果回填 desc，避免右侧一直“暂无简介”。
+                val metadata = if (fallbackDetail?.description.isNullOrBlank()) {
+                    runCatching {
+                        repo.loadDetailBySearchTitle(
+                            title = fallbackTitle,
+                            fallbackId = entry.videoId,
+                            year = entry.year.ifBlank { fallbackDetail?.year.orEmpty() },
+                            posterUrl = entry.posterUrl.ifBlank { fallbackDetail?.posterUrl.orEmpty() },
+                        )
+                    }.getOrNull()
+                } else {
+                    fallbackDetail
+                }
+                TvDetailSourcesResult(
+                    sources = sources,
+                    detail = metadata ?: fallbackDetail,
+                )
             },
             loadFavoriteState = { entry ->
                 TvFavoritesRepository(requireGatewayClient().tvApi)
@@ -775,9 +870,25 @@ class TvAppContainer(
 
         return when (category) {
             "每日放送" -> {
-                // Bangumi 日历接口：Kotlin TV 暂未接入 BangumiService，返回空列表。
-                // 后续可接入 Bangumi API 实现真正的每日放送数据。
-                emptyList()
+                // 对齐 Flutter：每日放送走 Bangumi calendar，并按“星期”筛选。
+                // 分页只在第一页返回，避免重复拼接同一天数据。
+                if (page > 0) {
+                    emptyList()
+                } else {
+                    val weekday = sel["星期"]?.toIntOrNull()
+                        ?: java.util.Calendar.getInstance().let { calendar ->
+                            when (calendar.get(java.util.Calendar.DAY_OF_WEEK)) {
+                                java.util.Calendar.MONDAY -> 1
+                                java.util.Calendar.TUESDAY -> 2
+                                java.util.Calendar.WEDNESDAY -> 3
+                                java.util.Calendar.THURSDAY -> 4
+                                java.util.Calendar.FRIDAY -> 5
+                                java.util.Calendar.SATURDAY -> 6
+                                else -> 7
+                            }
+                        }
+                    bangumiRepository.loadCalendarByWeekday(weekday)
+                }
             }
             "番剧" -> {
                 // fetchDoubanRecommends(kind=tv, category=动画, format=电视剧, type→label)
@@ -1004,10 +1115,41 @@ class TvAppContainer(
     private suspend fun loadHome(): TvHomePayload {
         // 首页数据请求前保证本地配置已经换成有效 Cookie。
         ensureSession()
+        return createHomeRepository().loadHome()
+    }
+
+    /**
+     * 观察首页分区流式加载进度。
+     *
+     * @return 分区先到先显示的进度流。
+     */
+    private fun observeHome(): Flow<TvHomeSectionProgress> {
+        return flow {
+            // 流式订阅前先确保会话，避免首包失败。
+            ensureSession()
+            createHomeRepository().observeHome().collect { progress ->
+                emit(
+                    TvHomeSectionProgress(
+                        sections = progress.payload.sections,
+                        readyKeys = progress.payload.sections.map { section -> section.key }.toSet(),
+                        isComplete = progress.isComplete,
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * 创建首页仓库。
+     *
+     * @return 首页数据仓库。
+     */
+    private fun createHomeRepository(): TvHomeRepository {
         return TvHomeRepository(
             playbackRepository = TvPlaybackRepository(api = requireGatewayClient().tvApi),
             doubanRepository = doubanRepository,
-        ).loadHome()
+            bangumiRepository = bangumiRepository,
+        )
     }
 
     /**
@@ -1129,4 +1271,21 @@ private fun TvDanmakuCommentPayload.toPlayerDanmakuComment(): TvPlayerDanmakuCom
         type = type,
         color = color,
     )
+}
+
+/**
+ * 粗粒度首字母匹配：仅当候选词中文首字母序列包含 query 时命中。
+ *
+ * 这里不做完整拼音库，先提供可测的本地联想路径。
+ *
+ * @param word 候选词。
+ * @param query 首字母查询。
+ * @return 是否命中。
+ */
+private fun pinyinInitialsMatch(word: String, query: String): Boolean {
+    if (query.isBlank()) {
+        return false
+    }
+    // 无拼音库时退化为包含判断，避免误伤英文种子词。
+    return word.uppercase().startsWith(query.uppercase())
 }

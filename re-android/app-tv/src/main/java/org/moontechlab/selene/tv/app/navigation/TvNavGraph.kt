@@ -174,11 +174,9 @@ fun TvNavGraph(
                 appContainer.createSearchViewModel()
             }
             val searchState by searchViewModel.state.collectAsState()
-            val searchScope = rememberCoroutineScope()
-
-            // 进入搜索页时加载历史
+            // 进入搜索页时加载历史/推荐
             LaunchedEffect(Unit) {
-                searchViewModel.loadHistory()
+                searchViewModel.bootstrap()
             }
 
             TvSearchRoute(
@@ -186,19 +184,16 @@ fun TvNavGraph(
                 onAppendChar = { char -> searchViewModel.appendChar(char) },
                 onDeleteLastChar = { searchViewModel.deleteLastChar() },
                 onClearQuery = { searchViewModel.clearQuery() },
-                onSearchCurrentQuery = {
-                    searchViewModel.submitQuery(searchState.query)
-                },
-                onQueryClick = { query -> searchViewModel.setQuery(query) },
-                onSearchHistoryClick = { query ->
-                    searchViewModel.submitQuery(query)
-                },
+                onSearchCurrentQuery = { searchViewModel.submitCurrentQuery() },
+                onHotQueryClick = { query -> searchViewModel.setQuery(query) },
+                onSearchHistoryClick = { query -> searchViewModel.submitHistoryQuery(query) },
+                onSuggestionClick = { query -> searchViewModel.submitSuggestionQuery(query) },
+                onClearHistory = { searchViewModel.clearHistory() },
                 onVideoClick = { videoId ->
                     navController.navigate(TvDestination.Detail.createRoute(videoId))
                 },
-                onBack = {
-                    navController.popBackStack()
-                },
+                onBack = { navController.popBackStack() },
+                onConsumeBack = { searchViewModel.handleBack() },
             )
         }
         composable(TvDestination.History.route) {
@@ -285,10 +280,8 @@ fun TvNavGraph(
                     settingsViewModel.updatePlayerKernelKey(key)
                     settingsScope.launch { settingsViewModel.performSavePlayerKernel() }
                 },
-                onAdFilterToggle = { enabled ->
-                    settingsViewModel.updateAdFilterEnabled(enabled)
-                    settingsScope.launch { settingsViewModel.performSaveAdFilter() }
-                },
+                // updateAdFilterEnabled 内部已立即持久化，避免双重保存。
+                onAdFilterToggle = settingsViewModel::updateAdFilterEnabled,
                 onDanmakuApiChange = settingsViewModel::updateDanmakuApi,
                 onDanmakuEnabledToggle = { enabled ->
                     settingsViewModel.updateDanmakuEnabled(enabled)
@@ -308,6 +301,7 @@ fun TvNavGraph(
                 onCacheClear = {
                     settingsScope.launch { settingsViewModel.performClearCache() }
                 },
+                onRegenerateQr = settingsViewModel::regenerateQrCode,
                 onNoticeDismiss = settingsViewModel::dismissNotice,
             )
         }
@@ -422,7 +416,7 @@ fun TvNavGraph(
                         org.moontechlab.selene.tv.core.player.api.PlaybackSource(sourceItem.id, sourceItem.name)
                     }
                     val episodes = detailState.currentSource?.episodes.orEmpty().map { episode ->
-                        org.moontechlab.selene.tv.core.player.api.PlaybackEpisode(episode.id, episode.title)
+                        org.moontechlab.selene.tv.core.player.api.PlaybackEpisode(episode.id, episode.title, episode.url)
                     }
                     sharedPlayerHost.updatePlaybackContext(
                         request = request,
@@ -441,7 +435,7 @@ fun TvNavGraph(
                             org.moontechlab.selene.tv.core.player.api.PlaybackSource(it.id, it.name)
                         }
                         val episodes = detailState.currentSource?.episodes.orEmpty().map {
-                            org.moontechlab.selene.tv.core.player.api.PlaybackEpisode(it.id, it.title)
+                            org.moontechlab.selene.tv.core.player.api.PlaybackEpisode(it.id, it.title, it.url)
                         }
                         sharedPlayerHost.updatePlaybackContext(
                             request = request,
@@ -458,11 +452,23 @@ fun TvNavGraph(
                 onEpisodeGroupSelected = { group -> detailViewModel.selectEpisodeGroup(group) },
                 onHistoryClick = { navController.navigate(TvDestination.History.route) },
                 onExitClick = { navController.popBackStack() },
+                onRecommendClick = { card ->
+                    // 相关推荐与首页豆瓣卡片一致：用 douban 来源 + 标题进入详情兜底搜索。
+                    val videoKey = TvDestination.Detail.createVideoKeyWithTitle(
+                        source = card.source.ifBlank { "douban" },
+                        videoId = card.id,
+                        title = card.title,
+                    )
+                    navController.navigate(TvDestination.Detail.createRoute(videoKey))
+                },
                 playerSurface = if (playerKernel == "exo") {
                     {
                         ExoPlayerSurface(
                             exoPlayer = sharedPlayerSession.exoEngine?.exoPlayer,
                             isActive = currentRoute == TvDestination.Detail.route,
+                            resizeMode = detailState.playbackRequest?.resizeMode
+                                ?: org.moontechlab.selene.tv.core.player.api.TvResizeMode.FIT,
+                            engine = sharedPlayerSession.exoEngine,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -528,10 +534,12 @@ fun TvNavGraph(
                 playbackRequest = playbackRequest,
                 viewModel = playerViewModel,
                 playerSurface = if (playerKernel == "exo") {
-                    { _ ->
+                    { playerUiState ->
                         ExoPlayerSurface(
                             exoPlayer = sharedPlayerSession.exoEngine?.exoPlayer,
                             isActive = currentRoute == TvDestination.Player.route,
+                            resizeMode = playerUiState.selectedResizeMode,
+                            engine = sharedPlayerSession.exoEngine,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }

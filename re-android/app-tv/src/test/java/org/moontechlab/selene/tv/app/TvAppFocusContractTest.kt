@@ -166,4 +166,15 @@ class TvAppFocusContractTest {
         return source.substringAfter("private fun TvNavigationPill(")
             .substringBefore("/**\n * TV 顶部当前时间。")
     }
+
+    /**
+     * 分类 tab 确认键才弹出筛选；首页不弹。
+     */
+    @Test
+    fun category_tabs_confirm_toggles_filter_home_does_not() {
+        val source = File("src/main/java/org/moontechlab/selene/tv/app/TvApp.kt").readText()
+        assertThat(source).contains("supportsCategoryFilter")
+        assertThat(source).contains("selected && supportsCategoryFilter")
+        assertThat(source).contains("destination.supportsCategoryFilter()")
+    }
 }

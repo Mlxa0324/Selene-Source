@@ -21,7 +21,6 @@ class TvDestinationTest {
             "library/tv",
             "library/anime",
             "library/show",
-            "live",
             "search",
             "history",
             "favorites",
@@ -79,10 +78,10 @@ class TvDestinationTest {
     }
 
     /**
-     * 确认首页与直播属于左侧主菜单。
+     * 确认首页与内容分类属于左侧主菜单；直播暂时隐藏。
      */
     @Test
-    fun primary_menu_destinations_expose_home_and_live() {
+    fun primary_menu_destinations_expose_home_and_categories() {
         val routes = TvDestination.primaryMenuDestinations.map { it.route }
 
         assertThat(routes).containsExactly(
@@ -91,8 +90,9 @@ class TvDestinationTest {
             "library/tv",
             "library/anime",
             "library/show",
-            "live",
         ).inOrder()
+        assertThat(routes).doesNotContain("live")
+        assertThat(TvDestination.topLevelDestinations.map { it.route }).doesNotContain("live")
     }
 
     /**
@@ -157,11 +157,30 @@ class TvDestinationTest {
             "剧集",
             "动漫",
             "综艺",
-            "直播",
             "搜索",
             "播放历史",
             "收藏夹",
             "设置",
         ).inOrder()
+    }
+
+    /**
+     * 相关推荐携带中文标题时，解析后必须是可读原文，不能残留 URL 编码。
+     */
+    @Test
+    fun detail_route_title_is_not_double_encoded() {
+        val key = TvDestination.Detail.createVideoKeyWithTitle(
+            source = "douban",
+            videoId = "123456",
+            title = "阿松的日常",
+        )
+        val route = TvDestination.Detail.createRoute(key)
+
+        assertThat(key).isEqualTo("douban::123456::阿松的日常")
+        assertThat(TvDestination.Detail.parseTitle(key)).isEqualTo("阿松的日常")
+        // createRoute 只编码整段 path，不应让 parseTitle 再看到 %E9...
+        assertThat(route).contains("%E9%98%BF")
+        assertThat(TvDestination.Detail.parseTitle("douban::123456::%E9%98%BF%E6%9D%BE%E7%9A%84%E6%97%A5%E5%B8%B8"))
+            .isEqualTo("阿松的日常")
     }
 }

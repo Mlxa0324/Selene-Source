@@ -1,5 +1,6 @@
 package org.moontechlab.selene.tv.app.navigation
 
+import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -177,10 +178,11 @@ sealed class TvDestination(
             title: String,
         ): String {
             val key = createVideoKey(source, videoId)
+            // 标题保持原文，交由 createRoute 统一编码整段 key，避免二次编码导致详情页显示 %E9...。
             return if (title.isBlank()) {
                 key
             } else {
-                "$key$videoKeySeparator${encodeRouteArg(title)}"
+                "$key$videoKeySeparator${title.trim()}"
             }
         }
 
@@ -213,7 +215,11 @@ sealed class TvDestination(
          */
         fun parseTitle(videoKey: String): String {
             val parts = videoKey.split(videoKeySeparator, limit = 3)
-            return if (parts.size >= 3) parts[2].trim() else ""
+            if (parts.size < 3) {
+                return ""
+            }
+            // 兼容历史路由里预编码过的标题，以及导航层解码后的原文标题。
+            return decodeRouteArg(parts[2].trim())
         }
     }
 
@@ -282,7 +288,36 @@ sealed class TvDestination(
         }
 
         /**
-         * 左侧主菜单承载首页、内容分类与直播入口。
+         * 解码动态路由参数。
+         *
+         * 兼容：
+         * 1. 导航层已还原的原文；
+         * 2. 旧版本在 key 内预编码、导航只解一层后仍残留的 percent 串。
+         *
+         * @param rawArg 路由参数。
+         * @return 可读标题/参数原文。
+         */
+        private fun decodeRouteArg(rawArg: String): String {
+            if (rawArg.isBlank() || !rawArg.contains('%')) {
+                return rawArg
+            }
+            return runCatching {
+                // 最多解两层，覆盖“预编码 + createRoute 再编码”的历史路径。
+                var decoded = rawArg
+                repeat(2) {
+                    val next = URLDecoder.decode(decoded, StandardCharsets.UTF_8.toString())
+                    if (next == decoded) {
+                        return@runCatching decoded
+                    }
+                    decoded = next
+                }
+                decoded
+            }.getOrDefault(rawArg)
+        }
+
+        /**
+         * 左侧主菜单承载首页与内容分类入口。
+         * 直播入口暂时隐藏，路由与实现保留便于后续恢复。
          */
         val primaryMenuDestinations = listOf(
             Home,
@@ -290,7 +325,6 @@ sealed class TvDestination(
             Tv,
             Anime,
             Show,
-            Live,
         )
 
         /**
@@ -312,7 +346,6 @@ sealed class TvDestination(
             Tv,
             Anime,
             Show,
-            Live,
             Search,
             History,
             Favorites,
