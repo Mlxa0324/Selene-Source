@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +19,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -32,15 +33,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,21 +52,55 @@ import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
-import org.moontechlab.selene.tv.core.design.layout.TvEmptyStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
-import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
+import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
 
-// ── 布局常量 (对齐 Flutter TV) ──
-private val LeftPanelWidth: Dp = 350.dp
+// ── 布局常量：左输入区更紧凑，右结果区更宽 ──
+private val LeftPanelWidth: Dp = 328.dp
 private const val KeyboardColumns = 6
 private const val KeyboardRows = 6
-private val KeyHeight: Dp = 42.dp
-private val KeySpacing: Dp = 8.dp
-private val RightPanelStartPadding: Dp = 32.dp
+private val KeyHeight: Dp = 44.dp
+private val KeySpacing: Dp = 7.dp
+private val RightPanelStartPadding: Dp = 24.dp
+private val PanelRadius: Dp = 22.dp
+private val ControlRadius: Dp = 14.dp
+
+/** 搜索页局部色板，统一左右面板质感。 */
+private object SearchPalette {
+    /** 页面底层背景。 */
+    val PageBg = TvTokens.Background
+
+    /** 左侧控制面板底色。 */
+    val LeftPanel = Color(0xFF222733)
+
+    /** 右侧内容面板底色。 */
+    val RightPanel = Color(0xFF252A35)
+
+    /** 输入框与词块默认底。 */
+    val ControlIdle = Color(0xFF343A48)
+
+    /** 键盘键默认底（略透明，避免整板过重）。 */
+    val KeyIdle = Color(0x143A4152)
+
+    /** 控件获焦填充。 */
+    val ControlFocused = Color(0xFF4B5366)
+
+    /** 搜索主按钮默认底。 */
+    val PrimaryIdle = Color(0xFF8C121B)
+
+    /** 搜索主按钮获焦底。 */
+    val PrimaryFocused = TvTokens.Accent
+
+    /** 弱提示文字。 */
+    val Hint = TvTokens.FormTextSecondary
+
+    /** 分区标题左侧装饰色。 */
+    val AccentBar = TvTokens.Accent
+}
 
 // ── 键盘布局 (6×6) ──
 private val KeyboardKeys: List<List<String>> = listOf(
@@ -77,7 +113,10 @@ private val KeyboardKeys: List<List<String>> = listOf(
 )
 
 /**
- * TV 搜索页 —— 双面板布局，对齐 Flutter TV。
+ * TV 搜索页 —— 左键盘右内容双面板。
+ *
+ * 操作逻辑保持不变：键盘输入、清空/搜索/删除、历史直接搜、
+ * 热词回填、联想确认搜索、结果进详情、返回先退面板再退页。
  */
 @Composable
 fun TvSearchRoute(
@@ -112,136 +151,211 @@ fun TvSearchRoute(
     var lastKeyboardRow by remember { mutableStateOf(0) }
     var lastKeyboardCol by remember { mutableStateOf(0) }
 
-    // 首焦点
+    // 首焦点落在键盘 A。
     LaunchedEffect(Unit) {
         keyFocusRequesters[0][0].requestFocus()
     }
 
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1A1D29))
-            .padding(horizontal = TvTokens.PageHorizontalPadding, vertical = 28.dp),
+            .background(SearchPalette.PageBg),
     ) {
-        // ═══ 左面板 (固定宽度) ═══
-        Column(
+        // 顶部柔光，拉开“影视搜索台”层次，不抢内容。
+        Box(
             modifier = Modifier
-                .width(LeftPanelWidth)
-                .fillMaxHeight(),
-        ) {
-            // 标题
-            androidx.compose.material3.Text(
-                text = "搜索",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.ExtraBold,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            androidx.compose.material3.Text(
-                text = "按返回键可退出本页面",
-                color = TvTokens.FormTextSecondary,
-                fontSize = 12.sp,
-            )
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // 搜索输入框 (纯展示)
-            SearchInputDisplay(query = state.query)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 虚拟键盘
-            TvKeyboard(
-                focusRequesters = keyFocusRequesters,
-                onKeyPressed = { onAppendChar(it) },
-                onArrowRightFromEdge = { row, col ->
-                    lastKeyboardRow = row; lastKeyboardCol = col
-                    rightPanelEntryFocus.requestFocus()
-                },
-                onArrowDownFromBottom = { clearButtonFocus.requestFocus() },
-                onArrowUpFromTop = { deleteButtonFocus.requestFocus() },
-                onBack = {
-                    if (!onConsumeBack()) {
-                        onBack()
-                    }
-                },
-                onFocusChanged = { row, col ->
-                    lastKeyboardRow = row; lastKeyboardCol = col
-                },
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 操作按钮
-            SearchActionRow(
-                clearFocus = clearButtonFocus,
-                searchFocus = searchButtonFocus,
-                deleteFocus = deleteButtonFocus,
-                onClear = onClearQuery,
-                onSearch = onSearchCurrentQuery,
-                onDelete = onDeleteLastChar,
-                onBack = {
-                    if (!onConsumeBack()) {
-                        onBack()
-                    }
-                },
-                onArrowUpToKeyboard = { col ->
-                    keyFocusRequesters[KeyboardRows - 1][col].requestFocus()
-                },
-                onArrowRightFromDelete = {
-                    rightPanelEntryFocus.requestFocus()
-                },
-            )
-        }
-
-        Spacer(modifier = Modifier.width(RightPanelStartPadding))
-
-        // ═══ 右面板 (填充剩余，独立滚动) ═══
-        RightPanel(
-            state = state,
-            entryFocusRequester = rightPanelEntryFocus,
-            onReturnToLeftPanel = {
-                keyFocusRequesters[lastKeyboardRow][lastKeyboardCol].requestFocus()
-            },
-            onHotQueryClick = onHotQueryClick,
-            onSearchHistoryClick = onSearchHistoryClick,
-            onSuggestionClick = onSuggestionClick,
-            onClearHistory = onClearHistory,
-            onVideoClick = onVideoClick,
-            onBack = {
-                if (!onConsumeBack()) {
-                    onBack()
-                }
-            },
-            modifier = Modifier.weight(1f).fillMaxHeight(),
+                .fillMaxWidth()
+                .height(220.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0x33241A1C),
+                            Color.Transparent,
+                        ),
+                    ),
+                ),
         )
+
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = TvTokens.PageHorizontalPadding,
+                    end = TvTokens.PageHorizontalPadding,
+                    top = 24.dp,
+                    bottom = 24.dp,
+                ),
+        ) {
+            // ═══ 左面板：输入 + 键盘 + 操作 ═══
+            Column(
+                modifier = Modifier
+                    .width(LeftPanelWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(PanelRadius))
+                    .background(SearchPalette.LeftPanel)
+                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(PanelRadius))
+                    .padding(horizontal = 18.dp, vertical = 20.dp),
+            ) {
+                // 标题区：主标题 + 操作提示。
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(SearchPalette.AccentBar),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    androidx.compose.material3.Text(
+                        text = "搜索",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                androidx.compose.material3.Text(
+                    text = "遥控器方向键切换 · 返回键退出页面",
+                    color = SearchPalette.Hint,
+                    fontSize = 12.sp,
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // 搜索输入框（纯展示，真实输入靠左侧键盘）。
+                SearchInputDisplay(query = state.query)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 虚拟键盘。
+                TvKeyboard(
+                    focusRequesters = keyFocusRequesters,
+                    onKeyPressed = { onAppendChar(it) },
+                    onArrowRightFromEdge = { row, col ->
+                        lastKeyboardRow = row
+                        lastKeyboardCol = col
+                        rightPanelEntryFocus.requestFocus()
+                    },
+                    onArrowDownFromBottom = { clearButtonFocus.requestFocus() },
+                    onArrowUpFromTop = { deleteButtonFocus.requestFocus() },
+                    onBack = {
+                        if (!onConsumeBack()) {
+                            onBack()
+                        }
+                    },
+                    onFocusChanged = { row, col ->
+                        lastKeyboardRow = row
+                        lastKeyboardCol = col
+                    },
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 操作按钮：清空 / 搜索 / 删除。
+                SearchActionRow(
+                    clearFocus = clearButtonFocus,
+                    searchFocus = searchButtonFocus,
+                    deleteFocus = deleteButtonFocus,
+                    onClear = onClearQuery,
+                    onSearch = onSearchCurrentQuery,
+                    onDelete = onDeleteLastChar,
+                    onBack = {
+                        if (!onConsumeBack()) {
+                            onBack()
+                        }
+                    },
+                    onArrowUpToKeyboard = { col ->
+                        keyFocusRequesters[KeyboardRows - 1][col].requestFocus()
+                    },
+                    onArrowRightFromDelete = {
+                        rightPanelEntryFocus.requestFocus()
+                    },
+                )
+            }
+
+            Spacer(modifier = Modifier.width(RightPanelStartPadding))
+
+            // ═══ 右面板：历史/热词/推荐/联想/结果 ═══
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(PanelRadius))
+                    .background(SearchPalette.RightPanel)
+                    .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(PanelRadius))
+                    .padding(horizontal = 22.dp, vertical = 20.dp),
+            ) {
+                RightPanel(
+                    state = state,
+                    entryFocusRequester = rightPanelEntryFocus,
+                    onReturnToLeftPanel = {
+                        keyFocusRequesters[lastKeyboardRow][lastKeyboardCol].requestFocus()
+                    },
+                    onHotQueryClick = onHotQueryClick,
+                    onSearchHistoryClick = onSearchHistoryClick,
+                    onSuggestionClick = onSuggestionClick,
+                    onClearHistory = onClearHistory,
+                    onVideoClick = onVideoClick,
+                    onBack = {
+                        if (!onConsumeBack()) {
+                            onBack()
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
     }
 }
 
 // ── 搜索输入框 ──
 
+/**
+ * 左侧搜索词展示框。
+ *
+ * @param query 当前输入内容。
+ */
 @Composable
 private fun SearchInputDisplay(query: String) {
+    val hasQuery = query.isNotEmpty()
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(46.dp)
-            .background(Color(0xFF4B4E58), RoundedCornerShape(23.dp)),
+            .height(50.dp)
+            .background(SearchPalette.ControlIdle, RoundedCornerShape(25.dp))
+            .border(
+                width = if (hasQuery) 1.5.dp else 1.dp,
+                color = if (hasQuery) SearchPalette.AccentBar.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(25.dp),
+            ),
         contentAlignment = Alignment.CenterStart,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier.padding(horizontal = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            androidx.compose.material3.Text(text = "\uD83D\uDD0D", fontSize = 18.sp)
-            Spacer(modifier = Modifier.width(10.dp))
-            if (query.isEmpty()) {
+            // 搜索图标圆底，强化“输入位”识别。
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.material3.Text(text = "\uD83D\uDD0D", fontSize = 13.sp)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            if (!hasQuery) {
                 androidx.compose.material3.Text(
                     text = "输入影片名称首字母进行搜索",
-                    color = Color(0xFF8E8E93), fontSize = 14.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = Color(0xFF8E95A3),
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             } else {
                 androidx.compose.material3.Text(
-                    text = query, color = Color.White, fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold, maxLines = 1,
+                    text = query,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -252,7 +366,17 @@ private fun SearchInputDisplay(query: String) {
 // ── 虚拟键盘 ──
 
 /**
+ * 6×6 字母数字虚拟键盘。
+ *
  * 键盘按键只消费方向键和确认键的 KeyUp，Back 键全程放行。
+ *
+ * @param focusRequesters 键位焦点矩阵。
+ * @param onKeyPressed 确认某键。
+ * @param onArrowRightFromEdge 右缘右移到右面板。
+ * @param onArrowDownFromBottom 底行下移到操作按钮。
+ * @param onArrowUpFromTop 顶行上移到操作按钮（环回）。
+ * @param onBack 返回处理。
+ * @param onFocusChanged 记录最近键位，供右面板返回。
  */
 @Composable
 private fun TvKeyboard(
@@ -264,7 +388,7 @@ private fun TvKeyboard(
     onBack: () -> Unit,
     onFocusChanged: (row: Int, col: Int) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         KeyboardKeys.forEachIndexed { row, keys ->
             Row(horizontalArrangement = Arrangement.spacedBy(KeySpacing)) {
                 keys.forEachIndexed { col, keyLabel ->
@@ -274,51 +398,68 @@ private fun TvKeyboard(
                     val interactionSource = remember { MutableInteractionSource() }
                     val isFocused by interactionSource.collectIsFocusedAsState()
                     val bgColor by animateColorAsState(
-                        if (isFocused) Color(0xFF737780) else Color.Transparent, tween(140),
+                        if (isFocused) SearchPalette.ControlFocused else SearchPalette.KeyIdle,
+                        tween(140),
+                        label = "searchKeyBg",
                     )
                     val borderColor by animateColorAsState(
-                        if (isFocused) Color.White else Color.Transparent, tween(140),
+                        if (isFocused) Color.White else Color.White.copy(alpha = 0.05f),
+                        tween(140),
+                        label = "searchKeyBorder",
                     )
 
                     Box(
                         modifier = Modifier
                             .weight(1f, fill = true)
                             .height(KeyHeight)
-                            .background(bgColor, RoundedCornerShape(8.dp))
+                            .background(bgColor, RoundedCornerShape(ControlRadius))
                             .border(
-                                if (isFocused) 2.dp else 0.dp, borderColor,
-                                RoundedCornerShape(8.dp),
+                                width = if (isFocused) 2.dp else 1.dp,
+                                color = borderColor,
+                                shape = RoundedCornerShape(ControlRadius),
                             )
                             .focusRequester(focusRequesters[row][col])
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) onFocusChanged(row, col)
                             }
                             .searchClickable({ onKeyPressed(keyLabel) })
-                            .onPreviewKeyEvent(KeyPreviewHandler(
-                                onEnter = { onKeyPressed(keyLabel) },
-                                onLeft = {
-                                    if (col > 0) focusRequesters[row][col - 1].requestFocus()
-                                },
-                                onRight = {
-                                    if (isRightEdge) onArrowRightFromEdge(row, col)
-                                    else focusRequesters[row][col + 1].requestFocus()
-                                },
-                                onUp = {
-                                    if (isTopRow) onArrowUpFromTop()
-                                    else focusRequesters[row - 1][col.coerceAtMost(KeyboardKeys[row - 1].lastIndex)].requestFocus()
-                                },
-                                onDown = {
-                                    if (isBottomRow) onArrowDownFromBottom()
-                                    else focusRequesters[row + 1][col.coerceAtMost(KeyboardKeys[row + 1].lastIndex)].requestFocus()
-                                },
-                                onBack = onBack,
-                            ))
+                            .onPreviewKeyEvent(
+                                KeyPreviewHandler(
+                                    onEnter = { onKeyPressed(keyLabel) },
+                                    onLeft = {
+                                        if (col > 0) focusRequesters[row][col - 1].requestFocus()
+                                    },
+                                    onRight = {
+                                        if (isRightEdge) onArrowRightFromEdge(row, col)
+                                        else focusRequesters[row][col + 1].requestFocus()
+                                    },
+                                    onUp = {
+                                        if (isTopRow) onArrowUpFromTop()
+                                        else {
+                                            focusRequesters[row - 1][
+                                                col.coerceAtMost(KeyboardKeys[row - 1].lastIndex),
+                                            ].requestFocus()
+                                        }
+                                    },
+                                    onDown = {
+                                        if (isBottomRow) onArrowDownFromBottom()
+                                        else {
+                                            focusRequesters[row + 1][
+                                                col.coerceAtMost(KeyboardKeys[row + 1].lastIndex),
+                                            ].requestFocus()
+                                        }
+                                    },
+                                    onBack = onBack,
+                                ),
+                            )
                             .focusable(interactionSource = interactionSource),
                         contentAlignment = Alignment.Center,
                     ) {
                         androidx.compose.material3.Text(
-                            text = keyLabel, color = Color.White,
-                            fontSize = 22.sp, fontWeight = FontWeight.ExtraBold,
+                            text = keyLabel,
+                            color = Color.White,
+                            fontSize = 21.sp,
+                            fontWeight = if (isFocused) FontWeight.ExtraBold else FontWeight.Bold,
                         )
                     }
                 }
@@ -329,6 +470,19 @@ private fun TvKeyboard(
 
 // ── 操作按钮行 ──
 
+/**
+ * 清空 / 搜索 / 删除三操作。
+ *
+ * @param clearFocus 清空按钮焦点。
+ * @param searchFocus 搜索按钮焦点。
+ * @param deleteFocus 删除按钮焦点。
+ * @param onClear 清空输入。
+ * @param onSearch 提交当前输入。
+ * @param onDelete 删除末字符。
+ * @param onBack 返回。
+ * @param onArrowUpToKeyboard 上移回键盘对应列。
+ * @param onArrowRightFromDelete 删除键右移进右面板。
+ */
 @Composable
 private fun SearchActionRow(
     clearFocus: FocusRequester,
@@ -341,20 +495,51 @@ private fun SearchActionRow(
     onArrowUpToKeyboard: (col: Int) -> Unit,
     onArrowRightFromDelete: () -> Unit,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-        SearchActionButton("清空", clearFocus, onClear, { onArrowUpToKeyboard(0) }, onBack = onBack)
-        SearchActionButton("搜索", searchFocus, onSearch, { onArrowUpToKeyboard(2) }, onBack = onBack)
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SearchActionButton(
-            "删除", deleteFocus, onDelete, { onArrowUpToKeyboard(5) },
-            onRight = onArrowRightFromDelete, onBack = onBack,
+            label = "清空",
+            focusRequester = clearFocus,
+            primary = false,
+            onClick = onClear,
+            onUp = { onArrowUpToKeyboard(0) },
+            onBack = onBack,
+        )
+        SearchActionButton(
+            label = "搜索",
+            focusRequester = searchFocus,
+            primary = true,
+            onClick = onSearch,
+            onUp = { onArrowUpToKeyboard(2) },
+            onBack = onBack,
+        )
+        SearchActionButton(
+            label = "删除",
+            focusRequester = deleteFocus,
+            primary = false,
+            onClick = onDelete,
+            onUp = { onArrowUpToKeyboard(5) },
+            onRight = onArrowRightFromDelete,
+            onBack = onBack,
         )
     }
 }
 
+/**
+ * 单个搜索操作按钮。
+ *
+ * @param label 文案。
+ * @param focusRequester 焦点请求器。
+ * @param primary 是否主操作（搜索）。
+ * @param onClick 点击/确认。
+ * @param onUp 上方向。
+ * @param onRight 右方向（仅删除需要）。
+ * @param onBack 返回。
+ */
 @Composable
 private fun RowScope.SearchActionButton(
     label: String,
     focusRequester: FocusRequester,
+    primary: Boolean,
     onClick: () -> Unit,
     onUp: () -> Unit,
     onRight: (() -> Unit)? = null,
@@ -362,39 +547,68 @@ private fun RowScope.SearchActionButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val idleBg = if (primary) SearchPalette.PrimaryIdle else SearchPalette.ControlIdle
+    val focusedBg = if (primary) SearchPalette.PrimaryFocused else SearchPalette.ControlFocused
     val bgColor by animateColorAsState(
-        if (isFocused) Color(0xFF757983) else Color(0xFF424550), tween(140),
+        if (isFocused) focusedBg else idleBg,
+        tween(140),
+        label = "searchActionBg",
     )
     val borderColor by animateColorAsState(
-        if (isFocused) Color.White else Color.Transparent, tween(140),
+        if (isFocused) Color.White else Color.White.copy(alpha = 0.06f),
+        tween(140),
+        label = "searchActionBorder",
     )
 
     Box(
         modifier = Modifier
             .weight(1f)
-            .height(44.dp)
-            .background(bgColor, RoundedCornerShape(22.dp))
-            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(22.dp))
+            .height(46.dp)
+            .background(bgColor, RoundedCornerShape(23.dp))
+            .border(
+                width = if (isFocused) 2.dp else 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(23.dp),
+            )
             .focusRequester(focusRequester)
             .searchClickable(onClick)
-            .onPreviewKeyEvent(KeyPreviewHandler(
-                onEnter = onClick,
-                onDown = { /* stay */ },
-                onUp = onUp,
-                onRight = onRight,
-                onBack = onBack,
-            ))
+            .onPreviewKeyEvent(
+                KeyPreviewHandler(
+                    onEnter = onClick,
+                    onDown = { /* stay */ },
+                    onUp = onUp,
+                    onRight = onRight,
+                    onBack = onBack,
+                ),
+            )
             .focusable(interactionSource = interactionSource),
         contentAlignment = Alignment.Center,
     ) {
         androidx.compose.material3.Text(
-            label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold,
+            text = label,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
         )
     }
 }
 
 // ── 右面板 ──
 
+/**
+ * 右侧内容区状态分发。
+ *
+ * @param state 搜索 UI 状态。
+ * @param entryFocusRequester 右面板入口焦点。
+ * @param onReturnToLeftPanel 左方向键回键盘。
+ * @param onHotQueryClick 热词点击。
+ * @param onSearchHistoryClick 历史点击。
+ * @param onSuggestionClick 联想点击。
+ * @param onClearHistory 清空历史。
+ * @param onVideoClick 视频点击。
+ * @param onBack 返回。
+ * @param modifier 外层修饰。
+ */
 @Composable
 private fun RightPanel(
     state: TvSearchUiState,
@@ -450,6 +664,18 @@ private fun RightPanel(
 
 // ── 默认面板 (历史+热词+推荐) ──
 
+/**
+ * 搜索首页默认内容。
+ *
+ * @param state 搜索 UI 状态。
+ * @param entryFocusRequester 右面板入口焦点。
+ * @param onReturnToLeftPanel 回键盘。
+ * @param onHotQueryClick 热词点击（只回填）。
+ * @param onSearchHistoryClick 历史点击（直接搜索）。
+ * @param onClearHistory 清空历史。
+ * @param onVideoClick 推荐卡片点击。
+ * @param onBack 返回。
+ */
 @Composable
 private fun SearchDefaultPanel(
     state: TvSearchUiState,
@@ -490,9 +716,12 @@ private fun SearchDefaultPanel(
         trailingActionLabel = if (state.searchHistory.isNotEmpty()) "清空" else null,
         onTrailingAction = onClearHistory,
     )
-    Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(12.dp))
     if (state.searchHistory.isEmpty()) {
-        TvEmptyStatePanel("暂无搜索历史", "使用左侧键盘输入首字母，或点击搜索按钮。")
+        SearchHintCard(
+            title = "暂无搜索历史",
+            message = "使用左侧键盘输入首字母，或点击搜索按钮。",
+        )
     } else {
         WordTileGrid(
             words = state.searchHistory,
@@ -505,9 +734,9 @@ private fun SearchDefaultPanel(
     }
 
     if (state.hotQueries.isNotEmpty()) {
-        Spacer(modifier = Modifier.height(30.dp))
+        Spacer(modifier = Modifier.height(28.dp))
         SectionTitle("搜索热词", "${state.hotQueries.size} 个推荐词")
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         WordTileGrid(
             words = state.hotQueries,
             entryFocusRequester = if (state.searchHistory.isEmpty()) entryFocusRequester else null,
@@ -518,9 +747,9 @@ private fun SearchDefaultPanel(
         )
     }
 
-    Spacer(modifier = Modifier.height(34.dp))
+    Spacer(modifier = Modifier.height(30.dp))
     SectionTitle("影片推荐", if (state.recommendCards.isEmpty()) "暂无推荐" else "${state.recommendCards.size} 部")
-    Spacer(modifier = Modifier.height(14.dp))
+    Spacer(modifier = Modifier.height(12.dp))
     RecommendRail(
         cards = state.recommendCards,
         entryFocusRequester = if (state.searchHistory.isEmpty() && state.hotQueries.isEmpty()) {
@@ -536,6 +765,16 @@ private fun SearchDefaultPanel(
 
 // ── 联想面板 ──
 
+/**
+ * 输入过程中的联想结果面板。
+ *
+ * @param state 搜索 UI 状态。
+ * @param entryFocusRequester 右面板入口焦点。
+ * @param onReturnToLeftPanel 回键盘。
+ * @param onSuggestionClick 联想词确认搜索。
+ * @param onVideoClick 推荐卡片点击。
+ * @param onBack 返回。
+ */
 @Composable
 private fun SearchSuggestionPanel(
     state: TvSearchUiState,
@@ -545,8 +784,11 @@ private fun SearchSuggestionPanel(
     onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    SectionTitle("联想结果", if (state.isSuggestionLoading) "联想中…" else "${state.suggestions.size} 个结果")
-    Spacer(modifier = Modifier.height(14.dp))
+    SectionTitle(
+        title = "联想结果",
+        hint = if (state.isSuggestionLoading) "联想中…" else "${state.suggestions.size} 个结果",
+    )
+    Spacer(modifier = Modifier.height(12.dp))
     when {
         state.isSuggestionLoading -> {
             TvSearchStatePanel(
@@ -580,9 +822,9 @@ private fun SearchSuggestionPanel(
                 onBack = onBack,
             )
             if (state.recommendCards.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(34.dp))
+                Spacer(modifier = Modifier.height(30.dp))
                 SectionTitle("影片推荐", "${state.recommendCards.size} 部")
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 RecommendRail(
                     cards = state.recommendCards,
                     entryFocusRequester = null,
@@ -595,6 +837,14 @@ private fun SearchSuggestionPanel(
     }
 }
 
+/**
+ * 分区标题行。
+ *
+ * @param title 主标题。
+ * @param hint 次要说明。
+ * @param trailingActionLabel 右侧操作文案。
+ * @param onTrailingAction 右侧操作回调。
+ */
 @Composable
 private fun SectionTitle(
     title: String,
@@ -606,12 +856,26 @@ private fun SectionTitle(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 红竖条对齐详情页分区标题语言。
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(18.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(SearchPalette.AccentBar),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
         androidx.compose.material3.Text(
-            title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold,
+            text = title,
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.ExtraBold,
         )
         Spacer(modifier = Modifier.width(12.dp))
         androidx.compose.material3.Text(
-            hint, color = TvTokens.FormTextSecondary, fontSize = 13.sp,
+            text = hint,
+            color = SearchPalette.Hint,
+            fontSize = 13.sp,
         )
         if (!trailingActionLabel.isNullOrBlank() && onTrailingAction != null) {
             Spacer(modifier = Modifier.weight(1f))
@@ -621,13 +885,13 @@ private fun SectionTitle(
                 modifier = Modifier
                     .height(34.dp)
                     .background(
-                        if (isFocused) Color(0xFF747881) else Color(0xFF3C4048),
+                        if (isFocused) SearchPalette.ControlFocused else SearchPalette.ControlIdle,
                         RoundedCornerShape(17.dp),
                     )
                     .border(
-                        if (isFocused) 2.dp else 1.dp,
-                        if (isFocused) Color.White else Color(0xFF535861),
-                        RoundedCornerShape(17.dp),
+                        width = if (isFocused) 2.dp else 1.dp,
+                        color = if (isFocused) Color.White else Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(17.dp),
                     )
                     .searchClickable(onTrailingAction)
                     .onPreviewKeyEvent(
@@ -650,6 +914,15 @@ private fun SectionTitle(
     }
 }
 
+/**
+ * 词块网格：历史 / 热词 / 联想共用。
+ *
+ * @param words 词列表。
+ * @param entryFocusRequester 首项入口焦点。
+ * @param onReturnToLeftPanel 左键回键盘。
+ * @param onWordClick 词确认。
+ * @param onBack 返回。
+ */
 @Composable
 private fun WordTileGrid(
     words: List<String>,
@@ -671,46 +944,60 @@ private fun WordTileGrid(
                         val word = words[index]
                         val interactionSource = remember { MutableInteractionSource() }
                         val isFocused by interactionSource.collectIsFocusedAsState()
-                        val bgColor = if (isFocused) Color(0xFF7B7E86) else Color(0xFF424550)
+                        val bgColor by animateColorAsState(
+                            if (isFocused) SearchPalette.ControlFocused else SearchPalette.ControlIdle,
+                            tween(140),
+                            label = "wordTileBg",
+                        )
                         val isFirst = index == 0
 
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
-                                .background(bgColor, RoundedCornerShape(8.dp))
+                                .height(46.dp)
+                                .background(bgColor, RoundedCornerShape(12.dp))
+                                .border(
+                                    width = if (isFocused) 2.dp else 1.dp,
+                                    color = if (isFocused) Color.White else Color.White.copy(alpha = 0.05f),
+                                    shape = RoundedCornerShape(12.dp),
+                                )
                                 .then(
-                                    if (isFirst && entryFocusRequester != null)
+                                    if (isFirst && entryFocusRequester != null) {
                                         Modifier.focusRequester(entryFocusRequester)
-                                    else Modifier.focusRequester(focusRequesters[index])
+                                    } else {
+                                        Modifier.focusRequester(focusRequesters[index])
+                                    },
                                 )
                                 .searchClickable({ onWordClick(word) })
-                                .onPreviewKeyEvent(KeyPreviewHandler(
-                                    onEnter = { onWordClick(word) },
-                                    onLeft = {
-                                        if (col == 0) onReturnToLeftPanel()
-                                        else focusRequesters.getOrNull(index - 1)?.requestFocus()
-                                    },
-                                    onRight = {
-                                        focusRequesters.getOrNull(index + 1)?.requestFocus()
-                                    },
-                                    onUp = {
-                                        focusRequesters.getOrNull(index - columns)?.requestFocus()
-                                    },
-                                    onDown = {
-                                        focusRequesters.getOrNull(index + columns)?.requestFocus()
-                                    },
-                                    onBack = onBack,
-                                ))
+                                .onPreviewKeyEvent(
+                                    KeyPreviewHandler(
+                                        onEnter = { onWordClick(word) },
+                                        // 左缘回键盘；同行/跨行焦点逻辑保持原搜索页契约。
+                                        onLeft = {
+                                            if (col == 0) onReturnToLeftPanel()
+                                            else focusRequesters.getOrNull(index - 1)?.requestFocus()
+                                        },
+                                        onRight = {
+                                            focusRequesters.getOrNull(index + 1)?.requestFocus()
+                                        },
+                                        onUp = {
+                                            focusRequesters.getOrNull(index - columns)?.requestFocus()
+                                        },
+                                        onDown = {
+                                            focusRequesters.getOrNull(index + columns)?.requestFocus()
+                                        },
+                                        onBack = onBack,
+                                    ),
+                                )
                                 .focusable(interactionSource = interactionSource)
-                                .padding(horizontal = 12.dp),
+                                .padding(horizontal = 14.dp),
                             contentAlignment = Alignment.CenterStart,
                         ) {
                             androidx.compose.material3.Text(
                                 text = word,
                                 color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                fontWeight = if (isFocused) FontWeight.Bold else FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -733,10 +1020,14 @@ private fun RecommendRail(
     onBack: () -> Unit,
 ) {
     if (cards.isEmpty()) {
-        TvEmptyStatePanel("暂无影片推荐", "观看详情后会在这里展示相关推荐。")
+        SearchHintCard(
+            title = "暂无推荐",
+            message = "观看详情后会在这里展示相关推荐。",
+        )
         return
     }
     // 推荐区用横向轨道，避免嵌在 verticalScroll 中再次套 LazyVerticalGrid。
+    // onReturnToLeftPanel/onBack 由外层词块或状态面板入口承接；海报轨首项承接 entryFocus。
     TvPosterRail(
         items = cards.map { video ->
             TvPosterItem(
@@ -762,30 +1053,52 @@ private fun SearchResultPanel(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 进度文案：有资源站总数时展示完成进度。
     val progressText = if (state.searchTotalResourceCount > 0) {
         "已搜索 ${state.searchCompletedResourceCount}/${state.searchTotalResourceCount} 个资源站"
     } else {
         null
     }
+
     Column(modifier = modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(SearchPalette.AccentBar),
+            )
+            Spacer(modifier = Modifier.width(10.dp))
             androidx.compose.material3.Text(
-                "搜索结果", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold,
+                text = "搜索结果",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
             )
             Spacer(modifier = Modifier.width(12.dp))
             androidx.compose.material3.Text(
-                "${state.resultCards.size} 个影片",
-                color = TvTokens.FormTextSecondary,
+                text = "${state.resultCards.size} 个影片",
+                color = SearchPalette.Hint,
                 fontSize = 13.sp,
             )
             if (!progressText.isNullOrBlank()) {
                 Spacer(modifier = Modifier.width(12.dp))
-                androidx.compose.material3.Text(
-                    progressText,
-                    color = Color(0xFF9CA2AD),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Box(
+                    modifier = Modifier
+                        .background(SearchPalette.ControlIdle, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) {
+                    androidx.compose.material3.Text(
+                        text = progressText,
+                        color = Color(0xFFB0B7C3),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(14.dp))
@@ -840,8 +1153,42 @@ private fun SearchResultPanel(
     }
 }
 
+@Composable
+private fun SearchHintCard(
+    title: String,
+    message: String,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SearchPalette.ControlIdle.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        androidx.compose.material3.Text(
+            text = title,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        androidx.compose.material3.Text(
+            text = message,
+            color = SearchPalette.Hint,
+            fontSize = 13.sp,
+        )
+    }
+}
+
 /**
  * 搜索右侧状态面板，承接键盘右移入口并支持左键回键盘。
+ *
+ * @param kind 状态类型。
+ * @param title 标题。
+ * @param message 说明。
+ * @param focusRequester 入口焦点。
+ * @param onReturnToLeftPanel 回键盘。
+ * @param onBack 返回。
  */
 @Composable
 private fun TvSearchStatePanel(
@@ -855,16 +1202,24 @@ private fun TvSearchStatePanel(
     Box(
         modifier = Modifier
             .focusRequester(focusRequester)
-            .onPreviewKeyEvent(KeyPreviewHandler(
-                onLeft = onReturnToLeftPanel,
-                onBack = onBack,
-            ))
+            .onPreviewKeyEvent(
+                KeyPreviewHandler(
+                    onLeft = onReturnToLeftPanel,
+                    onBack = onBack,
+                ),
+            )
             .focusable(),
     ) {
         TvStatePanel(kind = kind, title = title, message = message)
     }
 }
 
+/**
+ * 搜索结果副标题：年份 · 来源。
+ *
+ * @receiver 视频卡片。
+ * @return 展示副标题。
+ */
 private fun TvVideoCard.searchResultSubtitle(): String = buildList {
     if (year.isNotBlank()) add(year)
     if (sourceName.isNotBlank()) add(sourceName)
@@ -879,6 +1234,14 @@ private fun TvVideoCard.searchResultSubtitle(): String = buildList {
  * - 方向键/确认键 → KeyDown 处理并消费，KeyUp 也消费（防止重复触发）
  * - Back 键 → 全程不消费，交给 NavHost 处理
  * - 其他键 → 不消费，交给上层
+ *
+ * @param onEnter 确认。
+ * @param onLeft 左。
+ * @param onRight 右。
+ * @param onUp 上。
+ * @param onDown 下。
+ * @param onBack 返回（仅作业务回调位，实际不消费 Back 键）。
+ * @return 预览按键处理器。
  */
 private fun KeyPreviewHandler(
     onEnter: (() -> Unit)? = null,
@@ -893,31 +1256,48 @@ private fun KeyPreviewHandler(
         Key.Back -> false // 全程放行给 NavHost
         Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
             if (isKeyUp) true
-            else { onEnter?.invoke(); true }
+            else {
+                onEnter?.invoke()
+                true
+            }
         }
         Key.DirectionUp -> {
             if (isKeyUp) true
-            else { onUp?.invoke(); true }
+            else {
+                onUp?.invoke()
+                true
+            }
         }
         Key.DirectionDown -> {
             if (isKeyUp) true
-            else { onDown?.invoke(); true }
+            else {
+                onDown?.invoke()
+                true
+            }
         }
         Key.DirectionLeft -> {
             if (isKeyUp) true
-            else { onLeft?.invoke(); true }
+            else {
+                onLeft?.invoke()
+                true
+            }
         }
         Key.DirectionRight -> {
             if (isKeyUp) true
-            else { onRight?.invoke(); true }
+            else {
+                onRight?.invoke()
+                true
+            }
         }
         else -> false
     }
 }
 
-
 /**
  * 搜索页可交互节点的鼠标/触摸点击，与确认键等价。
+ *
+ * @param onClick 点击回调。
+ * @return 修饰后的 Modifier。
  */
 private fun Modifier.searchClickable(onClick: () -> Unit): Modifier {
     return tvPointerClickable(onClick = onClick)
