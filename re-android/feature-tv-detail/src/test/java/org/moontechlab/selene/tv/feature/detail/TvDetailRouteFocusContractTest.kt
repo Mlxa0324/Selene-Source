@@ -28,6 +28,12 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("NcatBottomActionGlyph")
         assertThat(source).doesNotContain("待加速")
         assertThat(source).doesNotContain("多集")
+        assertThat(source).contains("当前线路 · 推荐")
+        assertThat(source).contains("pinCurrentSource = false")
+        // 选集在上、分组在下：先渲染 episode LazyRow，再渲染分组条。
+        assertThat(source.indexOf("NcatEpisodeChip(")).isLessThan(source.lastIndexOf("NcatEpisodeGroupChoice("))
+        assertThat(source).contains("分组移动即切换")
+
         assertThat(source).doesNotContain("网飞猫")
     }
 

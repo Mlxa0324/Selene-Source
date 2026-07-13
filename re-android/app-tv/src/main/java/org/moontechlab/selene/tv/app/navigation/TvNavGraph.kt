@@ -117,7 +117,13 @@ fun TvNavGraph(
                 },
                 onVideoClick = { videoId ->
                     // 首页所有视频卡片统一进入原生 TV 详情页。
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
                 onSectionMoreClick = { target ->
                     // 首页分区查看更多沿用既有顶层页面，避免额外引入中转页。
@@ -132,7 +138,13 @@ fun TvNavGraph(
                 contentFocusRequester = contentFocusRequester,
                 showFilter = showCategoryFilter,
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -143,7 +155,13 @@ fun TvNavGraph(
                 contentFocusRequester = contentFocusRequester,
                 showFilter = showCategoryFilter,
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -154,7 +172,13 @@ fun TvNavGraph(
                 contentFocusRequester = contentFocusRequester,
                 showFilter = showCategoryFilter,
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -165,7 +189,13 @@ fun TvNavGraph(
                 contentFocusRequester = contentFocusRequester,
                 showFilter = showCategoryFilter,
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -190,7 +220,13 @@ fun TvNavGraph(
                 onSuggestionClick = { query -> searchViewModel.submitSuggestionQuery(query) },
                 onClearHistory = { searchViewModel.clearHistory() },
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
                 onBack = { navController.popBackStack() },
                 onConsumeBack = { searchViewModel.handleBack() },
@@ -208,7 +244,13 @@ fun TvNavGraph(
                 state = historyState,
                 contentFocusRequester = contentFocusRequester,
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -224,7 +266,13 @@ fun TvNavGraph(
                 state = favoritesState,
                 contentFocusRequester = contentFocusRequester,
                 onVideoClick = { videoId ->
-                    navController.navigate(TvDestination.Detail.createRoute(videoId))
+                    navController.navigate(TvDestination.Detail.createRoute(videoId)) {
+                        // 全局单详情：新开详情前清掉旧详情，避免返回栈堆积。
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
             )
         }
@@ -459,7 +507,13 @@ fun TvNavGraph(
                         videoId = card.id,
                         title = card.title,
                     )
-                    navController.navigate(TvDestination.Detail.createRoute(videoKey))
+                    // 全局只保留一个活跃详情页：替换当前详情，返回不再回到旧详情。
+                    navController.navigate(TvDestination.Detail.createRoute(videoKey)) {
+                        popUpTo(TvDestination.Detail.route) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
                 },
                 playerSurface = if (playerKernel == "exo") {
                     {

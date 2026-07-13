@@ -160,6 +160,19 @@ class TvNavGraphPlayerContractTest {
      *
      * @return 当前 TvNavGraph 源码文本。
      */
+
+    /**
+     * 相关推荐进入详情时必须替换当前详情，保证全局仅一个活跃详情页。
+     */
+    @Test
+    fun detail_recommend_navigation_replaces_existing_detail_entry() {
+        val source = readNavGraphSource()
+        assertThat(source).contains("onRecommendClick = { card ->")
+        assertThat(source).contains("popUpTo(TvDestination.Detail.route)")
+        assertThat(source).contains("inclusive = true")
+        assertThat(source).contains("launchSingleTop = true")
+    }
+
     private fun readNavGraphSource(): String {
         return File("src/main/java/org/moontechlab/selene/tv/app/navigation/TvNavGraph.kt")
             .readText()
