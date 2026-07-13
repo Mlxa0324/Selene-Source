@@ -68,7 +68,8 @@ class TvDetailRouteFocusContractTest {
         // 播放器与右侧简介按半宽 16:9 同高，简介上下边距加大。
         assertThat(source).contains("panelHeight = panelWidth * 9f / 16f")
         assertThat(source).contains("vertical = 22.dp")
-        assertThat(source).contains("heightIn(min = 84.dp)")
+        assertThat(source).contains("heightIn(min = 96.dp)")
+        assertThat(source).contains("右下角标签独占下一行")
         assertThat(source).contains("NcatFullscreenGlyph(")
         assertThat(source).contains("NcatFavoriteGlyph(")
         assertThat(source).contains("label = \"全屏\"")

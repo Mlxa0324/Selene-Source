@@ -957,12 +957,11 @@ private fun NcatInfoPanel(
         // 简介摘要可获焦：确认后打开全屏影片简介。
         val descriptionInteraction = remember { MutableInteractionSource() }
         val descriptionFocused by descriptionInteraction.collectIsFocusedAsState()
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // 简介区最小高度略抬高，长摘要更易读。
-                .heightIn(min = 84.dp)
-                .height(84.dp)
+                // 正文与右下角“简介”分两行：上摘要，下角标，避免同行挤压。
+                .heightIn(min = 96.dp)
                 .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                 .border(
                     width = if (descriptionFocused) 2.dp else 0.dp,
@@ -990,7 +989,8 @@ private fun NcatInfoPanel(
                     } else {
                         false
                     }
-                },
+                }
+                .padding(start = 14.dp, top = 12.dp, end = 12.dp, bottom = 10.dp),
         ) {
             Text(
                 text = descriptionText,
@@ -999,16 +999,25 @@ private fun NcatInfoPanel(
                 lineHeight = 19.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 14.dp, top = 14.dp, end = 56.dp, bottom = 14.dp),
+                modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            // 右下角标签独占下一行，不和左侧简介正文并排。
             Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 8.dp)
-                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.CenterEnd,
             ) {
-                Text(text = "简介", color = Color.White.copy(alpha = 0.78f), fontSize = 11.sp)
+                Box(
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = "简介",
+                        color = Color.White.copy(alpha = 0.78f),
+                        fontSize = 11.sp,
+                    )
+                }
             }
         }
         Row(
