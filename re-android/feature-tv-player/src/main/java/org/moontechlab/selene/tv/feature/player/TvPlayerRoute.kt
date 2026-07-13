@@ -386,14 +386,15 @@ fun TvPlayerRoute(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color(0xFF111822).copy(alpha = 0.72f),
-                                Color(0xFF060A10).copy(alpha = 0.78f),
+                                Color(0xFF0E141D).copy(alpha = 0.20f),
+                                Color(0xFF0B1018).copy(alpha = 0.78f),
+                                Color(0xFF05080D).copy(alpha = 0.92f),
                             ),
                         ),
                     )
-                    // start=0：播放线路二级列表可贴左；一级菜单单独补 start/end 安全边。
-                    .padding(start = 0.dp, top = 28.dp, end = 0.dp, bottom = 30.dp),
-                verticalArrangement = Arrangement.spacedBy(30.dp),
+                    // start=0：二级列表贴左滚动；一级菜单自行补左右安全边。
+                    .padding(start = 0.dp, top = 24.dp, end = 0.dp, bottom = 26.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
                 when (state.selectedTopMenu) {
                     PLAYER_MENU_PLAYLIST -> {
@@ -472,8 +473,12 @@ fun TvPlayerRoute(
                 }
                 // 一级菜单保留左右安全边；二级线路列表允许贴边。
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.padding(start = 32.dp, end = 32.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    // 一级菜单左右与全局页面边距一致，避免贴屏或过空。
+                    modifier = Modifier.padding(
+                        start = TvTokens.PageHorizontalPadding,
+                        end = TvTokens.PageHorizontalPadding,
+                    ),
                 ) {
                     PLAYER_PRIMARY_MENU_ITEMS.forEachIndexed { index, menu ->
                         val primaryMenuModifier = if (menu == PLAYER_MENU_OTHER) {
@@ -579,7 +584,7 @@ private fun TvPlayerPlaylistMenu(
     if (episodes.isEmpty()) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(start = 32.dp),
+            modifier = Modifier.padding(start = TvTokens.PageHorizontalPadding),
         ) {
             val emptyModifier = (focusRequester ?: focusRequesters.firstOrNull())?.let {
                 Modifier.focusRequester(it)
@@ -611,7 +616,7 @@ private fun TvPlayerPlaylistMenu(
             ?: focusRequesters.firstOrNull()
         Column(
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.padding(start = 32.dp),
+            modifier = Modifier.padding(start = TvTokens.PageHorizontalPadding),
         ) {
             if (groups.size > 1) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -933,10 +938,12 @@ private fun TvPlayerPlaybackChromeScrim() {
             .background(
                 Brush.verticalGradient(
                     colorStops = arrayOf(
-                        0.0f to Color.Black.copy(alpha = 0.34f),
-                        0.18f to Color.Transparent,
-                        0.72f to Color.Transparent,
-                        1.0f to Color.Black.copy(alpha = 0.28f),
+                        // 顶部标题可读；中段透明不挡画面；底部加深托住进度条。
+                        0.0f to Color.Black.copy(alpha = 0.42f),
+                        0.16f to Color.Transparent,
+                        0.62f to Color.Transparent,
+                        0.84f to Color.Black.copy(alpha = 0.34f),
+                        1.0f to Color.Black.copy(alpha = 0.58f),
                     ),
                 ),
             ),
@@ -969,7 +976,11 @@ private fun TvPlayerTopDecorations(
         modifier = modifier
             .testTag("tv-player-top-decorations")
             .fillMaxWidth()
-            .padding(start = 34.dp, top = 14.dp, end = 34.dp),
+            .padding(
+                start = TvTokens.PageHorizontalPadding,
+                top = 18.dp,
+                end = TvTokens.PageHorizontalPadding,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -1034,9 +1045,14 @@ private fun TvPlayerCenterPlayButton(
     Box(
         modifier = modifier
             .testTag("tv-player-center-play")
-            .size(56.dp)
+            .size(64.dp)
             .background(
-                color = Color.Black.copy(alpha = 0.58f),
+                color = Color.Black.copy(alpha = 0.52f),
+                shape = CircleShape,
+            )
+            .border(
+                width = 1.5.dp,
+                color = Color.White.copy(alpha = 0.28f),
                 shape = CircleShape,
             ),
         contentAlignment = Alignment.Center,
@@ -1470,7 +1486,11 @@ private fun TvPlayerBottomHint(
         modifier = modifier
             .testTag("tv-player-bottom-hint")
             .fillMaxWidth()
-            .padding(start = 34.dp, end = 34.dp, bottom = 62.dp),
+            .padding(
+                start = TvTokens.PageHorizontalPadding,
+                end = TvTokens.PageHorizontalPadding,
+                bottom = 68.dp,
+            ),
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
         color = Color.White.copy(alpha = 0.70f),
@@ -1510,7 +1530,11 @@ private fun TvPlayerBottomProgressBar(
         modifier = modifier
             .testTag("tv-player-bottom-progress")
             .fillMaxWidth()
-            .padding(start = 32.dp, end = 32.dp, bottom = 24.dp)
+            .padding(
+                start = TvTokens.PageHorizontalPadding,
+                end = TvTokens.PageHorizontalPadding,
+                bottom = 28.dp,
+            )
             // 固定行高，保证播放图标/时间/进度条/全屏图标同一基线居中。
             .height(BOTTOM_PROGRESS_ROW_HEIGHT),
         verticalAlignment = Alignment.CenterVertically,
@@ -1549,7 +1573,7 @@ private fun TvPlayerBottomProgressBar(
                     .fillMaxWidth()
                     .height(BOTTOM_PROGRESS_TRACK_HEIGHT)
                     .background(
-                        color = Color.White.copy(alpha = 0.54f),
+                        color = Color.White.copy(alpha = 0.28f),
                         shape = RoundedCornerShape(999.dp),
                     ),
             )
@@ -1560,7 +1584,7 @@ private fun TvPlayerBottomProgressBar(
                         .fillMaxWidth(segment.endFraction - segment.startFraction)
                         .height(BOTTOM_PROGRESS_TRACK_HEIGHT)
                         .background(
-                            color = Color.White.copy(alpha = 0.24f),
+                            color = Color.White.copy(alpha = 0.42f),
                             shape = RoundedCornerShape(999.dp),
                         ),
                 )
@@ -1648,7 +1672,7 @@ private fun TvPlayerMenuChip(
         animationSpec = tween(durationMillis = PLAYER_MENU_FOCUS_ANIMATION_MS),
         label = "tvPlayerMenuChipScale",
     )
-    val shape = RoundedCornerShape(10.dp)
+    val shape = RoundedCornerShape(12.dp)
     // 与详情页线路/选集一致：选中主题底；焦点只加白边，不换背景。
     val backgroundColor = when {
         selected -> TvTokens.Accent
@@ -1717,13 +1741,15 @@ private fun TvPlayerMenuChip(
                 onClick = onClick,
             )
             .focusable(interactionSource = interactionSource)
-            .padding(horizontal = 18.dp),
+            .padding(horizontal = 20.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -1882,7 +1908,7 @@ private const val PLAYER_MENU_FOCUSED_SCALE = 1.08f
 private const val PLAYER_MENU_FOCUS_ANIMATION_MS = 140
 
 /** 播放器菜单 chip 固定高度。 */
-private val PLAYER_MENU_CHIP_HEIGHT = 46.dp
+private val PLAYER_MENU_CHIP_HEIGHT = 48.dp
 
 /**
  * 线路 chip 水平安全宽度估算。
@@ -1896,19 +1922,19 @@ private val PLAYER_MENU_CHIP_SAFE_WIDTH = 160.dp
  *
  * 列表 viewport 贴右屏边；仅末项依赖此 padding 与屏边拉开距离。
  */
-private val PLAYER_MENU_LIST_END_PADDING = 32.dp
+private val PLAYER_MENU_LIST_END_PADDING = TvTokens.PageHorizontalPadding
 
 /** 底部进度条整行高度，图标/时间/轨道垂直居中共用。 */
-private val BOTTOM_PROGRESS_ROW_HEIGHT = 28.dp
+private val BOTTOM_PROGRESS_ROW_HEIGHT = 30.dp
 
 /** 底部进度条左右时间槽位宽度。 */
-private val BOTTOM_PROGRESS_TIME_SLOT_WIDTH = 56.dp
+private val BOTTOM_PROGRESS_TIME_SLOT_WIDTH = 58.dp
 
 /** 播放图标/全屏图标与相邻时间的间距。 */
-private val BOTTOM_PROGRESS_INNER_GAP = 6.dp
+private val BOTTOM_PROGRESS_INNER_GAP = 8.dp
 
 /** 时间数字与进度条之间的间距。 */
-private val BOTTOM_PROGRESS_TIME_TRACK_GAP = 8.dp
+private val BOTTOM_PROGRESS_TIME_TRACK_GAP = 10.dp
 
 /** 弹幕覆盖层顶部安全间距。 */
 private val DANMAKU_OVERLAY_TOP_PADDING = 72.dp
@@ -1923,13 +1949,13 @@ private const val DANMAKU_OVERLAY_MAX_VISIBLE_COMMENTS = 4
 private const val DANMAKU_OVERLAY_VISIBLE_MS = 4_200L
 
 /** 底部进度条轨道高度。 */
-private val BOTTOM_PROGRESS_TRACK_HEIGHT = 6.dp
+private val BOTTOM_PROGRESS_TRACK_HEIGHT = 5.dp
 
 /** 底部进度条当前时间圆点尺寸。 */
-private val BOTTOM_PROGRESS_KNOB_SIZE = 15.dp
+private val BOTTOM_PROGRESS_KNOB_SIZE = 14.dp
 
 /** 底部进度条当前时间圆点半径。 */
-private val BOTTOM_PROGRESS_KNOB_RADIUS = 7.5.dp
+private val BOTTOM_PROGRESS_KNOB_RADIUS = 7.dp
 
 /** 底部缓存段最多展示到当前位置之后 3 分钟。 */
 private const val BOTTOM_PROGRESS_CACHE_FORWARD_LIMIT_MS = 180_000L

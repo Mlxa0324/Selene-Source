@@ -251,10 +251,10 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("resolvePlayerCachedProgressSegments")
         assertThat(source).contains("BOTTOM_PROGRESS_CACHE_FORWARD_LIMIT_MS")
         assertThat(progressBarSource).contains("cachedProgressSegments: List<TvPlayerCachedProgressSegment>")
-        assertThat(progressBarSource).contains("Color.White.copy(alpha = 0.24f)")
-        assertThat(progressBarSource.indexOf("Color.White.copy(alpha = 0.54f)"))
-            .isLessThan(progressBarSource.indexOf("Color.White.copy(alpha = 0.24f)"))
-        assertThat(progressBarSource.indexOf("Color.White.copy(alpha = 0.24f)"))
+        assertThat(progressBarSource).contains("Color.White.copy(alpha = 0.42f)")
+        assertThat(progressBarSource.indexOf("Color.White.copy(alpha = 0.28f)"))
+            .isLessThan(progressBarSource.indexOf("Color.White.copy(alpha = 0.42f)"))
+        assertThat(progressBarSource.indexOf("Color.White.copy(alpha = 0.42f)"))
             .isLessThan(progressBarSource.indexOf("TvTokens.Accent"))
     }
 
@@ -380,10 +380,11 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("TvPlayerPlaybackChromeScrim")
         assertThat(source).contains("testTag(\"tv-player-playback-chrome-scrim\")")
         assertThat(source).contains("Brush.verticalGradient")
-        assertThat(source).contains("0.34f")
-        assertThat(source).contains("0.28f")
-        assertThat(source).contains("0.18f")
-        assertThat(source).contains("0.72f")
+        assertThat(source).contains("0.42f")
+        assertThat(source).contains("0.58f")
+        assertThat(source).contains("0.16f")
+        assertThat(source).contains("0.62f")
+        assertThat(source).contains("0.84f")
     }
 
     /**
@@ -475,7 +476,7 @@ class TvPlayerRouteControlContractTest {
             .substringBefore("private fun TvPlayerAspectRatioMenu(")
 
         // 列表 viewport 贴右；仅滚到末项时 end padding 留边；获焦滚动避免裁切。
-        assertThat(source).contains("private val PLAYER_MENU_LIST_END_PADDING = 32.dp")
+        assertThat(source).contains("private val PLAYER_MENU_LIST_END_PADDING = TvTokens.PageHorizontalPadding")
         assertThat(source).contains("private val PLAYER_MENU_CHIP_SAFE_WIDTH = 160.dp")
         assertThat(sourceMenu).contains("end = PLAYER_MENU_LIST_END_PADDING")
         assertThat(sourceMenu).contains("start = 0.dp")
@@ -487,8 +488,9 @@ class TvPlayerRouteControlContractTest {
         assertThat(sourceMenu).contains("TransformOrigin(1f, 0.5f)")
         assertThat(sourceMenu).contains("TransformOrigin(0f, 0.5f)")
         assertThat(sourceMenu).contains("focusScaleOrigin = when {")
-        assertThat(source).contains(".padding(start = 0.dp, top = 28.dp, end = 0.dp, bottom = 30.dp)")
-        assertThat(source).contains("modifier = Modifier.padding(start = 32.dp, end = 32.dp)")
+        assertThat(source).contains(".padding(start = 0.dp, top = 24.dp, end = 0.dp, bottom = 26.dp)")
+        assertThat(source).contains("start = TvTokens.PageHorizontalPadding")
+        assertThat(source).contains("end = TvTokens.PageHorizontalPadding")
     }
 
     /**
