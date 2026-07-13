@@ -731,12 +731,7 @@ private fun NcatPreviewPlaceholder(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "NCAT.APP",
-                color = TvTokens.Accent,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.ExtraBold,
-            )
+            // 仅保留品牌名，不展示外部网址。
             Text(
                 text = "IvyTV",
                 color = Color.White,
