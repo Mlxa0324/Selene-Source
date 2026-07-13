@@ -1040,13 +1040,21 @@ private fun NcatSourceCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val selected = option.selected || isFocused
-    val label = "${option.label}${option.trailingText}"
+    // 仅“已选线路”用红色底；获焦未选中只加白描边，避免整行都变红。
+    val selected = option.selected
+    val activeBackground = selected || isFocused
     Box(
         modifier = modifier
             .width(163.dp)
             .height(69.dp)
-            .background(if (selected) TvTokens.Accent else NcatSurface, RoundedCornerShape(NcatRadius))
+            .background(
+                color = when {
+                    selected -> TvTokens.Accent
+                    isFocused -> NcatSurface.copy(alpha = 0.98f)
+                    else -> NcatSurface
+                },
+                shape = RoundedCornerShape(NcatRadius),
+            )
             .border(
                 width = if (isFocused) 2.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent,
@@ -1065,26 +1073,47 @@ private fun NcatSourceCard(
                 }
             },
     ) {
+        // 左上角“多集”角标，对齐目标截图。
+        if (option.episodeCount > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 0.dp, top = 0.dp)
+                    .background(
+                        color = if (selected) Color.White.copy(alpha = 0.22f) else Color(0xFF5B2B7A),
+                        shape = RoundedCornerShape(topStart = NcatRadius, bottomEnd = 6.dp),
+                    )
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = "多集",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 16.dp),
+                .padding(top = 14.dp, start = 8.dp, end = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = label,
-                color = if (selected) Color.White else Color.White.copy(alpha = 0.48f),
-                fontSize = 16.sp,
+                // 片源名前加胶片符号，贴近截图观感。
+                text = "🎬 ${option.label}${option.trailingText}",
+                color = if (activeBackground) Color.White else Color.White.copy(alpha = 0.78f),
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
-                // 选中线路对齐早版观感：主标题下展示“当前线路 · 推荐”。
-                text = if (option.selected) "当前线路 · 推荐" else sourceDescription(option),
-                color = if (selected) Color.White.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.46f),
+                // 选中：当前线路 · 推荐；未选中：高清。
+                text = if (option.selected) "当前线路 · 推荐" else "高清",
+                color = if (selected) Color.White.copy(alpha = 0.92f) else Color.White.copy(alpha = 0.50f),
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
