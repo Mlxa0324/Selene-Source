@@ -122,6 +122,12 @@ private val NcatContentStartPadding = 36.dp
  */
 private val NcatContentEndPadding = 36.dp
 
+/** 详情右侧简介摘要背景框固定高度。 */
+private val NcatDescriptionBoxHeight = 88.dp
+
+/** 简介正文右侧预留给“简介”角标的宽度，避免末行与角标重叠。 */
+private val NcatDescriptionBadgeReserve = 58.dp
+
 /** TV 详情页顶部右侧时间格式。 */
 private val NcatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -963,13 +969,12 @@ private fun NcatInfoPanel(
         // 简介摘要可获焦：确认后打开全屏影片简介。
         val descriptionInteraction = remember { MutableInteractionSource() }
         val descriptionFocused by descriptionInteraction.collectIsFocusedAsState()
-        // 正文占上方，角标固定右下角，绝不与左侧文字同行。
+        // 固定高度背景框；右下角“简介”与末行同排，正文右侧预留角标宽度防重叠。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 8.dp)
-                .heightIn(min = 100.dp)
-                .height(100.dp)
+                .height(NcatDescriptionBoxHeight)
                 .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                 .border(
                     width = if (descriptionFocused) 2.dp else 0.dp,
@@ -1006,18 +1011,26 @@ private fun NcatInfoPanel(
                 lineHeight = 19.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                // 底部预留给右下角“简介”标签，避免正文盖住角标。
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 36.dp),
+                    .fillMaxSize()
+                    .padding(
+                        start = 16.dp,
+                        top = 12.dp,
+                        // 末行与右下角角标同排时，右侧预留角标宽度，避免文字重叠。
+                        end = NcatDescriptionBadgeReserve,
+                        bottom = 12.dp,
+                    ),
             )
-            // 固定贴在简介块右下角，单独一行区域，不与正文并排。
+            // 右下角“简介”角标，与正文最后一行同一底部基线区域。
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 10.dp, bottom = 8.dp)
-                    .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(topStart = 8.dp, bottomEnd = 10.dp))
+                    .padding(end = 10.dp, bottom = 10.dp)
+                    .background(
+                        color = Color.White.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(topStart = 8.dp, bottomEnd = 10.dp),
+                    )
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
