@@ -8,6 +8,14 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  */
 object TvListLayoutMetrics {
     /**
+     * TV 海报可视列数。
+     *
+     * 首页网格、历史、收藏和详情相关推荐统一按 7 列密度排布，
+     * 避免各页面各自写死导致可视卡片数不一致。
+     */
+    const val PosterColumns = 7
+
+    /**
      * 横向海报带开始推动列表的 0-based 卡片下标。
      *
      * Flutter TV 首页约定前 4 张卡片保持原位，第 5 张获焦才开始横向推进。
@@ -25,9 +33,12 @@ object TvListLayoutMetrics {
     val RailStartPadding = TvTokens.PageHorizontalPadding
 
     /**
-     * 横向列表右侧贴边，滚动到最后一张卡片可贴紧屏幕右边缘。
+     * 横向列表右侧收口留白。
+     *
+     * 与左侧页面边距一致：默认浏览时内容仍可从右缘进出，
+     * 滚到最右侧时末卡不会贴死屏幕边框。
      */
-    val RailEndPadding = 0.dp
+    val RailEndPadding = TvTokens.PageHorizontalPadding
 
     /**
      * 纵向网格左右安全留白。

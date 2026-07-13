@@ -44,6 +44,8 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param valueDisplay 值显示文案。
  * @param modifier 外层修饰器。
  * @param focusRequester 外部焦点请求器。
+ * @param onArrowUp 上键自定义焦点回调。
+ * @param onArrowDown 下键自定义焦点回调。
  */
 @Composable
 fun TvFormSliderRow(
@@ -55,6 +57,8 @@ fun TvFormSliderRow(
     valueDisplay: (Float) -> String = { "%.0f%%".format(it * 100) },
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    onArrowUp: (() -> Unit)? = null,
+    onArrowDown: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -79,6 +83,15 @@ fun TvFormSliderRow(
                 if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
             )
             .onPreviewKeyEvent { event ->
+                // 自定义上下链优先，左右键继续调值。
+                if (event.key == Key.DirectionUp && onArrowUp != null) {
+                    if (event.type == KeyEventType.KeyDown) onArrowUp.invoke()
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.DirectionDown && onArrowDown != null) {
+                    if (event.type == KeyEventType.KeyDown) onArrowDown.invoke()
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.DirectionLeft -> {

@@ -177,7 +177,7 @@ fun TvHomeSkeleton(
  */
 @Composable
 fun TvLibrarySkeleton(
-    columns: Int = 7,
+    columns: Int = TvListLayoutMetrics.PosterColumns,
     rows: Int = 3,
     modifier: Modifier = Modifier,
     contentFocusRequester: FocusRequester? = null,
@@ -220,7 +220,7 @@ fun TvLibrarySkeleton(
  */
 @Composable
 fun TvPosterGridSkeleton(
-    columns: Int = 7,
+    columns: Int = TvListLayoutMetrics.PosterColumns,
     rows: Int = 3,
     modifier: Modifier = Modifier,
     contentFocusRequester: FocusRequester? = null,

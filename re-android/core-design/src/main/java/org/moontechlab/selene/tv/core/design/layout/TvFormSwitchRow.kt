@@ -17,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -30,6 +29,9 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Switch
 import androidx.tv.material3.SwitchDefaults
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.handleTvConfirmKeyUp
+import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
+import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 
 /**
  * TV 表单开关行。
@@ -41,6 +43,8 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param onCheckedChange 状态变更回调。
  * @param modifier 外层修饰器。
  * @param focusRequester 外部焦点请求器。
+ * @param onArrowUp 上键自定义焦点回调。
+ * @param onArrowDown 下键自定义焦点回调。
  */
 @Composable
 fun TvFormSwitchRow(
@@ -49,6 +53,8 @@ fun TvFormSwitchRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
+    onArrowUp: (() -> Unit)? = null,
+    onArrowDown: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -71,6 +77,15 @@ fun TvFormSwitchRow(
                 if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
             )
             .onPreviewKeyEvent { event ->
+                // 自定义上下链优先，保证长表单滚动时路径稳定。
+                if (event.key == Key.DirectionUp && onArrowUp != null) {
+                    if (event.type == KeyEventType.KeyDown) onArrowUp.invoke()
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.DirectionDown && onArrowDown != null) {
+                    if (event.type == KeyEventType.KeyDown) onArrowDown.invoke()
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when (event.key) {
                     Key.DirectionLeft -> {
@@ -81,13 +96,12 @@ fun TvFormSwitchRow(
                         if (!checked) onCheckedChange(true)
                         true
                     }
-                    Key.Enter, Key.DirectionCenter -> {
+                    else -> handleTvConfirmKeyUp(event) {
                         onCheckedChange(!checked)
-                        true
                     }
-                    else -> false
                 }
             }
+            .tvPointerClickable(onClick = { onCheckedChange(!checked) })
             .focusable(interactionSource = interactionSource),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.handleTvConfirmKeyUp
+import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
+import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 
 /**
  * TV 表单 Chip 选项行 —— 横向 chip 排列，支持焦点记忆。
@@ -50,6 +54,9 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param onOptionSelected 选中回调。
  * @param modifier 外层修饰器。
  * @param onFocusEntryChanged 获焦入口变更回调，父组件据此决定进入该行时定位哪个 chip。
+ * @param entryFocusRequester 外部入口焦点请求器；请求它时会落到最近选中/记忆 chip。
+ * @param onArrowUp 上键自定义焦点回调。
+ * @param onArrowDown 下键自定义焦点回调。
  * @param chipPreview 可选 chip 预览（颜色块/图标等），默认仅文字。
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -62,6 +69,9 @@ fun <T> TvFormChipOptionRow(
     onOptionSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     onFocusEntryChanged: ((FocusRequester) -> Unit)? = null,
+    entryFocusRequester: FocusRequester? = null,
+    onArrowUp: (() -> Unit)? = null,
+    onArrowDown: (() -> Unit)? = null,
     chipPreview: @Composable (T, Boolean) -> Unit = { _, _ -> },
 ) {
     val selectedIndex = options.indexOfFirst { it == selectedKey }.coerceAtLeast(0)
@@ -73,6 +83,30 @@ fun <T> TvFormChipOptionRow(
     // 首次进入时立即上报入口焦点，确保父组件下键能正确定位
     LaunchedEffect(Unit) {
         onFocusEntryChanged?.invoke(chipFocusRequesters[selectedIndex])
+    }
+
+    // 外部入口焦点：请求后落到最近记忆/选中 chip，便于上下链稳定进出。
+    if (entryFocusRequester != null) {
+        LaunchedEffect(entryFocusRequester, options.size, selectedIndex) {
+            // 无操作，仅声明依赖；真正转发在 focusProperties 入口锚点完成。
+        }
+    }
+
+    // 入口锚点：外部 requestFocus 落到本行最近 chip。
+    if (entryFocusRequester != null) {
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .size(1.dp)
+                .focusRequester(entryFocusRequester)
+                .onFocusChanged { state ->
+                    if (state.isFocused) {
+                        val target = chipFocusRequesters.getOrNull(lastFocusedIndex)
+                            ?: chipFocusRequesters.getOrNull(selectedIndex)
+                        target?.requestFocus()
+                    }
+                }
+                .focusable(),
+        )
     }
 
     Row(
@@ -123,13 +157,18 @@ fun <T> TvFormChipOptionRow(
                         )
                         .focusRequester(chipFocusRequesters[index])
                         .onPreviewKeyEvent { event ->
-                            if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-                            when (event.key) {
-                                Key.Enter, Key.DirectionCenter -> {
-                                    onOptionSelected(option)
-                                    true
-                                }
-                                else -> false
+                            // 上下键交给宿主线性链，左右仍走系统/相邻 chip。
+                            if (event.key == Key.DirectionUp && onArrowUp != null) {
+                                if (event.type == KeyEventType.KeyDown) onArrowUp.invoke()
+                                return@onPreviewKeyEvent true
+                            }
+                            if (event.key == Key.DirectionDown && onArrowDown != null) {
+                                if (event.type == KeyEventType.KeyDown) onArrowDown.invoke()
+                                return@onPreviewKeyEvent true
+                            }
+                            // 空格 / Enter / 方向中心键选中 chip。
+                            handleTvConfirmKeyUp(event) {
+                                onOptionSelected(option)
                             }
                         }
                         .onFocusChanged { focusState ->
@@ -138,6 +177,7 @@ fun <T> TvFormChipOptionRow(
                                 onFocusEntryChanged?.invoke(chipFocusRequesters[index])
                             }
                         }
+                        .tvPointerClickable(onClick = { onOptionSelected(option) })
                         .focusable(interactionSource = interactionSource)
                         .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,

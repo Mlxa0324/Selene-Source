@@ -27,6 +27,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.handleTvConfirmKeyUp
+import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
+import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 
 /**
  * TV 表单主题色操作按钮。
@@ -36,6 +39,8 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param modifier 外层修饰器。
  * @param focusRequester 外部焦点请求器。
  * @param accentColor 按钮主题色，默认使用 [TvTokens.Accent]。
+ * @param onArrowUp 上键自定义焦点回调。
+ * @param onArrowDown 下键自定义焦点回调。
  */
 @Composable
 fun TvFormActionButton(
@@ -44,6 +49,8 @@ fun TvFormActionButton(
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
     accentColor: Color = TvTokens.Accent,
+    onArrowUp: (() -> Unit)? = null,
+    onArrowDown: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -65,15 +72,19 @@ fun TvFormActionButton(
                 if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
             )
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-                when (event.key) {
-                    Key.Enter, Key.DirectionCenter -> {
-                        onClick()
-                        true
-                    }
-                    else -> false
+                if (event.key == Key.DirectionUp && onArrowUp != null) {
+                    if (event.type == KeyEventType.KeyDown) onArrowUp.invoke()
+                    return@onPreviewKeyEvent true
                 }
+                if (event.key == Key.DirectionDown && onArrowDown != null) {
+                    if (event.type == KeyEventType.KeyDown) onArrowDown.invoke()
+                    return@onPreviewKeyEvent true
+                }
+                // 空格 / Enter / 方向中心键都确认点击。
+                handleTvConfirmKeyUp(event, onConfirm = onClick)
             }
+            // 平板鼠标左键点击与确认键等价。
+            .tvPointerClickable(onClick = onClick)
             .focusable(interactionSource = interactionSource)
             .padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center,

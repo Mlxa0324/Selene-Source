@@ -10,12 +10,20 @@ import org.junit.Test
  */
 class TvListLayoutMetricsTest {
     /**
-     * 横向列表左侧首卡缩进对齐页面标题，右侧贴边不留 margin。
+     * 横向列表左右都使用页面边距：左侧对齐标题，右侧末端收口不贴屏。
      */
     @Test
-    fun railContentPadding_usesPagePaddingStart_zeroEndForEdgeToEdge() {
+    fun railContentPadding_usesPagePaddingOnBothSides() {
         assertThat(TvListLayoutMetrics.RailStartPadding).isEqualTo(46.dp)
-        assertThat(TvListLayoutMetrics.RailEndPadding).isEqualTo(0.dp)
+        assertThat(TvListLayoutMetrics.RailEndPadding).isEqualTo(46.dp)
+    }
+
+    /**
+     * 海报可视列数应固定为 7，供网格和横向推荐轨道共用。
+     */
+    @Test
+    fun posterColumns_matchesSevenColumnDensity() {
+        assertThat(TvListLayoutMetrics.PosterColumns).isEqualTo(7)
     }
 
     /**
@@ -28,7 +36,9 @@ class TvListLayoutMetricsTest {
     }
 
     /**
-     * 横向海报带需要复刻 Flutter TV：首页前 4 张不推动列表，第 5 张开始按卡片步长推进。
+     * 横向海报带需要复刻 Flutter TV：同轨前 4 张不推动列表，第 5 张开始按卡片步长推进。
+     *
+     * 上下跨轨进入不得横向复位，只在同轨左右移动时才调用 animateScrollToItem。
      */
     @Test
     fun railFocusScroll_usesFlutterHomeSectionScrollRule() {
@@ -41,6 +51,9 @@ class TvListLayoutMetricsTest {
         assertThat(metricsSource).contains("resolveRailFirstVisibleItemIndex")
         assertThat(metricsSource).contains("focusedIndex - RailScrollStartIndex + 1")
         assertThat(railSource).contains("onFocusChanged = { hasFocus ->")
+        assertThat(railSource).contains("val isIntraRailHorizontalMove =")
+        assertThat(railSource).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
+        assertThat(railSource).contains("if (isIntraRailHorizontalMove) {")
         assertThat(railSource).contains("animateScrollToItem")
         assertThat(railSource).contains("resolveRailFirstVisibleItemIndex")
         assertThat(railSource).doesNotContain("snapshotFlow { listState.firstVisibleItemIndex }")

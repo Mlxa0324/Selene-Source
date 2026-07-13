@@ -15,7 +15,8 @@ class TvPosterFocusContractTest {
     fun posterRail_declares_focus_group() {
         val source = readLayoutSource("TvPosterRail.kt")
 
-        assertThat(source).contains("modifier = modifier.posterFocusGroup(")
+        assertThat(source).contains("modifier = modifier")
+        assertThat(source).contains(".posterFocusGroup(")
     }
 
     /**
@@ -100,11 +101,35 @@ class TvPosterFocusContractTest {
             .substringBefore("/**\n * 构建首张海报的焦点目标修饰器。")
 
         assertThat(focusGroupSource).contains("firstCardFocusRequester: FocusRequester")
+        assertThat(focusGroupSource).contains("onVerticalEnter: (() -> Unit)? = null")
         assertThat(source).contains("import androidx.compose.ui.focus.focusProperties")
+        assertThat(source).contains("import androidx.compose.ui.focus.FocusDirection")
         assertThat(focusGroupSource).contains("onEnter = {")
+        // 上下跨轨进入必须走几何就近，不能强制 requestFocus 到首卡。
+        assertThat(focusGroupSource).contains("FocusDirection.Up")
+        assertThat(focusGroupSource).contains("FocusDirection.Down")
+        assertThat(focusGroupSource).contains("isVerticalEnter")
+        assertThat(focusGroupSource).contains("onVerticalEnter")
         assertThat(focusGroupSource).contains("firstCardFocusRequester.requestFocus()")
         assertThat(focusGroupSource).doesNotContain("contentFocusRequester")
         assertThat(focusGroupSource).doesNotContain("focusable()")
+    }
+
+    /**
+     * 横向海报带只在同轨左右相邻移动时推动横向列表，上下跨轨就近落点不得改横向偏移。
+     */
+    @Test
+    fun posterRail_only_scrolls_horizontally_for_intra_rail_focus_moves() {
+        val source = readLayoutSource("TvPosterRail.kt")
+
+        assertThat(source).contains("var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }")
+        assertThat(source).contains("onVerticalEnter = {")
+        assertThat(source).contains("activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex")
+        assertThat(source).contains("val isIntraRailHorizontalMove =")
+        assertThat(source).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
+        assertThat(source).contains("if (isIntraRailHorizontalMove) {")
+        assertThat(source).contains("resolveRailFirstVisibleItemIndex(")
+        assertThat(source).contains("listState.animateScrollToItem(targetIndex)")
     }
 
     /**
@@ -122,6 +147,18 @@ class TvPosterFocusContractTest {
     /**
      * 海报占位底色必须固定为统一浅灰，避免封面未返回时出现随机彩色卡片。
      */
+
+    /**
+     * 海报获焦时必须把整卡（封面+标题副标题）请求进视口，避免只滚封面裁掉片名。
+     */
+    @Test
+    fun posterCard_requests_full_card_bring_into_view_on_focus() {
+        val source = readLayoutSource("TvPosterCard.kt")
+        assertThat(source).contains("BringIntoViewRequester")
+        assertThat(source).contains("bringIntoViewRequester(bringIntoViewRequester)")
+        assertThat(source).contains("bringIntoViewRequester.bringIntoView()")
+    }
+
     @Test
     fun posterCard_uses_single_neutral_placeholder_color() {
         val source = readLayoutSource("TvPosterCard.kt")
@@ -146,6 +183,28 @@ class TvPosterFocusContractTest {
 
         assertThat(source).contains("onRailFocused: (() -> Unit)? = null")
         assertThat(source).contains("onRailFocused?.invoke()")
+    }
+
+    /**
+     * 查看更多卡必须与海报卡同宽同结构高度，避免尾卡更高导致下方分区纵向抖动。
+     */
+    @Test
+    fun morePosterCard_matches_poster_card_layout_height() {
+        val source = readLayoutSource("TvPosterCard.kt")
+        val moreCardSource = source.substringAfter("fun TvMorePosterCard(")
+            .substringBefore("private fun posterBrushColors(")
+        val posterCardSource = source.substringAfter("fun TvPosterCard(")
+            .substringBefore("private fun TvPosterCover(")
+
+        // 尾卡不再使用固定 PosterHeight 盒子，而是与海报卡相同的 Column + CoverHeight。
+        assertThat(moreCardSource).contains("Column(")
+        assertThat(moreCardSource).contains("width(TvTokens.PosterWidth)")
+        assertThat(moreCardSource).contains("height(TvTokens.PosterCoverHeight)")
+        assertThat(moreCardSource).doesNotContain("height(TvTokens.PosterHeight)")
+        // 标题/副标题占位保证与海报卡行高一致。
+        assertThat(moreCardSource).contains("padding(start = 12.dp, top = 11.dp, end = 12.dp)")
+        assertThat(posterCardSource).contains("height(TvTokens.PosterCoverHeight)")
+        assertThat(posterCardSource).contains("padding(start = 12.dp, top = 11.dp, end = 12.dp)")
     }
 
     /**
@@ -190,8 +249,9 @@ class TvPosterFocusContractTest {
 
         assertThat(source).doesNotContain("import androidx.compose.foundation.clickable")
         assertThat(source).doesNotContain(".clickable(")
-        assertThat(source).contains("import androidx.compose.foundation.gestures.detectTapGestures")
-        assertThat(source).contains("import androidx.compose.ui.input.pointer.pointerInput")
+        // 点击统一走 tvPointerClickable，避免再生成 clickable 焦点节点。
+        assertThat(source).contains(".tvPointerClickable(")
+        assertThat(source).contains("isTvConfirmKey()")
     }
 
     /**
@@ -200,6 +260,19 @@ class TvPosterFocusContractTest {
      * @param fileName 源码文件名。
      * @return 当前源码文本。
      */
+
+    /**
+     * 横向左右移动不得触发外层纵向 onRailFocused，避免下方分区跟着抖动。
+     */
+    @Test
+    fun posterRail_skipsOuterVerticalScrollOnIntraRailHorizontalMove() {
+        val source = readLayoutSource("TvPosterRail.kt")
+
+        assertThat(source).contains("val isIntraRailHorizontalMove =")
+        assertThat(source).contains("if (!isIntraRailHorizontalMove) {")
+        assertThat(source).contains("onRailFocused?.invoke()")
+    }
+
     private fun readLayoutSource(fileName: String): String {
         return File("src/main/java/org/moontechlab/selene/tv/core/design/layout/$fileName")
             .readText()

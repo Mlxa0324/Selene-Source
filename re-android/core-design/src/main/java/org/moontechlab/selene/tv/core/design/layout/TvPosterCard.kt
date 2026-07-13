@@ -2,7 +2,12 @@ package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +51,7 @@ import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
  * @param onFocusChanged 卡片焦点变化回调。
  * @param onClick 卡片点击回调。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvPosterCard(
     item: TvPosterItem,
@@ -64,9 +70,15 @@ fun TvPosterCard(
     val colors = remember {
         posterBrushColors()
     }
+    // 封面单独可焦时，默认 BringIntoView 只保证封面进视口；标题/副标题会被底部裁切。
+    // 用整卡 requester 在获焦时把封面+文案一并滚入可见区。
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val bringIntoViewScope = rememberCoroutineScope()
 
     Column(
-        modifier = modifier.width(TvTokens.PosterWidth),
+        modifier = modifier
+            .width(TvTokens.PosterWidth)
+            .bringIntoViewRequester(bringIntoViewRequester),
     ) {
         TvFocusableCard(
             modifier = Modifier
@@ -76,6 +88,12 @@ fun TvPosterCard(
                 .onFocusChanged { focusState ->
                     // 卡片高亮直接跟随真实焦点，避免焦点进入后视觉仍停在顶部导航。
                     hasCardFocus = focusState.hasFocus
+                    if (focusState.hasFocus) {
+                        // 焦点进封面后，再把整卡（含标题副标题）请求滚入视口。
+                        bringIntoViewScope.launch {
+                            bringIntoViewRequester.bringIntoView()
+                        }
+                    }
                     onFocusChanged?.invoke(focusState.hasFocus)
                 },
             focusRequesters = focusRequesters,
@@ -250,14 +268,12 @@ fun TvMorePosterCard(
         label = "tvMorePosterCardScale",
     )
 
-    Box(
-        modifier = modifier
-            .width(TvTokens.PosterWidth)
-            .height(TvTokens.PosterHeight),
+    // 与 TvPosterCard 同宽同结构：封面区 + 标题区占位，避免“查看更多”更高把下方分区顶动。
+    Column(
+        modifier = modifier.width(TvTokens.PosterWidth),
     ) {
         TvFocusableCard(
             modifier = Modifier
-                .align(Alignment.TopCenter)
                 .width(TvTokens.PosterWidth)
                 .height(TvTokens.PosterCoverHeight)
                 .scale(scale)
@@ -289,6 +305,24 @@ fun TvMorePosterCard(
                     )
                 }
             }
+        }
+        // 标题/副标题占位与海报卡一致，LazyRow 行高不因尾卡变化。
+        Column(
+            modifier = Modifier.padding(start = 12.dp, top = 11.dp, end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = " ",
+                maxLines = 1,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.Transparent,
+            )
+            Text(
+                text = " ",
+                maxLines = 1,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                color = Color.Transparent,
+            )
         }
     }
 }

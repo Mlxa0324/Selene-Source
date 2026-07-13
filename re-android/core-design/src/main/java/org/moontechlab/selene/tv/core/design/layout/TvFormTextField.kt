@@ -35,6 +35,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.handleTvConfirmKeyUp
+import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
+import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 
 /**
  * TV 表单文本输入行 —— 浏览/编辑双模式。
@@ -116,12 +119,12 @@ fun TvFormTextField(
                 // 其余键保持 KeyUp 处理
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 when {
-                    isEditing && (event.key == Key.Enter || event.key == Key.DirectionCenter) -> {
+                    isEditing && event.key.isTvConfirmKey() -> {
                         onValueChange(editText)
                         isEditing = false
                         true
                     }
-                    !isEditing && (event.key == Key.Enter || event.key == Key.DirectionCenter) -> {
+                    !isEditing && event.key.isTvConfirmKey() -> {
                         editText = value
                         isEditing = true
                         true
@@ -129,6 +132,11 @@ fun TvFormTextField(
                     else -> false
                 }
             }
+            // 浏览态鼠标左键进入编辑，与确认键一致。
+            .tvPointerClickable(enabled = enabled && !isEditing, onClick = {
+                editText = value
+                isEditing = true
+            })
             .focusable(
                 enabled = enabled && !isEditing,
                 interactionSource = interactionSource,

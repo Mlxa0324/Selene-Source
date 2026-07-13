@@ -38,6 +38,7 @@ dependencies {
     implementation(libs.androidx.tv.material)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)

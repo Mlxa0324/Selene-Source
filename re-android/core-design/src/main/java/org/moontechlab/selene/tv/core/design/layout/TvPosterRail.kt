@@ -22,7 +22,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  *
  * @param items 影视卡片列表。
  * @param modifier 外层修饰器。
- * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给首张海报。
+ * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给最近业务海报。
  * @param onRailFocused 横向分区获焦回调，用于驱动外层页面纵向滚动。
  * @param onItemClick 卡片点击回调。
  * @param trailingContent 列表尾部附加内容。
@@ -46,16 +46,23 @@ fun TvPosterRail(
     }
     val firstCardFocusRequester = remember { FocusRequester() }
     val scrollScope = rememberCoroutineScope()
+    // 最近一次真实业务获焦下标，供顶部导航下探回到当前横向浏览位置。
     var lastFocusedItemIndex by rememberSaveable(
         designMetrics.viewportWidth.toInt(),
         designMetrics.viewportHeight.toInt(),
     ) {
         mutableIntStateOf(0)
     }
+    // 本轨当前会话最近获焦下标；上下跨轨进入前清零，左右相邻步进才横向推进。
+    var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
 
     LazyRow(
         modifier = modifier.posterFocusGroup(
             firstCardFocusRequester = firstCardFocusRequester,
+            onVerticalEnter = {
+                // 上下进轨前清会话下标，确保就近落点不会触发横向 animateScroll。
+                activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+            },
         ),
         state = listState,
         contentPadding = PaddingValues(
@@ -83,18 +90,30 @@ fun TvPosterRail(
                 focusRequesters = cardFocusRequesters,
                 onFocusChanged = { hasFocus ->
                     if (hasFocus) {
+                        // 仅本轨会话内左右相邻切换才横向推进；上下跨轨就近落点保持横向位置。
+                        val isIntraRailHorizontalMove =
+                            TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                previousActiveIndex = activeFocusedIndex,
+                                newlyFocusedIndex = index,
+                            )
                         // 记录真实业务焦点，避免首卡被 LazyRow 回收后顶部下探没有目标。
                         lastFocusedItemIndex = index
-                        // 分区内任意海报获焦时，都通知外层页面把当前区块滚回视口。
-                        onRailFocused?.invoke()
-                        val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
-                            focusedIndex = index,
-                            itemCount = items.size,
-                        )
-                        if (targetIndex != listState.firstVisibleItemIndex) {
-                            scrollScope.launch {
-                                // 复刻 Flutter TV 首页：第 5 张获焦后按卡片步长推动横向列表。
-                                listState.animateScrollToItem(targetIndex)
+                        activeFocusedIndex = index
+                        // 只有刚进入当前横向分区时才驱动外层纵向滚动；
+                        // 左右移动绝不能再 animateScrollToItem 整行，否则下方列表会跟着抖一下。
+                        if (!isIntraRailHorizontalMove) {
+                            onRailFocused?.invoke()
+                        }
+                        if (isIntraRailHorizontalMove) {
+                            val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
+                                focusedIndex = index,
+                                itemCount = items.size,
+                            )
+                            if (targetIndex != listState.firstVisibleItemIndex) {
+                                scrollScope.launch {
+                                    // 复刻 Flutter TV 首页：第 5 张获焦后按卡片步长推动横向列表。
+                                    listState.animateScrollToItem(targetIndex)
+                                }
                             }
                         }
                     }

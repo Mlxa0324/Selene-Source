@@ -3,7 +3,6 @@ package org.moontechlab.selene.tv.core.design.focus
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
@@ -21,7 +20,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
 import org.moontechlab.selene.tv.core.design.TvTokens
 
 /**
@@ -54,19 +52,6 @@ fun TvFocusableCard(
         // 多个入口共享同一个真实焦点节点，避免外层容器成为不可见中转焦点。
         current.focusRequester(requester)
     }
-    val pointerClickModifier = if (enabled && onPressed != null) {
-        Modifier.pointerInput(onPressed) {
-            detectTapGestures(
-                onTap = {
-                    // 鼠标和触摸点击只触发业务，不额外创建可获焦节点。
-                    onPressed()
-                },
-            )
-        }
-    } else {
-        Modifier
-    }
-
     Box(
         modifier = modifier
             .clip(shape)
@@ -75,7 +60,8 @@ fun TvFocusableCard(
                 shape = shape,
             )
             .onPreviewKeyEvent { event ->
-                if (!enabled || event.key != Key.DirectionCenter && event.key != Key.Enter) {
+                // 空格 / Enter / 方向中心键统一作为确认，适配平板外接键盘。
+                if (!enabled || !event.key.isTvConfirmKey()) {
                     return@onPreviewKeyEvent false
                 }
                 val action = when (event.type) {
@@ -92,7 +78,8 @@ fun TvFocusableCard(
                 }
                 true
             }
-            .then(pointerClickModifier)
+            // 鼠标左键 / 触摸点击与确认键等价，不额外生成 focusable。
+            .tvPointerClickable(enabled = enabled, onClick = onPressed)
             .then(focusRequesterModifier)
             .focusable(
                 enabled = enabled,
