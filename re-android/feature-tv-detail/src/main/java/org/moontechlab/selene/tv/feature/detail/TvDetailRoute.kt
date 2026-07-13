@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
@@ -396,7 +397,10 @@ private fun NcatDetailBackdrop(posterUrl: String) {
                 model = posterUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                // 轻微模糊，避免海报像素放大后的马赛克感。
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(radius = 18.dp),
             )
         } else {
             Box(
@@ -1200,8 +1204,8 @@ private fun NcatSourceCard(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                // 片源名前加胶片符号，贴近截图观感。
-                text = "🎬 ${option.label}${option.trailingText}",
+                // 后台名称若已带胶片符号，这里不再重复追加。
+                text = formatSourceCardTitle(option.label, option.trailingText),
                 color = if (activeBackground) Color.White else Color.White.copy(alpha = 0.78f),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
@@ -2026,6 +2030,27 @@ private fun scrollDetailOptionIntoView(
  * @param option 线路选项。
  * @return 副标题。
  */
+
+/**
+ * 组装线路卡主标题。
+ *
+ * 后台名称本身可能已带 🎬/胶片符号，前端只在缺失时补一个，避免双图标。
+ *
+ * @param label 线路原始名称。
+ * @param trailingText 集数后缀，例如（84）。
+ * @return 展示标题。
+ */
+private fun formatSourceCardTitle(label: String, trailingText: String): String {
+    val raw = label.trim()
+    // 去掉后台可能重复下发的胶片符号，最后只保留一个。
+    val stripped = raw
+        .replace("🎬", "")
+        .replace("🎞", "")
+        .replace("🎥", "")
+        .trim()
+    return "🎬 $stripped$trailingText"
+}
+
 private fun sourceDescription(option: TvDetailSourceOption): String {
     return when {
         option.label.contains("蓝光") -> "香港加速"
