@@ -128,7 +128,12 @@ class TvDetailRepository(
             title = primaryResult.title.orEmpty().trim().ifBlank { query },
             description = primaryResult.description.orEmpty(),
             posterUrl = primaryResult.poster.orEmpty().ifBlank { posterUrl },
-            year = primaryResult.year.orEmpty(),
+            year = primaryResult.normalizedYear(),
+            typeName = primaryResult.normalizedTypeName(),
+            categories = primaryResult.resolvedCategories(),
+            remarks = primaryResult.normalizedRemarks(),
+            qualityTag = primaryResult.normalizedQualityTag(),
+            rating = primaryResult.normalizedRating(),
             sourceName = primarySource.name,
             sources = sources,
         )
@@ -200,6 +205,8 @@ class TvDetailRepository(
             if (streamedResult.isSuccess || streamedSources.isNotEmpty()) {
                 return streamedSources.values.toList()
             }
+            // SSE 全失败且无增量结果时，落到下面的批量搜索兜底。
+            streamedResult.exceptionOrNull()
         }
         return api.search(query)
             .results.orEmpty()
@@ -344,7 +351,12 @@ class TvDetailRepository(
             title = title.orEmpty(),
             description = description.orEmpty(),
             posterUrl = poster.orEmpty(),
-            year = year.orEmpty(),
+            year = normalizedYear(),
+            typeName = normalizedTypeName(),
+            categories = resolvedCategories(),
+            remarks = normalizedRemarks(),
+            qualityTag = normalizedQualityTag(),
+            rating = normalizedRating(),
             sourceName = sourceName.orEmpty(),
             sources = listOf(videoSource),
         )
@@ -392,6 +404,82 @@ class TvDetailRepository(
      */
     private fun TvSearchResultResponse.matchesDetail(detail: TvVideoDetail): Boolean {
         return matchesTitleAndYear(title = detail.title, year = detail.year)
+    }
+
+
+    /**
+     * 规范化年份文案。
+     *
+     * @return 有效年份；空值或 unknown 哨兵返回空串。
+     */
+    private fun TvSearchResultResponse.normalizedYear(): String {
+        return year.orEmpty().trim().takeIf { value ->
+            value.isNotBlank() && !value.equals("unknown", ignoreCase = true)
+        }.orEmpty()
+    }
+
+    /**
+     * 规范化类型名称。
+     *
+     * @return 非空 type_name。
+     */
+    private fun TvSearchResultResponse.normalizedTypeName(): String {
+        return typeName.orEmpty().trim()
+    }
+
+    /**
+     * 规范化更新/备注文案。
+     *
+     * @return remarks 优先，其次 quality_tag。
+     */
+    private fun TvSearchResultResponse.normalizedRemarks(): String {
+        return remarks.orEmpty().trim().ifBlank { qualityTag.orEmpty().trim() }
+    }
+
+    /**
+     * 规范化清晰度/更新标签。
+     *
+     * @return quality_tag 优先，其次 resolution。
+     */
+    private fun TvSearchResultResponse.normalizedQualityTag(): String {
+        return qualityTag.orEmpty().trim().ifBlank { resolution.orEmpty().trim() }
+    }
+
+    /**
+     * 规范化评分文案。
+     *
+     * @return 有效评分；空值或 0 哨兵返回空串。
+     */
+    private fun TvSearchResultResponse.normalizedRating(): String {
+        val raw = rate.orEmpty().trim()
+        if (raw.isBlank()) {
+            return ""
+        }
+        // 过滤接口偶发的 0 / 0.0 无效分。
+        val numeric = raw.toDoubleOrNull()
+        if (numeric != null && numeric <= 0.0) {
+            return ""
+        }
+        return raw
+    }
+
+    /**
+     * 解析展示用分类标签。
+     *
+     * 合并 type_name 与 class，按逗号/顿号拆分并去重，保持接口顺序。
+     *
+     * @return 去重后的分类列表。
+     */
+    private fun TvSearchResultResponse.resolvedCategories(): List<String> {
+        val values = linkedSetOf<String>()
+        // 类型名优先作为首个标签。
+        normalizedTypeName().takeIf { value -> value.isNotBlank() }?.let(values::add)
+        videoClass.orEmpty()
+            .split(',', '，', '、', '/', '|')
+            .map { part -> part.trim() }
+            .filter { part -> part.isNotBlank() }
+            .forEach(values::add)
+        return values.toList()
     }
 
     /**

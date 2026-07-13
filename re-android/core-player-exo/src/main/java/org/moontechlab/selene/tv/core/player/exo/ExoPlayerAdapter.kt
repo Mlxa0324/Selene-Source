@@ -42,6 +42,13 @@ interface ExoPlayerAdapter {
     suspend fun setResizeMode(resizeMode: TvResizeMode)
 
     /**
+     * 绑定画面比例应用器，通常在 PlayerView 创建后注入。
+     *
+     * @param applier 画面比例应用器；解绑时传 Noop。
+     */
+    fun bindResizeModeApplier(applier: ExoResizeModeApplier)
+
+    /**
      * 绑定底层播放器事件回调。
      *
      * @param callback 事件回调；传空时停止向上游转发状态。

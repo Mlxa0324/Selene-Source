@@ -232,6 +232,26 @@ object SeleneTvNetworkFactory {
     }
 
     /**
+     * 创建 Bangumi 日历接口。
+     *
+     * 对齐 Flutter `https://api.bgm.tv/calendar` 主链路。
+     *
+     * @return Bangumi Retrofit 接口。
+     */
+    fun createBangumiApi(): SeleneBangumiApi {
+        val baseUrl = normalizeBaseUrl(BANGUMI_BASE_URL)
+        val okHttpClient = createBaseOkHttpClientBuilder()
+            .addInterceptor(BangumiHeaderInterceptor())
+            .build()
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(SeleneBangumiApi::class.java)
+    }
+
+    /**
      * 创建 TV 豆瓣代理接口。
      *
      * @return 豆瓣代理 Retrofit 接口。
@@ -320,6 +340,9 @@ object SeleneTvNetworkFactory {
             .joinToString("; ")
     }
 
+    /** Bangumi 官方 API 根地址。 */
+    private const val BANGUMI_BASE_URL = "https://api.bgm.tv/"
+
     /** 豆瓣代理 API 基础地址（腾讯 CDN 镜像）。 */
     private const val DOUBAN_BASE_URL = "https://m.douban.cmliussss.net/"
 }
@@ -340,6 +363,22 @@ internal class DoubanHeaderInterceptor : Interceptor {
             )
             .header("Referer", "https://movie.douban.com/")
             .header("Accept", "application/json, text/plain, */*")
+            .build()
+        return chain.proceed(request)
+    }
+}
+
+
+/**
+ * Bangumi 请求头拦截器。
+ *
+ * 官方 API 建议携带可识别 UA，避免匿名默认客户端被限流。
+ */
+internal class BangumiHeaderInterceptor : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
+        val request = chain.request().newBuilder()
+            .header("User-Agent", "SeleneTV/1.0 (https://github.com/moontechlab/selene)")
+            .header("Accept", "application/json")
             .build()
         return chain.proceed(request)
     }

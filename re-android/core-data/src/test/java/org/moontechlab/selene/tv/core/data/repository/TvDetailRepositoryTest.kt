@@ -37,9 +37,14 @@ class TvDetailRepositoryTest {
                         episodeTitles = listOf("第 1 集", "第 2 集"),
                         source = "source-a",
                         sourceName = "线路 A",
+                        videoClass = "剧情,运动",
                         year = "2026",
+                        remarks = "更新至20集",
+                        qualityTag = "更新至20集",
                         description = "剧情简介",
+                        typeName = "国产剧",
                         doubanId = 35267208,
+                        rate = "8.6",
                     )
                 }
             },
@@ -52,6 +57,11 @@ class TvDetailRepositoryTest {
         assertThat(detail?.title).isEqualTo("详情影片")
         assertThat(detail?.posterUrl).isEqualTo("https://img.test/poster.jpg")
         assertThat(detail?.year).isEqualTo("2026")
+        assertThat(detail?.typeName).isEqualTo("国产剧")
+        assertThat(detail?.categories).containsExactly("国产剧", "剧情", "运动").inOrder()
+        assertThat(detail?.remarks).isEqualTo("更新至20集")
+        assertThat(detail?.qualityTag).isEqualTo("更新至20集")
+        assertThat(detail?.rating).isEqualTo("8.6")
         assertThat(detail?.doubanId).isEqualTo("35267208")
         assertThat(detail?.sourceName).isEqualTo("线路 A")
         assertThat(detail?.description).isEqualTo("剧情简介")
@@ -64,6 +74,47 @@ class TvDetailRepositoryTest {
         assertThat(detail?.sources?.first()?.episodes?.map { episode -> episode.url })
             .containsExactly("https://cdn.test/1.m3u8", "https://cdn.test/2.m3u8")
             .inOrder()
+    }
+
+
+    /**
+     * 详情映射应透传分类/更新字段，并过滤 unknown 年份哨兵。
+     */
+    @Test
+    fun loadDetail_maps_categories_and_filters_unknown_year() = runTest {
+        val repository = TvDetailRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getDetail(
+                    source: String,
+                    id: String,
+                ): TvSearchResultResponse {
+                    return TvSearchResultResponse(
+                        id = "video-meta",
+                        title = "灿如繁星",
+                        episodes = listOf("https://cdn.test/1.m3u8"),
+                        episodeTitles = listOf("第01集"),
+                        source = "source-a",
+                        sourceName = "爱奇艺",
+                        videoClass = "剧情,运动",
+                        year = "unknown",
+                        remarks = "更新至20集",
+                        qualityTag = "更新至20集",
+                        description = "青春热血",
+                        typeName = "国产剧",
+                        rate = "0",
+                    )
+                }
+            },
+        )
+
+        val detail = repository.loadDetail(source = "source-a", id = "video-meta")
+
+        assertThat(detail?.year).isEqualTo("")
+        assertThat(detail?.rating).isEqualTo("")
+        assertThat(detail?.typeName).isEqualTo("国产剧")
+        assertThat(detail?.categories).containsExactly("国产剧", "剧情", "运动").inOrder()
+        assertThat(detail?.remarks).isEqualTo("更新至20集")
+        assertThat(detail?.qualityTag).isEqualTo("更新至20集")
     }
 
     /**

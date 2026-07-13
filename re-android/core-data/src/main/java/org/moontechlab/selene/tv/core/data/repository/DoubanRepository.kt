@@ -4,6 +4,7 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneDoubanApi
 import org.moontechlab.selene.tv.core.network.model.DoubanMovieItem
+import java.util.logging.Logger
 
 /**
  * 豆瓣分类数据仓库。
@@ -61,7 +62,14 @@ class DoubanRepository(
     suspend fun loadDetailRecommends(doubanId: String): List<TvVideoCard> {
         val source = htmlSource ?: return emptyList()
         val html = source.fetchSubjectHtml(doubanId)
-        return DoubanDetailsParser.parseRecommends(html)
+        val cards = DoubanDetailsParser.parseRecommends(html)
+        // 设备侧排查：确认验证后 HTML 是否真有推荐容器，避免再次误判为 UI 问题。
+        val hasSec = html.contains("id=\"sec\"")
+        val hasRecommendations = html.contains("id=\"recommendations\"")
+        LOGGER.info(
+            "loadDetailRecommends id=$doubanId htmlLen=${html.length} hasSec=$hasSec hasRecommendations=$hasRecommendations count=${cards.size}",
+        )
+        return cards
     }
 
     /**
@@ -174,6 +182,7 @@ class DoubanRepository(
 
     companion object {
         private const val MAX_CACHE_ENTRIES = 50
+        private val LOGGER: Logger = Logger.getLogger("TvDetailRecommend")
     }
 }
 

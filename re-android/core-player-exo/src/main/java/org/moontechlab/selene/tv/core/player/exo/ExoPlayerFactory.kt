@@ -37,8 +37,11 @@ object ExoPlayerFactory {
  */
 class AndroidExoPlayerAdapter(
     private val exoPlayer: ExoPlayer,
-    private val resizeModeApplier: ExoResizeModeApplier = ExoResizeModeApplier.Noop,
 ) : ExoPlayerAdapter {
+    /** 当前 PlayerView 画面比例应用器；未绑定画面层时为空实现。 */
+    @Volatile
+    private var resizeModeApplier: ExoResizeModeApplier = ExoResizeModeApplier.Noop
+
     /** 当前向上游透出的状态回调。 */
     private var eventCallback: ExoPlayerEventCallback? = null
 
@@ -201,6 +204,15 @@ class AndroidExoPlayerAdapter(
      */
     override suspend fun setResizeMode(resizeMode: TvResizeMode) {
         resizeModeApplier.applyResizeMode(resizeMode)
+    }
+
+    /**
+     * 绑定画面比例应用器。
+     *
+     * @param applier 目标应用器。
+     */
+    override fun bindResizeModeApplier(applier: ExoResizeModeApplier) {
+        resizeModeApplier = applier
     }
 
     /**

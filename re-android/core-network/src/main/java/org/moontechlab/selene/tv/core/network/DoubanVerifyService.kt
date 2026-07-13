@@ -6,8 +6,8 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import java.security.MessageDigest
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -18,10 +18,16 @@ import java.util.concurrent.ConcurrentHashMap
  * - 自动求解 SHA-512 PoW 难题并提交验证；
  * - 使用带过期管理的 Cookie 缓存维持验证会话。
  *
+ * 关键：
+ * OkHttp 默认跟随重定向时，最终 [Response] 不会暴露中间 302 的 `Set-Cookie`。
+ * 豆瓣 PoW 提交后正是通过 302 下发 `dbsawcv1`，因此必须回扫 [Response.priorResponse]
+ * 链路，否则重试详情页仍会卡在验证页，相关推荐解析结果恒为空。
+ *
  * @property client 专用于豆瓣直连的 OkHttp 客户端（不走代理）。
  */
 class DoubanVerifyService(
     private val client: OkHttpClient,
+    private val verifyUrl: String = DEFAULT_VERIFY_URL,
 ) {
     /** Cookie 值缓存。 */
     private val cookieCache = ConcurrentHashMap<String, String>()
@@ -73,11 +79,22 @@ class DoubanVerifyService(
 
     /**
      * SHA-512 暴力求解 nonce，使 `sha512(cha + nonce)` 以 `difficulty` 个零开头。
+     *
+     * @param cha 验证页挑战串。
+     * @param difficulty 前导零难度，默认 4。
+     * @return 满足条件的 nonce。
      */
     private suspend fun solvePoW(cha: String, difficulty: Int = 4): Int = withContext(Dispatchers.Default) {
         solvePoWInternal(cha, difficulty)
     }
 
+    /**
+     * 同步求解 PoW nonce。
+     *
+     * @param cha 验证页挑战串。
+     * @param difficulty 前导零难度。
+     * @return 满足条件的 nonce。
+     */
     private fun solvePoWInternal(cha: String, difficulty: Int): Int {
         val targetPrefix = "0".repeat(difficulty)
         val digest = MessageDigest.getInstance("SHA-512")
@@ -97,7 +114,9 @@ class DoubanVerifyService(
 
     // ---- Cookie ----
 
-    /** 清理过期 Cookie。 */
+    /**
+     * 清理已过期 Cookie，避免继续携带失效会话。
+     */
     private fun cleanupExpiredCookies() {
         val now = System.currentTimeMillis()
         val expiredKeys = cookieExpiries.entries
@@ -109,12 +128,28 @@ class DoubanVerifyService(
         }
     }
 
-    /** 从响应 Set-Cookie 头更新缓存。 */
+    /**
+     * 从单次响应（含重定向 prior 链）回收全部 `Set-Cookie`。
+     *
+     * 中间 302 的 Cookie 必须一并写入缓存，尤其是 `dbsawcv1`。
+     *
+     * @param response 最终响应。
+     */
     private fun updateCookies(response: Response) {
-        val setCookieHeaders = response.headers("Set-Cookie")
+        // 从最早重定向响应写到最终响应，保证后写值覆盖前写值。
+        for (item in response.redirectChain()) {
+            updateCookiesFromHeaders(item.headers("Set-Cookie"))
+        }
+    }
+
+    /**
+     * 将一组 `Set-Cookie` 文本写入本地 Cookie 缓存。
+     *
+     * @param setCookieHeaders 响应头中的 `Set-Cookie` 列表。
+     */
+    private fun updateCookiesFromHeaders(setCookieHeaders: List<String>) {
         for (header in setCookieHeaders) {
-            // Set-Cookie 可能逗号分隔多条，但值里也可能含逗号（如 expires）。
-            // 这里用简单分号拆分 name=value 部分。
+            // Set-Cookie 值本身可能含逗号（如 expires），只拆分第一段 name=value。
             val parts = header.split(";")
             val firstPart = parts.firstOrNull() ?: continue
             val separatorIndex = firstPart.indexOf('=')
@@ -147,7 +182,11 @@ class DoubanVerifyService(
         }
     }
 
-    /** 构建 Cookie 请求头字符串。 */
+    /**
+     * 构建 Cookie 请求头字符串。
+     *
+     * @return 可直接写入 `Cookie` 请求头的文本。
+     */
     private fun getCookieString(): String {
         cleanupExpiredCookies()
         // dbsawcv1 每次读取续期 300 秒（滑动过期）。
@@ -157,8 +196,24 @@ class DoubanVerifyService(
         return cookieCache.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
 
+    /**
+     * 当前缓存中是否已持有豆瓣 PoW 会话 Cookie。
+     *
+     * @return 存在 `dbsawcv1` 时为 true。
+     */
+    fun hasVerifySessionCookie(): Boolean {
+        cleanupExpiredCookies()
+        return cookieCache.containsKey("dbsawcv1")
+    }
+
     // ---- HTTP ----
 
+    /**
+     * GET 目标页面并回收响应链中的 Cookie。
+     *
+     * @param url 请求地址。
+     * @return 最终 HTTP 响应。
+     */
     private fun get(url: String): Response {
         val request = Request.Builder()
             .url(url)
@@ -172,6 +227,18 @@ class DoubanVerifyService(
         return response
     }
 
+    /**
+     * 提交 PoW 结果。
+     *
+     * 豆瓣通常对成功验证返回 302，并在中间响应写入 `dbsawcv1`；
+     * 这里关闭自动跟随，确保直接从该 302 回收 Cookie，避免再次落到验证页。
+     *
+     * @param tok 验证令牌。
+     * @param cha 挑战串。
+     * @param sol 求解出的 nonce。
+     * @param red 验证通过后的回跳地址。
+     * @param referer 发起验证的页面地址。
+     */
     private fun postVerify(tok: String, cha: String, sol: Int, red: String, referer: String) {
         val body = FormBody.Builder()
             .add("tok", tok)
@@ -180,15 +247,26 @@ class DoubanVerifyService(
             .add("red", red)
             .build()
         val request = Request.Builder()
-            .url(VERIFY_URL)
+            .url(verifyUrl)
             .header("User-Agent", USER_AGENT)
             .header("Referer", referer)
             .header("Cookie", getCookieString())
             .header("Content-Type", "application/x-www-form-urlencoded")
             .post(body)
             .build()
-        val response = client.newCall(request).execute()
-        response.use { updateCookies(it) }
+        // 关闭跟随：302 本身就是验证成功信号，Cookie 也在这里下发。
+        val noRedirectClient = client.newBuilder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+        val response = noRedirectClient.newCall(request).execute()
+        response.use { resp ->
+            updateCookies(resp)
+            // 非 2xx/3xx 视为验证接口异常，让上层决定是否回退镜像。
+            if (resp.code !in 200..399) {
+                throw IOException("HTTP ${resp.code} posting douban PoW verify")
+            }
+        }
     }
 
     // ---- HTML 提取 ----
@@ -196,13 +274,15 @@ class DoubanVerifyService(
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/120.0.0.0 Safari/537.36"
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/120.0.0.0 Safari/537.36"
         private const val REFERER = "https://movie.douban.com/"
         private const val ACCEPT_HTML =
             "text/html,application/xhtml+xml,application/xml;" +
-            "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
-        private const val VERIFY_URL = "https://sec.douban.com/c"
+                "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        /** 默认豆瓣 PoW 提交地址。 */
+        const val DEFAULT_VERIFY_URL = "https://sec.douban.com/c"
+
         private const val DBSAWCV1_DEFAULT_TTL_MS = 300_000L
 
         /**
@@ -215,6 +295,22 @@ class DoubanVerifyService(
         fun extractValue(html: String, name: String): String? {
             val regex = Regex("""id="$name"\s+name="$name"\s+value="(.*?)"""")
             return regex.find(html)?.groupValues?.getOrNull(1)
+        }
+
+        /**
+         * 展开最终响应及其 prior 重定向链，顺序为从最早到最终。
+         *
+         * @return 重定向链响应列表。
+         */
+        internal fun Response.redirectChain(): List<Response> {
+            val chain = ArrayList<Response>()
+            var current: Response? = this
+            while (current != null) {
+                chain.add(current)
+                current = current.priorResponse
+            }
+            chain.reverse()
+            return chain
         }
 
         /** SHA-512 字节数组转十六进制小写字符串。 */

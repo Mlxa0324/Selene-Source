@@ -48,6 +48,40 @@ class TvSearchStreamEventParserTest {
     }
 
     /**
+     * stream=1 的 pageResults 批次也要映射成可增量展示的结果事件。
+     */
+    @Test
+    fun parse_maps_page_results_payload() {
+        val payload = """
+            {
+              "pageResults": [
+                {
+                  "id": "video-2",
+                  "title": "另一部",
+                  "episodes": ["https://cdn.test/2.m3u8"],
+                  "source": "source-b",
+                  "source_name": "线路 B"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val event = TvSearchStreamEventParser().parse(payload) as TvSearchSourceResultEvent
+        assertThat(event.results).hasSize(1)
+        assertThat(event.results.first().id).isEqualTo("video-2")
+        assertThat(event.results.first().sourceName).isEqualTo("线路 B")
+    }
+
+    /**
+     * failedSources 心跳没有可展示结果，应返回 null 被调用方跳过。
+     */
+    @Test
+    fun parse_returns_null_for_failed_sources_heartbeat() {
+        val event = TvSearchStreamEventParser().parse("""{"failedSources":["a","b"]}""")
+        assertThat(event).isNull()
+    }
+
+    /**
      * 未知事件类型必须显式报错，避免静默吞掉后导致详情页补源永远不结束。
      */
     @Test

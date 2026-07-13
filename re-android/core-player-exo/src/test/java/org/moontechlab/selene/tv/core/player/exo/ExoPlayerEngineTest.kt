@@ -199,6 +199,8 @@ private class RecordingExoPlayerAdapter : ExoPlayerAdapter {
         eventCallback = callback
     }
 
+    override fun bindResizeModeApplier(applier: ExoResizeModeApplier) = Unit
+
     /** 返回当前播放状态。 */
     override fun getPlaybackState(): Int = testPlaybackState
 

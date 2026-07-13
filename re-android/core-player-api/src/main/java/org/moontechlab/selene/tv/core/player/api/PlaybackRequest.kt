@@ -10,10 +10,15 @@ data class PlaybackSource(
 
 /**
  * 播放器可用的剧集摘要。
+ *
+ * @property id 剧集 ID。
+ * @property title 剧集标题。
+ * @property url 播放地址；全屏菜单切集时直接复用。
  */
 data class PlaybackEpisode(
     val id: String,
     val title: String,
+    val url: String = "",
 )
 
 /**

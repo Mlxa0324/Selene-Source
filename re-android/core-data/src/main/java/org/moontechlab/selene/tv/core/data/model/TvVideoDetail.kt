@@ -9,6 +9,11 @@ package org.moontechlab.selene.tv.core.data.model
  * @property description 剧情简介。
  * @property posterUrl 封面地址。
  * @property year 上映年份。
+ * @property typeName 类型名称（如“国产剧”）。
+ * @property categories 分类标签列表（由 type_name + class 解析）。
+ * @property remarks 更新/备注文案。
+ * @property qualityTag 清晰度或更新标签。
+ * @property rating 评分文案；无有效评分时为空。
  * @property sourceName 当前来源名称。
  * @property sources 可播放来源列表。
  */
@@ -19,6 +24,11 @@ data class TvVideoDetail(
     val description: String,
     val posterUrl: String = "",
     val year: String = "",
+    val typeName: String = "",
+    val categories: List<String> = emptyList(),
+    val remarks: String = "",
+    val qualityTag: String = "",
+    val rating: String = "",
     val sourceName: String = "",
     val sources: List<TvVideoSource>,
 )

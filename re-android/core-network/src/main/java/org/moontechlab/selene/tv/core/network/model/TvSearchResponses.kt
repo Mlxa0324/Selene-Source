@@ -41,11 +41,16 @@ data class TvSearchResponse(
  * @property episodeTitles 剧集标题列表。
  * @property source 播放来源标识。
  * @property sourceName 播放来源名称。
- * @property videoClass 视频分类。
+ * @property videoClass 视频分类（逗号分隔，如“剧情,运动”）。
  * @property year 上映年份。
+ * @property remarks 更新/备注文案（如“更新至20集”）。
+ * @property qualityTag 清晰度或更新标签文案。
  * @property description 简介。
- * @property typeName 类型名称。
+ * @property typeName 类型名称（如“国产剧”）。
  * @property doubanId 豆瓣 ID。
+ * @property resolution 清晰度文案（如 720p）。
+ * @property resolutionLevel 清晰度数值级别。
+ * @property rate 评分文案；部分源或豆瓣入口可能返回。
  */
 data class TvSearchResultResponse(
     val id: String? = null,
@@ -61,10 +66,17 @@ data class TvSearchResultResponse(
     @SerializedName("class")
     val videoClass: String? = null,
     val year: String? = null,
+    val remarks: String? = null,
+    @SerializedName("quality_tag")
+    val qualityTag: String? = null,
     @SerializedName("desc")
     val description: String? = null,
     @SerializedName("type_name")
     val typeName: String? = null,
     @SerializedName("douban_id")
     val doubanId: Int? = null,
+    val resolution: String? = null,
+    @SerializedName("resolution_level")
+    val resolutionLevel: Int? = null,
+    val rate: String? = null,
 )

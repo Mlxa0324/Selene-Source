@@ -32,7 +32,8 @@ class ExoResizeModeMappingTest {
     fun android_adapter_delegates_resize_mode_to_player_view_applier() {
         val source = readFactorySource()
 
-        assertThat(source).contains("private val resizeModeApplier: ExoResizeModeApplier")
+        assertThat(source).contains("private var resizeModeApplier: ExoResizeModeApplier")
+        assertThat(source).contains("fun bindResizeModeApplier(applier: ExoResizeModeApplier)")
         assertThat(source).contains("resizeModeApplier.applyResizeMode(resizeMode)")
         assertThat(source).doesNotContain("这里先由上层快照持久化")
     }

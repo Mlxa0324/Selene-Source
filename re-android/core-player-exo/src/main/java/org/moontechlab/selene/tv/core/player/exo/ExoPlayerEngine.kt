@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.player.exo
 
 import androidx.media3.common.Player
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -183,6 +184,24 @@ class ExoPlayerEngine(
             syncStateWithSnapshot()
         }
     }
+
+    /**
+     * 绑定 / 解绑 Media3 PlayerView，使画面比例设置真正落到渲染层。
+     *
+     * @param playerView 当前活跃 PlayerView；传 null 表示解绑。
+     */
+    fun bindPlayerView(playerView: PlayerView?) {
+        val applier = if (playerView == null) {
+            ExoResizeModeApplier.Noop
+        } else {
+            PlayerViewResizeModeApplier(playerView)
+        }
+        player.bindResizeModeApplier(applier)
+        // 绑定后立刻回放当前比例，避免切换画面层后回到默认 FIT。
+        val currentMode = lastSnapshot?.resizeMode ?: TvResizeMode.FIT
+        applier.applyResizeMode(currentMode)
+    }
+
 
     /**
      * 捕获当前播放快照。
