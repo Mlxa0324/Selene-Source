@@ -109,8 +109,9 @@ fun TvPosterCard(
             )
         }
         Column(
-            modifier = Modifier.padding(start = 8.dp, top = 10.dp, end = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            // 封面与标题拉开一点，多轨纵向扫描时更易读。
+            modifier = Modifier.padding(start = 6.dp, top = 12.dp, end = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(
                 text = item.title,
@@ -127,7 +128,8 @@ fun TvPosterCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                color = if (hasCardFocus) Color.White.copy(alpha = 0.86f) else TvTokens.TextSecondary,
+                // 副标题略提亮，避免深色背景下像“缺字”。
+                color = if (hasCardFocus) Color.White.copy(alpha = 0.9f) else TvTokens.TextSecondary.copy(alpha = 0.92f),
             )
         }
     }
@@ -316,8 +318,9 @@ fun TvMorePosterCard(
         }
         // 标题/副标题占位与海报卡一致，LazyRow 行高不因尾卡变化。
         Column(
-            modifier = Modifier.padding(start = 8.dp, top = 10.dp, end = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            // 封面与标题拉开一点，多轨纵向扫描时更易读。
+            modifier = Modifier.padding(start = 6.dp, top = 12.dp, end = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(
                 text = " ",

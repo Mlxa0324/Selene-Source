@@ -152,7 +152,8 @@ fun TvHomeRoute(
             modifier = Modifier.fillMaxSize(),
             state = homeListState,
             // 末行分区需要额外底部空白，才能把焦点卡的标题滚出屏幕底边。
-            contentPadding = PaddingValues(bottom = 136.dp),
+            // 底部多留一行标题+副标题余量，末轨获焦不贴底。
+            contentPadding = PaddingValues(top = 8.dp, bottom = 148.dp),
             verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
         ) {
             itemsIndexed(

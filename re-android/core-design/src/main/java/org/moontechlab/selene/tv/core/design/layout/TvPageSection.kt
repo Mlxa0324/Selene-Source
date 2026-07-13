@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import org.moontechlab.selene.tv.core.design.TvTokens
@@ -35,8 +36,8 @@ fun TvPageSection(
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
-        // 标题与海报轨间距收一点，整页节奏更紧凑、分区更清晰。
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        // 标题与海报轨略拉开，焦点放大后标题仍不易与封面抢视线。
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(
             modifier = Modifier
@@ -48,7 +49,9 @@ fun TvPageSection(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.SemiBold,
+                        // 分区标题略加重，多层海报轨里更容易一眼定位。
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.2.sp,
                     ),
                     color = TvTokens.TextPrimary,
                 )
