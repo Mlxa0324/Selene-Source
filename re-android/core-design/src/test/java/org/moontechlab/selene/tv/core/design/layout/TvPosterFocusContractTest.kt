@@ -202,9 +202,9 @@ class TvPosterFocusContractTest {
         assertThat(moreCardSource).contains("height(TvTokens.PosterCoverHeight)")
         assertThat(moreCardSource).doesNotContain("height(TvTokens.PosterHeight)")
         // 标题/副标题占位保证与海报卡行高一致。
-        assertThat(moreCardSource).contains("padding(start = 12.dp, top = 11.dp, end = 12.dp)")
+        assertThat(moreCardSource).contains("padding(start = 8.dp, top = 10.dp, end = 8.dp)")
         assertThat(posterCardSource).contains("height(TvTokens.PosterCoverHeight)")
-        assertThat(posterCardSource).contains("padding(start = 12.dp, top = 11.dp, end = 12.dp)")
+        assertThat(posterCardSource).contains("padding(start = 8.dp, top = 10.dp, end = 8.dp)")
     }
 
     /**

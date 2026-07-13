@@ -89,8 +89,10 @@ object TvTokens {
 
     /**
      * TV 页面区块纵向间距。
+     *
+     * 首页多层横向海报带需要略大的纵向呼吸，避免标题贴着上一行封面。
      */
-    val SectionSpacing = 28.dp
+    val SectionSpacing = 34.dp
 
     /**
      * TV 页面卡片间距。

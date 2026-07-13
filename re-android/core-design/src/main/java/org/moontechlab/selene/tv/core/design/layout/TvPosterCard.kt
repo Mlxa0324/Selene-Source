@@ -32,6 +32,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,8 +63,9 @@ fun TvPosterCard(
 ) {
     var hasCardFocus by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (hasCardFocus) 1.08f else 1f,
-        animationSpec = tween(durationMillis = 140),
+        // 首页多轨同时可见时，1.06 放大更稳，减少上下排互相顶动。
+        targetValue = if (hasCardFocus) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 150),
         label = "tvPosterCardScale",
     )
     val radius = RoundedCornerShape(TvTokens.CardRadius)
@@ -107,25 +109,28 @@ fun TvPosterCard(
             )
         }
         Column(
-            modifier = Modifier.padding(start = 12.dp, top = 11.dp, end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(start = 8.dp, top = 10.dp, end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-        Text(
-            text = item.title,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
-        )
-        Text(
-            text = item.subtitle.ifBlank { posterCaption(item.posterUrl) },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-            color = TvTokens.TextSecondary,
-        )
+            Text(
+                text = item.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = if (hasCardFocus) FontWeight.SemiBold else FontWeight.Medium,
+                ),
+                // 获焦时标题更亮，辅助遥控器定位当前卡。
+                color = if (hasCardFocus) Color.White else TvTokens.TextPrimary,
+            )
+            Text(
+                text = item.subtitle.ifBlank { posterCaption(item.posterUrl) },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = if (hasCardFocus) Color.White.copy(alpha = 0.86f) else TvTokens.TextSecondary,
+            )
+        }
     }
-}
 }
 
 /**
@@ -167,7 +172,7 @@ private fun TvPosterCover(
                     Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color.Black.copy(alpha = 0.34f),
+                            Color.Black.copy(alpha = 0.42f),
                         ),
                     ),
                 ),
@@ -263,8 +268,8 @@ fun TvMorePosterCard(
 ) {
     var hasMoreCardFocus by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
-        targetValue = if (hasMoreCardFocus) 1.08f else 1f,
-        animationSpec = tween(durationMillis = 140),
+        targetValue = if (hasMoreCardFocus) 1.06f else 1f,
+        animationSpec = tween(durationMillis = 150),
         label = "tvMorePosterCardScale",
     )
 
@@ -286,21 +291,24 @@ fun TvMorePosterCard(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(
+                        // 查看更多使用略亮的中性底，和海报占位区分但不抢眼。
+                        color = if (hasMoreCardFocus) TvTokens.SurfaceElevated else TvTokens.PosterPlaceholder,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
                         text = "→",
                         style = MaterialTheme.typography.displaySmall,
-                        color = if (hasMoreCardFocus) TvTokens.FocusBorder else Color.White,
+                        color = if (hasMoreCardFocus) TvTokens.FocusBorder else Color.White.copy(alpha = 0.92f),
                     )
                     Text(
                         text = label,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = Color.White,
                     )
                 }
@@ -308,8 +316,8 @@ fun TvMorePosterCard(
         }
         // 标题/副标题占位与海报卡一致，LazyRow 行高不因尾卡变化。
         Column(
-            modifier = Modifier.padding(start = 12.dp, top = 11.dp, end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(start = 8.dp, top = 10.dp, end = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
                 text = " ",

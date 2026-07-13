@@ -122,7 +122,7 @@ fun TvHomeRoute(
             object : BringIntoViewSpec {
                 private val topMarginPx = with(density) { 24.dp.toPx() }
                 // 标题行约 22sp + 副标题 13sp + 间距与放大余量。
-                private val bottomMarginPx = with(density) { 96.dp.toPx() }
+                private val bottomMarginPx = with(density) { 108.dp.toPx() }
 
                 override fun calculateScrollDistance(
                     offset: Float,
@@ -152,7 +152,7 @@ fun TvHomeRoute(
             modifier = Modifier.fillMaxSize(),
             state = homeListState,
             // 末行分区需要额外底部空白，才能把焦点卡的标题滚出屏幕底边。
-            contentPadding = PaddingValues(bottom = 120.dp),
+            contentPadding = PaddingValues(bottom = 136.dp),
             verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
         ) {
             itemsIndexed(
