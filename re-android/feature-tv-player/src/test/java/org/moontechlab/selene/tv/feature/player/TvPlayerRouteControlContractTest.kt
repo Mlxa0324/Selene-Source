@@ -170,6 +170,22 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
+     * 底部按钮组有操作后必须后延关闭，并保留底部渐变背景。
+     */
+    @Test
+    fun route_menu_interaction_resets_auto_hide_and_keeps_bottom_gradient() {
+        val source = readRouteSource()
+
+        // 交互计数器驱动重新计时。
+        assertThat(source).contains("menuInteractionKey++")
+        assertThat(source).contains("bumpMenuInteraction()")
+        assertThat(source).contains("PLAYER_MENU_AUTO_HIDE_MS")
+        // 底部背景渐变必须保留。
+        assertThat(source).contains("Brush.verticalGradient(")
+        assertThat(source).contains("底部背景渐变")
+    }
+
+    /**
      * 菜单和 loading 都未显示时，全屏底部必须常驻播放进度条。
      */
     @Test

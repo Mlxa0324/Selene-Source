@@ -110,7 +110,7 @@ fun TvPlayerRoute(
 ) {
     val state by viewModel.state.collectAsState()
     val scope = rememberCoroutineScope()
-    // 菜单交互计数器，用于 5s 无操作自动隐藏
+    // 菜单交互计数器：每次操作递增，驱动 4s 无操作自动隐藏重新计时。
     var menuInteractionKey by remember { mutableIntStateOf(0) }
     // 顶部/底部播放壳层可见性：无操作倒计时后隐藏标题、进度条等。
     var isChromeVisible by remember { mutableStateOf(true) }
@@ -125,12 +125,6 @@ fun TvPlayerRoute(
     val secondaryMenuFocusRequesters = rememberPlayerMenuFocusRequesters(
         count = resolveSecondaryMenuItemCount(state),
     )
-    val requestSelectedPrimaryMenuFocus: () -> Unit = {
-        primaryMenuFocusRequesters.requestFocusAt(resolveSelectedPrimaryMenuIndex(state))
-    }
-    val requestSelectedSecondaryMenuFocus: () -> Unit = {
-        secondaryMenuFocusRequesters.requestFocusAt(resolveSelectedSecondaryMenuIndex(state))
-    }
     /**
      * 显示顶部/底部播放壳层，并重置无操作隐藏倒计时。
      */
@@ -139,11 +133,25 @@ fun TvPlayerRoute(
         chromeInteractionKey++
     }
     /**
-     * 记录菜单交互，同时保持壳层计时与菜单计时同步刷新。
+     * 记录底部菜单交互，并把自动隐藏倒计时整体后延。
+     *
+     * 任意焦点移动、确认选择、方向键切换都会调用；
+     * 只在用户持续无操作时才关闭菜单。
      */
     val bumpMenuInteraction: () -> Unit = {
+        // 递增 key 取消旧 delay，重新计时。
         menuInteractionKey++
+        // 菜单活跃时同步保持顶部壳层可见。
         revealChrome()
+    }
+    val requestSelectedPrimaryMenuFocus: () -> Unit = {
+        // 一级/二级之间跳转也算操作，后延自动隐藏。
+        bumpMenuInteraction()
+        primaryMenuFocusRequesters.requestFocusAt(resolveSelectedPrimaryMenuIndex(state))
+    }
+    val requestSelectedSecondaryMenuFocus: () -> Unit = {
+        bumpMenuInteraction()
+        secondaryMenuFocusRequesters.requestFocusAt(resolveSelectedSecondaryMenuIndex(state))
     }
 
     LaunchedEffect(viewModel) {
@@ -307,6 +315,8 @@ fun TvPlayerRoute(
                         continuousSeekState.stop()
                         // Flutter TV 全屏页下键呼出底部菜单，默认进入播放列表。
                         viewModel.openMenu(PLAYER_MENU_PLAYLIST)
+                        // 打开菜单也算一次操作，开始 4s 无操作计时。
+                        bumpMenuInteraction()
                         true
                     }
                     else -> false
@@ -367,29 +377,34 @@ fun TvPlayerRoute(
         }
 
         if (state.isMenuVisible) {
-            // 菜单 4s 无操作自动隐藏。
+            // 底部按钮组：用户每次操作后重新计时，无操作才自动收起。
             LaunchedEffect(state.isMenuVisible, menuInteractionKey) {
-                if (state.isMenuVisible) {
-                    delay(PLAYER_MENU_AUTO_HIDE_MS)
-                    viewModel.closeMenu()
+                if (!state.isMenuVisible) {
+                    return@LaunchedEffect
                 }
+                delay(PLAYER_MENU_AUTO_HIDE_MS)
+                // 倒计时结束时菜单仍打开，才执行关闭。
+                viewModel.closeMenu()
             }
-            // 对齐 Flutter：二级菜单在上、一级菜单在下，底部渐变面板承载。
+            // 对齐 Flutter：二级菜单在上、一级菜单在下。
+            // 底部渐变背景必须保留，托住按钮组可读性。
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .onPreviewKeyEvent {
-                        // 任意按键重置菜单 4s 隐藏倒计时。
+                        // 任意按键（含方向/确认）后延自动隐藏。
                         bumpMenuInteraction()
                         false
                     }
                     .fillMaxWidth()
                     .background(
+                        // 底部背景渐变：上透明、下加深，不能去掉。
                         Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color(0xCC0A0F16),
-                                Color(0xF205090E),
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.28f to Color(0x990A0F16),
+                                0.62f to Color(0xD90A0F16),
+                                1.0f to Color(0xF205090E),
                             ),
                         ),
                     )
@@ -412,6 +427,8 @@ fun TvPlayerRoute(
                             onArrowDown = requestSelectedPrimaryMenuFocus,
                             onArrowUp = requestSelectedSecondaryMenuFocus,
                             onEpisodeSelected = { episodeId ->
+                                // 选集也是操作，后延关闭。
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.selectEpisode(episodeId) }
                             },
                         )
@@ -424,6 +441,7 @@ fun TvPlayerRoute(
                             onArrowDown = requestSelectedPrimaryMenuFocus,
                             onArrowUp = requestSelectedSecondaryMenuFocus,
                             onSourceSelected = { sourceId ->
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.selectSource(sourceId) }
                             },
                         )
@@ -434,6 +452,7 @@ fun TvPlayerRoute(
                             focusRequesters = secondaryMenuFocusRequesters,
                             onArrowDown = requestSelectedPrimaryMenuFocus,
                             onResizeModeSelected = { resizeMode ->
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.selectResizeMode(resizeMode) }
                             },
                         )
@@ -444,6 +463,7 @@ fun TvPlayerRoute(
                             focusRequesters = secondaryMenuFocusRequesters,
                             onArrowDown = requestSelectedPrimaryMenuFocus,
                             onPlaybackSpeedSelected = { speed ->
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.selectPlaybackSpeed(speed) }
                             },
                         )
@@ -456,21 +476,27 @@ fun TvPlayerRoute(
                             focusRequesters = secondaryMenuFocusRequesters,
                             onArrowDown = requestSelectedPrimaryMenuFocus,
                             onIntroClick = {
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.setSkipIntroToCurrentPosition() }
                             },
                             onIntroLongClick = {
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.clearSkipIntroPosition() }
                             },
                             onOutroClick = {
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.setSkipOutroToCurrentPosition() }
                             },
                             onOutroLongClick = {
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.clearSkipOutroPosition() }
                             },
                             onDanmakuToggle = {
+                                bumpMenuInteraction()
                                 scope.launch { viewModel.toggleDanmakuEnabled() }
                             },
                             onDanmakuMatchRequested = {
+                                bumpMenuInteraction()
                                 // 手动匹配默认沿用当前片名，贴近 Flutter TV 弹幕搜索面板。
                                 onDanmakuMatchRequested(resolveDanmakuMatchQuery(state.playbackRequest))
                             },
@@ -498,13 +524,19 @@ fun TvPlayerRoute(
                             compact = true,
                             modifier = primaryMenuModifier.focusRequester(primaryMenuFocusRequesters[index]),
                             onFocused = {
+                                // 焦点移动也算操作，后延自动隐藏。
+                                bumpMenuInteraction()
                                 // 焦点移入即切换二级内容，避免再按确认。
                                 if (state.selectedTopMenu != menu) {
                                     viewModel.openMenu(menu)
                                 }
                             },
-                            onArrowUp = requestSelectedSecondaryMenuFocus,
+                            onArrowUp = {
+                                bumpMenuInteraction()
+                                requestSelectedSecondaryMenuFocus()
+                            },
                             onClick = {
+                                bumpMenuInteraction()
                                 viewModel.openMenu(menu)
                                 requestSelectedSecondaryMenuFocus()
                             },
@@ -1945,7 +1977,11 @@ private fun scrollPlayerMenuChipIntoView(
     }
 }
 
-/** 全屏播放器底部按钮组无操作自动隐藏时长。 */
+/**
+ * 全屏播放器底部按钮组无操作自动隐藏时长。
+ *
+ * 用户任意操作后会重置该倒计时，只有持续无操作才关闭。
+ */
 private const val PLAYER_MENU_AUTO_HIDE_MS = 4_000L
 
 /** 连续 seek 进入长按态前的短按保护时间。 */
