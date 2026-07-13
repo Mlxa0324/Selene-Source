@@ -922,7 +922,7 @@ private fun NcatInfoPanel(
 ) {
     val detail = state.detail ?: return
     val descriptionText = detail.description.ifBlank { "暂无简介，切换线路后仍可继续播放。" }
-    // 右侧介绍区与左侧播放器同高：上下边距加大，内容在固定高度内均匀排布。
+    // 右侧介绍区与左侧播放器同高：上下外边距加大，简介块与标题/按钮留出呼吸。
     Column(
         modifier = modifier
             .background(NcatInfoPanelSurface, RoundedCornerShape(18.dp))
@@ -931,37 +931,41 @@ private fun NcatInfoPanel(
                 color = Color.White.copy(alpha = 0.08f),
                 shape = RoundedCornerShape(18.dp),
             )
-            // 上下边距加大，标题/简介/按钮不贴边。
-            .padding(horizontal = 20.dp, vertical = 22.dp),
+            // 面板外边距：左右略收、上下更松，避免简介块贴边。
+            .padding(horizontal = 18.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            text = detail.title,
-            color = Color.White,
-            fontSize = 21.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            NcatMetaBadge(label = "豆瓣：暂无评分", accent = true)
-            if (detail.year.isNotBlank()) {
-                NcatMetaBadge(label = detail.year, accent = false)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = detail.title,
+                color = Color.White,
+                fontSize = 21.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                NcatMetaBadge(label = "豆瓣：暂无评分", accent = true)
+                if (detail.year.isNotBlank()) {
+                    NcatMetaBadge(label = detail.year, accent = false)
+                }
+                NcatMetaBadge(label = detail.sourceName.ifBlank { "中国大陆" }, accent = false)
+                NcatMetaBadge(label = "剧情 / 奇幻 / 冒险", accent = false)
             }
-            NcatMetaBadge(label = detail.sourceName.ifBlank { "中国大陆" }, accent = false)
-            NcatMetaBadge(label = "剧情 / 奇幻 / 冒险", accent = false)
         }
         // 简介摘要可获焦：确认后打开全屏影片简介。
         val descriptionInteraction = remember { MutableInteractionSource() }
         val descriptionFocused by descriptionInteraction.collectIsFocusedAsState()
+        // 简介块上下外间距：与标签行、操作按钮分开，避免贴得太紧。
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(vertical = 8.dp)
                 // 正文与右下角“简介”分两行：上摘要，下角标，避免同行挤压。
-                .heightIn(min = 96.dp)
+                .heightIn(min = 100.dp)
                 .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                 .border(
                     width = if (descriptionFocused) 2.dp else 0.dp,
@@ -990,7 +994,8 @@ private fun NcatInfoPanel(
                         false
                     }
                 }
-                .padding(start = 14.dp, top = 12.dp, end = 12.dp, bottom = 10.dp),
+                // 块内边距：上左略大，右下给角标留白。
+                .padding(start = 16.dp, top = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
             Text(
                 text = descriptionText,
@@ -1001,7 +1006,7 @@ private fun NcatInfoPanel(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             // 右下角标签独占下一行，不和左侧简介正文并排。
             Box(
                 modifier = Modifier.fillMaxWidth(),
