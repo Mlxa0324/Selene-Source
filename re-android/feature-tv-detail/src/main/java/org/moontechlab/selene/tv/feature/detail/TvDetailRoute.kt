@@ -959,13 +959,13 @@ private fun NcatInfoPanel(
         // 简介摘要可获焦：确认后打开全屏影片简介。
         val descriptionInteraction = remember { MutableInteractionSource() }
         val descriptionFocused by descriptionInteraction.collectIsFocusedAsState()
-        // 简介块上下外间距：与标签行、操作按钮分开，避免贴得太紧。
-        Column(
+        // 正文占上方，角标固定右下角，绝不与左侧文字同行。
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 8.dp)
-                // 正文与右下角“简介”分两行：上摘要，下角标，避免同行挤压。
                 .heightIn(min = 100.dp)
+                .height(100.dp)
                 .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                 .border(
                     width = if (descriptionFocused) 2.dp else 0.dp,
@@ -993,9 +993,7 @@ private fun NcatInfoPanel(
                     } else {
                         false
                     }
-                }
-                // 块内边距：上左略大，右下给角标留白。
-                .padding(start = 16.dp, top = 14.dp, end = 14.dp, bottom = 12.dp),
+                },
         ) {
             Text(
                 text = descriptionText,
@@ -1004,25 +1002,25 @@ private fun NcatInfoPanel(
                 lineHeight = 19.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(),
+                // 底部预留给右下角“简介”标签，避免正文盖住角标。
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, top = 14.dp, end = 16.dp, bottom = 36.dp),
             )
-            Spacer(modifier = Modifier.height(10.dp))
-            // 右下角标签独占下一行，不和左侧简介正文并排。
+            // 固定贴在简介块右下角，单独一行区域，不与正文并排。
             Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.CenterEnd,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 10.dp, bottom = 8.dp)
+                    .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(topStart = 8.dp, bottomEnd = 10.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
-                Box(
-                    modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = "简介",
-                        color = Color.White.copy(alpha = 0.78f),
-                        fontSize = 11.sp,
-                    )
-                }
+                Text(
+                    text = "简介",
+                    color = Color.White.copy(alpha = 0.82f),
+                    fontSize = 11.sp,
+                )
             }
         }
         Row(
