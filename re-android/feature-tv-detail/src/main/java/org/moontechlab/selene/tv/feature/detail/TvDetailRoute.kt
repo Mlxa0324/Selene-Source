@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -435,13 +435,12 @@ private fun NcatDetailBackdrop(posterUrl: String) {
                 model = posterUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                // 裁切锚点略偏上，避免默认居中显得过沉。
-                alignment = Alignment.TopCenter,
+                // 以顶部为起点，再向下偏移总高度的 1/10。
+                // BiasAlignment 垂直：-1 顶、0 中、1 底；-1 + 0.2 = -0.8。
+                alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.8f),
                 // 轻微模糊，避免海报像素放大后的马赛克感。
                 modifier = Modifier
                     .fillMaxSize()
-                    // 上移幅度收敛，只做轻微构图修正。
-                    .offset(y = (-16).dp)
                     .blur(radius = 18.dp),
             )
         } else {
