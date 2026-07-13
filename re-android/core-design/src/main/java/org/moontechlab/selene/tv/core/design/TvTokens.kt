@@ -80,7 +80,7 @@ object TvTokens {
     /**
      * TV 页面水平安全边距。
      */
-    val PageHorizontalPadding = 46.dp
+    val PageHorizontalPadding = 50.dp
 
     /**
      * TV 页面顶部留白。

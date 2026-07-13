@@ -111,14 +111,14 @@ private val NcatRadius = 8.dp
  * 列表不通过外层 page padding 控制横向滚动，只靠 LazyRow contentPadding，
  * 因此向左滚出首屏时不会被页面边距二次夹死。
  */
-private val NcatContentStartPadding = 32.dp
+private val NcatContentStartPadding = 36.dp
 
 /**
  * 详情页右侧边距。
  *
  * 横向列表 end contentPadding 与之相同：滚到最右侧时末卡不贴屏。
  */
-private val NcatContentEndPadding = 32.dp
+private val NcatContentEndPadding = 36.dp
 
 /** TV 详情页顶部右侧时间格式。 */
 private val NcatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")

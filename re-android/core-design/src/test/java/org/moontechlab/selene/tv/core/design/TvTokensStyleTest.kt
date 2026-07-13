@@ -38,7 +38,7 @@ class TvTokensStyleTest {
      */
     @Test
     fun homeDensity_matchesFlutterTvHomeLayout() {
-        assertThat(TvTokens.PageHorizontalPadding).isEqualTo(46.dp)
+        assertThat(TvTokens.PageHorizontalPadding).isEqualTo(50.dp)
         assertThat(TvTokens.CardSpacing).isEqualTo(18.dp)
         assertThat(TvTokens.PosterWidth).isEqualTo(158.dp)
         assertThat(TvTokens.PosterHeight).isEqualTo(288.dp)
