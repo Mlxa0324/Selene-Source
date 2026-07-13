@@ -16,6 +16,8 @@ class TvDetailRouteFocusContractTest {
         val source = readRouteSource()
         assertThat(source).contains("NcatDetailTopBar")
         assertThat(source).contains("NcatDetailHero")
+        assertThat(source).contains("NcatDetailBackdrop")
+        assertThat(source).contains("NcatInfoPanelSurface")
         assertThat(source).contains("NcatSourceCard")
         assertThat(source).contains("NcatEpisodeGroupRail")
         assertThat(source).contains("NcatRecommendRail")

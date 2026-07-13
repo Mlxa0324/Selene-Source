@@ -1510,7 +1510,7 @@ private fun TvPlayerBottomProgressBar(
         modifier = modifier
             .testTag("tv-player-bottom-progress")
             .fillMaxWidth()
-            .padding(start = 34.dp, end = 34.dp, bottom = 26.dp)
+            .padding(start = 32.dp, end = 32.dp, bottom = 24.dp)
             // 固定行高，保证播放图标/时间/进度条/全屏图标同一基线居中。
             .height(BOTTOM_PROGRESS_ROW_HEIGHT),
         verticalAlignment = Alignment.CenterVertically,

@@ -88,6 +88,9 @@ import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 /** TV 详情页截图版背景色。 */
 private val NcatBackground = Color(0xFF11131C)
 
+/** 右侧介绍卡片半透明底色。 */
+private val NcatInfoPanelSurface = Color(0xCC1A1D27)
+
 /** TV 详情页截图版卡片底色。 */
 private val NcatSurface = Color(0xFF454852)
 
@@ -209,6 +212,9 @@ fun TvDetailRoute(
             .fillMaxSize()
             .background(NcatBackground),
     ) {
+        // 主海报固定铺满页面，不随详情内容滚动。
+        NcatDetailBackdrop(posterUrl = detail?.posterUrl.orEmpty())
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -375,6 +381,62 @@ private fun rememberDetailFocusTargets(
  * @param focusTargets 焦点请求器。
  * @param onSearchClick 搜索入口回调。
  */
+/**
+ * 详情页固定海报背景。
+ *
+ * 以主图/海报铺满整页，滚动内容层叠在上方，背景本身不随滚动移动。
+ *
+ * @param posterUrl 海报地址。
+ */
+@Composable
+private fun NcatDetailBackdrop(posterUrl: String) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (posterUrl.isNotBlank()) {
+            AsyncImage(
+                model = posterUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(NcatBackground),
+            )
+        }
+        // 自上而下压暗，保证标题和线路文字可读。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.42f),
+                            Color.Black.copy(alpha = 0.72f),
+                            Color(0xF20B0D14),
+                        ),
+                    ),
+                ),
+        )
+        // 左右微暗，避免边缘过亮干扰焦点描边。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.28f),
+                            Color.Transparent,
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.34f),
+                        ),
+                    ),
+                ),
+        )
+    }
+}
+
 @Composable
 private fun NcatDetailTopBar(
     focusTargets: TvDetailFocusTargets,
@@ -487,7 +549,7 @@ private fun NcatDetailHero(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 31.dp),
-        horizontalArrangement = Arrangement.spacedBy(42.dp),
+        horizontalArrangement = Arrangement.spacedBy(28.dp),
         verticalAlignment = Alignment.Top,
     ) {
         NcatPreviewPanel(
@@ -557,10 +619,12 @@ private fun NcatPreviewPanel(
     Box(
         modifier = modifier
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(0.dp))
+            // 主预览区大圆角，贴近截图卡片。
+            .clip(RoundedCornerShape(18.dp))
             .border(
-                width = if (isFocused) 2.dp else 0.dp,
-                color = if (isFocused) Color.White else Color.Transparent,
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) Color.White else Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(18.dp),
             )
             .focusRequester(focusTargets.player)
             .focusProperties {
@@ -721,35 +785,61 @@ private fun BoxScope.NcatPreviewProgressBar(
     positionMs: Long,
     durationMs: Long,
 ) {
-    val progress = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-    Row(
+    val progress = (positionMs.toFloat() / durationMs.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
+    // 贴底进度条：左播放态/当前时间，中红条，右总时长。
+    Column(
         modifier = Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .padding(horizontal = 9.dp, vertical = 7.dp)
-            .height(13.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.55f),
+                    ),
+                ),
+            )
+            .padding(start = 12.dp, end = 12.dp, top = 18.dp, bottom = 10.dp),
     ) {
-        Text(if (isPlaying) "▶" else "⏸", color = Color.White, fontSize = 8.sp)
-        Spacer(Modifier.width(5.dp))
-        Text(formatTime(positionMs), color = Color.White.copy(alpha = 0.96f), fontSize = 8.sp)
-        Spacer(Modifier.width(5.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(3.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(Color.White.copy(alpha = 0.3f)),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text(
+                text = if (isPlaying) "▶" else "⏸",
+                color = Color.White,
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = formatTime(positionMs),
+                color = Color.White.copy(alpha = 0.96f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.width(10.dp))
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(progress)
+                    .weight(1f)
                     .height(3.dp)
-                    .background(TvTokens.Accent, RoundedCornerShape(1.dp)),
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.28f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress)
+                        .height(3.dp)
+                        .background(TvTokens.Accent, RoundedCornerShape(2.dp)),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = formatTime(durationMs),
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
             )
         }
-        Spacer(Modifier.width(5.dp))
-        Text(formatTime(durationMs), color = Color.White.copy(alpha = 0.54f), fontSize = 8.sp)
     }
 }
 
@@ -773,8 +863,17 @@ private fun NcatInfoPanel(
     onFavoriteToggle: (() -> Unit)?,
 ) {
     val detail = state.detail ?: return
+    // 右侧介绍区：半透明圆角底块包住标题/标签/简介/操作。
     Column(
-        modifier = modifier.height(244.dp),
+        modifier = modifier
+            .height(244.dp)
+            .background(NcatInfoPanelSurface, RoundedCornerShape(18.dp))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(18.dp),
+            )
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
@@ -800,7 +899,7 @@ private fun NcatInfoPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(83.dp)
-                .background(NcatSurface, RoundedCornerShape(4.dp)),
+                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
         ) {
             Text(
                 text = detail.description.ifBlank { "暂无简介" },
