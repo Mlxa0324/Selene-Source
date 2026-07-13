@@ -205,6 +205,106 @@ class TvPlayerViewModel(
     }
 
     /**
+     * 全屏菜单切换剧集。
+     *
+     * 对齐 Flutter TV：切集后从 0 秒起播，并刷新弹幕。
+     *
+     * @param episodeId 目标剧集 ID。
+     */
+    suspend fun selectEpisode(episodeId: String) {
+        val current = mutableState.value.playbackRequest ?: return
+        val targetId = episodeId.trim()
+        if (targetId.isBlank() || targetId == current.episodeId) {
+            return
+        }
+        val episodes = mutableState.value.allEpisodes
+        val index = episodes.indexOfFirst { episode -> episode.id == targetId }
+        if (index < 0) {
+            return
+        }
+        val episode = episodes[index]
+        val nextRequest = current.copy(
+            episodeId = episode.id,
+            episodeIndex = index,
+            episodeTitle = episode.title,
+            // 有地址时直接切集；空地址时仍保留当前 url，避免误下发空白媒体。
+            url = episode.url.trim().ifBlank { current.url },
+            startPositionMs = 0L,
+        )
+        mutableState.value = mutableState.value.copy(
+            playbackRequest = nextRequest,
+            isMenuVisible = false,
+            isSeekOverlayVisible = false,
+            isPlayerLoading = true,
+            playerErrorMessage = null,
+            currentPositionMs = 0L,
+        )
+        val engine = playerEngine
+        if (engine == null) {
+            mutableState.value = mutableState.value.copy(isPlayerLoading = false)
+            return
+        }
+        runCatching {
+            engine.load(nextRequest)
+        }.onSuccess {
+            syncPlayerState(engine.state.value)
+            loadDanmakuForCurrentRequest()
+        }.onFailure { throwable ->
+            mutableState.value = mutableState.value.copy(
+                isPlayerLoading = false,
+                playerErrorMessage = throwable.message ?: "切换剧集失败",
+            )
+        }
+    }
+
+    /**
+     * 全屏菜单切换线路。
+     *
+     * 当前上下文若只提供线路摘要，则先更新选中线路；
+     * 若详情已同步同一 source 的剧集列表，则继续用首集地址起播。
+     *
+     * @param sourceId 目标线路 ID。
+     */
+    suspend fun selectSource(sourceId: String) {
+        val current = mutableState.value.playbackRequest ?: return
+        val targetId = sourceId.trim()
+        if (targetId.isBlank() || targetId == current.sourceId) {
+            return
+        }
+        val source = mutableState.value.availableSources.firstOrNull { item -> item.id == targetId }
+            ?: return
+        val nextRequest = current.copy(
+            sourceId = source.id,
+            // 切线路后默认从当前集/首集继续；没有新地址时保留旧 url，等待详情同步。
+            startPositionMs = 0L,
+        )
+        mutableState.value = mutableState.value.copy(
+            playbackRequest = nextRequest,
+            isMenuVisible = false,
+            isSeekOverlayVisible = false,
+            isPlayerLoading = true,
+            playerErrorMessage = null,
+            currentPositionMs = 0L,
+        )
+        val engine = playerEngine
+        if (engine == null) {
+            mutableState.value = mutableState.value.copy(isPlayerLoading = false)
+            return
+        }
+        runCatching {
+            engine.load(nextRequest)
+        }.onSuccess {
+            syncPlayerState(engine.state.value)
+            loadDanmakuForCurrentRequest()
+        }.onFailure { throwable ->
+            mutableState.value = mutableState.value.copy(
+                isPlayerLoading = false,
+                playerErrorMessage = throwable.message ?: "切换线路失败",
+            )
+        }
+    }
+
+    /**
      * 持续观察播放器内核状态。
      */
     suspend fun observePlayerState() {

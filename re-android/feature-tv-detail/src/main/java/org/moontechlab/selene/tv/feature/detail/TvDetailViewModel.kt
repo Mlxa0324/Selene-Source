@@ -269,9 +269,20 @@ data class TvDetailResumeTarget(
 )
 
 /**
+ * 详情页线路加载结果。
+ *
+ * @property sources 可播放线路。
+ * @property detail 详情元数据（简介/年份/封面等），可为空。
+ */
+data class TvDetailSourcesResult(
+    val sources: List<TvVideoSource> = emptyList(),
+    val detail: TvVideoDetail? = null,
+)
+
+/**
  * TV 详情页 ViewModel。
  *
- * @property loadExactSources 精确源加载器。
+ * @property loadExactSources 精确详情/线路加载器。
  * @property loadMoreSources 标题补源加载器。
  * @property loadRecommends 推荐加载器。
  * @property loadResumeRecord 续播记录加载器。
@@ -283,11 +294,13 @@ data class TvDetailResumeTarget(
  */
 class TvDetailViewModel(
     initialEntry: TvDetailEntry? = null,
-    private val loadExactSources: suspend (TvDetailEntry) -> List<TvVideoSource> = { emptyList() },
+    private val loadExactSources: suspend (TvDetailEntry) -> TvDetailSourcesResult = {
+        TvDetailSourcesResult()
+    },
     private val loadMoreSources: suspend (
         TvDetailEntry,
         onIncremental: (List<TvVideoSource>) -> Unit,
-    ) -> List<TvVideoSource> = { _, _ -> emptyList() },
+    ) -> TvDetailSourcesResult = { _, _ -> TvDetailSourcesResult() },
     private val loadRecommends: suspend (TvDetailEntry, TvVideoDetail?) -> List<TvVideoCard> = { _, _ -> emptyList() },
     private val loadResumeRecord: suspend (TvDetailEntry) -> TvDetailResumeRecord? = { null },
     private val loadFavoriteState: suspend (TvDetailEntry) -> Boolean = { false },
@@ -420,12 +433,13 @@ class TvDetailViewModel(
                 allowResumeFallback = false,
             )
 
-            // 精确源先回包时应立即进入首播状态。
+            // 精确源先回包时应立即进入首播状态，并回填接口简介等元数据。
             exactDeferred.await()
-                .onSuccess { sources ->
+                .onSuccess { result ->
+                    mergeDetailMetadata(result.detail)
                     mergeSources(
                         serial = serial,
-                        incomingSources = sources,
+                        incomingSources = result.sources,
                         preferIncoming = true,
                         allowResumeFallback = false,
                     )
@@ -437,10 +451,12 @@ class TvDetailViewModel(
 
             // 标题补源结果继续追加，失败也只标记本路完成。
             moreDeferred.await()
-                .onSuccess { sources ->
+                .onSuccess { result ->
+                    // 精确详情没简介时，用搜索结果里的 desc 兜底。
+                    mergeDetailMetadata(result.detail)
                     mergeSources(
                         serial = serial,
-                        incomingSources = sources,
+                        incomingSources = result.sources,
                         preferIncoming = false,
                         allowResumeFallback = true,
                     )
@@ -1415,6 +1431,45 @@ class TvDetailViewModel(
             sourceName = primarySource?.name.orEmpty().ifBlank { baseDetail.sourceName },
             sources = sources,
         )
+    }
+
+    /**
+     * 合并详情元数据（简介/年份/封面/豆瓣 ID）。
+     *
+     * 仅回填当前仍为空的字段，避免增量搜索把已有精确详情覆盖成空。
+     *
+     * @param incoming 接口或搜索返回的详情元数据。
+     */
+    private fun mergeDetailMetadata(incoming: TvVideoDetail?) {
+        if (incoming == null) {
+            return
+        }
+        val state = mutableState.value
+        val current = state.detail ?: currentEntry.toBaseDetail(emptyList()) ?: return
+        val merged = current.copy(
+            // 简介：接口/搜索有 desc 时覆盖入口占位空串。
+            description = current.description.ifBlank { incoming.description },
+            title = current.title.ifBlank { incoming.title },
+            posterUrl = current.posterUrl.ifBlank { incoming.posterUrl },
+            year = current.year.ifBlank { incoming.year },
+            typeName = current.typeName.ifBlank { incoming.typeName },
+            // 分类以更完整一侧为准，避免后到空列表覆盖已解析标签。
+            categories = if (current.categories.size >= incoming.categories.size) {
+                current.categories.ifEmpty { incoming.categories }
+            } else {
+                incoming.categories
+            },
+            remarks = current.remarks.ifBlank { incoming.remarks },
+            qualityTag = current.qualityTag.ifBlank { incoming.qualityTag },
+            rating = current.rating.ifBlank { incoming.rating },
+            doubanId = current.doubanId.ifBlank { incoming.doubanId },
+            sourceName = current.sourceName.ifBlank { incoming.sourceName },
+            // 线路列表仍由 mergeSources 统一处理，这里只合并资料字段。
+            sources = current.sources.ifEmpty { incoming.sources },
+        )
+        if (merged != current) {
+            mutableState.value = state.copy(detail = merged)
+        }
     }
 
     private companion object {

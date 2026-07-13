@@ -41,8 +41,9 @@ class TvPlayerRouteControlContractTest {
         val source = readRouteSource()
 
         assertThat(source).contains("val playerRootFocusRequester = remember { FocusRequester() }")
-        assertThat(source).contains("LaunchedEffect(state.isMenuVisible)")
+        assertThat(source).contains("LaunchedEffect(state.isMenuVisible, state.selectedTopMenu, state.allEpisodes, state.availableSources)")
         assertThat(source).contains("playerRootFocusRequester.requestFocus()")
+        assertThat(source).contains("requestSelectedSecondaryMenuFocus()")
         assertThat(source).contains(".focusRequester(playerRootFocusRequester)")
         assertThat(source).contains(".focusable()")
     }
@@ -308,7 +309,9 @@ class TvPlayerRouteControlContractTest {
         val source = readRouteSource()
 
         assertThat(source).contains("val shouldShowTopDecorations =")
-        assertThat(source).contains("state.isMenuVisible || !state.isPlayerLoading")
+        assertThat(source).contains("state.isMenuVisible || isChromeVisible")
+        assertThat(source).contains("PLAYER_MENU_AUTO_HIDE_MS")
+        assertThat(source).contains("isChromeVisible = false")
         assertThat(source).contains("TvPlayerTopDecorations")
         assertThat(source).contains("testTag(\"tv-player-top-decorations\")")
     }
@@ -372,7 +375,8 @@ class TvPlayerRouteControlContractTest {
     fun route_renders_playback_chrome_scrim_when_menu_hidden_and_not_loading() {
         val source = readRouteSource()
 
-        assertThat(source).contains("val shouldShowPlaybackChrome = !state.isMenuVisible && !state.isPlayerLoading")
+        assertThat(source).contains("val shouldShowPlaybackChrome =")
+        assertThat(source).contains("isChromeVisible")
         assertThat(source).contains("TvPlayerPlaybackChromeScrim")
         assertThat(source).contains("testTag(\"tv-player-playback-chrome-scrim\")")
         assertThat(source).contains("Brush.verticalGradient")
@@ -450,13 +454,41 @@ class TvPlayerRouteControlContractTest {
 
         assertThat(source).contains("import androidx.compose.animation.core.animateFloatAsState")
         assertThat(source).contains("import androidx.compose.animation.core.tween")
-        assertThat(source).contains("import androidx.compose.ui.draw.scale")
+        assertThat(source).contains("import androidx.compose.ui.graphics.graphicsLayer")
         assertThat(source).contains("private const val PLAYER_MENU_FOCUSED_SCALE = 1.08f")
         assertThat(source).contains("private const val PLAYER_MENU_FOCUS_ANIMATION_MS = 140")
         assertThat(menuChipSource).contains("val scale by animateFloatAsState(")
         assertThat(menuChipSource).contains("targetValue = if (isFocused) PLAYER_MENU_FOCUSED_SCALE else 1f")
         assertThat(menuChipSource).contains("animationSpec = tween(durationMillis = PLAYER_MENU_FOCUS_ANIMATION_MS)")
-        assertThat(menuChipSource).contains(".scale(scale)")
+        assertThat(menuChipSource).contains("scaleX = scale")
+        assertThat(menuChipSource).contains("scaleY = scale")
+        assertThat(menuChipSource).contains("transformOrigin = focusScaleOrigin")
+    }
+
+    /**
+     * 播放线路二级列表必须预留右侧放大 gutter，且末项右锚向左扩展，避免贴边裁切。
+     */
+    @Test
+    fun route_source_menu_reserves_end_gutter_and_edge_scale_origin() {
+        val source = readRouteSource()
+        val sourceMenu = source.substringAfter("private fun TvPlayerSourceMenu(")
+            .substringBefore("private fun TvPlayerAspectRatioMenu(")
+
+        // 列表 viewport 贴右；仅滚到末项时 end padding 留边；获焦滚动避免裁切。
+        assertThat(source).contains("private val PLAYER_MENU_LIST_END_PADDING = 32.dp")
+        assertThat(source).contains("private val PLAYER_MENU_CHIP_SAFE_WIDTH = 160.dp")
+        assertThat(sourceMenu).contains("end = PLAYER_MENU_LIST_END_PADDING")
+        assertThat(sourceMenu).contains("start = 0.dp")
+        assertThat(sourceMenu).contains("fillMaxWidth()")
+        assertThat(sourceMenu).contains("scrollPlayerMenuChipIntoView(")
+        assertThat(sourceMenu).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
+        assertThat(sourceMenu).contains("rememberSaveable(saver = LazyListState.Saver)")
+        assertThat(sourceMenu).contains("if (shouldScroll) {")
+        assertThat(sourceMenu).contains("TransformOrigin(1f, 0.5f)")
+        assertThat(sourceMenu).contains("TransformOrigin(0f, 0.5f)")
+        assertThat(sourceMenu).contains("focusScaleOrigin = when {")
+        assertThat(source).contains(".padding(start = 0.dp, top = 28.dp, end = 0.dp, bottom = 30.dp)")
+        assertThat(source).contains("modifier = Modifier.padding(start = 32.dp, end = 32.dp)")
     }
 
     /**

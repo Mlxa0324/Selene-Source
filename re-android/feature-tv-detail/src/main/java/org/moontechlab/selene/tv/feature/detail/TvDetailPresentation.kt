@@ -588,18 +588,24 @@ fun shouldShowDetailEpisodeGroupChoices(groupCount: Int): Boolean {
  * @param sources 播放线路。
  * @param episodes 剧集列表。
  * @param recommends 推荐卡片。
+ * @param recommendLoadState 推荐加载状态。
  * @return 区块显隐状态。
  */
 fun buildDetailLayoutSections(
     sources: List<TvVideoSource>,
     episodes: List<TvEpisode>,
     recommends: List<TvVideoCard>,
+    recommendLoadState: TvDetailRecommendLoadState = TvDetailRecommendLoadState.Idle,
 ): TvDetailLayoutSections {
-    val hasRecommends = recommends.isNotEmpty()
+    // 对齐 Flutter：有数据展示列表；调度/加载/失败时展示轻量状态，空结果时隐藏。
+    val showRecommends = recommends.isNotEmpty() ||
+        recommendLoadState == TvDetailRecommendLoadState.Scheduled ||
+        recommendLoadState == TvDetailRecommendLoadState.Loading ||
+        recommendLoadState == TvDetailRecommendLoadState.Failed
     return TvDetailLayoutSections(
         showSources = sources.isNotEmpty(),
         showEpisodes = episodes.isNotEmpty(),
-        showRecommends = hasRecommends,
+        showRecommends = showRecommends,
         showBottomActions = true,
     )
 }

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -17,13 +18,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -40,13 +44,18 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -67,6 +76,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
 import org.moontechlab.selene.tv.core.player.api.PlaybackEpisode
@@ -101,6 +111,10 @@ fun TvPlayerRoute(
     val scope = rememberCoroutineScope()
     // 菜单交互计数器，用于 5s 无操作自动隐藏
     var menuInteractionKey by remember { mutableIntStateOf(0) }
+    // 顶部/底部播放壳层可见性：无操作倒计时后隐藏标题、进度条等。
+    var isChromeVisible by remember { mutableStateOf(true) }
+    // 壳层交互计数器，任意操作重置 4s 隐藏计时。
+    var chromeInteractionKey by remember { mutableIntStateOf(0) }
     val continuousSeekState = rememberContinuousSeekState(
         scope = scope,
         viewModel = viewModel,
@@ -116,6 +130,20 @@ fun TvPlayerRoute(
     val requestSelectedSecondaryMenuFocus: () -> Unit = {
         secondaryMenuFocusRequesters.requestFocusAt(resolveSelectedSecondaryMenuIndex(state))
     }
+    /**
+     * 显示顶部/底部播放壳层，并重置无操作隐藏倒计时。
+     */
+    val revealChrome: () -> Unit = {
+        isChromeVisible = true
+        chromeInteractionKey++
+    }
+    /**
+     * 记录菜单交互，同时保持壳层计时与菜单计时同步刷新。
+     */
+    val bumpMenuInteraction: () -> Unit = {
+        menuInteractionKey++
+        revealChrome()
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.observePlayerState()
@@ -127,14 +155,39 @@ fun TvPlayerRoute(
         viewModel.loadDanmakuForCurrentRequest()
     }
 
-    LaunchedEffect(state.isMenuVisible) {
+    LaunchedEffect(state.isMenuVisible, state.selectedTopMenu, state.allEpisodes, state.availableSources) {
         if (state.isMenuVisible) {
-            // 菜单展开后把焦点交给当前一级菜单，保证上下行导航立即可用。
-            requestSelectedPrimaryMenuFocus()
+            // 展开后优先落到当前二级菜单（播放列表/线路），一级菜单用下键回落。
+            // 二级无项时再落一级，避免“上键无响应”。
+            val secondaryReady = when (state.selectedTopMenu) {
+                PLAYER_MENU_PLAYLIST -> state.allEpisodes.isNotEmpty()
+                PLAYER_MENU_SOURCES -> state.availableSources.isNotEmpty()
+                PLAYER_MENU_ASPECT_RATIO,
+                PLAYER_MENU_SPEED,
+                PLAYER_MENU_OTHER,
+                -> true
+                else -> false
+            }
+            if (secondaryReady) {
+                requestSelectedSecondaryMenuFocus()
+            } else {
+                requestSelectedPrimaryMenuFocus()
+            }
         } else {
+            // 菜单关闭后重新露出进度条/标题，并启动 4s 无操作隐藏。
+            revealChrome()
             // 首次进入全屏或菜单关闭后，根节点必须重新获焦，左右键才能稳定执行 seek。
             runCatching { playerRootFocusRequester.requestFocus() }
         }
+    }
+
+    // 顶部标题/底部进度条：无操作 4 秒后隐藏；菜单打开时由菜单层接管底部。
+    LaunchedEffect(isChromeVisible, state.isMenuVisible, state.isPlayerLoading, chromeInteractionKey) {
+        if (!isChromeVisible || state.isMenuVisible || state.isPlayerLoading) {
+            return@LaunchedEffect
+        }
+        delay(PLAYER_MENU_AUTO_HIDE_MS)
+        isChromeVisible = false
     }
 
     LaunchedEffect(
@@ -166,10 +219,14 @@ fun TvPlayerRoute(
         }
     }
 
-    val shouldShowTopDecorations = state.isMenuVisible || !state.isPlayerLoading
-    val shouldShowPlaybackChrome = !state.isMenuVisible && !state.isPlayerLoading
+    // 菜单打开时保留顶栏；菜单关闭后跟随壳层倒计时显示/隐藏。
+    val shouldShowTopDecorations =
+        !state.isPlayerLoading && (state.isMenuVisible || isChromeVisible)
+    // 底部进度条/提示仅在菜单关闭且壳层可见时展示。
+    val shouldShowPlaybackChrome =
+        isChromeVisible && !state.isMenuVisible && !state.isPlayerLoading
     val shouldShowCenterPlayButton =
-        !state.isMenuVisible && !state.isPlayerLoading && !state.isPlaybackPlaying
+        isChromeVisible && !state.isMenuVisible && !state.isPlayerLoading && !state.isPlaybackPlaying
 
     Box(
         modifier = Modifier
@@ -198,10 +255,14 @@ fun TvPlayerRoute(
                     }
                     Key.DirectionCenter,
                     Key.Enter,
+                    Key.NumPadEnter,
+                    Key.Spacebar,
                     -> {
                         if (state.isMenuVisible) {
                             return@onPreviewKeyEvent false
                         }
+                        // 先露出壳层再切播放，避免隐藏态误以为无响应。
+                        revealChrome()
                         // Flutter TV 全屏页菜单未弹出时，确认键只切换播放暂停。
                         scope.launch { viewModel.togglePlayPause() }
                         true
@@ -210,6 +271,7 @@ fun TvPlayerRoute(
                         if (state.isMenuVisible) {
                             return@onPreviewKeyEvent false
                         }
+                        revealChrome()
                         if (event.isSeekRepeatEvent()) {
                             // 原生 repeat 只维持长按态，实际连续节拍由内部 100ms tick 控制。
                             return@onPreviewKeyEvent true
@@ -225,6 +287,7 @@ fun TvPlayerRoute(
                         if (state.isMenuVisible) {
                             return@onPreviewKeyEvent false
                         }
+                        revealChrome()
                         if (event.isSeekRepeatEvent()) {
                             // 原生 repeat 只消费不下发 seek，避免叠加内部 tick 后过快跳动。
                             return@onPreviewKeyEvent true
@@ -249,18 +312,14 @@ fun TvPlayerRoute(
                 }
             }
             .focusable()
-            .padding(36.dp),
-    ) {
+                ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    color = TvTokens.Surface.copy(alpha = 0.34f),
-                    shape = RoundedCornerShape(18.dp),
-                ),
+                .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            // 真实播放器平台视图必须稳定放在最底层，菜单和遥控器壳层只叠加在其上方。
+            // 全屏真铺：不留外边距/圆角裁切，避免视频四周出现黑边框。
             playerSurface(state)
         }
 
@@ -307,49 +366,47 @@ fun TvPlayerRoute(
         }
 
         if (state.isMenuVisible) {
-            // 菜单 5s 无操作自动隐藏 (对齐 Flutter _menuAutoHideDuration)
+            // 菜单 4s 无操作自动隐藏。
             LaunchedEffect(state.isMenuVisible, menuInteractionKey) {
                 if (state.isMenuVisible) {
-                    delay(5000L)
+                    delay(PLAYER_MENU_AUTO_HIDE_MS)
                     viewModel.closeMenu()
                 }
             }
+            // 对齐 Flutter：二级菜单在上、一级菜单在下，底部渐变面板承载。
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .onPreviewKeyEvent {
-                        menuInteractionKey++ // 任意按键重置倒计时
+                        // 任意按键重置菜单 4s 隐藏倒计时。
+                        bumpMenuInteraction()
                         false
                     }
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF111822).copy(alpha = 0.72f),
+                                Color(0xFF060A10).copy(alpha = 0.78f),
+                            ),
+                        ),
+                    )
+                    // start=0：播放线路二级列表可贴左；一级菜单单独补 start/end 安全边。
+                    .padding(start = 0.dp, top = 28.dp, end = 0.dp, bottom = 30.dp),
+                verticalArrangement = Arrangement.spacedBy(30.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PLAYER_PRIMARY_MENU_ITEMS.forEachIndexed { index, menu ->
-                        val primaryMenuModifier = if (menu == PLAYER_MENU_OTHER) {
-                            Modifier.testTag("tv-player-menu-other")
-                        } else {
-                            Modifier
-                        }
-                        TvPlayerMenuChip(
-                            label = menu,
-                            selected = state.selectedTopMenu == menu,
-                            modifier = primaryMenuModifier.focusRequester(primaryMenuFocusRequesters[index]),
-                            onFocused = { viewModel.openMenu(menu) },
-                            onArrowUp = requestSelectedSecondaryMenuFocus,
-                            onArrowDown = requestSelectedPrimaryMenuFocus,
-                            onClick = { viewModel.openMenu(menu) },
-                        )
-                    }
-                }
                 when (state.selectedTopMenu) {
                     PLAYER_MENU_PLAYLIST -> {
                         TvPlayerPlaylistMenu(
                             episodes = state.allEpisodes,
                             currentEpisodeId = state.playbackRequest?.episodeId.orEmpty(),
                             focusRequester = secondaryMenuFocusRequesters.firstOrNull(),
+                            focusRequesters = secondaryMenuFocusRequesters,
                             onArrowDown = requestSelectedPrimaryMenuFocus,
-                            onEpisodeSelected = { /* TODO: 线路切换后重新加载 */ },
+                            onArrowUp = requestSelectedSecondaryMenuFocus,
+                            onEpisodeSelected = { episodeId ->
+                                scope.launch { viewModel.selectEpisode(episodeId) }
+                            },
                         )
                     }
                     PLAYER_MENU_SOURCES -> {
@@ -358,7 +415,10 @@ fun TvPlayerRoute(
                             currentSourceId = state.playbackRequest?.sourceId.orEmpty(),
                             focusRequester = secondaryMenuFocusRequesters.firstOrNull(),
                             onArrowDown = requestSelectedPrimaryMenuFocus,
-                            onSourceSelected = { /* TODO: 线路切换后重新加载 */ },
+                            onArrowUp = requestSelectedSecondaryMenuFocus,
+                            onSourceSelected = { sourceId ->
+                                scope.launch { viewModel.selectSource(sourceId) }
+                            },
                         )
                     }
                     PLAYER_MENU_ASPECT_RATIO -> {
@@ -410,9 +470,31 @@ fun TvPlayerRoute(
                         )
                     }
                 }
+                // 一级菜单保留左右安全边；二级线路列表允许贴边。
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.padding(start = 32.dp, end = 32.dp),
+                ) {
+                    PLAYER_PRIMARY_MENU_ITEMS.forEachIndexed { index, menu ->
+                        val primaryMenuModifier = if (menu == PLAYER_MENU_OTHER) {
+                            Modifier.testTag("tv-player-menu-other")
+                        } else {
+                            Modifier
+                        }
+                        TvPlayerMenuChip(
+                            label = menu,
+                            selected = state.selectedTopMenu == menu,
+                            modifier = primaryMenuModifier.focusRequester(primaryMenuFocusRequesters[index]),
+                            onFocused = { viewModel.openMenu(menu) },
+                            onArrowUp = requestSelectedSecondaryMenuFocus,
+                            onArrowDown = requestSelectedPrimaryMenuFocus,
+                            onClick = { viewModel.openMenu(menu) },
+                        )
+                    }
+                }
             }
         } else {
-            if (!state.isMenuVisible && !state.isPlayerLoading) {
+            if (shouldShowPlaybackChrome) {
                 val progressPositionMs = resolveBottomProgressPositionMs(state)
                 val cachedProgressSegments = resolvePlayerCachedProgressSegments(
                     cachedRanges = state.cachedRanges,
@@ -489,30 +571,48 @@ private fun TvPlayerPlaylistMenu(
     episodes: List<PlaybackEpisode>,
     currentEpisodeId: String,
     focusRequester: FocusRequester?,
+    focusRequesters: List<FocusRequester> = emptyList(),
     onArrowDown: () -> Unit,
+    onArrowUp: (() -> Unit)? = null,
     onEpisodeSelected: (String) -> Unit,
 ) {
     if (episodes.isEmpty()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(start = 32.dp),
+        ) {
+            val emptyModifier = (focusRequester ?: focusRequesters.firstOrNull())?.let {
+                Modifier.focusRequester(it)
+            } ?: Modifier
             TvPlayerMenuChip(
                 label = "暂无选集",
                 selected = true,
-                modifier = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
+                modifier = emptyModifier,
                 onArrowDown = onArrowDown,
+                onArrowUp = onArrowUp,
                 onClick = {},
             )
         }
     } else {
         val groups = episodes.chunked(20)
-        var selectedGroup by remember { mutableIntStateOf(0) }
+        // 默认落在当前集所在分组，避免打开菜单后上键无目标。
+        val initialGroup = remember(episodes, currentEpisodeId) {
+            val index = episodes.indexOfFirst { episode -> episode.id == currentEpisodeId }
+                .takeIf { value -> value >= 0 } ?: 0
+            index / 20
+        }
+        var selectedGroup by remember(initialGroup) { mutableIntStateOf(initialGroup) }
         val safeGroup = selectedGroup.coerceIn(0, groups.lastIndex)
         val group = groups[safeGroup]
-        val boundaryFocusRequester = remember { FocusRequester() }
-        // 分组切换后落焦到新组首集
-        LaunchedEffect(safeGroup) {
-            if (groups.size > 1) boundaryFocusRequester.requestFocus()
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        val currentInGroupIndex = group.indexOfFirst { episode -> episode.id == currentEpisodeId }
+            .takeIf { value -> value >= 0 } ?: 0
+        // 当前集优先挂 secondaryMenuFocusRequesters[0]，保证一级菜单上键可进二级。
+        val currentFocusRequester = focusRequester
+            ?: focusRequesters.firstOrNull()
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(start = 32.dp),
+        ) {
             if (groups.size > 1) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(groups.size) { gi ->
@@ -522,6 +622,8 @@ private fun TvPlayerPlaylistMenu(
                             label = "$start-$end",
                             selected = gi == safeGroup,
                             onClick = { selectedGroup = gi },
+                            onArrowDown = onArrowDown,
+                            onArrowUp = onArrowUp,
                             onArrowLeft = if (gi == 0) { { selectedGroup = groups.lastIndex } } else null,
                             onArrowRight = if (gi == groups.lastIndex) { { selectedGroup = 0 } } else null,
                         )
@@ -533,11 +635,20 @@ private fun TvPlayerPlaylistMenu(
                     val ep = group[i]
                     val isFirst = i == 0
                     val isLast = i == group.lastIndex
+                    val isCurrent = ep.id == currentEpisodeId
+                    val itemModifier = when {
+                        isCurrent && currentFocusRequester != null ->
+                            Modifier.focusRequester(currentFocusRequester)
+                        isFirst && currentFocusRequester != null && currentInGroupIndex == 0 ->
+                            Modifier.focusRequester(currentFocusRequester)
+                        else -> Modifier
+                    }
                     TvPlayerMenuChip(
                         label = ep.title.ifBlank { "第${i + 1}集" },
-                        selected = ep.id == currentEpisodeId,
-                        modifier = if (isFirst) Modifier.focusRequester(boundaryFocusRequester) else Modifier,
+                        selected = isCurrent,
+                        modifier = itemModifier,
                         onArrowDown = onArrowDown,
+                        onArrowUp = onArrowUp,
                         onClick = { onEpisodeSelected(ep.id) },
                         onArrowLeft = if (isFirst && safeGroup > 0) { { selectedGroup = safeGroup - 1 } } else null,
                         onArrowRight = if (isLast && safeGroup < groups.lastIndex) { { selectedGroup = safeGroup + 1 } } else null,
@@ -560,6 +671,7 @@ private fun TvPlayerSourceMenu(
     currentSourceId: String,
     focusRequester: FocusRequester?,
     onArrowDown: () -> Unit,
+    onArrowUp: (() -> Unit)? = null,
     onSourceSelected: (String) -> Unit,
 ) {
     if (sources.isEmpty()) {
@@ -569,18 +681,86 @@ private fun TvPlayerSourceMenu(
                 selected = true,
                 modifier = focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier,
                 onArrowDown = onArrowDown,
+                onArrowUp = onArrowUp,
                 onClick = {},
             )
         }
     } else {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 视觉贴右屏边：列表 viewport 拉满右侧；仅滚动到末项时用 contentPadding.end 留安全边。
+        // 获焦项滚动进视口，配合锚点放大，避免焦点裁切遮挡。
+        val sourceChipOverflowY = PLAYER_MENU_CHIP_HEIGHT * ((PLAYER_MENU_FOCUSED_SCALE - 1f) / 2f)
+        // 二级线路菜单：上下回到一级再下探时保持横向偏移，不复位。
+        val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+        val scrollScope = rememberCoroutineScope()
+        var activeFocusedIndex by remember {
+            mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
+        }
+        LazyRow(
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(
+                // 与一级菜单左缘对齐。
+                start = 0.dp,
+                // 滚到最右时末卡与屏边保留边距；中途滚动允许贴边裁切未获焦项。
+                end = PLAYER_MENU_LIST_END_PADDING,
+                top = sourceChipOverflowY,
+                bottom = sourceChipOverflowY,
+            ),
+            // 上下回到一级再下探时清会话，保持横向偏移不复位。
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(PLAYER_MENU_CHIP_HEIGHT + sourceChipOverflowY * 2)
+                .focusProperties {
+                    onEnter = {
+                        val isVerticalEnter =
+                            requestedFocusDirection == FocusDirection.Up ||
+                                requestedFocusDirection == FocusDirection.Down
+                        if (isVerticalEnter) {
+                            activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+                        }
+                    }
+                }
+                .focusGroup(),
+        ) {
             items(sources.size) { i ->
                 val src = sources[i]
+                val isFirst = i == 0
+                val isLast = i == sources.lastIndex
                 TvPlayerMenuChip(
                     label = src.name.ifBlank { "线路${i + 1}" },
                     selected = src.id == currentSourceId,
-                    modifier = if (i == 0 && focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier,
+                    // 首项左锚向右扩，末项右锚向左扩，中间居中，避免左右裁切抖动。
+                    focusScaleOrigin = when {
+                        isFirst && isLast -> TransformOrigin.Center
+                        isFirst -> TransformOrigin(0f, 0.5f)
+                        isLast -> TransformOrigin(1f, 0.5f)
+                        else -> TransformOrigin.Center
+                    },
+                    modifier = (if (isFirst && focusRequester != null) {
+                        Modifier.focusRequester(focusRequester)
+                    } else {
+                        Modifier
+                    }).onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            // 仅同轨左右相邻才滚；从一级菜单下探回来保持原横向位置。
+                            val shouldScroll =
+                                TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                    previousActiveIndex = activeFocusedIndex,
+                                    newlyFocusedIndex = i,
+                                )
+                            activeFocusedIndex = i
+                            if (shouldScroll) {
+                                scrollPlayerMenuChipIntoView(
+                                    listState = listState,
+                                    index = i,
+                                    itemCount = sources.size,
+                                    scrollScope = scrollScope,
+                                )
+                            }
+                        }
+                    },
                     onArrowDown = onArrowDown,
+                    onArrowUp = onArrowUp,
                     onClick = { onSourceSelected(src.id) },
                 )
             }
@@ -1076,8 +1256,12 @@ private fun resolveTopDecorationTitle(request: PlaybackRequest?): String {
     if (request == null) {
         return "IvyTV | 当前播放"
     }
-    val episodeLabel = request.episodeId.ifBlank { "当前集" }
-    return "${request.videoId} | $episodeLabel"
+    // 对齐 Flutter TV：左侧展示「片名 | 集数标题」，不暴露内部 videoId。
+    val title = request.videoTitle.trim().ifBlank { request.videoId.trim() }.ifBlank { "IvyTV" }
+    val episodeLabel = request.episodeTitle.trim().ifBlank {
+        request.episodeId.trim().ifBlank { "当前集" }
+    }
+    return "$title | $episodeLabel"
 }
 
 /**
@@ -1326,28 +1510,34 @@ private fun TvPlayerBottomProgressBar(
         modifier = modifier
             .testTag("tv-player-bottom-progress")
             .fillMaxWidth()
-            .padding(start = 34.dp, end = 34.dp, bottom = 26.dp),
+            .padding(start = 34.dp, end = 34.dp, bottom = 26.dp)
+            // 固定行高，保证播放图标/时间/进度条/全屏图标同一基线居中。
+            .height(BOTTOM_PROGRESS_ROW_HEIGHT),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = if (isPlaying) "Ⅱ" else "▶",
-            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.width(18.dp),
+            style = MaterialTheme.typography.titleSmall,
             color = Color.White,
+            textAlign = TextAlign.Center,
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(BOTTOM_PROGRESS_INNER_GAP))
         Text(
             text = formatPlayerDuration(safePositionMs),
             modifier = Modifier
                 .testTag("tv-player-bottom-current-time-slot")
                 .width(BOTTOM_PROGRESS_TIME_SLOT_WIDTH),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             color = Color.White.copy(alpha = 0.96f),
+            maxLines = 1,
         )
-        Spacer(modifier = Modifier.width(14.dp))
+        // 时间与进度条间距收紧，避免视觉“空一截”。
+        Spacer(modifier = Modifier.width(BOTTOM_PROGRESS_TIME_TRACK_GAP))
         BoxWithConstraints(
             modifier = Modifier
                 .weight(1f)
-                .height(18.dp)
+                .fillMaxHeight()
                 .testTag("tv-player-bottom-progress-track"),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -1394,15 +1584,25 @@ private fun TvPlayerBottomProgressBar(
                     ),
             )
         }
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(BOTTOM_PROGRESS_TIME_TRACK_GAP))
         Text(
             text = formatPlayerDuration(safeDurationMs),
             modifier = Modifier
                 .testTag("tv-player-bottom-total-time-slot")
                 .width(BOTTOM_PROGRESS_TIME_SLOT_WIDTH),
             textAlign = TextAlign.End,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             color = Color.White.copy(alpha = 0.96f),
+            maxLines = 1,
+        )
+        Spacer(modifier = Modifier.width(BOTTOM_PROGRESS_INNER_GAP))
+        // Flutter TV 底部进度条右侧保留展开/全屏示意图标。
+        Text(
+            text = "⛶",
+            modifier = Modifier.width(18.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.92f),
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -1424,6 +1624,12 @@ private fun TvPlayerMenuChip(
     label: String,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    /**
+     * 获焦放大锚点。
+     *
+     * 列表首项用左锚、末项用右锚，放大时向列表内侧扩展，避免贴边裁切。
+     */
+    focusScaleOrigin: TransformOrigin = TransformOrigin.Center,
     onFocused: (() -> Unit)? = null,
     onArrowUp: (() -> Unit)? = null,
     onArrowDown: (() -> Unit)? = null,
@@ -1443,17 +1649,23 @@ private fun TvPlayerMenuChip(
         label = "tvPlayerMenuChipScale",
     )
     val shape = RoundedCornerShape(10.dp)
+    // 与详情页线路/选集一致：选中主题底；焦点只加白边，不换背景。
     val backgroundColor = when {
         selected -> TvTokens.Accent
-        isFocused -> TvTokens.FocusFill
         else -> TvTokens.Surface.copy(alpha = 0.88f)
     }
 
     Box(
         modifier = modifier
-            .height(46.dp)
+            .height(PLAYER_MENU_CHIP_HEIGHT)
             .widthIn(min = 108.dp)
-            .scale(scale)
+            // 布局占位固定，按锚点向内侧视觉放大，配合列表 end/top padding 不裁切不抖动。
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = focusScaleOrigin
+                clip = false
+            }
             .clip(shape)
             .background(backgroundColor)
             .onFocusChanged { focusState ->
@@ -1466,6 +1678,7 @@ private fun TvPlayerMenuChip(
                 if (
                     event.key == Key.DirectionCenter ||
                     event.key == Key.Enter ||
+                    event.key == Key.NumPadEnter ||
                     event.key == Key.Spacebar
                 ) {
                     val action = when (event.type) {
@@ -1599,6 +1812,60 @@ private fun resolvePlaylistMenuLabel(playbackRequest: PlaybackRequest?): String 
     return episodeLabel ?: "当前播放"
 }
 
+
+/**
+ * 播放器二级菜单 chip 获焦后滚进可视安全区。
+ *
+ * 末项对齐列表末尾，利用 end contentPadding 形成贴边滚动后的右边距；
+ * 其余项尽量完整露出，避免焦点放大被右边缘裁切。
+ *
+ * @param listState 横向列表状态。
+ * @param index 获焦下标。
+ * @param itemCount 列表总数。
+ * @param scrollScope 滚动协程作用域。
+ */
+private fun scrollPlayerMenuChipIntoView(
+    listState: LazyListState,
+    index: Int,
+    itemCount: Int,
+    scrollScope: CoroutineScope,
+) {
+    if (itemCount <= 0 || index !in 0 until itemCount) {
+        return
+    }
+    scrollScope.launch {
+        val lastIndex = itemCount - 1
+        if (index >= lastIndex) {
+            // 滚到最右：末卡落在 end padding 内侧，视觉有边距。
+            listState.animateScrollToItem(lastIndex)
+            return@launch
+        }
+        val visible = listState.layoutInfo.visibleItemsInfo
+        val target = visible.firstOrNull { info -> info.index == index }
+        val viewportEnd = listState.layoutInfo.viewportEndOffset
+        val viewportStart = listState.layoutInfo.viewportStartOffset
+        if (target == null) {
+            listState.animateScrollToItem(index)
+            return@launch
+        }
+        // 右侧被裁或贴边过紧时，向左推进一格，给获焦放大留空。
+        val rightOverflow = target.offset + target.size - viewportEnd
+        val leftOverflow = viewportStart - target.offset
+        when {
+            rightOverflow > 0 -> {
+                val nextFirst = (listState.firstVisibleItemIndex + 1).coerceAtMost(index)
+                listState.animateScrollToItem(nextFirst)
+            }
+            leftOverflow > 0 -> {
+                listState.animateScrollToItem(index)
+            }
+        }
+    }
+}
+
+/** 全屏播放器底部按钮组无操作自动隐藏时长。 */
+private const val PLAYER_MENU_AUTO_HIDE_MS = 4_000L
+
 /** 连续 seek 进入长按态前的短按保护时间。 */
 private const val CONTINUOUS_SEEK_START_DELAY_MS = 250L
 
@@ -1614,8 +1881,34 @@ private const val PLAYER_MENU_FOCUSED_SCALE = 1.08f
 /** 播放器菜单获焦放大动画时长。 */
 private const val PLAYER_MENU_FOCUS_ANIMATION_MS = 140
 
+/** 播放器菜单 chip 固定高度。 */
+private val PLAYER_MENU_CHIP_HEIGHT = 46.dp
+
+/**
+ * 线路 chip 水平安全宽度估算。
+ *
+ * minWidth 只有 108.dp，宽文案实际更宽；用于获焦溢出估算。
+ */
+private val PLAYER_MENU_CHIP_SAFE_WIDTH = 160.dp
+
+/**
+ * 二级线路列表滚到最右时的 end 安全边。
+ *
+ * 列表 viewport 贴右屏边；仅末项依赖此 padding 与屏边拉开距离。
+ */
+private val PLAYER_MENU_LIST_END_PADDING = 32.dp
+
+/** 底部进度条整行高度，图标/时间/轨道垂直居中共用。 */
+private val BOTTOM_PROGRESS_ROW_HEIGHT = 28.dp
+
 /** 底部进度条左右时间槽位宽度。 */
-private val BOTTOM_PROGRESS_TIME_SLOT_WIDTH = 78.dp
+private val BOTTOM_PROGRESS_TIME_SLOT_WIDTH = 56.dp
+
+/** 播放图标/全屏图标与相邻时间的间距。 */
+private val BOTTOM_PROGRESS_INNER_GAP = 6.dp
+
+/** 时间数字与进度条之间的间距。 */
+private val BOTTOM_PROGRESS_TIME_TRACK_GAP = 8.dp
 
 /** 弹幕覆盖层顶部安全间距。 */
 private val DANMAKU_OVERLAY_TOP_PADDING = 72.dp

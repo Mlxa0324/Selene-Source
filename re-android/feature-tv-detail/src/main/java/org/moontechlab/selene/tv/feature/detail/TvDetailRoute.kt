@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +36,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,6 +73,14 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
+import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
@@ -104,6 +114,7 @@ private val NcatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("
  * @param onHistoryClick 历史入口回调。
  * @param onExitClick 退出详情回调。
  * @param onSearchClick 搜索入口回调。
+ * @param onRecommendClick 相关推荐点击回调。
  * @param playerSurface 预览播放器内容。
  */
 @Composable
@@ -119,6 +130,7 @@ fun TvDetailRoute(
     onHistoryClick: (() -> Unit)? = null,
     onExitClick: (() -> Unit)? = null,
     onSearchClick: (() -> Unit)? = null,
+    onRecommendClick: ((TvVideoCard) -> Unit)? = null,
     playerSurface: (@Composable () -> Unit)? = null,
 ) {
     val detail = state.detail
@@ -183,7 +195,11 @@ fun TvDetailRoute(
     ) {
         LazyListState()
     }
-    val recommendListState = rememberLazyListState()
+    val recommendListState = rememberSaveable(
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyListState.Saver,
+    ) { LazyListState() }
     val detailScrollState = rememberScrollState()
     val detailScrollScope = rememberCoroutineScope()
 
@@ -263,6 +279,7 @@ fun TvDetailRoute(
                     focusTargets = focusTargets,
                     listState = recommendListState,
                     hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
+                    onRecommendClick = onRecommendClick,
                 )
             }
 
@@ -374,16 +391,24 @@ private fun NcatDetailTopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "网飞猫",
+                text = "IvyTV",
                 color = Color.White,
-                fontSize = 20.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 0.6.sp,
             )
-            Spacer(Modifier.width(15.dp))
+            Spacer(Modifier.width(14.dp))
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(18.dp)
+                    .background(Color.White.copy(alpha = 0.18f)),
+            )
+            Spacer(Modifier.width(14.dp))
             Text(
-                text = "按返回键返回上一页 | 全屏时[向下键]可进行播放设置（内核，倍数，其它）",
+                text = "按返回键返回上一页  ·  全屏时按向下键打开播放设置",
                 color = NcatMutedText,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -395,23 +420,12 @@ private fun NcatDetailTopBar(
         ) {
             NcatTopPill(
                 label = "⌕ 搜索",
-                width = 132.dp,
+                width = 88.dp,
                 focusRequester = focusTargets.search,
                 modifier = Modifier.focusProperties {
-                    right = focusTargets.login
                     down = focusTargets.player
                 },
                 onClick = { onSearchClick?.invoke() },
-            )
-            NcatTopPill(
-                label = "♟ 立即登录",
-                width = 164.dp,
-                focusRequester = focusTargets.login,
-                modifier = Modifier.focusProperties {
-                    left = focusTargets.search
-                    down = focusTargets.fullscreen
-                },
-                onClick = {},
             )
             Text(
                 text = remember { LocalTime.now().format(NcatTimeFormatter) },
@@ -439,28 +453,13 @@ private fun NcatTopPill(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    TvFocusableCard(
-        modifier = modifier
-            .height(36.dp)
-            .width(width),
-        focusRequesters = listOf(focusRequester),
-        onPressed = onClick,
+    NcatPillFocusButton(
+        modifier = modifier.height(36.dp).width(width),
+        focusRequester = focusRequester,
+        cornerRadius = 19.dp,
+        onClick = onClick,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF343840), RoundedCornerShape(19.dp))
-                .padding(horizontal = 15.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-            )
-        }
+        Text(text = label, color = Color.White.copy(alpha = 0.88f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -648,7 +647,7 @@ private fun NcatPreviewPlaceholder(
                 fontWeight = FontWeight.ExtraBold,
             )
             Text(
-                text = "网飞猫",
+                text = "IvyTV",
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Black,
@@ -826,42 +825,31 @@ private fun NcatInfoPanel(
         ) {
             NcatActionTile(
                 label = "全屏",
-                icon = "▢",
                 selected = false,
                 focusRequester = focusTargets.fullscreen,
                 modifier = Modifier.focusProperties {
-                    up = focusTargets.login
+                    up = focusTargets.search
                     left = focusTargets.player
                     right = focusTargets.favorite
                     down = currentSourceFocusRequester ?: FocusRequester.Default
                 },
                 onPressed = { onPlayPressed?.invoke() },
+                iconContent = { NcatFullscreenGlyph(modifier = Modifier.size(20.dp), color = Color.White) },
             )
             NcatActionTile(
                 label = if (state.isFavorite) "已收藏" else "收藏",
-                icon = "♥",
                 selected = state.isFavorite,
                 focusRequester = focusTargets.favorite,
                 modifier = Modifier.focusProperties {
-                    up = focusTargets.login
+                    up = focusTargets.search
                     left = focusTargets.fullscreen
-                    right = focusTargets.feedback
+                    right = focusTargets.favorite
                     down = currentSourceFocusRequester ?: FocusRequester.Default
                 },
                 onPressed = { onFavoriteToggle?.invoke() },
-            )
-            NcatActionTile(
-                label = "反馈",
-                icon = "▰",
-                selected = false,
-                focusRequester = focusTargets.feedback,
-                modifier = Modifier.focusProperties {
-                    up = focusTargets.login
-                    left = focusTargets.favorite
-                    right = focusTargets.feedback
-                    down = currentSourceFocusRequester ?: FocusRequester.Default
+                iconContent = {
+                    NcatFavoriteGlyph(modifier = Modifier.size(20.dp), favorited = state.isFavorite)
                 },
-                onPressed = {},
             )
         }
     }
@@ -908,39 +896,41 @@ private fun NcatMetaBadge(
 @Composable
 private fun NcatActionTile(
     label: String,
-    icon: String,
     selected: Boolean,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
+    icon: String? = null,
+    iconContent: (@Composable () -> Unit)? = null,
     onPressed: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val background = if (selected || isFocused) TvTokens.Accent else NcatSurface
-    val borderColor = if (isFocused) Color.White else Color.Transparent
+    val background = if (isFocused) NcatSurface.copy(alpha = 0.95f) else NcatSurface
+    val borderColor = when {
+        isFocused -> Color.White
+        selected -> Color.White.copy(alpha = 0.22f)
+        else -> Color.White.copy(alpha = 0.06f)
+    }
     Column(
         modifier = modifier
-            .width(61.dp)
-            .height(68.dp)
+            .width(72.dp)
+            .height(72.dp)
             .background(background, RoundedCornerShape(NcatRadius))
-            .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(NcatRadius))
+            .border(BorderStroke(if (isFocused) 2.dp else 1.dp, borderColor), RoundedCornerShape(NcatRadius))
             .focusRequester(focusRequester)
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-                if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
-                    onPressed()
-                    true
-                } else {
-                    false
-                }
+                if (event.key == Key.Enter || event.key == Key.DirectionCenter || event.key == Key.NumPadEnter || event.key == Key.Spacebar) {
+                    onPressed(); true
+                } else false
             }
             .padding(vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(text = icon, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        if (iconContent != null) iconContent() else if (icon != null) Text(text = icon, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(5.dp))
         Text(text = label, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
@@ -968,6 +958,7 @@ private fun NcatSourceRail(
     onSourceSelected: ((String) -> Unit)?,
 ) {
     val scrollScope = rememberCoroutineScope()
+    var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     NcatSectionHeader(
         title = "切换线路",
         hint = "遇播放卡顿，音画不同步或无法播放时，请切换播放线路或播放内核",
@@ -990,7 +981,7 @@ private fun NcatSourceRail(
     LazyRow(
         state = listState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+        contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
         modifier = Modifier.height(77.dp),
     ) {
         items(sourceOptions.size, key = { index -> sourceOptions[index].sourceId }) { index ->
@@ -1010,13 +1001,19 @@ private fun NcatSourceRail(
                     }
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
-                            // 线路获焦时推动横向列表，避免焦点停在屏幕外。
-                            scrollDetailOptionIntoView(
-                                listState = listState,
-                                focusedIndex = index,
-                                itemCount = sourceOptions.size,
-                                scrollScope = scrollScope,
+                            val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                previousActiveIndex = activeFocusedIndex,
+                                newlyFocusedIndex = index,
                             )
+                            activeFocusedIndex = index
+                            if (shouldScroll) {
+                                scrollDetailOptionIntoView(
+                                    listState = listState,
+                                    focusedIndex = index,
+                                    itemCount = sourceOptions.size,
+                                    scrollScope = scrollScope,
+                                )
+                            }
                         }
                     },
                 onPressed = { onSourceSelected?.invoke(option.sourceId) },
@@ -1067,19 +1064,6 @@ private fun NcatSourceCard(
                 }
             },
     ) {
-        if (option.episodeCount >= 20) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .background(
-                        color = if (selected) Color(0xFFD0171D) else Color(0xFFB73138),
-                        shape = RoundedCornerShape(topStart = NcatRadius, bottomEnd = 1.dp),
-                    )
-                    .padding(horizontal = 7.dp, vertical = 3.dp),
-            ) {
-                Text(text = "待加速", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1135,6 +1119,7 @@ private fun NcatEpisodeGroupRail(
     onGroupSelected: ((Int) -> Unit)?,
 ) {
     val scrollScope = rememberCoroutineScope()
+    var activeEpisodeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     val totalCount = groups.sumOf { group -> group.episodes.size }
     val showGroupChoices = shouldShowDetailEpisodeGroupChoices(groups.size)
     NcatSectionHeader(
@@ -1156,7 +1141,7 @@ private fun NcatEpisodeGroupRail(
         LazyRow(
             state = episodeGroupListState,
             horizontalArrangement = Arrangement.spacedBy(17.dp),
-            contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+            contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
             modifier = Modifier.height(61.dp),
         ) {
             items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
@@ -1198,7 +1183,7 @@ private fun NcatEpisodeGroupRail(
     LazyRow(
         state = episodeListState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+        contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
         modifier = Modifier
             .height(62.dp)
             .padding(top = 3.dp),
@@ -1224,13 +1209,19 @@ private fun NcatEpisodeGroupRail(
                     }
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
-                            // 选集获焦时推动组内横向列表，保留左侧安全留白。
-                            scrollDetailOptionIntoView(
-                                listState = episodeListState,
-                                focusedIndex = index,
-                                itemCount = selectedGroup.episodes.size,
-                                scrollScope = scrollScope,
+                            val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                previousActiveIndex = activeEpisodeFocusedIndex,
+                                newlyFocusedIndex = index,
                             )
+                            activeEpisodeFocusedIndex = index
+                            if (shouldScroll) {
+                                scrollDetailOptionIntoView(
+                                    listState = episodeListState,
+                                    focusedIndex = index,
+                                    itemCount = selectedGroup.episodes.size,
+                                    scrollScope = scrollScope,
+                                )
+                            }
                         }
                     },
                 onPressed = { onEpisodeSelected?.invoke(episode.episodeId) },
@@ -1369,6 +1360,7 @@ private fun NcatEpisodeChip(
  * @param focusTargets 焦点请求器。
  * @param listState 横向列表状态。
  * @param hasEpisodeGroupChoices 是否展示选集分组切换条。
+ * @param onRecommendClick 推荐卡点击回调。
  */
 @Composable
 private fun NcatRecommendRail(
@@ -1376,8 +1368,10 @@ private fun NcatRecommendRail(
     focusTargets: TvDetailFocusTargets,
     listState: LazyListState,
     hasEpisodeGroupChoices: Boolean,
+    onRecommendClick: ((TvVideoCard) -> Unit)? = null,
 ) {
     val scrollScope = rememberCoroutineScope()
+    var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     NcatSectionHeader(
         title = "好片推荐",
         hint = null,
@@ -1386,7 +1380,7 @@ private fun NcatRecommendRail(
     LazyRow(
         state = listState,
         horizontalArrangement = Arrangement.spacedBy(17.dp),
-        contentPadding = PaddingValues(start = 31.dp, end = 31.dp),
+        contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
         modifier = Modifier.height(213.dp),
     ) {
         items(cards.size, key = { index -> cards[index].source + "::" + cards[index].id + "::" + index }) { index ->
@@ -1394,6 +1388,7 @@ private fun NcatRecommendRail(
             NcatRecommendCard(
                 card = card,
                 focusRequester = focusTargets.recommends.getOrNull(index),
+                onPressed = { onRecommendClick?.invoke(card) },
                 modifier = Modifier
                     .focusProperties {
                         up = focusTargets.episodeGroups
@@ -1408,13 +1403,19 @@ private fun NcatRecommendRail(
                     }
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
-                            // 推荐获焦时滚到安全可见区域，沿用详情横向列表策略。
-                            scrollDetailOptionIntoView(
-                                listState = listState,
-                                focusedIndex = index,
-                                itemCount = cards.size,
-                                scrollScope = scrollScope,
+                            val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                previousActiveIndex = activeFocusedIndex,
+                                newlyFocusedIndex = index,
                             )
+                            activeFocusedIndex = index
+                            if (shouldScroll) {
+                                scrollDetailOptionIntoView(
+                                    listState = listState,
+                                    focusedIndex = index,
+                                    itemCount = cards.size,
+                                    scrollScope = scrollScope,
+                                )
+                            }
                         }
                     },
             )
@@ -1434,6 +1435,7 @@ private fun NcatRecommendCard(
     card: TvVideoCard,
     focusRequester: FocusRequester?,
     modifier: Modifier = Modifier,
+    onPressed: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -1459,7 +1461,24 @@ private fun NcatRecommendCard(
                     shape = RoundedCornerShape(7.dp),
                 )
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                .focusable(interactionSource = interactionSource),
+                .focusable(interactionSource = interactionSource)
+                .then(if (onPressed != null) Modifier.ncatClickable(onPressed) else Modifier)
+                .onPreviewKeyEvent { event ->
+                    if (onPressed == null || event.type != KeyEventType.KeyUp) {
+                        return@onPreviewKeyEvent false
+                    }
+                    if (
+                        event.key == Key.Enter ||
+                        event.key == Key.DirectionCenter ||
+                        event.key == Key.NumPadEnter ||
+                        event.key == Key.Spacebar
+                    ) {
+                        onPressed()
+                        true
+                    } else {
+                        false
+                    }
+                },
         ) {
             if (card.posterUrl.isNotBlank()) {
                 AsyncImage(
@@ -1517,7 +1536,7 @@ private fun NcatPosterPlaceholder() {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "网飞猫",
+            text = "IvyTV",
             color = Color(0xFFCACDD2),
             fontSize = 16.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -1548,7 +1567,8 @@ private fun NcatBottomActions(
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
             NcatBottomPill(
-                label = "回到顶部",
+                label = "返回顶部",
+                leadingIcon = { NcatBottomActionGlyph(kind = NcatBottomActionIcon.BackToTop) },
                 focusRequester = focusTargets.backTop,
                 modifier = Modifier.focusProperties {
                     up = focusTargets.recommends.firstOrNull()
@@ -1560,7 +1580,8 @@ private fun NcatBottomActions(
                 onClick = onBackToTop,
             )
             NcatBottomPill(
-                label = "返回上一页",
+                label = "随便看看",
+                leadingIcon = { NcatBottomActionGlyph(kind = NcatBottomActionIcon.RandomBrowse) },
                 focusRequester = focusTargets.random,
                 modifier = Modifier.focusProperties {
                     up = focusTargets.recommends.firstOrNull()
@@ -1588,27 +1609,18 @@ private fun NcatBottomPill(
     label: String,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
+    leadingIcon: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    TvFocusableCard(
-        modifier = modifier
-            .height(36.dp)
-            .width(113.dp),
-        focusRequesters = listOf(focusRequester),
-        onPressed = onClick,
+    NcatPillFocusButton(
+        modifier = modifier.height(36.dp).width(128.dp),
+        focusRequester = focusRequester,
+        cornerRadius = 19.dp,
+        onClick = onClick,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF555963), RoundedCornerShape(19.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                color = Color.White.copy(alpha = 0.64f),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            leadingIcon?.invoke()
+            Text(text = label, color = Color.White.copy(alpha = 0.88f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
@@ -1629,22 +1641,32 @@ private fun NcatSectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 31.dp, end = 31.dp, top = topPadding, bottom = 13.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(start = 33.dp, end = 33.dp, top = topPadding, bottom = 14.dp),
+        // 红竖线与主标题垂直居中对齐，副文案跟随同一中线。
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier
+                // 高度贴近 20sp 加粗主标题视觉字高，避免顶到底看起来偏长。
+                .width(3.dp)
+                .height(18.dp)
+                .background(TvTokens.Accent, RoundedCornerShape(1.5.dp)),
+        )
+        Spacer(Modifier.width(10.dp))
         Text(
             text = title,
             color = Color.White,
             fontSize = 20.sp,
             fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
         )
         if (!hint.isNullOrBlank()) {
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
                 text = hint,
                 color = NcatMutedText,
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1732,6 +1754,97 @@ private fun Modifier.ncatClickable(onPressed: () -> Unit): Modifier {
  * @param itemCount 当前轨道项目总数。
  * @param scrollScope 滚动协程作用域。
  */
+
+@Composable
+private fun NcatPillFocusButton(
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester,
+    cornerRadius: Dp,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(cornerRadius)
+    Box(
+        modifier = modifier
+            .background(brush = Brush.horizontalGradient(listOf(Color(0xFF3A4150), Color(0xFF2B313D))), shape = shape)
+            .border(width = if (isFocused) 2.dp else 1.dp, color = if (isFocused) Color.White else Color.White.copy(alpha = 0.08f), shape = shape)
+            .focusRequester(focusRequester)
+            .focusable(interactionSource = interactionSource)
+            .ncatClickable(onClick)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+                if (event.key == Key.Enter || event.key == Key.DirectionCenter || event.key == Key.NumPadEnter || event.key == Key.Spacebar) {
+                    onClick(); true
+                } else false
+            },
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+private enum class NcatBottomActionIcon { BackToTop, RandomBrowse }
+
+@Composable
+private fun NcatBottomActionGlyph(kind: NcatBottomActionIcon, modifier: Modifier = Modifier.size(16.dp)) {
+    Canvas(modifier = modifier) {
+        val stroke = 1.8.dp.toPx()
+        val color = Color.White.copy(alpha = 0.9f)
+        when (kind) {
+            NcatBottomActionIcon.BackToTop -> {
+                val midX = size.width / 2f
+                drawLine(color, Offset(midX, size.height * 0.78f), Offset(midX, size.height * 0.28f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(midX, size.height * 0.28f), Offset(size.width * 0.28f, size.height * 0.52f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(midX, size.height * 0.28f), Offset(size.width * 0.72f, size.height * 0.52f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.22f, size.height * 0.18f), Offset(size.width * 0.78f, size.height * 0.18f), stroke, StrokeCap.Square)
+            }
+            NcatBottomActionIcon.RandomBrowse -> {
+                drawLine(color, Offset(size.width * 0.18f, size.height * 0.34f), Offset(size.width * 0.72f, size.height * 0.34f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.72f, size.height * 0.34f), Offset(size.width * 0.55f, size.height * 0.18f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.72f, size.height * 0.34f), Offset(size.width * 0.55f, size.height * 0.50f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.82f, size.height * 0.66f), Offset(size.width * 0.28f, size.height * 0.66f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.28f, size.height * 0.66f), Offset(size.width * 0.45f, size.height * 0.50f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.28f, size.height * 0.66f), Offset(size.width * 0.45f, size.height * 0.82f), stroke, StrokeCap.Square)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NcatFavoriteGlyph(modifier: Modifier = Modifier, favorited: Boolean) {
+    val color = if (favorited) TvTokens.Accent else Color.White
+    Canvas(modifier = modifier) {
+        val stroke = 2.dp.toPx(); val width = size.width; val height = size.height
+        val path = Path().apply {
+            moveTo(width * 0.50f, height * 0.88f)
+            cubicTo(width * 0.22f, height * 0.70f, width * 0.06f, height * 0.48f, width * 0.08f, height * 0.30f)
+            cubicTo(width * 0.10f, height * 0.14f, width * 0.24f, height * 0.08f, width * 0.36f, height * 0.12f)
+            cubicTo(width * 0.44f, height * 0.15f, width * 0.48f, height * 0.24f, width * 0.50f, height * 0.30f)
+            cubicTo(width * 0.52f, height * 0.24f, width * 0.56f, height * 0.15f, width * 0.64f, height * 0.12f)
+            cubicTo(width * 0.76f, height * 0.08f, width * 0.90f, height * 0.14f, width * 0.92f, height * 0.30f)
+            cubicTo(width * 0.94f, height * 0.48f, width * 0.78f, height * 0.70f, width * 0.50f, height * 0.88f)
+            close()
+        }
+        if (favorited) drawPath(path = path, color = color, style = Fill)
+        else drawPath(path = path, color = color, style = Stroke(width = stroke, cap = StrokeCap.Square, join = StrokeJoin.Miter))
+    }
+}
+
+@Composable
+private fun NcatFullscreenGlyph(modifier: Modifier = Modifier, color: Color = Color.White) {
+    Canvas(modifier = modifier) {
+        val stroke = 2.dp.toPx(); val arm = size.minDimension * 0.32f; val inset = stroke / 2f
+        drawLine(color, Offset(inset, arm), Offset(inset, inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(inset, inset), Offset(arm, inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(size.width - inset, arm), Offset(size.width - inset, inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(size.width - inset, inset), Offset(size.width - arm, inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(inset, size.height - arm), Offset(inset, size.height - inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(inset, size.height - inset), Offset(arm, size.height - inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(size.width - inset, size.height - arm), Offset(size.width - inset, size.height - inset), stroke, cap = StrokeCap.Square)
+        drawLine(color, Offset(size.width - inset, size.height - inset), Offset(size.width - arm, size.height - inset), stroke, cap = StrokeCap.Square)
+    }
+}
+
 private fun scrollDetailOptionIntoView(
     listState: LazyListState,
     focusedIndex: Int,
@@ -1742,13 +1855,11 @@ private fun scrollDetailOptionIntoView(
         focusedIndex = focusedIndex,
         itemCount = itemCount,
     )
-    if (targetIndex == listState.firstVisibleItemIndex) {
-        // 已在目标视窗，不重复触发滚动动画。
-        return
-    }
+    val alreadyAtTarget = listState.firstVisibleItemIndex == targetIndex &&
+        (targetIndex != 0 || listState.firstVisibleItemScrollOffset == 0)
+    if (alreadyAtTarget) return
     scrollScope.launch {
-        // 与首页海报带保持一致：第 5 个选项起按步长推进。
-        listState.animateScrollToItem(targetIndex)
+        listState.animateScrollToItem(index = targetIndex, scrollOffset = 0)
     }
 }
 
@@ -1810,4 +1921,19 @@ private fun formatSpeed(bytesPerSecond: Long): String {
         return "%.0f KB/s".format(kb)
     }
     return "%.1f MB/s".format(kb / 1024f)
+}
+
+
+/**
+ * 计算固定焦点槽对应的首个可见下标。
+ */
+internal fun resolveDetailPinnedFirstVisibleIndex(
+    focusedIndex: Int,
+    itemCount: Int,
+    pinIndex: Int = 1,
+): Int {
+    if (itemCount <= 0 || focusedIndex <= pinIndex) return 0
+    val safePin = pinIndex.coerceAtLeast(0)
+    val maxFirst = (itemCount - 1 - safePin).coerceAtLeast(0)
+    return (focusedIndex - safePin).coerceIn(0, maxFirst)
 }

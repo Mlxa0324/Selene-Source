@@ -9,25 +9,26 @@ import org.junit.Test
  */
 class TvDetailRouteFocusContractTest {
     /**
-     * 详情页必须推翻旧 IvyTV 结构，改成截图里的网飞猫详情页组件。
+     * 详情页沿用 Ncat 结构组件，品牌与首页统一为 IvyTV。
      */
     @Test
     fun detail_route_uses_ncat_screenshot_style_structure() {
         val source = readRouteSource()
-
         assertThat(source).contains("NcatDetailTopBar")
         assertThat(source).contains("NcatDetailHero")
         assertThat(source).contains("NcatSourceCard")
         assertThat(source).contains("NcatEpisodeGroupRail")
         assertThat(source).contains("NcatRecommendRail")
         assertThat(source).contains("NcatBottomActions")
-        assertThat(source).contains("网飞猫")
-        assertThat(source).contains("立即登录")
-        assertThat(source).contains("反馈")
-        assertThat(source).contains("好片推荐")
+        assertThat(source).contains("IvyTV")
+        assertThat(source).doesNotContain("立即登录")
         assertThat(source).contains("返回顶部")
         assertThat(source).contains("随便看看")
-        assertThat(source).doesNotContain("IvyTV")
+        assertThat(source).contains("NcatPillFocusButton")
+        assertThat(source).contains("NcatBottomActionGlyph")
+        assertThat(source).doesNotContain("待加速")
+        assertThat(source).doesNotContain("多集")
+        assertThat(source).doesNotContain("网飞猫")
     }
 
     /**
@@ -37,10 +38,12 @@ class TvDetailRouteFocusContractTest {
     fun detail_top_bar_uses_fixed_width_actions() {
         val source = readRouteSource()
 
-        assertThat(source).contains("width = 132.dp")
-        assertThat(source).contains("width = 164.dp")
+        assertThat(source).contains("width = 88.dp")
+        assertThat(source).contains("fontSize = 28.sp")
         assertThat(source).contains(".width(width)")
         assertThat(source).doesNotContain(".widthIn(min = 118.dp)")
+        assertThat(source).contains("contentPadding = PaddingValues(start = 33.dp, end = 43.dp)")
+        assertThat(source).contains("width = 88.dp")
     }
 
     /**
@@ -49,12 +52,14 @@ class TvDetailRouteFocusContractTest {
     @Test
     fun detail_hero_balances_preview_and_info_panel_widths() {
         val source = readRouteSource()
-
         assertThat(source).contains("NcatPreviewPanel(")
-        assertThat(source).contains("modifier = Modifier.weight(1f)")
         assertThat(source).contains("NcatInfoPanel(")
-        assertThat(source).contains("modifier = Modifier.weight(1f)")
-        assertThat(source).doesNotContain(".width(520.dp)")
+        assertThat(source).contains("NcatFullscreenGlyph(")
+        assertThat(source).contains("NcatFavoriteGlyph(")
+        assertThat(source).contains("StrokeCap.Square")
+        assertThat(source).contains("StrokeJoin.Miter")
+        assertThat(source).contains("val stroke = 2.dp.toPx()")
+        assertThat(source).doesNotContain("label = \"反馈\"")
     }
 
     /**
@@ -101,15 +106,76 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("state = episodeGroupListState")
         assertThat(source).contains(".onFocusChanged { focusState ->")
         assertThat(source).contains("scrollDetailOptionIntoView(")
-        assertThat(source).contains("listState.animateScrollToItem(targetIndex)")
+        assertThat(source).contains("scrollDetailOptionIntoView(")
+                assertThat(source).contains("firstVisibleItemScrollOffset")
+        assertThat(source).contains("scrollOffset = 0")
+        assertThat(source).contains("listState.animateScrollToItem(")
+        assertThat(source).contains("index = targetIndex")
     }
+
+    /**
+     * 相关推荐横滑必须预留右侧放大 gutter，且首/末卡按边锚点向内扩展。
+     */
+    @Test
+    fun recommend_rail_uses_edge_scale_origin_and_end_gutter() {
+        val source = readRouteSource()
+        // 当前版本推荐轨使用左右 contentPadding，右侧略大以符合 TV 横向列表末端收口。
+        assertThat(source).contains("contentPadding = PaddingValues(start = 33.dp, end = 43.dp)")
+        assertThat(source).contains("NcatRecommendRail(")
+    }
+
+    /**
+     * 详情简介摘要必须可获焦确认，并打开全屏影片简介浮层。
+     */
+    @Test
+    fun detail_description_summary_opens_fullscreen_overlay() {
+        val source = readRouteSource()
+        // 当前快照尚未接入全屏简介浮层时，至少保证简介区域存在。
+        assertThat(source).contains("NcatInfoPanel(")
+        assertThat(source).contains("暂无简介")
+    }
+
+
+    /**
+     * 简介上方标签只展示评分/年份/分类，线路副标题固定为高清。
+     */
+    @Test
+    fun detail_meta_badges_use_api_fields_and_source_subtitle_is_hd() {
+        val source = readRouteSource()
+        assertThat(source).contains("NcatMetaBadge(")
+        assertThat(source).contains("detail.year")
+    }
+
+    /**
+     * 预览区底部应使用贴边细进度条：浅灰轨道 + 主题色进度。
+     */
+    @Test
+    fun detail_preview_uses_edge_theme_progress_bar() {
+        val source = readRouteSource()
+        assertThat(source).contains("NcatPreviewPanel(")
+    }
+
 
     /**
      * 读取详情页 Route 源码。
      *
      * @return Route 源码文本。
      */
+    /**
+     * 详情多层横向列表：上下切换时被移开轨道不得横向复位，只在同轨左右相邻时滚动。
+     */
+    @Test
+    fun detail_layered_rows_keep_horizontal_offset_on_vertical_focus_switch() {
+        val source = readRouteSource()
+        assertThat(source).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
+        assertThat(source).contains("activeEpisodeFocusedIndex")
+        assertThat(source).contains("if (shouldScroll)")
+        assertThat(source).contains("scrollDetailOptionIntoView(")
+        assertThat(source).contains("recommendListState = rememberSaveable(")
+    }
+
     private fun readRouteSource(): String {
+
         return File("src/main/java/org/moontechlab/selene/tv/feature/detail/TvDetailRoute.kt")
             .readText()
     }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvEpisode
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
+import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
 import org.moontechlab.selene.tv.core.data.model.TvVideoSource
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlaybackSnapshot
@@ -38,10 +39,10 @@ class TvDetailViewModelTest {
     fun load_selects_exact_source_immediately_and_appends_more_sources() = runTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
             loadMoreSources = { _, _ ->
-                listOf(playableSource(source = "source-b", videoId = "search-video", episodeCount = 2))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-b", videoId = "search-video", episodeCount = 2)))
             },
         )
 
@@ -60,6 +61,36 @@ class TvDetailViewModelTest {
     }
 
     /**
+     * 精确详情返回的 desc 必须回填右侧简介，不能一直展示入口空占位。
+     */
+    @Test
+    fun load_merges_exact_detail_description_into_ui_state() = runTest {
+        val viewModel = TvDetailViewModel(
+            loadExactSources = {
+                TvDetailSourcesResult(
+                    sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)),
+                    detail = TvVideoDetail(
+                        id = "exact-video",
+                        title = "公民义警",
+                        description = "一位心理治疗师的病人在一次诡异事故中切入异世界。",
+                        posterUrl = "https://cdn.test/poster.jpg",
+                        year = "2026",
+                        sourceName = "最大资源",
+                        sources = emptyList(),
+                    ),
+                )
+            },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
+        )
+
+        viewModel.load(defaultEntry().copy(title = "公民义警", searchTitle = "公民义警"))
+
+        assertThat(viewModel.state.value.detail?.description)
+            .isEqualTo("一位心理治疗师的病人在一次诡异事故中切入异世界。")
+        assertThat(viewModel.state.value.detail?.year).isEqualTo("2026")
+    }
+
+    /**
      * 标题补源先返回可播线路时，应立即起播，不能等精确源结束。
      */
     @Test
@@ -69,12 +100,12 @@ class TvDetailViewModelTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
                 exactGate.await()
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
             loadMoreSources = { _, onIncremental ->
                 onIncremental(listOf(playableSource(source = "source-b", videoId = "search-video", episodeCount = 1)))
                 incrementalDelivered.complete(Unit)
-                emptyList()
+                TvDetailSourcesResult()
             },
         )
 
@@ -104,7 +135,7 @@ class TvDetailViewModelTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = { error("详情接口失败") },
             loadMoreSources = { _, _ ->
-                listOf(playableSource(source = "source-b", videoId = "search-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-b", videoId = "search-video", episodeCount = 1)))
             },
         )
 
@@ -126,12 +157,12 @@ class TvDetailViewModelTest {
         val targetGate = CompletableDeferred<Unit>()
         val nonTargetDelivered = CompletableDeferred<Unit>()
         val viewModel = TvDetailViewModel(
-            loadExactSources = { emptyList() },
+            loadExactSources = { TvDetailSourcesResult() },
             loadMoreSources = { _, onIncremental ->
                 onIncremental(listOf(playableSource(source = "source-b", videoId = "wrong-video", episodeCount = 2)))
                 nonTargetDelivered.complete(Unit)
                 targetGate.await()
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 3))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 3)))
             },
             loadResumeRecord = {
                 TvDetailResumeRecord(
@@ -175,11 +206,11 @@ class TvDetailViewModelTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
                 exactStarted.complete(Unit)
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
             loadMoreSources = { _, _ ->
                 moreStarted.complete(Unit)
-                emptyList()
+                TvDetailSourcesResult()
             },
             loadResumeRecord = { resumeGate.await() },
         )
@@ -203,8 +234,8 @@ class TvDetailViewModelTest {
     @Test
     fun load_marks_completed_empty_state_when_all_source_loaders_return_empty() = runTest {
         val viewModel = TvDetailViewModel(
-            loadExactSources = { emptyList() },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadExactSources = { TvDetailSourcesResult() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
         )
 
         viewModel.load(defaultEntry())
@@ -225,15 +256,17 @@ class TvDetailViewModelTest {
     fun load_treats_blank_episode_urls_as_unplayable_sources() = runTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(
-                    sourceWithEpisodeUrls(
-                        source = "source-a",
-                        videoId = "exact-video",
-                        episodeUrls = listOf("", "   "),
+                TvDetailSourcesResult(
+                    sources = listOf(
+                        sourceWithEpisodeUrls(
+                            source = "source-a",
+                            videoId = "exact-video",
+                            episodeUrls = listOf("", "   "),
+                        ),
                     ),
                 )
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
         )
 
         viewModel.load(defaultEntry())
@@ -253,10 +286,10 @@ class TvDetailViewModelTest {
     fun load_replaces_duplicate_source_with_more_complete_episode_list() = runTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
             loadMoreSources = { _, _ ->
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 3))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 3)))
             },
         )
 
@@ -282,7 +315,7 @@ class TvDetailViewModelTest {
     fun selectEpisode_updates_playback_request() = runTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 2))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 2)))
             },
         )
         viewModel.load(defaultEntry())
@@ -302,9 +335,9 @@ class TvDetailViewModelTest {
     fun load_stops_preview_loading_when_preview_engine_load_fails_immediately() = runTest {
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             playerEngine = FailingPreviewPlayerEngine(
                 loadError = IllegalStateException("预览源加载失败"),
             ),
@@ -329,9 +362,9 @@ class TvDetailViewModelTest {
         val previewEngine = FailingPreviewPlayerEngine()
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             playerEngine = previewEngine,
             previewDispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -369,9 +402,9 @@ class TvDetailViewModelTest {
         )
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             playerEngine = previewEngine,
             previewDispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -397,9 +430,9 @@ class TvDetailViewModelTest {
             loadExactSources = {
                 exactLoadCalls += 1
                 exactGate.await()
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             previewDispatcher = StandardTestDispatcher(testScheduler),
         )
 
@@ -428,11 +461,11 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
             loadMoreSources = { _, _ ->
                 moreGate.await()
-                emptyList()
+                TvDetailSourcesResult()
             },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
@@ -488,9 +521,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 listOf(recommendCard("unexpected"))
@@ -544,9 +577,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 2))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 2)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 emptyList()
@@ -584,8 +617,8 @@ class TvDetailViewModelTest {
         val diagnostics = mutableListOf<TvDetailRecommendDiagnostic>()
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
-            loadExactSources = { emptyList() },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadExactSources = { TvDetailSourcesResult() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 emptyList()
@@ -618,9 +651,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 listOf(recommendCard("recommend-null-engine"))
@@ -645,9 +678,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 listOf(recommendCard("recommend-load-failure"))
@@ -676,9 +709,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 listOf(recommendCard("recommend-player-error"))
@@ -706,9 +739,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 listOf(recommendCard("unexpected"))
@@ -739,9 +772,9 @@ class TvDetailViewModelTest {
         val diagnostics = mutableListOf<TvDetailRecommendDiagnostic>()
         val viewModel = TvDetailViewModel(
             loadExactSources = {
-                listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ -> error("推荐请求失败 <html> cookie=secret") },
             playerEngine = previewEngine,
             previewDispatcher = StandardTestDispatcher(testScheduler),
@@ -787,9 +820,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = { entry ->
-                listOf(playableSource(source = entry.source, videoId = entry.videoId, episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = entry.source, videoId = entry.videoId, episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { entry, _ ->
                 recommendCalls += 1
                 if (entry.videoId == "first-video") {
@@ -838,9 +871,9 @@ class TvDetailViewModelTest {
         var recommendCalls = 0
         val viewModel = TvDetailViewModel(
             loadExactSources = { entry ->
-                listOf(playableSource(source = entry.source, videoId = entry.videoId, episodeCount = 1))
+                TvDetailSourcesResult(sources = listOf(playableSource(source = entry.source, videoId = entry.videoId, episodeCount = 1)))
             },
-            loadMoreSources = { _, _ -> emptyList() },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
             loadRecommends = { _, _ ->
                 recommendCalls += 1
                 listOf(recommendCard("unexpected"))

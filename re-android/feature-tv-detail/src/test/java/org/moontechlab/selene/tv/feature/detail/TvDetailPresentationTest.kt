@@ -76,7 +76,7 @@ class TvDetailPresentationTest {
     }
 
     /**
-     * 只有一个选集分组时，不展示上方分组切换条，避免单集影片出现 1-1 空白槽。
+     * 只有一个选集分组时，不展示下方分组切换条，避免单集影片出现 1-1 空白槽。
      */
     @Test
     fun shouldShowDetailEpisodeGroupChoices_only_shows_for_multiple_groups() {
@@ -158,5 +158,18 @@ class TvDetailPresentationTest {
                 url = "https://cdn.test/${index + 1}.m3u8",
             )
         }
+    }
+
+    /**
+     * 选集/分组固定焦点槽：前 2 项不滚，之后焦点停在第 2 格、列表推进。
+     */
+    @Test
+    fun resolveDetailPinnedFirstVisibleIndex_keeps_focus_slot_stable() {
+        assertThat(resolveDetailPinnedFirstVisibleIndex(focusedIndex = 0, itemCount = 20)).isEqualTo(0)
+        assertThat(resolveDetailPinnedFirstVisibleIndex(focusedIndex = 1, itemCount = 20)).isEqualTo(0)
+        assertThat(resolveDetailPinnedFirstVisibleIndex(focusedIndex = 2, itemCount = 20)).isEqualTo(1)
+        assertThat(resolveDetailPinnedFirstVisibleIndex(focusedIndex = 5, itemCount = 20)).isEqualTo(4)
+        // 末段不再无限制推进，保证最后几项仍能停在固定槽附近。
+        assertThat(resolveDetailPinnedFirstVisibleIndex(focusedIndex = 19, itemCount = 20)).isEqualTo(18)
     }
 }
