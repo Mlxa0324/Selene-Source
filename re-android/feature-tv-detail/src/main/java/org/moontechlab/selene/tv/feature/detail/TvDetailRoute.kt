@@ -435,13 +435,13 @@ private fun NcatDetailBackdrop(posterUrl: String) {
                 model = posterUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                // 裁切锚点偏上，海报主体更靠近页面上半区。
+                // 裁切锚点略偏上，避免默认居中显得过沉。
                 alignment = Alignment.TopCenter,
                 // 轻微模糊，避免海报像素放大后的马赛克感。
                 modifier = Modifier
                     .fillMaxSize()
-                    // 再整体上移一截，修正默认居中裁切“偏下”的观感。
-                    .offset(y = (-48).dp)
+                    // 上移幅度收敛，只做轻微构图修正。
+                    .offset(y = (-16).dp)
                     .blur(radius = 18.dp),
             )
         } else {
