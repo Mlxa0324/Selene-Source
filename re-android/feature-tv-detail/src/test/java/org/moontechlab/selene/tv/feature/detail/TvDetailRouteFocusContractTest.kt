@@ -68,7 +68,7 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("NcatFullscreenGlyph(")
         assertThat(source).contains("NcatFavoriteGlyph(")
         assertThat(source).contains("label = \"全屏\"")
-        assertThat(source).contains("label = if (state.isFavorite) \"已收藏\" else \"收藏\"")
+        assertThat(source).contains("label = \"收藏\"")
         assertThat(source).contains("NcatContentStartPadding")
         assertThat(source).contains("NcatContentEndPadding")
         assertThat(source).contains("StrokeCap.Square")
@@ -152,9 +152,14 @@ class TvDetailRouteFocusContractTest {
     @Test
     fun detail_description_summary_opens_fullscreen_overlay() {
         val source = readRouteSource()
-        // 当前快照尚未接入全屏简介浮层时，至少保证简介区域存在。
         assertThat(source).contains("NcatInfoPanel(")
-        assertThat(source).contains("暂无简介")
+        assertThat(source).contains("showDescriptionOverlay")
+        assertThat(source).contains("NcatDescriptionOverlay(")
+        assertThat(source).contains("focusTargets.description")
+        assertThat(source).contains("onOpenDescription")
+        assertThat(source).contains("影片简介")
+        assertThat(source).contains("label = \"全屏\"")
+        assertThat(source).contains("label = \"收藏\"")
     }
 
 

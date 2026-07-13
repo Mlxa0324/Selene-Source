@@ -76,7 +76,9 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -224,6 +226,8 @@ fun TvDetailRoute(
     ) { LazyListState() }
     val detailScrollState = rememberScrollState()
     val detailScrollScope = rememberCoroutineScope()
+    // 简介全屏浮层开关：摘要获焦确认后展示完整文案。
+    var showDescriptionOverlay by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -272,6 +276,7 @@ fun TvDetailRoute(
                 currentSourceFocusRequester = currentSourceFocusRequester,
                 onPlayPressed = onPlayPressed,
                 onFavoriteToggle = onFavoriteToggle,
+                onOpenDescription = { showDescriptionOverlay = true },
                 playerSurface = playerSurface,
             )
 
@@ -321,6 +326,16 @@ fun TvDetailRoute(
                 )
             }
         }
+
+        if (showDescriptionOverlay) {
+            NcatDescriptionOverlay(
+                title = detail?.title.orEmpty(),
+                description = detail?.description.orEmpty(),
+                sourceName = detail?.sourceName.orEmpty(),
+                posterUrl = detail?.posterUrl.orEmpty(),
+                onDismiss = { showDescriptionOverlay = false },
+            )
+        }
     }
 }
 
@@ -330,6 +345,7 @@ fun TvDetailRoute(
  * @property search 顶部搜索焦点。
  * @property login 顶部登录焦点。
  * @property player 预览播放器焦点。
+ * @property description 简介摘要焦点。
  * @property fullscreen 全屏按钮焦点。
  * @property favorite 收藏按钮焦点。
  * @property feedback 反馈按钮焦点。
@@ -344,6 +360,8 @@ private data class TvDetailFocusTargets(
     val search: FocusRequester,
     val login: FocusRequester,
     val player: FocusRequester,
+    /** 简介摘要焦点，确认后打开全屏影片简介。 */
+    val description: FocusRequester,
     val fullscreen: FocusRequester,
     val favorite: FocusRequester,
     val feedback: FocusRequester,
@@ -376,6 +394,7 @@ private fun rememberDetailFocusTargets(
         search = remember { FocusRequester() },
         login = remember { FocusRequester() },
         player = player,
+        description = remember { FocusRequester() },
         fullscreen = remember { FocusRequester() },
         favorite = remember { FocusRequester() },
         feedback = remember { FocusRequester() },
@@ -569,6 +588,7 @@ private fun NcatDetailHero(
     currentSourceFocusRequester: FocusRequester?,
     onPlayPressed: (() -> Unit)?,
     onFavoriteToggle: (() -> Unit)?,
+    onOpenDescription: () -> Unit,
     playerSurface: (@Composable () -> Unit)?,
 ) {
     Row(
@@ -601,6 +621,7 @@ private fun NcatDetailHero(
             modifier = Modifier.weight(1f),
             onPlayPressed = onPlayPressed,
             onFavoriteToggle = onFavoriteToggle,
+            onOpenDescription = onOpenDescription,
         )
     }
 }
@@ -655,7 +676,7 @@ private fun NcatPreviewPanel(
             .focusRequester(focusTargets.player)
             .focusProperties {
                 up = focusTargets.search
-                right = focusTargets.fullscreen
+                right = focusTargets.description
                 down = currentSourceFocusRequester ?: FocusRequester.Default
             }
             .focusable(interactionSource = interactionSource)
@@ -882,12 +903,13 @@ private fun NcatInfoPanel(
     modifier: Modifier = Modifier,
     onPlayPressed: (() -> Unit)?,
     onFavoriteToggle: (() -> Unit)?,
+    onOpenDescription: () -> Unit,
 ) {
     val detail = state.detail ?: return
-    // 右侧介绍区：半透明圆角底块包住标题/标签/简介/操作。
+    val descriptionText = detail.description.ifBlank { "暂无简介，切换线路后仍可继续播放。" }
+    // 右侧介绍区：半透明圆角底块包住标题/标签/简介/操作；高度随内容自适应，避免裁切按钮文案。
     Column(
         modifier = modifier
-            .height(244.dp)
             .background(NcatInfoPanelSurface, RoundedCornerShape(18.dp))
             .border(
                 width = 1.dp,
@@ -916,28 +938,59 @@ private fun NcatInfoPanel(
             NcatMetaBadge(label = detail.sourceName.ifBlank { "中国大陆" }, accent = false)
             NcatMetaBadge(label = "剧情 / 奇幻 / 冒险", accent = false)
         }
+        // 简介摘要可获焦：确认后打开全屏影片简介。
+        val descriptionInteraction = remember { MutableInteractionSource() }
+        val descriptionFocused by descriptionInteraction.collectIsFocusedAsState()
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(83.dp)
-                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp)),
+                .height(72.dp)
+                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                .border(
+                    width = if (descriptionFocused) 2.dp else 0.dp,
+                    color = if (descriptionFocused) Color.White else Color.Transparent,
+                    shape = RoundedCornerShape(12.dp),
+                )
+                .focusRequester(focusTargets.description)
+                .focusProperties {
+                    up = focusTargets.search
+                    left = focusTargets.player
+                    down = focusTargets.fullscreen
+                }
+                .focusable(interactionSource = descriptionInteraction)
+                .ncatClickable(onOpenDescription)
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+                    if (
+                        event.key == Key.Enter ||
+                        event.key == Key.DirectionCenter ||
+                        event.key == Key.NumPadEnter ||
+                        event.key == Key.Spacebar
+                    ) {
+                        onOpenDescription()
+                        true
+                    } else {
+                        false
+                    }
+                },
         ) {
             Text(
-                text = detail.description.ifBlank { "暂无简介" },
+                text = descriptionText,
                 color = Color.White.copy(alpha = 0.78f),
                 fontSize = 12.sp,
                 lineHeight = 19.sp,
-                maxLines = 3,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 12.dp),
+                modifier = Modifier.padding(start = 13.dp, top = 12.dp, end = 52.dp, bottom = 12.dp),
             )
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(topStart = 3.dp))
-                    .padding(horizontal = 12.dp, vertical = 5.dp),
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 8.dp)
+                    .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             ) {
-                Text(text = "更多", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
+                Text(text = "简介", color = Color.White.copy(alpha = 0.78f), fontSize = 11.sp)
             }
         }
         Row(
@@ -949,27 +1002,31 @@ private fun NcatInfoPanel(
                 selected = false,
                 focusRequester = focusTargets.fullscreen,
                 modifier = Modifier.focusProperties {
-                    up = focusTargets.search
+                    up = focusTargets.description
                     left = focusTargets.player
                     right = focusTargets.favorite
                     down = currentSourceFocusRequester ?: FocusRequester.Default
                 },
                 onPressed = { onPlayPressed?.invoke() },
-                iconContent = { NcatFullscreenGlyph(modifier = Modifier.size(20.dp), color = Color.White) },
+                iconContent = { NcatFullscreenGlyph(modifier = Modifier.size(22.dp), color = Color.White) },
             )
             NcatActionTile(
-                label = if (state.isFavorite) "已收藏" else "收藏",
+                // 收藏态只变心形颜色，文案固定“收藏”，贴近目标截图。
+                label = "收藏",
                 selected = state.isFavorite,
                 focusRequester = focusTargets.favorite,
                 modifier = Modifier.focusProperties {
-                    up = focusTargets.search
+                    up = focusTargets.description
                     left = focusTargets.fullscreen
                     right = focusTargets.favorite
                     down = currentSourceFocusRequester ?: FocusRequester.Default
                 },
                 onPressed = { onFavoriteToggle?.invoke() },
                 iconContent = {
-                    NcatFavoriteGlyph(modifier = Modifier.size(20.dp), favorited = state.isFavorite)
+                    NcatFavoriteGlyph(
+                        modifier = Modifier.size(22.dp),
+                        favorited = state.isFavorite,
+                    )
                 },
             )
         }
@@ -1027,19 +1084,19 @@ private fun NcatActionTile(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val background = if (isFocused) NcatSurface.copy(alpha = 0.95f) else NcatSurface
+    // 对齐目标截图：深灰圆角方块，上图标下文案；获焦白边。
+    val shape = RoundedCornerShape(12.dp)
+    val background = Color(0xFF3A3D48)
     val borderColor = when {
         isFocused -> Color.White
-        selected -> Color.White.copy(alpha = 0.22f)
-        else -> Color.White.copy(alpha = 0.06f)
+        else -> Color.White.copy(alpha = 0.08f)
     }
-    // 固定宽高：上方图标、下方文案（全屏 / 收藏 / 已收藏）。
     Column(
         modifier = modifier
-            .width(76.dp)
-            .height(78.dp)
-            .background(background, RoundedCornerShape(NcatRadius))
-            .border(BorderStroke(if (isFocused) 2.dp else 1.dp, borderColor), RoundedCornerShape(NcatRadius))
+            .width(72.dp)
+            .height(72.dp)
+            .background(background, shape)
+            .border(BorderStroke(if (isFocused) 2.dp else 1.dp, borderColor), shape)
             .focusRequester(focusRequester)
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
@@ -1048,16 +1105,12 @@ private fun NcatActionTile(
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter || event.key == Key.NumPadEnter || event.key == Key.Spacebar) {
                     onPressed(); true
                 } else false
-            }
-            .padding(top = 12.dp, bottom = 10.dp),
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top,
+        verticalArrangement = Arrangement.Center,
     ) {
-        // 图标区固定高度，保证文案始终在按钮下半区可见。
         Box(
-            modifier = Modifier
-                .height(28.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.size(24.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (iconContent != null) {
@@ -1066,17 +1119,17 @@ private fun NcatActionTile(
                 Text(
                     text = icon,
                     color = Color.White,
-                    fontSize = 19.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = label,
             color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
             maxLines = 1,
         )
     }
@@ -2046,6 +2099,150 @@ private fun NcatBottomActionGlyph(kind: NcatBottomActionIcon, modifier: Modifier
     }
 }
 
+
+/**
+ * 全屏影片简介浮层。
+ *
+ * @param title 影片标题。
+ * @param description 完整简介。
+ * @param sourceName 线路/来源名。
+ * @param posterUrl 背景海报。
+ * @param onDismiss 关闭回调。
+ */
+@Composable
+private fun NcatDescriptionOverlay(
+    title: String,
+    description: String,
+    sourceName: String,
+    posterUrl: String,
+    onDismiss: () -> Unit,
+) {
+    val closeRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        runCatching { closeRequester.requestFocus() }
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.72f))
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                // 浮层打开时拦截返回，只关闭简介不退出详情。
+                if (
+                    event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.Back || event.key == Key.Escape)
+                ) {
+                    onDismiss()
+                    true
+                } else {
+                    false
+                }
+            }
+            .ncatClickable(onDismiss),
+    ) {
+        // 背景海报弱化，突出左侧文案。
+        if (posterUrl.isNotBlank()) {
+            AsyncImage(
+                model = posterUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(radius = 12.dp),
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.62f)),
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = NcatContentStartPadding,
+                    end = NcatContentEndPadding,
+                    top = 36.dp,
+                    bottom = 36.dp,
+                ),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "影片简介",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = "按[返回键]退出本页",
+                        color = NcatMutedText,
+                        fontSize = 13.sp,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(TvTokens.Accent, RoundedCornerShape(21.dp))
+                        .border(BorderStroke(2.dp, Color.White), RoundedCornerShape(21.dp))
+                        .focusRequester(closeRequester)
+                        .focusable()
+                        .ncatClickable(onDismiss)
+                        .onPreviewKeyEvent { event ->
+                            if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+                            if (
+                                event.key == Key.Enter ||
+                                event.key == Key.DirectionCenter ||
+                                event.key == Key.Back ||
+                                event.key == Key.Escape
+                            ) {
+                                onDismiss()
+                                true
+                            } else {
+                                false
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = "×", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(modifier = Modifier.height(28.dp))
+            Text(
+                text = title.ifBlank { "影片简介" },
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (sourceName.isNotBlank()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                NcatMetaBadge(label = sourceName, accent = false)
+            }
+            Spacer(modifier = Modifier.height(22.dp))
+            Text(
+                text = "影片简介",
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = description.ifBlank { "暂无简介，切换线路后仍可继续播放。" },
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 15.sp,
+                lineHeight = 24.sp,
+            )
+        }
+    }
+}
+
 @Composable
 private fun NcatFavoriteGlyph(modifier: Modifier = Modifier, favorited: Boolean) {
     val color = if (favorited) TvTokens.Accent else Color.White
@@ -2068,16 +2265,18 @@ private fun NcatFavoriteGlyph(modifier: Modifier = Modifier, favorited: Boolean)
 
 @Composable
 private fun NcatFullscreenGlyph(modifier: Modifier = Modifier, color: Color = Color.White) {
+    // 目标截图为圆角方框，不再使用四角展开箭头。
     Canvas(modifier = modifier) {
-        val stroke = 2.dp.toPx(); val arm = size.minDimension * 0.32f; val inset = stroke / 2f
-        drawLine(color, Offset(inset, arm), Offset(inset, inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(inset, inset), Offset(arm, inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(size.width - inset, arm), Offset(size.width - inset, inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(size.width - inset, inset), Offset(size.width - arm, inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(inset, size.height - arm), Offset(inset, size.height - inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(inset, size.height - inset), Offset(arm, size.height - inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(size.width - inset, size.height - arm), Offset(size.width - inset, size.height - inset), stroke, cap = StrokeCap.Square)
-        drawLine(color, Offset(size.width - inset, size.height - inset), Offset(size.width - arm, size.height - inset), stroke, cap = StrokeCap.Square)
+        val stroke = 2.dp.toPx()
+        val inset = stroke
+        val corner = size.minDimension * 0.18f
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(inset, inset),
+            size = Size(size.width - inset * 2f, size.height - inset * 2f),
+            cornerRadius = CornerRadius(corner, corner),
+            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
     }
 }
 
