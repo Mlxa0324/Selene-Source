@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -591,38 +592,51 @@ private fun NcatDetailHero(
     onOpenDescription: () -> Unit,
     playerSurface: (@Composable () -> Unit)?,
 ) {
-    Row(
+    // 左右等宽，高度以 16:9 预览区为准，简介面板强制同高。
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = NcatContentStartPadding, end = NcatContentEndPadding),
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
-        verticalAlignment = Alignment.Top,
     ) {
-        NcatPreviewPanel(
-            modifier = Modifier.weight(1f),
-            title = state.currentEpisode?.title ?: state.detail?.title.orEmpty(),
-            sourceName = state.currentSource?.name.orEmpty(),
-            posterUrl = state.detail?.posterUrl.orEmpty(),
-            focusTargets = focusTargets,
-            currentSourceFocusRequester = currentSourceFocusRequester,
-            onPlayPressed = onPlayPressed,
-            playerSurface = playerSurface,
-            previewIsLoading = state.previewIsLoading,
-            previewNetworkSpeed = state.previewNetworkSpeed,
-            previewIsPlaying = state.previewIsPlaying,
-            previewPositionMs = state.previewPositionMs,
-            previewDurationMs = state.previewDurationMs,
-            previewPlaybackStarted = state.previewPlaybackStarted,
-        )
-        NcatInfoPanel(
-            state = state,
-            focusTargets = focusTargets,
-            currentSourceFocusRequester = currentSourceFocusRequester,
-            modifier = Modifier.weight(1f),
-            onPlayPressed = onPlayPressed,
-            onFavoriteToggle = onFavoriteToggle,
-            onOpenDescription = onOpenDescription,
-        )
+        val heroGap = 28.dp
+        val panelWidth = (maxWidth - heroGap) / 2
+        // 播放器高度 = 半宽 * 9/16；简介面板与之齐平。
+        val panelHeight = panelWidth * 9f / 16f
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(heroGap),
+            verticalAlignment = Alignment.Top,
+        ) {
+            NcatPreviewPanel(
+                modifier = Modifier
+                    .width(panelWidth)
+                    .height(panelHeight),
+                title = state.currentEpisode?.title ?: state.detail?.title.orEmpty(),
+                sourceName = state.currentSource?.name.orEmpty(),
+                posterUrl = state.detail?.posterUrl.orEmpty(),
+                focusTargets = focusTargets,
+                currentSourceFocusRequester = currentSourceFocusRequester,
+                onPlayPressed = onPlayPressed,
+                playerSurface = playerSurface,
+                previewIsLoading = state.previewIsLoading,
+                previewNetworkSpeed = state.previewNetworkSpeed,
+                previewIsPlaying = state.previewIsPlaying,
+                previewPositionMs = state.previewPositionMs,
+                previewDurationMs = state.previewDurationMs,
+                previewPlaybackStarted = state.previewPlaybackStarted,
+            )
+            NcatInfoPanel(
+                state = state,
+                focusTargets = focusTargets,
+                currentSourceFocusRequester = currentSourceFocusRequester,
+                modifier = Modifier
+                    .width(panelWidth)
+                    .height(panelHeight),
+                onPlayPressed = onPlayPressed,
+                onFavoriteToggle = onFavoriteToggle,
+                onOpenDescription = onOpenDescription,
+            )
+        }
     }
 }
 
@@ -665,7 +679,8 @@ private fun NcatPreviewPanel(
     val isFocused by interactionSource.collectIsFocusedAsState()
     Box(
         modifier = modifier
-            .aspectRatio(16f / 9f)
+            // 高度由 Hero 按 16:9 统一下发，避免与右侧简介错高。
+            .fillMaxSize()
             // 主预览区大圆角，贴近截图卡片。
             .clip(RoundedCornerShape(18.dp))
             .border(
@@ -907,7 +922,7 @@ private fun NcatInfoPanel(
 ) {
     val detail = state.detail ?: return
     val descriptionText = detail.description.ifBlank { "暂无简介，切换线路后仍可继续播放。" }
-    // 右侧介绍区：半透明圆角底块包住标题/标签/简介/操作；高度随内容自适应，避免裁切按钮文案。
+    // 右侧介绍区与左侧播放器同高：上下边距加大，内容在固定高度内均匀排布。
     Column(
         modifier = modifier
             .background(NcatInfoPanelSurface, RoundedCornerShape(18.dp))
@@ -916,8 +931,9 @@ private fun NcatInfoPanel(
                 color = Color.White.copy(alpha = 0.08f),
                 shape = RoundedCornerShape(18.dp),
             )
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            // 上下边距加大，标题/简介/按钮不贴边。
+            .padding(horizontal = 20.dp, vertical = 22.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Text(
             text = detail.title,
@@ -944,7 +960,9 @@ private fun NcatInfoPanel(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(72.dp)
+                // 简介区最小高度略抬高，长摘要更易读。
+                .heightIn(min = 84.dp)
+                .height(84.dp)
                 .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                 .border(
                     width = if (descriptionFocused) 2.dp else 0.dp,
@@ -981,7 +999,7 @@ private fun NcatInfoPanel(
                 lineHeight = 19.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 13.dp, top = 12.dp, end = 52.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 14.dp, top = 14.dp, end = 56.dp, bottom = 14.dp),
             )
             Box(
                 modifier = Modifier
