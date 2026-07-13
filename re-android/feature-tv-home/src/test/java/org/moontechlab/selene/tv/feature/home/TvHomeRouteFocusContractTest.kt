@@ -56,7 +56,12 @@ class TvHomeRouteFocusContractTest {
 
         assertThat(source).contains("val homeScrollScope = rememberCoroutineScope()")
         assertThat(source).contains("onRailFocused = {")
-        assertThat(source).contains("homeListState.animateScrollToItem(sectionIndex)")
+        assertThat(source).contains("homeListState.animateScrollToItem(")
+        assertThat(source).contains("scrollOffset = 0")
+        // 纵向焦点滚动需给标题副标题预留底部边距，避免只露出封面。
+        assertThat(source).contains("LocalBringIntoViewSpec")
+        assertThat(source).contains("bottomMarginPx")
+        assertThat(source).contains("contentPadding = PaddingValues(bottom = 120.dp)")
     }
 
     /**

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +29,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,17 +40,19 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 import org.moontechlab.selene.tv.core.design.layout.TvEmptyStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
+import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
@@ -83,16 +85,21 @@ fun TvSearchRoute(
     onAppendChar: (String) -> Unit = {},
     onDeleteLastChar: () -> Unit = {},
     onClearQuery: () -> Unit = {},
-    onSearchCurrentQuery: suspend () -> Unit = {},
-    onQueryClick: (String) -> Unit = {},
-    onSearchHistoryClick: suspend (String) -> Unit = {},
+    onSearchCurrentQuery: () -> Unit = {},
+    onHotQueryClick: (String) -> Unit = {},
+    onSearchHistoryClick: (String) -> Unit = {},
+    onSuggestionClick: (String) -> Unit = {},
+    onClearHistory: () -> Unit = {},
     onVideoClick: (String) -> Unit = {},
     onBack: () -> Unit = {},
+    onConsumeBack: () -> Boolean = { false },
 ) {
-    val scope = rememberCoroutineScope()
-
-    // 拦截系统返回键
-    BackHandler { onBack() }
+    // 拦截系统返回键：优先在搜索页内部退结果/联想，再退出页面。
+    BackHandler {
+        if (!onConsumeBack()) {
+            onBack()
+        }
+    }
 
     // ── 焦点请求器 ──
     val keyFocusRequesters = remember {
@@ -151,7 +158,11 @@ fun TvSearchRoute(
                 },
                 onArrowDownFromBottom = { clearButtonFocus.requestFocus() },
                 onArrowUpFromTop = { deleteButtonFocus.requestFocus() },
-                onBack = onBack,
+                onBack = {
+                    if (!onConsumeBack()) {
+                        onBack()
+                    }
+                },
                 onFocusChanged = { row, col ->
                     lastKeyboardRow = row; lastKeyboardCol = col
                 },
@@ -164,9 +175,13 @@ fun TvSearchRoute(
                 searchFocus = searchButtonFocus,
                 deleteFocus = deleteButtonFocus,
                 onClear = onClearQuery,
-                onSearch = { scope.launch { onSearchCurrentQuery() } },
+                onSearch = onSearchCurrentQuery,
                 onDelete = onDeleteLastChar,
-                onBack = onBack,
+                onBack = {
+                    if (!onConsumeBack()) {
+                        onBack()
+                    }
+                },
                 onArrowUpToKeyboard = { col ->
                     keyFocusRequesters[KeyboardRows - 1][col].requestFocus()
                 },
@@ -185,10 +200,16 @@ fun TvSearchRoute(
             onReturnToLeftPanel = {
                 keyFocusRequesters[lastKeyboardRow][lastKeyboardCol].requestFocus()
             },
-            onQueryClick = onQueryClick,
+            onHotQueryClick = onHotQueryClick,
             onSearchHistoryClick = onSearchHistoryClick,
+            onSuggestionClick = onSuggestionClick,
+            onClearHistory = onClearHistory,
             onVideoClick = onVideoClick,
-            onBack = onBack,
+            onBack = {
+                if (!onConsumeBack()) {
+                    onBack()
+                }
+            },
             modifier = Modifier.weight(1f).fillMaxHeight(),
         )
     }
@@ -272,6 +293,7 @@ private fun TvKeyboard(
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) onFocusChanged(row, col)
                             }
+                            .searchClickable({ onKeyPressed(keyLabel) })
                             .onPreviewKeyEvent(KeyPreviewHandler(
                                 onEnter = { onKeyPressed(keyLabel) },
                                 onLeft = {
@@ -354,6 +376,7 @@ private fun RowScope.SearchActionButton(
             .background(bgColor, RoundedCornerShape(22.dp))
             .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(22.dp))
             .focusRequester(focusRequester)
+            .searchClickable(onClick)
             .onPreviewKeyEvent(KeyPreviewHandler(
                 onEnter = onClick,
                 onDown = { /* stay */ },
@@ -377,94 +400,253 @@ private fun RightPanel(
     state: TvSearchUiState,
     entryFocusRequester: FocusRequester,
     onReturnToLeftPanel: () -> Unit,
-    onQueryClick: (String) -> Unit,
-    onSearchHistoryClick: suspend (String) -> Unit,
+    onHotQueryClick: (String) -> Unit,
+    onSearchHistoryClick: (String) -> Unit,
+    onSuggestionClick: (String) -> Unit,
+    onClearHistory: () -> Unit,
     onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hasResults = state.showResults && state.query.isNotBlank() &&
-        (state.resultGroups.isNotEmpty() || state.isLoading || state.errorMessage != null)
+    when {
+        // 结果面板优先，对齐 Flutter `_shouldShowSearchResultPanel`。
+        // 结果区自带 LazyVerticalGrid，不能再套 verticalScroll。
+        state.showResultsPanel -> SearchResultPanel(
+            state = state,
+            entryFocusRequester = entryFocusRequester,
+            onReturnToLeftPanel = onReturnToLeftPanel,
+            onVideoClick = onVideoClick,
+            onBack = onBack,
+            modifier = modifier,
+        )
 
-    Column(
-        modifier = modifier.verticalScroll(rememberScrollState()),
-    ) {
-        when {
-            hasResults -> SearchResultPanel(
+        // 纯字母数字输入进入联想面板。
+        state.showSuggestionPanel -> Column(modifier = modifier.verticalScroll(rememberScrollState())) {
+            SearchSuggestionPanel(
                 state = state,
                 entryFocusRequester = entryFocusRequester,
                 onReturnToLeftPanel = onReturnToLeftPanel,
+                onSuggestionClick = onSuggestionClick,
                 onVideoClick = onVideoClick,
                 onBack = onBack,
             )
-            state.query.isEmpty() -> SearchDefaultPanel(
+        }
+
+        // 默认首页：历史 + 热词 + 推荐。
+        else -> Column(modifier = modifier.verticalScroll(rememberScrollState())) {
+            SearchDefaultPanel(
                 state = state,
                 entryFocusRequester = entryFocusRequester,
                 onReturnToLeftPanel = onReturnToLeftPanel,
-                onQueryClick = onQueryClick,
+                onHotQueryClick = onHotQueryClick,
                 onSearchHistoryClick = onSearchHistoryClick,
-                onBack = onBack,
-            )
-            else -> SearchPromptPanel(
-                query = state.query,
-                entryFocusRequester = entryFocusRequester,
-                onReturnToLeftPanel = onReturnToLeftPanel,
+                onClearHistory = onClearHistory,
+                onVideoClick = onVideoClick,
                 onBack = onBack,
             )
         }
     }
 }
 
-// ── 默认面板 (历史+热词) ──
+// ── 默认面板 (历史+热词+推荐) ──
 
 @Composable
 private fun SearchDefaultPanel(
     state: TvSearchUiState,
     entryFocusRequester: FocusRequester,
     onReturnToLeftPanel: () -> Unit,
-    onQueryClick: (String) -> Unit,
-    onSearchHistoryClick: suspend (String) -> Unit,
+    onHotQueryClick: (String) -> Unit,
+    onSearchHistoryClick: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    val scope = rememberCoroutineScope()
+    if (state.isBootstrapping) {
+        TvSearchStatePanel(
+            kind = TvStatePanelKind.Loading,
+            title = "加载搜索页",
+            message = "正在读取历史和推荐…",
+            focusRequester = entryFocusRequester,
+            onReturnToLeftPanel = onReturnToLeftPanel,
+            onBack = onBack,
+        )
+        return
+    }
+    if (!state.bootstrapErrorMessage.isNullOrBlank()) {
+        TvSearchStatePanel(
+            kind = TvStatePanelKind.Error,
+            title = "搜索页加载失败",
+            message = state.bootstrapErrorMessage.orEmpty(),
+            focusRequester = entryFocusRequester,
+            onReturnToLeftPanel = onReturnToLeftPanel,
+            onBack = onBack,
+        )
+        return
+    }
 
-    SectionTitle("搜索历史", "${state.searchHistory.size} 条记录")
+    SectionTitle(
+        title = "搜索历史",
+        hint = if (state.searchHistory.isEmpty()) "暂无记录" else "${state.searchHistory.size} 条记录",
+        trailingActionLabel = if (state.searchHistory.isNotEmpty()) "清空" else null,
+        onTrailingAction = onClearHistory,
+    )
     Spacer(modifier = Modifier.height(14.dp))
     if (state.searchHistory.isEmpty()) {
-        TvEmptyStatePanel("暂无搜索历史", "使用左侧键盘输入关键词后点击搜索按钮。")
+        TvEmptyStatePanel("暂无搜索历史", "使用左侧键盘输入首字母，或点击搜索按钮。")
     } else {
         WordTileGrid(
             words = state.searchHistory,
             entryFocusRequester = entryFocusRequester,
             onReturnToLeftPanel = onReturnToLeftPanel,
-            onWordClick = { word -> scope.launch { onSearchHistoryClick(word) } },
+            // 历史词直接搜索，对齐 Flutter onWordPressed -> _performSearch。
+            onWordClick = onSearchHistoryClick,
             onBack = onBack,
         )
     }
 
-    Spacer(modifier = Modifier.height(32.dp))
+    if (state.hotQueries.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(30.dp))
+        SectionTitle("搜索热词", "${state.hotQueries.size} 个推荐词")
+        Spacer(modifier = Modifier.height(14.dp))
+        WordTileGrid(
+            words = state.hotQueries,
+            entryFocusRequester = if (state.searchHistory.isEmpty()) entryFocusRequester else null,
+            onReturnToLeftPanel = onReturnToLeftPanel,
+            // 热词只回填，不直接搜索。
+            onWordClick = onHotQueryClick,
+            onBack = onBack,
+        )
+    }
 
-    SectionTitle("搜索热词", "${state.hotQueries.size} 个推荐词")
+    Spacer(modifier = Modifier.height(34.dp))
+    SectionTitle("影片推荐", if (state.recommendCards.isEmpty()) "暂无推荐" else "${state.recommendCards.size} 部")
     Spacer(modifier = Modifier.height(14.dp))
-    WordTileGrid(
-        words = state.hotQueries,
-        entryFocusRequester = null,
+    RecommendRail(
+        cards = state.recommendCards,
+        entryFocusRequester = if (state.searchHistory.isEmpty() && state.hotQueries.isEmpty()) {
+            entryFocusRequester
+        } else {
+            null
+        },
         onReturnToLeftPanel = onReturnToLeftPanel,
-        onWordClick = { word -> onQueryClick(word) },
+        onVideoClick = onVideoClick,
         onBack = onBack,
     )
 }
 
+// ── 联想面板 ──
+
 @Composable
-private fun SectionTitle(title: String, hint: String) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+private fun SearchSuggestionPanel(
+    state: TvSearchUiState,
+    entryFocusRequester: FocusRequester,
+    onReturnToLeftPanel: () -> Unit,
+    onSuggestionClick: (String) -> Unit,
+    onVideoClick: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    SectionTitle("联想结果", if (state.isSuggestionLoading) "联想中…" else "${state.suggestions.size} 个结果")
+    Spacer(modifier = Modifier.height(14.dp))
+    when {
+        state.isSuggestionLoading -> {
+            TvSearchStatePanel(
+                kind = TvStatePanelKind.Loading,
+                title = "联想中...",
+                message = "正在根据首字母匹配影片名称。",
+                focusRequester = entryFocusRequester,
+                onReturnToLeftPanel = onReturnToLeftPanel,
+                onBack = onBack,
+            )
+        }
+
+        state.suggestions.isEmpty() -> {
+            TvSearchStatePanel(
+                kind = TvStatePanelKind.Empty,
+                title = "暂无联想结果",
+                message = "可继续输入，或直接点击搜索按钮。",
+                focusRequester = entryFocusRequester,
+                onReturnToLeftPanel = onReturnToLeftPanel,
+                onBack = onBack,
+            )
+        }
+
+        else -> {
+            WordTileGrid(
+                words = state.suggestions,
+                entryFocusRequester = entryFocusRequester,
+                onReturnToLeftPanel = onReturnToLeftPanel,
+                // 联想词确认后直接搜索，并保留返回上下文。
+                onWordClick = onSuggestionClick,
+                onBack = onBack,
+            )
+            if (state.recommendCards.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(34.dp))
+                SectionTitle("影片推荐", "${state.recommendCards.size} 部")
+                Spacer(modifier = Modifier.height(14.dp))
+                RecommendRail(
+                    cards = state.recommendCards,
+                    entryFocusRequester = null,
+                    onReturnToLeftPanel = onReturnToLeftPanel,
+                    onVideoClick = onVideoClick,
+                    onBack = onBack,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(
+    title: String,
+    hint: String,
+    trailingActionLabel: String? = null,
+    onTrailingAction: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         androidx.compose.material3.Text(
-            title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold,
+            title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold,
         )
         Spacer(modifier = Modifier.width(12.dp))
         androidx.compose.material3.Text(
             hint, color = TvTokens.FormTextSecondary, fontSize = 13.sp,
         )
+        if (!trailingActionLabel.isNullOrBlank() && onTrailingAction != null) {
+            Spacer(modifier = Modifier.weight(1f))
+            val interactionSource = remember { MutableInteractionSource() }
+            val isFocused by interactionSource.collectIsFocusedAsState()
+            Box(
+                modifier = Modifier
+                    .height(34.dp)
+                    .background(
+                        if (isFocused) Color(0xFF747881) else Color(0xFF3C4048),
+                        RoundedCornerShape(17.dp),
+                    )
+                    .border(
+                        if (isFocused) 2.dp else 1.dp,
+                        if (isFocused) Color.White else Color(0xFF535861),
+                        RoundedCornerShape(17.dp),
+                    )
+                    .searchClickable(onTrailingAction)
+                    .onPreviewKeyEvent(
+                        KeyPreviewHandler(
+                            onEnter = onTrailingAction,
+                        ),
+                    )
+                    .focusable(interactionSource = interactionSource)
+                    .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.material3.Text(
+                    text = trailingActionLabel,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
     }
 }
 
@@ -502,34 +684,35 @@ private fun WordTileGrid(
                                         Modifier.focusRequester(entryFocusRequester)
                                     else Modifier.focusRequester(focusRequesters[index])
                                 )
+                                .searchClickable({ onWordClick(word) })
                                 .onPreviewKeyEvent(KeyPreviewHandler(
                                     onEnter = { onWordClick(word) },
                                     onLeft = {
                                         if (col == 0) onReturnToLeftPanel()
-                                        else focusRequesters[index - 1].requestFocus()
+                                        else focusRequesters.getOrNull(index - 1)?.requestFocus()
                                     },
                                     onRight = {
-                                        if (col < columns - 1 && index + 1 < words.size)
-                                            focusRequesters[index + 1].requestFocus()
+                                        focusRequesters.getOrNull(index + 1)?.requestFocus()
                                     },
                                     onUp = {
-                                        if (row == 0) onReturnToLeftPanel()
-                                        else focusRequesters[(index - columns).coerceAtLeast(0)].requestFocus()
+                                        focusRequesters.getOrNull(index - columns)?.requestFocus()
                                     },
                                     onDown = {
-                                        if (row < rows - 1)
-                                            focusRequesters[(index + columns).coerceAtMost(words.lastIndex)].requestFocus()
+                                        focusRequesters.getOrNull(index + columns)?.requestFocus()
                                     },
                                     onBack = onBack,
                                 ))
-                                .focusable(interactionSource = interactionSource),
-                            contentAlignment = Alignment.Center,
+                                .focusable(interactionSource = interactionSource)
+                                .padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.CenterStart,
                         ) {
                             androidx.compose.material3.Text(
-                                word, color = Color.White, fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium, maxLines = 1,
+                                text = word,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 12.dp),
                             )
                         }
                     } else {
@@ -541,42 +724,33 @@ private fun WordTileGrid(
     }
 }
 
-// ── 搜索提示和结果面板 ──
-
 @Composable
-private fun SearchPromptPanel(
-    query: String,
-    entryFocusRequester: FocusRequester,
+private fun RecommendRail(
+    cards: List<TvVideoCard>,
+    entryFocusRequester: FocusRequester?,
     onReturnToLeftPanel: () -> Unit,
+    onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    SectionTitle("搜索入口", "确认词条可发起搜索")
-    Spacer(modifier = Modifier.height(14.dp))
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-    val borderColor = if (isFocused) Color.White else Color.Transparent
-    Box(
-        modifier = Modifier
-            .fillMaxWidth().height(80.dp)
-            .background(Color(0xFF424550), RoundedCornerShape(12.dp))
-            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(12.dp))
-            .focusRequester(entryFocusRequester)
-            .onPreviewKeyEvent(KeyPreviewHandler(
-                onLeft = onReturnToLeftPanel,
-                onBack = onBack,
-            ))
-            .focusable(interactionSource = interactionSource),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.Text(
-                "当前搜索词: ", color = TvTokens.FormTextSecondary, fontSize = 15.sp,
-            )
-            androidx.compose.material3.Text(
-                query, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold,
-            )
-        }
+    if (cards.isEmpty()) {
+        TvEmptyStatePanel("暂无影片推荐", "观看详情后会在这里展示相关推荐。")
+        return
     }
+    // 推荐区用横向轨道，避免嵌在 verticalScroll 中再次套 LazyVerticalGrid。
+    TvPosterRail(
+        items = cards.map { video ->
+            TvPosterItem(
+                id = video.id,
+                source = video.source.ifBlank { "douban" },
+                title = video.title,
+                subtitle = video.searchResultSubtitle(),
+                posterUrl = video.posterUrl,
+                totalEpisodes = video.totalEpisodes,
+            )
+        },
+        firstItemFocusRequester = entryFocusRequester,
+        onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
+    )
 }
 
 @Composable
@@ -586,38 +760,56 @@ private fun SearchResultPanel(
     onReturnToLeftPanel: () -> Unit,
     onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-        androidx.compose.material3.Text(
-            "搜索结果", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold,
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        val total = state.resultGroups.sumOf { it.videos.size }
-        androidx.compose.material3.Text(
-            "${total} 个影片", color = TvTokens.FormTextSecondary, fontSize = 13.sp,
-        )
+    val progressText = if (state.searchTotalResourceCount > 0) {
+        "已搜索 ${state.searchCompletedResourceCount}/${state.searchTotalResourceCount} 个资源站"
+    } else {
+        null
     }
-    Spacer(modifier = Modifier.height(14.dp))
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+            androidx.compose.material3.Text(
+                "搜索结果", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            androidx.compose.material3.Text(
+                "${state.resultCards.size} 个影片",
+                color = TvTokens.FormTextSecondary,
+                fontSize = 13.sp,
+            )
+            if (!progressText.isNullOrBlank()) {
+                Spacer(modifier = Modifier.width(12.dp))
+                androidx.compose.material3.Text(
+                    progressText,
+                    color = Color(0xFF9CA2AD),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
 
-    when {
-        state.isLoading -> TvSearchStatePanel(
-            kind = TvStatePanelKind.Loading,
-            title = "正在搜索 ${state.query}",
-            message = "请稍候...",
-            focusRequester = entryFocusRequester,
-            onReturnToLeftPanel = onReturnToLeftPanel,
-            onBack = onBack,
-        )
-        !state.errorMessage.isNullOrBlank() -> TvSearchStatePanel(
-            kind = TvStatePanelKind.Error,
-            title = "搜索失败",
-            message = state.errorMessage,
-            focusRequester = entryFocusRequester,
-            onReturnToLeftPanel = onReturnToLeftPanel,
-            onBack = onBack,
-        )
-        state.resultGroups.isEmpty() || state.resultGroups.all { it.videos.isEmpty() } ->
-            TvSearchStatePanel(
+        when {
+            state.isSearchResultLoading && state.resultCards.isEmpty() -> TvSearchStatePanel(
+                kind = TvStatePanelKind.Loading,
+                title = "正在搜索 ${state.query}",
+                message = progressText ?: "正在聚合各资源站结果…",
+                focusRequester = entryFocusRequester,
+                onReturnToLeftPanel = onReturnToLeftPanel,
+                onBack = onBack,
+            )
+
+            !state.errorMessage.isNullOrBlank() && state.resultCards.isEmpty() -> TvSearchStatePanel(
+                kind = TvStatePanelKind.Error,
+                title = "搜索失败",
+                message = state.errorMessage.orEmpty(),
+                focusRequester = entryFocusRequester,
+                onReturnToLeftPanel = onReturnToLeftPanel,
+                onBack = onBack,
+            )
+
+            !state.isSearchResultLoading && state.resultCards.isEmpty() -> TvSearchStatePanel(
                 kind = TvStatePanelKind.Empty,
                 title = "暂无搜索结果",
                 message = "尝试使用其他关键词搜索。",
@@ -625,18 +817,21 @@ private fun SearchResultPanel(
                 onReturnToLeftPanel = onReturnToLeftPanel,
                 onBack = onBack,
             )
-        else -> state.resultGroups.forEach { group ->
-            if (group.videos.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+
+            else -> {
                 TvPosterGrid(
-                    items = group.videos.map { video ->
+                    items = state.resultCards.map { video ->
                         TvPosterItem(
-                            id = video.id, source = video.source,
-                            title = video.title, subtitle = video.searchResultSubtitle(),
-                            posterUrl = video.posterUrl, totalEpisodes = video.totalEpisodes,
+                            id = video.id,
+                            source = video.source,
+                            title = video.title,
+                            subtitle = video.searchResultSubtitle(),
+                            posterUrl = video.posterUrl,
+                            totalEpisodes = video.totalEpisodes,
                         )
                     },
                     columns = 5,
+                    modifier = Modifier.fillMaxSize(),
                     firstItemFocusRequester = entryFocusRequester,
                     onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
                 )
@@ -696,7 +891,7 @@ private fun KeyPreviewHandler(
     val isKeyUp = event.type == KeyEventType.KeyUp
     when (event.key) {
         Key.Back -> false // 全程放行给 NavHost
-        Key.DirectionCenter, Key.Enter -> {
+        Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
             if (isKeyUp) true
             else { onEnter?.invoke(); true }
         }
@@ -718,4 +913,12 @@ private fun KeyPreviewHandler(
         }
         else -> false
     }
+}
+
+
+/**
+ * 搜索页可交互节点的鼠标/触摸点击，与确认键等价。
+ */
+private fun Modifier.searchClickable(onClick: () -> Unit): Modifier {
+    return tvPointerClickable(onClick = onClick)
 }

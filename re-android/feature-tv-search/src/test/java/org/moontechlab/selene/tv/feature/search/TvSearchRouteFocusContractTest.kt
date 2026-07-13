@@ -15,13 +15,17 @@ class TvSearchRouteFocusContractTest {
     fun right_panel_states_attach_entry_focus_requester() {
         val source = readRouteSource()
 
-        assertThat(source).contains("private fun SearchPromptPanel(")
+        assertThat(source).contains("private fun SearchSuggestionPanel(")
+        assertThat(source).contains("private fun SearchDefaultPanel(")
         assertThat(source).contains("entryFocusRequester: FocusRequester")
         assertThat(source).contains("onReturnToLeftPanel: () -> Unit")
         assertThat(source).contains("private fun SearchResultPanel(")
         assertThat(source).contains("firstItemFocusRequester = entryFocusRequester")
         assertThat(source).contains("TvSearchStatePanel(")
         assertThat(source).contains("focusRequester = entryFocusRequester")
+        assertThat(source).contains("onConsumeBack")
+        assertThat(source).contains("影片推荐")
+        assertThat(source).contains("联想结果")
     }
 
     /**

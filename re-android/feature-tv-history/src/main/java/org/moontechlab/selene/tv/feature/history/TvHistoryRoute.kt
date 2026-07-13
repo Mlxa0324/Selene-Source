@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvEmptyStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
@@ -71,7 +72,7 @@ fun TvHistoryRoute(
                         progressFraction = video.playbackProgressFraction(),
                     )
                 },
-                columns = 7,
+                columns = TvListLayoutMetrics.PosterColumns,
                 firstItemFocusRequester = contentFocusRequester,
                 onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
             )

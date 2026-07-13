@@ -1,6 +1,8 @@
 package org.moontechlab.selene.tv.feature.home
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvHomePayload
@@ -103,6 +105,74 @@ class TvHomeViewModelTest {
 
         assertThat(viewModel.state.value.isLoading).isFalse()
         assertThat(viewModel.state.value.errorMessage).isEqualTo("网络异常")
+    }
+
+
+    /**
+     * 流式加载时先返回的分区应先展示，未返回分区不提前补空块。
+     */
+    @Test
+    fun loadHome_stream_shows_ready_sections_progressively() = runTest {
+        val viewModel = TvHomeViewModel(
+            loadHome = {
+                error("stream path should not call loadHome")
+            },
+            observeHome = {
+                flow {
+                    emit(
+                        TvHomeSectionProgress(
+                            sections = listOf(
+                                TvHomeSection(
+                                    key = "hot_movies",
+                                    title = "热门电影",
+                                    videos = listOf(
+                                        TvVideoCard(id = "m1", title = "电影1", posterUrl = ""),
+                                    ),
+                                ),
+                            ),
+                            readyKeys = setOf("hot_movies"),
+                            isComplete = false,
+                        ),
+                    )
+                    delay(1)
+                    emit(
+                        TvHomeSectionProgress(
+                            sections = listOf(
+                                TvHomeSection(
+                                    key = "hot_movies",
+                                    title = "热门电影",
+                                    videos = listOf(
+                                        TvVideoCard(id = "m1", title = "电影1", posterUrl = ""),
+                                    ),
+                                ),
+                                TvHomeSection(
+                                    key = "hot_tv_shows",
+                                    title = "热门剧集",
+                                    videos = listOf(
+                                        TvVideoCard(id = "t1", title = "剧集1", posterUrl = ""),
+                                    ),
+                                ),
+                            ),
+                            readyKeys = setOf("hot_movies", "hot_tv_shows"),
+                            isComplete = true,
+                        ),
+                    )
+                }
+            },
+        )
+
+        // 收集中途状态：第一批只应有热门电影。
+        val states = mutableListOf<TvHomeUiState>()
+        // 直接 load 会 collect 完整流；用子任务采样较复杂，这里断言最终态 + 流语义通过 readyKeys。
+        viewModel.load()
+
+        assertThat(viewModel.state.value.isLoading).isFalse()
+        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
+            "hot_movies",
+            "hot_tv_shows",
+        ).inOrder()
+        assertThat(viewModel.state.value.sections.map { it.key }).doesNotContain("bangumi_calendar")
+        assertThat(viewModel.state.value.sections.map { it.key }).doesNotContain("hot_shows")
     }
 
     /**

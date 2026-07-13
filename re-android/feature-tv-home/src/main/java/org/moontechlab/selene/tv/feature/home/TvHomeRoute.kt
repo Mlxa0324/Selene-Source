@@ -3,17 +3,22 @@ package org.moontechlab.selene.tv.feature.home
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -24,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -35,6 +39,7 @@ import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
+import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
@@ -57,6 +62,7 @@ import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
  * @param onVideoClick 视频卡片点击回调。
  * @param onSectionMoreClick 分区查看更多点击回调。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvHomeRoute(
     state: TvHomeUiState = TvHomeUiState(),
@@ -110,9 +116,43 @@ fun TvHomeRoute(
             LazyListState()
         }
         val homeScrollScope = rememberCoroutineScope()
+        val density = LocalDensity.current
+        // 纵向焦点滚动：底部多留“封面标题+副标题+安全边距”，避免只露封面裁掉片名。
+        val homeBringIntoViewSpec = remember(density) {
+            object : BringIntoViewSpec {
+                private val topMarginPx = with(density) { 24.dp.toPx() }
+                // 标题行约 22sp + 副标题 13sp + 间距与放大余量。
+                private val bottomMarginPx = with(density) { 96.dp.toPx() }
+
+                override fun calculateScrollDistance(
+                    offset: Float,
+                    size: Float,
+                    containerSize: Float,
+                ): Float {
+                    val trailingEdge = offset + size
+                    val leadingEdge = offset
+                    if (leadingEdge >= topMarginPx && trailingEdge <= containerSize - bottomMarginPx) {
+                        return 0f
+                    }
+                    if (leadingEdge < topMarginPx && trailingEdge > containerSize - bottomMarginPx) {
+                        return 0f
+                    }
+                    if (leadingEdge < topMarginPx) {
+                        return leadingEdge - topMarginPx
+                    }
+                    if (trailingEdge > containerSize - bottomMarginPx) {
+                        return trailingEdge - (containerSize - bottomMarginPx)
+                    }
+                    return 0f
+                }
+            }
+        }
+        CompositionLocalProvider(LocalBringIntoViewSpec provides homeBringIntoViewSpec) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = homeListState,
+            // 末行分区需要额外底部空白，才能把焦点卡的标题滚出屏幕底边。
+            contentPadding = PaddingValues(bottom = 120.dp),
             verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
         ) {
             itemsIndexed(
@@ -139,8 +179,11 @@ fun TvHomeRoute(
                                 homeListState.firstVisibleItemScrollOffset == 0
                             if (!sectionAlreadyAnchored) {
                                 homeScrollScope.launch {
-                                    // 首页纵向换排时把当前分区滚到视口顶部，避免焦点进入了下一排但页面停在原位。
-                                    homeListState.animateScrollToItem(sectionIndex)
+                                    // 纵向换排：分区标题顶到内容区顶部，整卡（含片名）才能完整露出。
+                                    homeListState.animateScrollToItem(
+                                        index = sectionIndex,
+                                        scrollOffset = 0,
+                                    )
                                 }
                             }
                         },
@@ -164,6 +207,7 @@ fun TvHomeRoute(
                     )
                 }
             }
+        }
         }
     }
 }
@@ -234,7 +278,7 @@ fun TvVideoLibraryRoute(
             )
         } else {
             TvPosterGrid(
-                columns = 7,
+                columns = TvListLayoutMetrics.PosterColumns,
                 items = state.videos.map { video -> video.toPosterItem(state.title) },
                 firstItemFocusRequester = contentFocusRequester,
                 onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
@@ -432,40 +476,42 @@ private fun TvVideoCard.playbackProgressFraction(): Float {
  */
 private fun categorySubtitle(categoryKey: String): String {
     return when (categoryKey) {
-        "movie" -> "来自豆瓣的精选内容"
-        "tv" -> "来自豆瓣的精选内容"
-        "anime" -> "来自Bangumi的精选内容"
-        "show" -> "来自豆瓣的精选内容"
+        "movie" -> "豆瓣精选"
+        "tv" -> "豆瓣精选"
+        "anime" -> "Bangumi 精选"
+        "show" -> "豆瓣精选"
         else -> ""
     }
 }
 
 /**
  * TV 海报网格头部 —— 标题+副标题，不获焦，随网格滚动。
+ *
+ * 网格本身已有左右 contentPadding，这里不再叠加水平缩进，避免标题视觉缩进偏大。
+ * 颜色走 TV 主题 token，避免 Material onSurface 在暗色底上偏灰看不清。
  */
 @Composable
 private fun PosterGridHeader(
     title: String,
     subtitle: String,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = TvTokens.PageHorizontalPadding),
-        verticalAlignment = Alignment.Bottom,
+            .padding(bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.ExtraBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = TvTokens.TextPrimary,
         )
         if (subtitle.isNotBlank()) {
-            Spacer(modifier = Modifier.padding(start = 12.dp))
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TvTokens.TextSecondary,
             )
         }
     }

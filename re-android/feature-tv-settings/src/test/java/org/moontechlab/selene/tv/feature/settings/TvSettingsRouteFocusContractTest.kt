@@ -9,18 +9,20 @@ import org.junit.Test
  */
 class TvSettingsRouteFocusContractTest {
     /**
-     * 设置页首焦点落在服务器地址，焦点链为线性从上到下。
+     * 设置页首焦点落在服务器地址，并提供线性上下链与获焦滚动。
      */
     @Test
     fun route_source_assigns_first_focus_to_server_url() {
         val source = readRouteSource()
 
         assertThat(source).contains("import androidx.compose.ui.focus.FocusRequester")
-        // 首焦点: 服务器地址
         assertThat(source).contains("settingsEntryFocusRequester.requestFocus()")
-        // 焦点链注释验证线性顺序
-        assertThat(source).contains("服务器地址 → 账号 → 密码 → 保存配置")
-        assertThat(source).contains("回到服务器地址")
+        assertThat(source).contains("focusAndScroll")
+        assertThat(source).contains("scrollAnchorToCenter")
+        assertThat(source).contains("positionInRoot()")
+        assertThat(source).contains("regenerateModifier = Modifier.trackAnchor(\"qr\")")
+        assertThat(source).contains("regenerateQrFocus")
+        assertThat(source).contains("clearCacheFocus")
     }
 
     /**
@@ -33,6 +35,18 @@ class TvSettingsRouteFocusContractTest {
         assertThat(source).contains("contentFocusRequester: FocusRequester? = null")
         assertThat(source).contains("val settingsEntryFocusRequester = contentFocusRequester ?: serverUrlFocus")
         assertThat(source).contains("focusRequester = settingsEntryFocusRequester")
+    }
+
+    /**
+     * 二维码区域必须支持真实扫码数据与重新生成。
+     */
+    @Test
+    fun route_source_renders_real_qr_section() {
+        val source = readRouteSource()
+        assertThat(source).contains("TvQrCodeSection")
+        assertThat(source).contains("qrData = state.qrData")
+        assertThat(source).contains("onRegenerateQr")
+        assertThat(source).contains("regenerateFocusRequester = regenerateQrFocus")
     }
 
     /**

@@ -1,7 +1,9 @@
 package org.moontechlab.selene.tv.feature.home
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flow
 import org.moontechlab.selene.tv.core.data.model.TvHomePayload
 import org.moontechlab.selene.tv.core.data.model.TvHomeSection
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
@@ -17,6 +19,11 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 data class TvHomeUiState(
     val selectedMainTab: String = HOME_TAB_KEY,
     val sections: List<TvHomeSection> = emptyList(),
+    /**
+     * 是否仍在拉取首页数据。
+     *
+     * 流式加载下：首个分区已回填时仍可能为 true，便于骨架/局部占位策略判断。
+     */
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
 )
@@ -233,10 +240,15 @@ data class TvVideoLibraryUiState(
 /**
  * TV 首页 ViewModel。
  *
- * @property loadHome 首页数据加载函数。
+ * 支持一次性 [loadHome] 与流式 [observeHome] 两种注入：
+ * 优先使用 observeHome，哪个分区先返回就先展示哪块。
+ *
+ * @property loadHome 首页一次性加载函数（兼容旧测试与兜底）。
+ * @property observeHome 首页分区流式加载函数；返回 null 时退回 loadHome。
  */
 class TvHomeViewModel(
     private val loadHome: suspend () -> TvHomePayload,
+    private val observeHome: (() -> Flow<TvHomeSectionProgress>)? = null,
 ) {
     /** 首页内部状态。 */
     private val mutableState = MutableStateFlow(TvHomeUiState())
@@ -246,13 +258,40 @@ class TvHomeViewModel(
 
     /**
      * 加载首页数据。
+     *
+     * 有流式数据源时按块回填；否则保持整包加载语义。
      */
     suspend fun load() {
         // 加载过程只更新数据状态，不改变当前主菜单选中项。
         mutableState.value = mutableState.value.copy(
             isLoading = true,
             errorMessage = null,
+            // 刷新时先清空旧分区，避免旧块与新块混排。
+            sections = emptyList(),
         )
+        val stream = observeHome
+        if (stream != null) {
+            runCatching {
+                stream().collect { progress ->
+                    // 先到先显示：只合并当前已就绪分区，保持 Flutter TV 固定顺序。
+                    mutableState.value = mutableState.value.copy(
+                        sections = progress.sections.normalizedForFlutterTvHome(
+                            onlyReadyKeys = progress.readyKeys,
+                        ),
+                        selectedMainTab = HOME_TAB_KEY,
+                        isLoading = !progress.isComplete,
+                        errorMessage = null,
+                    )
+                }
+            }.onFailure { throwable ->
+                mutableState.value = mutableState.value.copy(
+                    isLoading = false,
+                    errorMessage = throwable.message ?: "首页数据加载失败",
+                )
+            }
+            return
+        }
+
         runCatching { loadHome() }
             .onSuccess { payload ->
                 mutableState.value = mutableState.value.copy(
@@ -271,6 +310,19 @@ class TvHomeViewModel(
             }
     }
 }
+
+/**
+ * 首页分区流式进度。
+ *
+ * @property sections 当前已就绪分区（可无序）。
+ * @property readyKeys 已回填分区 key，用于避免补齐未加载空分区。
+ * @property isComplete 是否全部请求结束。
+ */
+data class TvHomeSectionProgress(
+    val sections: List<TvHomeSection>,
+    val readyKeys: Set<String>,
+    val isComplete: Boolean,
+)
 
 /**
  * TV 分类视频库 ViewModel。
@@ -801,15 +853,25 @@ private fun varietyFilterRows(selectedOptions: Map<String, String>): List<TvLibr
 /**
  * 将接口返回分区归一化为 Flutter TV 首页顺序。
  *
- * @return 补齐缺失分区后的列表。
+ * @param onlyReadyKeys 非空时只展示这些已就绪分区，未返回的块不提前补空模板。
+ * @return 按固定顺序排列后的分区列表。
  */
-private fun List<TvHomeSection>.normalizedForFlutterTvHome(): List<TvHomeSection> {
+private fun List<TvHomeSection>.normalizedForFlutterTvHome(
+    onlyReadyKeys: Set<String>? = null,
+): List<TvHomeSection> {
     val incomingByKey = associateBy { section -> section.key }
     return HOME_SECTION_TEMPLATES
+        .asSequence()
+        .filter { template ->
+            // 流式加载：未返回的分区先不占位，避免“一股脑”空块。
+            onlyReadyKeys == null || template.key in onlyReadyKeys
+        }
         .map { template -> incomingByKey[template.key] ?: template }
         .filterNot { section ->
+            // 继续观看无记录时隐藏；其它分区即便空列表也保留标题（失败可见）。
             section.key == "continue_watching" && section.videos.isEmpty()
         }
+        .toList()
 }
 
 /**
