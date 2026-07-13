@@ -1,5 +1,6 @@
 package org.moontechlab.selene.tv.core.design.layout
 
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.moontechlab.selene.tv.core.design.TvTokens
 
@@ -49,6 +50,46 @@ object TvListLayoutMetrics {
      * 纵向网格底部安全留白。
      */
     val GridBottomPadding = TvTokens.PageBottomPadding
+
+    /**
+     * 按可视列数计算横向海报卡片宽度。
+     *
+     * 视口宽度扣除左右 contentPadding 与列间距后均分，
+     * 用于详情相关推荐等需要“首屏刚好 N 列”的轨道。
+     *
+     * @param viewportWidth 当前列表视口宽度。
+     * @param startPadding 左侧 contentPadding。
+     * @param endPadding 右侧 contentPadding。
+     * @param spacing 卡片间距。
+     * @param columns 可视列数，默认 [PosterColumns]。
+     * @return 单张卡片宽度，至少 1.dp。
+     */
+    fun resolvePosterRailItemWidth(
+        viewportWidth: Dp,
+        startPadding: Dp = RailStartPadding,
+        endPadding: Dp = RailEndPadding,
+        spacing: Dp = TvTokens.CardSpacing,
+        columns: Int = PosterColumns,
+    ): Dp {
+        val safeColumns = columns.coerceAtLeast(1)
+        val gapTotal = spacing * (safeColumns - 1)
+        val available = viewportWidth - startPadding - endPadding - gapTotal
+        return (available / safeColumns).coerceAtLeast(1.dp)
+    }
+
+    /**
+     * 按海报封面宽高比换算封面高度。
+     *
+     * @param cardWidth 卡片宽度。
+     * @return 封面高度，保持与 [TvTokens.PosterWidth]/[TvTokens.PosterCoverHeight] 一致。
+     */
+    fun resolvePosterCoverHeight(
+        cardWidth: Dp,
+    ): Dp {
+        // 225/158 ≈ 1.424，相关推荐与首页海报封面比例统一。
+        val ratio = TvTokens.PosterCoverHeight.value / TvTokens.PosterWidth.value
+        return cardWidth * ratio
+    }
 
     /**
      * 计算横向海报带焦点卡片对应的首个可见卡片下标。

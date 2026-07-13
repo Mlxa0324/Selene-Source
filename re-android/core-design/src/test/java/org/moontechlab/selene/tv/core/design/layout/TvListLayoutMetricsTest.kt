@@ -27,6 +27,25 @@ class TvListLayoutMetricsTest {
     }
 
     /**
+     * 7 列密度应按视口均分：1920 宽、左右 46、间距 18 时卡片宽约 235.4dp。
+     */
+    @Test
+    fun resolvePosterRailItemWidth_dividesViewportBySevenColumns() {
+        val width = TvListLayoutMetrics.resolvePosterRailItemWidth(
+            viewportWidth = 1920.dp,
+            startPadding = 46.dp,
+            endPadding = 46.dp,
+            spacing = 18.dp,
+            columns = 7,
+        )
+        // (1920 - 46 - 46 - 18*6) / 7 = 1718 / 7
+        val expected = (1920f - 46f - 46f - 18f * 6f) / 7f
+        assertThat(width.value).isWithin(0.5f).of(expected)
+        val cover = TvListLayoutMetrics.resolvePosterCoverHeight(width)
+        assertThat(cover.value).isWithin(0.5f).of(width.value * 225f / 158f)
+    }
+
+    /**
      * 纵向网格左右对齐页面标题，统一使用页面水平边距。
      */
     @Test

@@ -130,9 +130,16 @@ class TvDetailRouteFocusContractTest {
     @Test
     fun recommend_rail_uses_edge_scale_origin_and_end_gutter() {
         val source = readRouteSource()
-        // 当前版本推荐轨使用左右 contentPadding，右侧略大以符合 TV 横向列表末端收口。
-        assertThat(source).contains("contentPadding = PaddingValues(start = 33.dp, end = 43.dp)")
+        // 相关推荐必须走全局 7 列密度与左右安全边，禁止写死 113.dp。
         assertThat(source).contains("NcatRecommendRail(")
+        assertThat(source).contains("TvListLayoutMetrics.PosterColumns")
+        assertThat(source).contains("resolvePosterRailItemWidth(")
+        assertThat(source).contains("start = recommendStartPadding")
+        assertThat(source).contains("end = recommendEndPadding")
+        assertThat(source).contains("RailStartPadding")
+        assertThat(source).contains("RailEndPadding")
+        assertThat(source).doesNotContain("width(113.dp)")
+        assertThat(source).doesNotContain("height(160.dp)")
     }
 
     /**

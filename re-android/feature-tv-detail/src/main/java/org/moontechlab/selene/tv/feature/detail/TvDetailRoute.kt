@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -1533,53 +1534,75 @@ private fun NcatRecommendRail(
 ) {
     val scrollScope = rememberCoroutineScope()
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
+    // 相关推荐左右边距对齐全局横向列表契约，首屏刚好放下 PosterColumns 列。
+    val recommendStartPadding = TvListLayoutMetrics.RailStartPadding
+    val recommendEndPadding = TvListLayoutMetrics.RailEndPadding
+    val recommendSpacing = TvTokens.CardSpacing
     NcatSectionHeader(
         title = "相关推荐",
         hint = null,
         topPadding = 23.dp,
     )
-    LazyRow(
-        state = listState,
-        horizontalArrangement = Arrangement.spacedBy(17.dp),
-        contentPadding = PaddingValues(start = 33.dp, end = 43.dp),
-        modifier = Modifier.height(213.dp),
-    ) {
-        items(cards.size, key = { index -> cards[index].source + "::" + cards[index].id + "::" + index }) { index ->
-            val card = cards[index]
-            NcatRecommendCard(
-                card = card,
-                focusRequester = focusTargets.recommends.getOrNull(index),
-                onPressed = { onRecommendClick?.invoke(card) },
-                modifier = Modifier
-                    .focusProperties {
-                        up = focusTargets.episodeGroups
-                            .firstOrNull()
-                            .takeIf { hasEpisodeGroupChoices }
-                            ?: focusTargets.episodes.firstOrNull()
-                            ?: FocusRequester.Default
-                        down = focusTargets.backTop
-                        left = focusTargets.recommends.getOrNull((index - 1).coerceAtLeast(0)) ?: FocusRequester.Default
-                        right = focusTargets.recommends.getOrNull((index + 1).coerceAtMost(cards.lastIndex))
-                            ?: FocusRequester.Default
-                    }
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused) {
-                            val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
-                                previousActiveIndex = activeFocusedIndex,
-                                newlyFocusedIndex = index,
-                            )
-                            activeFocusedIndex = index
-                            if (shouldScroll) {
-                                scrollDetailOptionIntoView(
-                                    listState = listState,
-                                    focusedIndex = index,
-                                    itemCount = cards.size,
-                                    scrollScope = scrollScope,
-                                )
-                            }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // 按当前视口宽度反推卡片宽高，避免写死 113.dp 导致列数漂移。
+        val cardWidth = TvListLayoutMetrics.resolvePosterRailItemWidth(
+            viewportWidth = maxWidth,
+            startPadding = recommendStartPadding,
+            endPadding = recommendEndPadding,
+            spacing = recommendSpacing,
+            columns = TvListLayoutMetrics.PosterColumns,
+        )
+        val coverHeight = TvListLayoutMetrics.resolvePosterCoverHeight(cardWidth)
+        // 封面 + 标题行 + 间距，获焦放大后仍有轻微纵向余量。
+        val railHeight = coverHeight + 36.dp
+        LazyRow(
+            state = listState,
+            horizontalArrangement = Arrangement.spacedBy(recommendSpacing),
+            contentPadding = PaddingValues(
+                start = recommendStartPadding,
+                end = recommendEndPadding,
+            ),
+            modifier = Modifier.height(railHeight),
+        ) {
+            items(cards.size, key = { index -> cards[index].source + "::" + cards[index].id + "::" + index }) { index ->
+                val card = cards[index]
+                NcatRecommendCard(
+                    card = card,
+                    cardWidth = cardWidth,
+                    coverHeight = coverHeight,
+                    focusRequester = focusTargets.recommends.getOrNull(index),
+                    onPressed = { onRecommendClick?.invoke(card) },
+                    modifier = Modifier
+                        .focusProperties {
+                            up = focusTargets.episodeGroups
+                                .firstOrNull()
+                                .takeIf { hasEpisodeGroupChoices }
+                                ?: focusTargets.episodes.firstOrNull()
+                                ?: FocusRequester.Default
+                            down = focusTargets.backTop
+                            left = focusTargets.recommends.getOrNull((index - 1).coerceAtLeast(0)) ?: FocusRequester.Default
+                            right = focusTargets.recommends.getOrNull((index + 1).coerceAtMost(cards.lastIndex))
+                                ?: FocusRequester.Default
                         }
-                    },
-            )
+                        .onFocusChanged { focusState ->
+                            if (focusState.isFocused) {
+                                val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                    previousActiveIndex = activeFocusedIndex,
+                                    newlyFocusedIndex = index,
+                                )
+                                activeFocusedIndex = index
+                                if (shouldScroll) {
+                                    scrollDetailOptionIntoView(
+                                        listState = listState,
+                                        focusedIndex = index,
+                                        itemCount = cards.size,
+                                        scrollScope = scrollScope,
+                                    )
+                                }
+                            }
+                        },
+                )
+            }
         }
     }
 }
@@ -1588,12 +1611,17 @@ private fun NcatRecommendRail(
  * 截图式推荐卡。
  *
  * @param card 推荐数据。
+ * @param cardWidth 由全局 7 列密度反推的卡片宽度。
+ * @param coverHeight 与首页海报同比例的封面高度。
  * @param focusRequester 焦点请求器。
  * @param modifier 外层修饰器。
+ * @param onPressed 确认/点击回调。
  */
 @Composable
 private fun NcatRecommendCard(
     card: TvVideoCard,
+    cardWidth: Dp,
+    coverHeight: Dp,
     focusRequester: FocusRequester?,
     modifier: Modifier = Modifier,
     onPressed: (() -> Unit)? = null,
@@ -1607,14 +1635,14 @@ private fun NcatRecommendCard(
     )
     Column(
         modifier = modifier
-            .width(113.dp)
+            .width(cardWidth)
             .scale(scale),
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Box(
             modifier = Modifier
-                .width(113.dp)
-                .height(160.dp)
+                .width(cardWidth)
+                .height(coverHeight)
                 .clip(RoundedCornerShape(7.dp))
                 .border(
                     width = if (isFocused) 2.dp else 0.dp,
@@ -1802,7 +1830,12 @@ private fun NcatSectionHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 33.dp, end = 33.dp, top = topPadding, bottom = 14.dp),
+            .padding(
+                start = TvListLayoutMetrics.RailStartPadding,
+                end = TvListLayoutMetrics.RailEndPadding,
+                top = topPadding,
+                bottom = 14.dp,
+            ),
         // 红竖线与主标题垂直居中对齐，副文案跟随同一中线。
         verticalAlignment = Alignment.CenterVertically,
     ) {
