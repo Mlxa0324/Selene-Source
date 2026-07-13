@@ -114,10 +114,161 @@ class TvHomeRepositoryTest {
         assertThat(payload.sections.first { it.key == "hot_movies" }.videos).isNotEmpty()
         // 热门剧集失败 → 空列表
         assertThat(payload.sections.first { it.key == "hot_tv_shows" }.videos).isEmpty()
-        // 未注入 BangumiRepository 时新番放送为空，不影响其它分区。
-        assertThat(payload.sections.first { it.key == "bangumi_calendar" }.videos).isEmpty()
+        // 未注入 Bangumi 时新番放送回退豆瓣动画，仍应有内容。
+        assertThat(payload.sections.first { it.key == "bangumi_calendar" }.videos).isNotEmpty()
         // 热门综艺正常
         assertThat(payload.sections.first { it.key == "hot_shows" }.videos).isNotEmpty()
+    }
+
+    /**
+     * Bangumi 接口失败时，新番放送应回退豆瓣动画热门，避免整轨空白。
+     */
+    @Test
+    fun loadHome_fallsBackToDoubanAnimeWhenBangumiFails() = runTest {
+        val recordedParams = java.util.Collections.synchronizedList(mutableListOf<DoubanCategoryParams>())
+        val repository = TvHomeRepository(
+            playbackRepository = TvPlaybackRepository(continueWatching = emptyList()),
+            doubanRepository = DoubanRepository(api = object : FakeHomeDoubanApi() {
+                override suspend fun getCategoryData(
+                    kind: String, start: Int, limit: Int, category: String, type: String,
+                ): DoubanCategoryResponse {
+                    recordedParams.add(
+                        DoubanCategoryParams(kind = kind, category = category, type = type),
+                    )
+                    return super.getCategoryData(kind, start, limit, category, type)
+                }
+
+                override suspend fun getRecommends(
+                    kind: String,
+                    refresh: Int,
+                    start: Int,
+                    count: Int,
+                    selectedCategories: String,
+                    uncollect: Boolean,
+                    scoreRange: String,
+                    tags: String,
+                    sort: String,
+                ): DoubanCategoryResponse {
+                    recordedParams.add(
+                        DoubanCategoryParams(
+                            kind = kind,
+                            category = "全部",
+                            type = "动画",
+                            format = "电视剧",
+                            sort = sort,
+                        ),
+                    )
+                    return DoubanCategoryResponse(
+                        items = listOf(
+                            DoubanMovieItem(
+                                id = "anime-fallback-1",
+                                title = "豆瓣动画兜底",
+                                pic = org.moontechlab.selene.tv.core.network.model.DoubanPic(
+                                    normal = "test.jpg",
+                                    large = "test-lg.jpg",
+                                ),
+                                rating = org.moontechlab.selene.tv.core.network.model.DoubanRating(value = 9.0),
+                                cardSubtitle = "2026 / 日本",
+                            ),
+                        ),
+                    )
+                }
+            }),
+            bangumiRepository = BangumiRepository(
+                api = object : org.moontechlab.selene.tv.core.network.SeleneBangumiApi {
+                    override suspend fun getCalendar(): List<org.moontechlab.selene.tv.core.network.model.BangumiCalendarDayResponse> {
+                        throw IllegalStateException("bangumi blocked without proxy")
+                    }
+                },
+            ),
+        )
+
+        val payload = repository.loadHome()
+        val bangumiSection = payload.sections.first { it.key == "bangumi_calendar" }
+
+        // 主接口失败后仍有海报，分区标题保持「新番放送」。
+        assertThat(bangumiSection.title).isEqualTo("新番放送")
+        assertThat(bangumiSection.videos).isNotEmpty()
+        assertThat(bangumiSection.videos.first().title).isEqualTo("豆瓣动画兜底")
+        // 兜底应命中豆瓣动画推荐参数（kind=tv + 动画）。
+        assertThat(recordedParams.any { param ->
+            param.kind == "tv" && param.type == "动画" && param.sort == "T"
+        }).isTrue()
+    }
+
+    /**
+     * Bangumi 有数据时不触发豆瓣动画兜底，避免覆盖真实新番。
+     */
+    @Test
+    fun loadHome_prefersBangumiWhenAvailable() = runTest {
+        var doubanAnimeFallbackCalled = false
+        val repository = TvHomeRepository(
+            playbackRepository = TvPlaybackRepository(continueWatching = emptyList()),
+            doubanRepository = DoubanRepository(api = object : FakeHomeDoubanApi() {
+                override suspend fun getRecommends(
+                    kind: String,
+                    refresh: Int,
+                    start: Int,
+                    count: Int,
+                    selectedCategories: String,
+                    uncollect: Boolean,
+                    scoreRange: String,
+                    tags: String,
+                    sort: String,
+                ): DoubanCategoryResponse {
+                    if (selectedCategories.contains("动画") || tags.contains("动画")) {
+                        doubanAnimeFallbackCalled = true
+                    }
+                    return super.getRecommends(
+                        kind, refresh, start, count, selectedCategories, uncollect, scoreRange, tags, sort,
+                    )
+                }
+            }),
+            bangumiRepository = BangumiRepository(
+                api = object : org.moontechlab.selene.tv.core.network.SeleneBangumiApi {
+                    override suspend fun getCalendar(): List<org.moontechlab.selene.tv.core.network.model.BangumiCalendarDayResponse> {
+                        return listOf(
+                            org.moontechlab.selene.tv.core.network.model.BangumiCalendarDayResponse(
+                                weekday = org.moontechlab.selene.tv.core.network.model.BangumiWeekdayResponse(
+                                    id = java.util.Calendar.getInstance().let { calendar ->
+                                        when (calendar.get(java.util.Calendar.DAY_OF_WEEK)) {
+                                            java.util.Calendar.MONDAY -> 1
+                                            java.util.Calendar.TUESDAY -> 2
+                                            java.util.Calendar.WEDNESDAY -> 3
+                                            java.util.Calendar.THURSDAY -> 4
+                                            java.util.Calendar.FRIDAY -> 5
+                                            java.util.Calendar.SATURDAY -> 6
+                                            else -> 7
+                                        }
+                                    },
+                                    cn = "今天",
+                                ),
+                                items = listOf(
+                                    org.moontechlab.selene.tv.core.network.model.BangumiItemResponse(
+                                        id = 9001,
+                                        name = "Bangumi Today",
+                                        nameCn = "今日新番",
+                                        airDate = "2026-07-14",
+                                        airWeekday = 1,
+                                        rating = org.moontechlab.selene.tv.core.network.model.BangumiRatingResponse(score = 8.2),
+                                        images = org.moontechlab.selene.tv.core.network.model.BangumiImagesResponse(
+                                            large = "https://lain.bgm.tv/pic/cover/l/9001.jpg",
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        )
+                    }
+                },
+            ),
+        )
+
+        val payload = repository.loadHome()
+        val bangumiSection = payload.sections.first { it.key == "bangumi_calendar" }
+
+        assertThat(bangumiSection.videos.map { it.title }).contains("今日新番")
+        assertThat(bangumiSection.videos.first().source).isEqualTo("bangumi")
+        assertThat(doubanAnimeFallbackCalled).isFalse()
     }
 
 

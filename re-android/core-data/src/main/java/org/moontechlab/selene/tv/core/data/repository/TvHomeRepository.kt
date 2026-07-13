@@ -128,7 +128,7 @@ class TvHomeRepository(
                 )
             }
 
-            // 新番放送：对齐 Flutter，走 Bangumi 当日日历。
+            // 新番放送：优先 Bangumi 当日日历，失败再回退豆瓣动画热门。
             launch(Dispatchers.IO) {
                 completeSection(
                     TvHomeSection(
@@ -176,15 +176,26 @@ class TvHomeRepository(
     }
 
     /**
-     * 安全加载 Bangumi 当日新番，失败返回空列表，不阻断其它分区。
+     * 安全加载「新番放送」分区。
      *
-     * @return 今日放送卡片列表。
+     * 优先走 Bangumi 当日日历；国内无代理时该接口常不可达。
+     * 失败或结果为空时，回退豆瓣动画热门，避免首页动漫轨整块空白。
+     *
+     * @return 优先 Bangumi 今日放送；否则豆瓣动画热门；两边都失败则空列表。
      */
     private suspend fun loadBangumiCalendarSafely(): List<TvVideoCard> {
-        val repository = bangumiRepository ?: return emptyList()
-        return runCatching {
-            repository.loadTodayCalendar()
-        }.getOrDefault(emptyList())
+        // 1) 优先 Bangumi：对齐 Flutter 新番放送主数据源。
+        val bangumiVideos = bangumiRepository?.let { repository ->
+            runCatching {
+                repository.loadTodayCalendar()
+            }.getOrDefault(emptyList())
+        }.orEmpty()
+        if (bangumiVideos.isNotEmpty()) {
+            return bangumiVideos
+        }
+
+        // 2) 回退豆瓣动画：不依赖代理，复用分类页缓存参数。
+        return loadCategorySafely(BANGUMI_FALLBACK_DOUBAN_PARAMS)
     }
 
     private companion object {
@@ -211,6 +222,19 @@ class TvHomeRepository(
 
         /** 新番放送分区标题。 */
         const val BANGUMI_CALENDAR_TITLE = "新番放送"
+
+        /**
+         * Bangumi 不可达时的豆瓣动画兜底参数。
+         *
+         * 对齐动漫 Tab「番剧」默认筛选，走豆瓣推荐接口，国内网络更稳。
+         */
+        val BANGUMI_FALLBACK_DOUBAN_PARAMS = DoubanCategoryParams(
+            kind = "tv",
+            category = "全部",
+            type = "动画",
+            format = "电视剧",
+            sort = "T",
+        )
 
         /** 热门综艺分区标识。 */
         const val HOT_SHOWS_KEY = "hot_shows"
