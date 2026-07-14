@@ -558,17 +558,19 @@ private fun TvNavigationPill(
         // 主菜单：无背景，主题色文字 + 选中下划线。
         // 注意：下划线绝不能裸用 fillMaxWidth() 撑满 Row，否则首项占满整行、后续 tab 被挤没。
         // 用 IntrinsicSize.Max 让宽度跟文案，再 fillMaxWidth 画与字同宽的下划线。
+        // 无 start 内边距，与上方 LOGO 左缘对齐（父级已有 PageHorizontalPadding）。
         Box(
             modifier = Modifier
                 .height(TvTokens.TopActionHeight)
-                // 水平 padding 与原先胶囊接近，保持点击热区与视觉节奏。
                 .then(focusAndClickModifier)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center,
+                // 右侧留一点热区间距，左侧 0 保证与 LOGO 左对齐。
+                .padding(end = 4.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
             Column(
                 modifier = Modifier.width(IntrinsicSize.Max),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalAlignment = Alignment.Start,
+                // 文案与下划线整体垂直居中于导航行高。
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
@@ -580,12 +582,12 @@ private fun TvNavigationPill(
                     color = labelColor,
                     maxLines = 1,
                 )
-                Spacer(modifier = Modifier.height(6.dp))
-                // 下划线与文案同宽：未选中透明，选中主题色，获焦未选中白线提示。
+                // 下划线紧贴文字下方（肉眼挨着），略加高一点。
+                Spacer(modifier = Modifier.height(2.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
+                        .height(4.dp)
                         .widthIn(min = 16.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .background(underlineColor),

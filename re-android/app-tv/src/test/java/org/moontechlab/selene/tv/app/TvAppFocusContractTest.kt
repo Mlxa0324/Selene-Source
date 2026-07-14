@@ -224,6 +224,10 @@ class TvAppFocusContractTest {
         assertThat(pillSource).contains("Color.Transparent")
         // 下划线宽度跟文案，禁止裸 fillMaxWidth 把首项撑满整行挤掉后续 tab。
         assertThat(pillSource).contains("IntrinsicSize.Max")
+        // 与 LOGO 左对齐：主菜单项无 start 内边距；下划线贴字且略加高。
+        assertThat(pillSource).contains("padding(end = 4.dp)")
+        assertThat(pillSource).contains("Spacer(modifier = Modifier.height(2.dp))")
+        assertThat(pillSource).contains(".height(4.dp)")
         assertThat(topNavSource).contains("horizontalSpacing = 12.dp")
     }
 
