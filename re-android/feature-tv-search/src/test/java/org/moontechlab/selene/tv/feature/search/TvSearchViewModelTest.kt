@@ -193,10 +193,38 @@ class TvSearchViewModelTest {
         val cards = aggregateSearchResults(
             listOf(
                 TvSearchResultResponse(id = "1", title = "剑 来", episodes = listOf("1"), sourceName = "A"),
-                TvSearchResultResponse(id = "2", title = "剑来", episodes = listOf("1", "2"), sourceName = "B"),
+                TvSearchResultResponse(id = "2", title = "剑来", episodes = listOf("1", "2"), sourceName = "B", rate = "8.6"),
             ),
         )
         assertThat(cards).hasSize(1)
+        assertThat(cards.single().totalEpisodes).isEqualTo(2)
+        assertThat(cards.single().doubanRate).isEqualTo("8.6")
+        assertThat(cards.single().sourceName).isEqualTo("A 等2源")
+    }
+
+    /**
+     * 同名来源去重，避免副标题「电影天堂 / 电影天堂」。
+     */
+    @Test
+    fun aggregateSearchResults_dedupes_duplicate_source_names() {
+        val cards = aggregateSearchResults(
+            listOf(
+                TvSearchResultResponse(
+                    id = "1",
+                    title = "中餐厅",
+                    episodes = listOf("1", "2"),
+                    sourceName = "电影天堂",
+                ),
+                TvSearchResultResponse(
+                    id = "2",
+                    title = "中餐厅",
+                    episodes = listOf("1"),
+                    sourceName = " 电影天堂 ",
+                ),
+            ),
+        )
+        assertThat(cards).hasSize(1)
+        assertThat(cards.single().sourceName).isEqualTo("电影天堂")
         assertThat(cards.single().totalEpisodes).isEqualTo(2)
     }
 

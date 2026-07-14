@@ -19,9 +19,10 @@ data class TvPageStatChipData(
  * @property title 海报主标题。
  * @property subtitle 海报副标题。
  * @property posterUrl 海报地址，用于生成默认背景纹理。
- * @property totalEpisodes 总集数，用于续播徽标。
- * @property episodeIndex 当前集数，从 1 开始。
+ * @property totalEpisodes 总集数，用于右上角集数徽标。
+ * @property episodeIndex 当前集数，从 1 开始；续播场景展示「当前/总集」。
  * @property progressFraction 播放进度比例，取值范围会在渲染前归一化到 0..1。
+ * @property rating 评分文案（如豆瓣分）；非空时在封面上展示。
  */
 data class TvPosterItem(
     val id: String,
@@ -32,6 +33,7 @@ data class TvPosterItem(
     val totalEpisodes: Int = 0,
     val episodeIndex: Int = 0,
     val progressFraction: Float = 0f,
+    val rating: String = "",
 )
 
 /**

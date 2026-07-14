@@ -723,14 +723,23 @@ private fun buildAggregatedVideoCard(results: List<TvSearchResultResponse>): TvV
     val representative = results.maxByOrNull { result ->
         val episodeScore = result.episodes.orEmpty().size * 10
         val posterScore = if (result.poster.orEmpty().isNotBlank()) 1 else 0
-        episodeScore + posterScore
+        val rateScore = if (result.rate.orEmpty().trim().let { it.isNotEmpty() && it != "0" }) 2 else 0
+        episodeScore + posterScore + rateScore
     } ?: results.first()
     val maxEpisodeCount = results.maxOfOrNull { it.episodes.orEmpty().size } ?: 0
-    val sourceName = results
+    // 来源去重：折叠空白/大小写后再 distinct，避免「电影天堂 / 电影天堂」重复。
+    val sourceNames = results
         .mapNotNull { it.sourceName?.trim()?.takeIf(String::isNotEmpty) }
-        .distinct()
-        .joinToString(separator = " / ")
-        .ifBlank { representative.sourceName.orEmpty() }
+        .distinctBy { name -> name.replace(Regex("\\s+"), "").lowercase() }
+    val sourceName = when {
+        sourceNames.isEmpty() -> representative.sourceName.orEmpty().trim()
+        sourceNames.size == 1 -> sourceNames.first()
+        else -> "${sourceNames.first()} 等${sourceNames.size}源"
+    }
+    val rate = results
+        .mapNotNull { it.rate?.trim()?.takeIf { value -> value.isNotEmpty() && value != "0" && value != "0.0" } }
+        .firstOrNull()
+        .orEmpty()
     return TvVideoCard(
         id = representative.id.orEmpty(),
         source = representative.source.orEmpty().ifBlank { "aggregated" },
@@ -740,5 +749,6 @@ private fun buildAggregatedVideoCard(results: List<TvSearchResultResponse>): TvV
         posterUrl = representative.poster.orEmpty(),
         totalEpisodes = maxEpisodeCount,
         searchTitle = representative.title.orEmpty(),
+        doubanRate = rate,
     )
 }

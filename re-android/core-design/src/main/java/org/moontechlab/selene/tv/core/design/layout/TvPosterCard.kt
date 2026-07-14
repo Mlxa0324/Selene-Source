@@ -186,12 +186,30 @@ private fun TvPosterCover(
                     ),
                 ),
         )
-        if (item.totalEpisodes > 1 && item.episodeIndex > 0) {
+        // 多集：右上角展示总集数；续播有当前集时展示「当前/总集」。
+        val episodeBadgeText = when {
+            item.totalEpisodes > 1 && item.episodeIndex > 0 ->
+                "${item.episodeIndex}/${item.totalEpisodes}"
+            item.totalEpisodes > 1 ->
+                "共${item.totalEpisodes}集"
+            else -> null
+        }
+        if (episodeBadgeText != null) {
             TvPosterEpisodeBadge(
-                text = "${item.episodeIndex}/${item.totalEpisodes}",
+                text = episodeBadgeText,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 8.dp, end = 8.dp),
+            )
+        }
+        // 有评分时左上角展示，避免与右上集数徽标重叠。
+        val ratingText = item.rating.trim()
+        if (ratingText.isNotEmpty() && ratingText != "0" && ratingText != "0.0") {
+            TvPosterEpisodeBadge(
+                text = ratingText,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 8.dp, start = 8.dp),
             )
         }
         if (progressFraction > 0f) {

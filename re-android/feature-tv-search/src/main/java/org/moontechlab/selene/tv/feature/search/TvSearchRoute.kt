@@ -1200,7 +1200,7 @@ private fun SearchResultPanel(
             )
 
             else -> {
-                // 5 列观感更满：卡片铺满格宽 + 收紧边距/间距，避免固定宽 158 显得瘦窄。
+                // 5 列铺满格宽；上下间距加大，避免标题/封面贴太近。
                 TvPosterGrid(
                     items = state.resultCards.map { video ->
                         TvPosterItem(
@@ -1210,14 +1210,15 @@ private fun SearchResultPanel(
                             subtitle = video.searchResultSubtitle(),
                             posterUrl = video.posterUrl,
                             totalEpisodes = video.totalEpisodes,
+                            rating = video.doubanRate,
                         )
                     },
                     columns = 5,
                     modifier = Modifier.fillMaxSize(),
                     contentHorizontalPadding = 2.dp,
-                    contentBottomPadding = 16.dp,
+                    contentBottomPadding = 20.dp,
                     horizontalSpacing = 12.dp,
-                    verticalSpacing = 14.dp,
+                    verticalSpacing = 22.dp,
                     fillCellWidth = true,
                     firstItemFocusRequester = entryFocusRequester,
                     onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
@@ -1289,15 +1290,36 @@ private fun TvSearchStatePanel(
 }
 
 /**
- * 搜索结果副标题：年份 · 来源。
+ * 搜索结果副标题：年份 · 来源（来源去重，避免重复拼接）。
  *
  * @receiver 视频卡片。
  * @return 展示副标题。
  */
-private fun TvVideoCard.searchResultSubtitle(): String = buildList {
-    if (year.isNotBlank()) add(year)
-    if (sourceName.isNotBlank()) add(sourceName)
-}.joinToString(" · ").ifBlank { "结果" }
+private fun TvVideoCard.searchResultSubtitle(): String {
+    val yearPart = year.trim()
+    // 拆分「A / B」「A、B」等再去重，防止接口/聚合导致来源字面重复。
+    val sourceParts = sourceName
+        .split(Regex("[/|,，、·]+"))
+        .map { part -> part.trim() }
+        .filter { part -> part.isNotEmpty() }
+        .distinctBy { part -> part.replace(Regex("\\s+"), "").lowercase() }
+    val sourcePart = when {
+        sourceParts.isEmpty() -> ""
+        sourceParts.size == 1 -> sourceParts.first()
+        else -> "${sourceParts.first()} 等${sourceParts.size}源"
+    }
+    return buildList {
+        if (yearPart.isNotBlank()) {
+            // 来源文案里已带年份时不再重复拼年份。
+            if (sourcePart.isEmpty() || !sourcePart.contains(yearPart)) {
+                add(yearPart)
+            }
+        }
+        if (sourcePart.isNotBlank()) {
+            add(sourcePart)
+        }
+    }.joinToString(" · ").ifBlank { "结果" }
+}
 
 // ── 通用按键处理：只消费手动处理的键，Back/其他键全程放行 ──
 
