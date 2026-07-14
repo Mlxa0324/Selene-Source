@@ -1048,11 +1048,14 @@ private fun WordTileGrid(
                                     color = if (isFocused) Color.White else Color.White.copy(alpha = 0.05f),
                                     shape = RoundedCornerShape(12.dp),
                                 )
+                                // 每项都挂 focusRequesters[index]，保证区内左右能移到首项。
+                                // 首项额外挂 entryFocusRequester，承接从左栏进入右栏的入口焦点。
+                                .focusRequester(focusRequesters[index])
                                 .then(
                                     if (isFirst && entryFocusRequester != null) {
                                         Modifier.focusRequester(entryFocusRequester)
                                     } else {
-                                        Modifier.focusRequester(focusRequesters[index])
+                                        Modifier
                                     },
                                 )
                                 .searchClickable({ onWordClick(word) })
@@ -1061,18 +1064,24 @@ private fun WordTileGrid(
                                         onEnter = { onWordClick(word) },
                                         // 左缘回键盘；区内左右不环形。
                                         onLeft = {
-                                            if (col == 0) onReturnToLeftPanel()
-                                            else focusRequesters.getOrNull(index - 1)?.requestFocus()
+                                            if (col == 0) {
+                                                onReturnToLeftPanel()
+                                            } else {
+                                                focusRequesters.getOrNull(index - 1)
+                                                    ?.let { runCatching { it.requestFocus() } }
+                                            }
                                         },
                                         onRight = {
                                             if (index < lastIndex) {
-                                                focusRequesters.getOrNull(index + 1)?.requestFocus()
+                                                focusRequesters.getOrNull(index + 1)
+                                                    ?.let { runCatching { it.requestFocus() } }
                                             }
                                         },
                                         onUp = {
                                             val up = index - columns
                                             if (up >= 0) {
-                                                focusRequesters.getOrNull(up)?.requestFocus()
+                                                focusRequesters.getOrNull(up)
+                                                    ?.let { runCatching { it.requestFocus() } }
                                             } else {
                                                 onArrowUpFromTop?.invoke()
                                             }
@@ -1080,7 +1089,8 @@ private fun WordTileGrid(
                                         onDown = {
                                             val down = index + columns
                                             if (down <= lastIndex) {
-                                                focusRequesters.getOrNull(down)?.requestFocus()
+                                                focusRequesters.getOrNull(down)
+                                                    ?.let { runCatching { it.requestFocus() } }
                                             } else {
                                                 // 底行下键：离开本区到下一区块，不循环回顶部。
                                                 onArrowDownFromBottom?.invoke()

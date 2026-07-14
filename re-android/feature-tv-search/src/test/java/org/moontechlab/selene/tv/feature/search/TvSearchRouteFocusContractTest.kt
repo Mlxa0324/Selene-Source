@@ -62,6 +62,7 @@ class TvSearchRouteFocusContractTest {
 
     /**
      * 右侧词块不环形：底行下键用 onArrowDownFromBottom 离开本区，禁止循环回顶部。
+     * 首项必须同时挂 focusRequesters[0] 与 entryFocusRequester，否则区内无法移回首项。
      */
     @Test
     fun right_panel_word_tiles_do_not_wrap_vertically() {
@@ -74,6 +75,8 @@ class TvSearchRouteFocusContractTest {
         assertThat(wordGrid).contains("onArrowUpFromTop")
         assertThat(wordGrid).contains("底行下键：离开本区到下一区块，不循环回顶部")
         assertThat(wordGrid).doesNotContain("底行下键：回到首行同列（环形）")
+        assertThat(wordGrid).contains(".focusRequester(focusRequesters[index])")
+        assertThat(wordGrid).contains("首项额外挂 entryFocusRequester")
         assertThat(source).contains("hotEntryFocus")
         assertThat(source).contains("recommendEntryFocus")
     }
