@@ -65,8 +65,14 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -1037,7 +1043,7 @@ private fun NcatInfoPanel(
         // 简介摘要可获焦：确认后打开全屏影片简介。
         val descriptionInteraction = remember { MutableInteractionSource() }
         val descriptionFocused by descriptionInteraction.collectIsFocusedAsState()
-        // 固定高度背景框；右下角“简介”与末行同排，正文右侧预留角标宽度防重叠。
+        // 固定高度背景框；末行绕开右下角“简介”标签，上方文本保持整行宽度。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1072,21 +1078,15 @@ private fun NcatInfoPanel(
                     }
                 },
         ) {
-            Text(
-                text = descriptionText,
-                color = Color.White.copy(alpha = 0.78f),
-                fontSize = 12.sp,
-                lineHeight = 19.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            NcatWrappedDescription(
+                description = descriptionText,
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxSize()
                     .padding(
                         start = 16.dp,
                         top = 12.dp,
-                        // 末行与右下角角标同排时，右侧预留角标宽度，避免文字重叠。
-                        end = NcatDescriptionBadgeReserve,
+                        end = 16.dp,
                         bottom = 12.dp,
                     ),
             )
@@ -1144,6 +1144,65 @@ private fun NcatInfoPanel(
                     )
                 },
             )
+        }
+    }
+}
+
+/**
+ * 渲染绕开右下角“简介”标签的影片简介摘要。
+ *
+ * 前两行使用完整宽度，第三行缩窄以绕过标签，超出第三行的内容由第三行省略号表示。
+ *
+ * @param description 影片简介原文。
+ * @param modifier 摘要可用区域修饰器。
+ */
+@OptIn(ExperimentalTextApi::class)
+@Composable
+private fun NcatWrappedDescription(
+    description: String,
+    modifier: Modifier = Modifier,
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val descriptionStyle = TextStyle(
+        color = Color.White.copy(alpha = 0.78f),
+        fontSize = 12.sp,
+        lineHeight = 19.sp,
+    )
+    BoxWithConstraints(modifier = modifier) {
+        // 右下标签只影响最末行；上方两行按完整可用宽度排版。
+        val fullLineWidth = maxWidth
+        val lastLineWidth = (maxWidth - NcatDescriptionBadgeReserve).coerceAtLeast(0.dp)
+        val density = LocalDensity.current
+        val fullLineLayout = textMeasurer.measure(
+            text = AnnotatedString(description),
+            style = descriptionStyle,
+            constraints = Constraints(
+                maxWidth = with(density) { fullLineWidth.roundToPx() },
+            ),
+        )
+        val upperTextEnd = if (fullLineLayout.lineCount > 2) {
+            // 取完整前两行的文本边界，第三行交给缩窄区域处理。
+            fullLineLayout.getLineEnd(1, visibleEnd = true)
+        } else {
+            description.length
+        }
+        val upperDescription = description.substring(0, upperTextEnd)
+        val finalDescription = description.substring(upperTextEnd)
+
+        Column {
+            Text(
+                text = upperDescription,
+                style = descriptionStyle,
+            )
+            if (finalDescription.isNotEmpty()) {
+                Text(
+                    text = finalDescription,
+                    modifier = Modifier.width(lastLineWidth),
+                    style = descriptionStyle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

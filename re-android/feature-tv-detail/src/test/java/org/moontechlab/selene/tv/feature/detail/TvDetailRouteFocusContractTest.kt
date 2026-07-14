@@ -135,19 +135,24 @@ class TvDetailRouteFocusContractTest {
     }
 
     /**
-     * 简介摘要必须避开右下角“简介”按钮列，超过两行时以省略号收尾。
+     * 简介摘要应模拟 Word 围绕：前两行全宽，末行绕开右下角标签并以省略号收尾。
      */
     @Test
-    fun detail_description_reserves_action_column_and_ellipsizes_after_two_lines() {
+    fun detail_description_wraps_around_action_badge_and_ellipsizes_final_line() {
         val source = readRouteSource()
         val infoPanelSource = source
             .substringAfter("private fun NcatInfoPanel(")
             .substringBefore("private fun NcatMetaBadge(")
+        val wrappedDescriptionSource = source
+            .substringAfter("private fun NcatWrappedDescription(")
+            .substringBefore("private fun NcatMetaBadge(")
 
         assertThat(source).contains("private val NcatDescriptionBadgeReserve = 112.dp")
-        assertThat(infoPanelSource).contains("maxLines = 2")
-        assertThat(infoPanelSource).contains("overflow = TextOverflow.Ellipsis")
-        assertThat(infoPanelSource).contains("end = NcatDescriptionBadgeReserve")
+        assertThat(infoPanelSource).contains("NcatWrappedDescription(")
+        assertThat(wrappedDescriptionSource).contains("rememberTextMeasurer()")
+        assertThat(wrappedDescriptionSource).contains("getLineEnd(1, visibleEnd = true)")
+        assertThat(wrappedDescriptionSource).contains("maxLines = 1")
+        assertThat(wrappedDescriptionSource).contains("overflow = TextOverflow.Ellipsis")
     }
 
     /**
