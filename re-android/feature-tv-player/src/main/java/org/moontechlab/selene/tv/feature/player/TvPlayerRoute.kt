@@ -217,9 +217,11 @@ fun TvPlayerRoute(
         }
     }
 
+    val showLoadingOverlay = state.shouldShowLoadingOverlay()
+
     // 顶部标题/底部进度条：无操作 4 秒后隐藏；菜单打开时由菜单层接管底部。
-    LaunchedEffect(isChromeVisible, state.isMenuVisible, state.isPlayerLoading, chromeInteractionKey) {
-        if (!isChromeVisible || state.isMenuVisible || state.isPlayerLoading) {
+    LaunchedEffect(isChromeVisible, state.isMenuVisible, showLoadingOverlay, chromeInteractionKey) {
+        if (!isChromeVisible || state.isMenuVisible || showLoadingOverlay) {
             return@LaunchedEffect
         }
         delay(PLAYER_MENU_AUTO_HIDE_MS)
@@ -230,17 +232,16 @@ fun TvPlayerRoute(
         state.isSeekOverlayVisible,
         state.seekOverlayPositionMs,
         state.seekOverlayDirection,
-        state.isPlayerLoading,
+        state.isSeekGestureActive,
     ) {
         if (!state.isSeekOverlayVisible) {
             return@LaunchedEffect
         }
-        // 长按 seek 松手后进入缓冲：立刻让中心转圈接手，不再叠 seek 时间提示。
-        if (state.isPlayerLoading) {
-            viewModel.hideSeekOverlay()
+        // 按住期间 seek 提示常驻；松手后由 onSeekGestureReleased 立刻收起，改展示转圈。
+        if (state.isSeekGestureActive) {
             return@LaunchedEffect
         }
-        // Flutter TV 的 seek 中心提示停留约 1.2 秒后自动淡出。
+        // 极端情况下手势状态已清但提示仍在：短延迟后兜底隐藏。
         delay(1_200)
         viewModel.hideSeekOverlay()
     }
@@ -264,12 +265,12 @@ fun TvPlayerRoute(
 
     // 菜单打开时保留顶栏；菜单关闭后跟随壳层倒计时显示/隐藏。
     val shouldShowTopDecorations =
-        !state.isPlayerLoading && (state.isMenuVisible || isChromeVisible)
+        !showLoadingOverlay && (state.isMenuVisible || isChromeVisible)
     // 底部进度条/提示仅在菜单关闭且壳层可见时展示。
     val shouldShowPlaybackChrome =
-        isChromeVisible && !state.isMenuVisible && !state.isPlayerLoading
+        isChromeVisible && !state.isMenuVisible && !showLoadingOverlay
     val shouldShowCenterPlayButton =
-        isChromeVisible && !state.isMenuVisible && !state.isPlayerLoading && !state.isPlaybackPlaying
+        isChromeVisible && !state.isMenuVisible && !showLoadingOverlay && !state.isPlaybackPlaying
 
     Box(
         modifier = Modifier
@@ -278,12 +279,8 @@ fun TvPlayerRoute(
             .focusRequester(playerRootFocusRequester)
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyUp && event.key.isSeekDirectionKey()) {
-                    // 方向键松手立刻停止连续 seek，避免松手后进度继续跳动。
+                    // 方向键松手：停连续 seek，并进入“等画面”加载转圈。
                     continuousSeekState.stop()
-                    // 松手后若内核已在缓冲，收起中心 seek 提示，改由加载转圈接管。
-                    if (state.isPlayerLoading) {
-                        viewModel.hideSeekOverlay()
-                    }
                     return@onPreviewKeyEvent true
                 }
                 if (event.type != KeyEventType.KeyDown) {
@@ -398,14 +395,15 @@ fun TvPlayerRoute(
             )
         }
 
-        if (state.isPlayerLoading) {
+        // 按住快进/快退：只显示时间提示；松手后才显示加载转圈，直到画面起播。
+        if (showLoadingOverlay) {
             TvPlayerLoadingOverlay(
                 networkSpeedText = formatNetworkSpeed(state.networkSpeedBytesPerSecond),
                 modifier = Modifier.align(Alignment.Center),
             )
         }
 
-        if (state.isSeekOverlayVisible) {
+        if (state.isSeekOverlayVisible && !showLoadingOverlay) {
             TvPlayerSeekOverlay(
                 direction = state.seekOverlayDirection,
                 positionMs = state.seekOverlayDisplayPositionMs,
@@ -1722,6 +1720,9 @@ private class ContinuousSeekState(
     /** 当前连续 seek 任务。 */
     private var seekJob: Job? = null
 
+    /** 左右键是否仍处于一次按住手势中（start→stop 成对）。 */
+    private var gestureActive: Boolean = false
+
     /**
      * 开始一次方向键 seek。
      *
@@ -1732,7 +1733,13 @@ private class ContinuousSeekState(
         direction: Int,
         initialHoldMs: Long,
     ) {
-        stop()
+        // 同一次按住不重复“松手”语义，只取消旧 tick 再开新任务。
+        seekJob?.cancel()
+        seekJob = null
+        if (!gestureActive) {
+            gestureActive = true
+            viewModel.onSeekGestureStarted()
+        }
         seekJob = scope.launch {
             // 初次按下先执行 10 秒短跳；若用户很快松手，就保持短按语义。
             viewModel.seekByDirection(
@@ -1755,11 +1762,16 @@ private class ContinuousSeekState(
     }
 
     /**
-     * 停止当前连续 seek。
+     * 停止当前连续 seek（方向键松手或离开全屏）。
      */
     fun stop() {
         seekJob?.cancel()
         seekJob = null
+        if (gestureActive) {
+            gestureActive = false
+            // 短按/长按松手：收起时间提示，展示加载转圈直到起播。
+            viewModel.onSeekGestureReleased()
+        }
     }
 }
 

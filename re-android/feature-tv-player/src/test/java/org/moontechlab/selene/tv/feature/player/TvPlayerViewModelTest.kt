@@ -352,6 +352,57 @@ class TvPlayerViewModelTest {
     }
 
     /**
+     * 快进/快退：按住不展示加载转圈；松手后展示，直到画面就绪（Playing）再消失。
+     */
+    @Test
+    fun seek_gesture_shows_loading_only_after_release_until_playing() = runTest {
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-2",
+            url = "https://cdn.test/video.m3u8",
+            startPositionMs = 12_000L,
+        )
+        val engine = RecordingPlayerEngine(durationMs = 60_000L)
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+        )
+        viewModel.loadInitialRequest()
+        val observeJob = backgroundScope.launch {
+            viewModel.observePlayerState()
+        }
+        runCurrent()
+
+        viewModel.onSeekGestureStarted()
+        viewModel.seekByDirection(direction = 1, holdMs = 100)
+        // 按住期间即使内核进入 Loading，也不展示中心转圈。
+        engine.emitState(PlayerState.Loading)
+        runCurrent()
+        assertThat(viewModel.state.value.isSeekGestureActive).isTrue()
+        assertThat(viewModel.state.value.isSeekOverlayVisible).isTrue()
+        assertThat(viewModel.state.value.shouldShowLoadingOverlay()).isFalse()
+
+        // 松手：收起时间提示，进入等画面加载动画。
+        viewModel.onSeekGestureReleased()
+        assertThat(viewModel.state.value.isSeekGestureActive).isFalse()
+        assertThat(viewModel.state.value.isSeekOverlayVisible).isFalse()
+        assertThat(viewModel.state.value.isPostSeekLoading).isTrue()
+        assertThat(viewModel.state.value.shouldShowLoadingOverlay()).isTrue()
+
+        // 画面起播后转圈消失。
+        engine.emitState(
+            PlayerState.Playing(
+                snapshot = request.toTestSnapshot(positionMs = 22_000L, durationMs = 60_000L),
+            ),
+        )
+        runCurrent()
+        assertThat(viewModel.state.value.isPostSeekLoading).isFalse()
+        assertThat(viewModel.state.value.shouldShowLoadingOverlay()).isFalse()
+        observeJob.cancel()
+    }
+
+    /**
      * 左右键 seek 后必须展示中心时间提示，且提示目标不能脱离真实 seek 目标。
      */
     @Test

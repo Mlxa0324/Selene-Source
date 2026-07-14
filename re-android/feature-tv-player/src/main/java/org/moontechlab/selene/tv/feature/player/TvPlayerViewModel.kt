@@ -30,6 +30,8 @@ import org.moontechlab.selene.tv.core.player.api.toPlaybackIdentity
  * @property cachedRanges 当前播放器已缓存范围，单位毫秒。
  * @property networkSpeedBytesPerSecond 当前播放器下载网速，单位 B/s。
  * @property playerErrorMessage 播放器加载错误文案。
+ * @property isSeekGestureActive 左右键是否仍按住（按住期间不展示加载转圈）。
+ * @property isPostSeekLoading 松手后等待起播的加载动画，直到 Playing/Paused 就绪后清除。
  * @property isSeekOverlayVisible 中心 seek 提示是否可见。
  * @property seekOverlayDirection 当前 seek 方向，`1` 为快进，`-1` 为快退。
  * @property seekOverlayPositionMs 实际下发给播放器的 seek 目标位置。
@@ -58,6 +60,8 @@ data class TvPlayerUiState(
     val cachedRanges: List<TvPlayerCachedRange> = emptyList(),
     val networkSpeedBytesPerSecond: Long = 0L,
     val playerErrorMessage: String? = null,
+    val isSeekGestureActive: Boolean = false,
+    val isPostSeekLoading: Boolean = false,
     val isSeekOverlayVisible: Boolean = false,
     val seekOverlayDirection: Int = 0,
     val seekOverlayPositionMs: Long = currentPositionMs,
@@ -511,8 +515,37 @@ class TvPlayerViewModel(
         mutableState.value = mutableState.value.copy(
             isMenuVisible = true,
             isSeekOverlayVisible = false,
+            isSeekGestureActive = false,
+            isPostSeekLoading = false,
             selectedTopMenu = menu,
         )
+    }
+
+    /**
+     * 左右方向键按下：进入 seek 手势，按住期间只展示时间提示，不展示加载转圈。
+     */
+    fun onSeekGestureStarted() {
+        mutableState.value = mutableState.value.copy(
+            isSeekGestureActive = true,
+            isPostSeekLoading = false,
+        )
+    }
+
+    /**
+     * 左右方向键松手：收起 seek 提示，展示加载转圈直到画面就绪起播。
+     */
+    fun onSeekGestureReleased() {
+        seekOverlayDisplayBasePositionMs = null
+        mutableState.value = mutableState.value.copy(
+            isSeekGestureActive = false,
+            isSeekOverlayVisible = false,
+            // 短按/长按松手统一进入“等画面”加载动画。
+            isPostSeekLoading = true,
+        )
+        // 用当前内核态立刻收口：已 Playing/Paused 则不硬撑；仍 Loading 则保持转圈。
+        playerEngine?.let { engine ->
+            syncPlayerState(engine.state.value)
+        }
     }
 
     /**
@@ -634,9 +667,19 @@ class TvPlayerViewModel(
         val snapshot = playerState.snapshotOrNull()
         val positionMs = snapshot?.positionMs ?: mutableState.value.currentPositionMs
         val request = mutableState.value.playbackRequest
+        // 起播/暂停就绪后结束松手加载动画；缓冲中保留，直到真正可出画。
+        val keepPostSeekLoading = when (playerState) {
+            is PlayerState.Loading -> mutableState.value.isPostSeekLoading
+            is PlayerState.Playing,
+            is PlayerState.Paused,
+            -> false
+            is PlayerState.Error -> false
+            PlayerState.Idle -> false
+        }
         mutableState.value = mutableState.value.copy(
             isPlayerLoading = playerState is PlayerState.Loading,
             isPlaybackPlaying = playerState is PlayerState.Playing,
+            isPostSeekLoading = keepPostSeekLoading,
             currentPositionMs = positionMs,
             durationMs = snapshot?.durationMs ?: mutableState.value.durationMs,
             cachedRanges = snapshot?.cachedRanges?.map { range ->
@@ -859,6 +902,18 @@ class TvPlayerViewModel(
             seekOverlayDurationMs = durationMs,
         )
     }
+}
+
+/**
+ * 是否展示全屏中心加载转圈。
+ *
+ * 规则：按住快进/快退时不展示；松手后（或首启加载）展示，直到画面就绪。
+ */
+fun TvPlayerUiState.shouldShowLoadingOverlay(): Boolean {
+    if (isSeekGestureActive) {
+        return false
+    }
+    return isPlayerLoading || isPostSeekLoading
 }
 
 /**

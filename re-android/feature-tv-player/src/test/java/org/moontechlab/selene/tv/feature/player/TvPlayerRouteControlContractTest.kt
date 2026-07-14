@@ -193,7 +193,7 @@ class TvPlayerRouteControlContractTest {
     fun route_renders_bottom_progress_when_menu_and_loading_hidden() {
         val source = readRouteSource()
 
-        assertThat(source).contains("!state.isMenuVisible && !state.isPlayerLoading")
+        assertThat(source).contains("!state.isMenuVisible && !showLoadingOverlay")
         assertThat(source).contains("TvPlayerBottomProgressBar")
         assertThat(source).contains("testTag(\"tv-player-bottom-progress\")")
     }
@@ -309,7 +309,11 @@ class TvPlayerRouteControlContractTest {
     fun route_renders_fullscreen_loading_overlay_with_speed_text() {
         val source = readRouteSource()
 
-        assertThat(source).contains("if (state.isPlayerLoading)")
+        // 转圈仅在松手后/首启加载展示：按住 seek 时 shouldShowLoadingOverlay=false。
+        assertThat(source).contains("shouldShowLoadingOverlay()")
+        assertThat(source).contains("if (showLoadingOverlay)")
+        assertThat(source).contains("onSeekGestureStarted()")
+        assertThat(source).contains("onSeekGestureReleased()")
         assertThat(source).contains("TvPlayerLoadingOverlay")
         assertThat(source).contains("CircularProgressIndicator")
         assertThat(source).contains("testTag(\"tv-player-fullscreen-loading\")")
@@ -359,7 +363,7 @@ class TvPlayerRouteControlContractTest {
             .substringBefore("/**\n * TV 全屏播放器中心 seek 提示。")
 
         assertThat(source).contains("val shouldShowCenterPlayButton =")
-        assertThat(source).contains("!state.isMenuVisible && !state.isPlayerLoading && !state.isPlaybackPlaying")
+        assertThat(source).contains("!state.isMenuVisible && !showLoadingOverlay && !state.isPlaybackPlaying")
         assertThat(source).contains("TvPlayerCenterPlayButton")
         assertThat(source).contains("testTag(\"tv-player-center-play\")")
         assertThat(centerPlaySource).doesNotContain(".clickable(")
@@ -377,7 +381,7 @@ class TvPlayerRouteControlContractTest {
 
         assertThat(source).contains("TvPlayerBottomHint")
         assertThat(source).contains("testTag(\"tv-player-bottom-hint\")")
-        assertThat(source).contains("!state.isMenuVisible && !state.isPlayerLoading")
+        assertThat(source).contains("!state.isMenuVisible && !showLoadingOverlay")
         assertThat(source).contains("返回键退出")
         assertThat(source).contains("下键播放设置")
         assertThat(source).contains("保持安全观看距离")
