@@ -18,6 +18,18 @@ class TvTokensStyleTest {
     }
 
     /**
+     * 设置页提供的背景标识必须映射为对应详情页基础色，未知值回退默认深蓝。
+     */
+    @Test
+    fun configuredBackground_resolvesSettingPaletteAndFallsBackToDeepBlue() {
+        assertThat(TvTokens.resolveBackgroundColor("deep_blue")).isEqualTo(Color(0xFF1A1D29))
+        assertThat(TvTokens.resolveBackgroundColor("pure_black")).isEqualTo(Color(0xFF000000))
+        assertThat(TvTokens.resolveBackgroundColor("dark_purple")).isEqualTo(Color(0xFF2D1B4E))
+        assertThat(TvTokens.resolveBackgroundColor("deep_green")).isEqualTo(Color(0xFF064E3B))
+        assertThat(TvTokens.resolveBackgroundColor("unknown")).isEqualTo(TvTokens.Background)
+    }
+
+    /**
      * 默认选中主色应使用 Flutter TV 默认奈飞红。
      */
     @Test

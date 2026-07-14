@@ -92,6 +92,18 @@ class TvNavGraphPlayerContractTest {
     }
 
     /**
+     * 详情路由必须接收设置页保存的背景键，不能回退到页面内写死的默认色。
+     */
+    @Test
+    fun detail_route_receives_saved_background_key_from_container() {
+        val source = readNavGraphSource()
+        val detailRouteSource = source.substringAfter("TvDetailRoute(")
+            .substringBefore("onSourceSelected =")
+
+        assertThat(detailRouteSource).contains("backgroundKey = appContainer.peekBackgroundKey()")
+    }
+
+    /**
      * WebView 画面层必须把真实播放事件回灌给同一个播放内核，驱动进度条和暂停态。
      */
     @Test

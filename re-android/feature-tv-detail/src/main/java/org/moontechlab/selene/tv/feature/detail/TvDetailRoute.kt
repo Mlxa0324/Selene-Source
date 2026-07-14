@@ -1,5 +1,6 @@
 package org.moontechlab.selene.tv.feature.detail
 
+import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -47,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -66,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -125,16 +128,45 @@ private val NcatContentEndPadding = 36.dp
 /** 详情右侧简介摘要背景框固定高度。 */
 private val NcatDescriptionBoxHeight = 88.dp
 
-/** 简介正文右侧预留给“简介”角标的宽度，避免末行与角标重叠。 */
-private val NcatDescriptionBadgeReserve = 58.dp
+/** 简介正文右侧预留给“简介”操作列的宽度，避免末行与按钮重叠。 */
+private val NcatDescriptionBadgeReserve = 112.dp
+
+/** 详情播放线路与选集空态卡片共用的固定宽度，避免文案长度影响视觉对齐。 */
+private val NcatEmptyStatePanelWidth = 320.dp
+
+/** 影片简介浮层打开时，详情内容层使用的背景模糊半径。 */
+private val NcatDescriptionBackdropBlurRadius = 12.dp
+
+/** Android 8 至 11 不支持原生模糊时，详情内容层保留的弱可见度。 */
+private const val NcatDescriptionLegacyContentAlpha = 0.12f
 
 /** TV 详情页顶部右侧时间格式。 */
 private val NcatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 /**
+ * 根据系统图形能力弱化影片简介下方的详情内容。
+ *
+ * Android 12 及以上使用原生模糊；旧系统将内容淡出，避免清晰文字与简介正文重叠。
+ *
+ * @param showOverlay 是否正在展示影片简介浮层。
+ * @return 应用于详情内容层的视觉效果修饰器。
+ */
+private fun Modifier.ncatDescriptionBackdropEffect(showOverlay: Boolean): Modifier {
+    // 浮层关闭时不创建额外图层，保持播放器和滚动内容的正常渲染成本。
+    if (!showOverlay) return this
+    // Android 12+ 支持 RenderEffect 模糊，旧系统改用淡出保障文字可读性。
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        blur(radius = NcatDescriptionBackdropBlurRadius)
+    } else {
+        alpha(NcatDescriptionLegacyContentAlpha)
+    }
+}
+
+/**
  * TV 详情页 Route。
  *
  * @param state 详情页状态。
+ * @param backgroundKey 设置页保存的基础背景标识。
  * @param onSourceSelected 线路选择回调。
  * @param onEpisodeSelected 剧集选择回调。
  * @param onPlayPressed 全屏播放回调。
@@ -151,6 +183,7 @@ private val NcatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("
 @Composable
 fun TvDetailRoute(
     state: TvDetailUiState = TvDetailUiState(),
+    backgroundKey: String = "deep_blue",
     onSourceSelected: ((String) -> Unit)? = null,
     onEpisodeSelected: ((String) -> Unit)? = null,
     onPlayPressed: (() -> Unit)? = null,
@@ -165,6 +198,8 @@ fun TvDetailRoute(
     playerSurface: (@Composable () -> Unit)? = null,
 ) {
     val detail = state.detail
+    // 详情底色统一复用设置页背景标识，海报缺失时也保持用户选择的颜色。
+    val detailBackgroundColor = TvTokens.resolveBackgroundColor(backgroundKey)
     val focusTargets = rememberDetailFocusTargets(
         sourceCount = detail?.sources.orEmpty().size,
         episodeCount = state.currentSource?.episodes.orEmpty().size,
@@ -240,14 +275,19 @@ fun TvDetailRoute(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(NcatBackground),
+            .background(detailBackgroundColor),
     ) {
         // 主海报固定铺满页面，不随详情内容滚动。
-        NcatDetailBackdrop(posterUrl = detail?.posterUrl.orEmpty())
+        NcatDetailBackdrop(
+            posterUrl = detail?.posterUrl.orEmpty(),
+            backgroundColor = detailBackgroundColor,
+        )
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // 只模糊下方详情内容，浮层作为同级上层继续保持清晰。
+                .ncatDescriptionBackdropEffect(showDescriptionOverlay)
                 .verticalScroll(detailScrollState)
                 .padding(bottom = 80.dp),
         ) {
@@ -340,7 +380,6 @@ fun TvDetailRoute(
                 title = detail?.title.orEmpty(),
                 description = detail?.description.orEmpty(),
                 sourceName = detail?.sourceName.orEmpty(),
-                posterUrl = detail?.posterUrl.orEmpty(),
                 onDismiss = { showDescriptionOverlay = false },
             )
         }
@@ -432,9 +471,13 @@ private fun rememberDetailFocusTargets(
  * 以主图/海报铺满整页，滚动内容层叠在上方，背景本身不随滚动移动。
  *
  * @param posterUrl 海报地址。
+ * @param backgroundColor 设置页选择的海报缺失兜底背景色。
  */
 @Composable
-private fun NcatDetailBackdrop(posterUrl: String) {
+private fun NcatDetailBackdrop(
+    posterUrl: String,
+    backgroundColor: Color,
+) {
     Box(modifier = Modifier.fillMaxSize()) {
         if (posterUrl.isNotBlank()) {
             AsyncImage(
@@ -453,7 +496,7 @@ private fun NcatDetailBackdrop(posterUrl: String) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(NcatBackground),
+                    .background(backgroundColor),
             )
         }
         // 自上而下压暗，保证标题和线路文字可读。
@@ -538,8 +581,10 @@ private fun NcatDetailTopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             NcatTopPill(
-                label = "⌕ 搜索",
-                width = 88.dp,
+                label = "搜索",
+                leadingGlyph = "⌕",
+                leadingGlyphSize = 22.sp,
+                width = 94.dp,
                 focusRequester = focusTargets.search,
                 modifier = Modifier.focusProperties {
                     down = focusTargets.player
@@ -560,6 +605,9 @@ private fun NcatDetailTopBar(
  * 顶部胶囊按钮。
  *
  * @param label 展示文案。
+ * @param width 按钮固定宽度。
+ * @param leadingGlyph 文案前的图标字符。
+ * @param leadingGlyphSize 图标字符字号。
  * @param focusRequester 焦点请求器。
  * @param modifier 外层修饰器。
  * @param onClick 点击回调。
@@ -568,6 +616,8 @@ private fun NcatDetailTopBar(
 private fun NcatTopPill(
     label: String,
     width: Dp,
+    leadingGlyph: String? = null,
+    leadingGlyphSize: TextUnit = 16.sp,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -578,7 +628,25 @@ private fun NcatTopPill(
         cornerRadius = 19.dp,
         onClick = onClick,
     ) {
-        Text(text = label, color = Color.White.copy(alpha = 0.88f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 搜索按钮将放大镜独立放大，保证 TV 远距离下仍清晰可辨。
+            if (!leadingGlyph.isNullOrBlank()) {
+                Text(
+                    text = leadingGlyph,
+                    color = Color.White.copy(alpha = 0.94f),
+                    fontSize = leadingGlyphSize,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.88f),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
     }
 }
 
@@ -1221,6 +1289,7 @@ private fun NcatSourceRail(
             title = if (emptyPlaybackCompleted) "未找到可播放信息" else "暂无播放线路",
             message = message,
             focusRequester = null,
+            width = NcatEmptyStatePanelWidth,
         )
         return
     }
@@ -1416,6 +1485,7 @@ private fun NcatEpisodeGroupRail(
             title = "暂无选集",
             message = "当前线路没有可播放剧集。",
             focusRequester = null,
+            width = NcatEmptyStatePanelWidth,
         )
         return
     }
@@ -2017,6 +2087,7 @@ private fun NcatSectionHeader(
  * @param title 状态标题。
  * @param message 状态说明。
  * @param focusRequester 焦点请求器。
+ * @param width 状态卡片固定宽度；为空时按内容自然撑开。
  */
 @Composable
 private fun NcatStateBlock(
@@ -2024,12 +2095,17 @@ private fun NcatStateBlock(
     title: String,
     message: String,
     focusRequester: FocusRequester?,
+    width: Dp? = null,
 ) {
+    // 线路和选集空态传入统一宽度，其它详情状态保留自然宽度。
+    val statePanelModifier = Modifier
+        .padding(start = NcatContentStartPadding, end = NcatContentEndPadding)
+        .then(if (width != null) Modifier.width(width) else Modifier)
     TvStatePanel(
         kind = kind,
         title = title,
         message = message,
-        modifier = Modifier.padding(start = NcatContentStartPadding, end = NcatContentEndPadding),
+        modifier = statePanelModifier,
         contentFocusRequester = focusRequester,
     )
 }
@@ -2150,10 +2226,11 @@ private fun NcatBottomActionGlyph(kind: NcatBottomActionIcon, modifier: Modifier
 /**
  * 全屏影片简介浮层。
  *
+ * 不另铺海报背景，直接半透明盖在详情页上，沿用详情页画面作底。
+ *
  * @param title 影片标题。
  * @param description 完整简介。
  * @param sourceName 线路/来源名。
- * @param posterUrl 背景海报。
  * @param onDismiss 关闭回调。
  */
 @Composable
@@ -2161,7 +2238,6 @@ private fun NcatDescriptionOverlay(
     title: String,
     description: String,
     sourceName: String,
-    posterUrl: String,
     onDismiss: () -> Unit,
 ) {
     val closeRequester = remember { FocusRequester() }
@@ -2171,7 +2247,8 @@ private fun NcatDescriptionOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f))
+            // 仅半透明遮罩，透出下方详情页背景。
+            .background(Color.Black.copy(alpha = 0.58f))
             .focusable()
             .onPreviewKeyEvent { event ->
                 // 浮层打开时拦截返回，只关闭简介不退出详情。
@@ -2187,22 +2264,6 @@ private fun NcatDescriptionOverlay(
             }
             .ncatClickable(onDismiss),
     ) {
-        // 背景海报弱化，突出左侧文案。
-        if (posterUrl.isNotBlank()) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(radius = 12.dp),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.62f)),
-            )
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()

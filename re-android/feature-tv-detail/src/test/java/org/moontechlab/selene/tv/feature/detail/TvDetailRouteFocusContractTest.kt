@@ -43,18 +43,67 @@ class TvDetailRouteFocusContractTest {
     }
 
     /**
+     * 详情页基础背景必须由设置保存的背景键解析，不能固定为 Ncat 深色背景。
+     */
+    @Test
+    fun detail_route_resolves_default_background_from_setting_key() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("backgroundKey: String = \"deep_blue\"")
+        assertThat(source).contains("TvTokens.resolveBackgroundColor(backgroundKey)")
+        assertThat(source).contains(".background(detailBackgroundColor)")
+        assertThat(source).contains("NcatDetailBackdrop(")
+        assertThat(source).contains("backgroundColor = detailBackgroundColor")
+    }
+
+    /**
      * 顶部按钮必须是固定宽度，避免在窄一点的 TV 视口里撑爆顶部栏。
      */
     @Test
     fun detail_top_bar_uses_fixed_width_actions() {
         val source = readRouteSource()
 
-        assertThat(source).contains("width = 88.dp")
+        assertThat(source).contains("width = 94.dp")
         assertThat(source).contains("fontSize = 28.sp")
         assertThat(source).contains(".width(width)")
         assertThat(source).doesNotContain(".widthIn(min = 118.dp)")
         assertThat(source).contains("contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding)")
-        assertThat(source).contains("width = 88.dp")
+        assertThat(source).contains("width = 94.dp")
+    }
+
+    /**
+     * 详情页右上搜索按钮应将放大镜与文案分开排版，保证远距离观看时图标清晰可见。
+     */
+    @Test
+    fun detail_top_bar_uses_large_search_glyph_separate_from_label() {
+        val source = readRouteSource()
+        val topPillSource = source
+            .substringAfter("private fun NcatTopPill(")
+            .substringBefore("/**\n * 截图式 Hero 区。")
+
+        assertThat(source).contains("label = \"搜索\"")
+        assertThat(source).contains("leadingGlyph = \"⌕\"")
+        assertThat(source).contains("leadingGlyphSize = 22.sp")
+        assertThat(topPillSource).contains("Row(")
+        assertThat(topPillSource).contains("fontSize = leadingGlyphSize")
+    }
+
+    /**
+     * 线路与选集的空态卡片必须共用固定宽度，避免仅因说明文案长度不同而显得大小不协调。
+     */
+    @Test
+    fun detail_empty_source_and_episode_panels_share_fixed_width() {
+        val source = readRouteSource()
+        val sourceRail = source
+            .substringAfter("private fun NcatSourceRail(")
+            .substringBefore("private fun NcatSourceCard(")
+        val episodeRail = source
+            .substringAfter("private fun NcatEpisodeGroupRail(")
+            .substringBefore("private fun NcatEpisodeChip(")
+
+        assertThat(source).contains("NcatEmptyStatePanelWidth")
+        assertThat(sourceRail).contains("width = NcatEmptyStatePanelWidth")
+        assertThat(episodeRail).contains("width = NcatEmptyStatePanelWidth")
     }
 
     /**
@@ -83,6 +132,22 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("StrokeJoin.Miter")
         assertThat(source).contains("val stroke = 2.dp.toPx()")
         assertThat(source).doesNotContain("label = \"反馈\"")
+    }
+
+    /**
+     * 简介摘要必须避开右下角“简介”按钮列，超过两行时以省略号收尾。
+     */
+    @Test
+    fun detail_description_reserves_action_column_and_ellipsizes_after_two_lines() {
+        val source = readRouteSource()
+        val infoPanelSource = source
+            .substringAfter("private fun NcatInfoPanel(")
+            .substringBefore("private fun NcatMetaBadge(")
+
+        assertThat(source).contains("private val NcatDescriptionBadgeReserve = 112.dp")
+        assertThat(infoPanelSource).contains("maxLines = 2")
+        assertThat(infoPanelSource).contains("overflow = TextOverflow.Ellipsis")
+        assertThat(infoPanelSource).contains("end = NcatDescriptionBadgeReserve")
     }
 
     /**
@@ -168,6 +233,34 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("影片简介")
         assertThat(source).contains("label = \"全屏\"")
         assertThat(source).contains("label = \"收藏\"")
+    }
+
+    /**
+     * 影片简介浮层必须复用并模糊详情页背景，不得再次加载独立海报。
+     */
+    @Test
+    fun description_overlay_reuses_detail_page_backdrop_without_poster_layer() {
+        val source = readRouteSource()
+        // 只截取简介浮层函数，避免详情页自身的海报背景影响断言。
+        val overlaySource = source
+            .substringAfter("private fun NcatDescriptionOverlay(")
+            .substringBefore("@Composable\nprivate fun NcatFavoriteGlyph")
+
+        // 详情内容层在简介打开时按系统能力模糊或弱化，浮层自身保持清晰。
+        assertThat(source).contains("NcatDescriptionBackdropBlurRadius")
+        assertThat(source).contains(".ncatDescriptionBackdropEffect(showDescriptionOverlay)")
+        assertThat(source).contains("if (!showOverlay) return this")
+        assertThat(source).contains("Build.VERSION.SDK_INT >= Build.VERSION_CODES.S")
+        assertThat(source).contains("blur(radius = NcatDescriptionBackdropBlurRadius)")
+        assertThat(source).contains("alpha(NcatDescriptionLegacyContentAlpha)")
+        // 详情背景效果必须先绘制，简介浮层后绘制，避免正文一同被模糊。
+        assertThat(source.indexOf(".ncatDescriptionBackdropEffect(showDescriptionOverlay)"))
+            .isLessThan(source.indexOf("if (showDescriptionOverlay)"))
+        // 浮层仅保留可读性遮罩，底图继续由下方详情页提供。
+        assertThat(overlaySource).contains(".background(Color.Black.copy(alpha = 0.58f))")
+        assertThat(overlaySource).doesNotContain("posterUrl")
+        assertThat(overlaySource).doesNotContain("AsyncImage(")
+        assertThat(overlaySource).doesNotContain(".blur(")
     }
 
 

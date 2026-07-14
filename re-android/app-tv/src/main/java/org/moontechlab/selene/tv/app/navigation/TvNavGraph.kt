@@ -475,6 +475,7 @@ fun TvNavGraph(
             }
             TvDetailRoute(
                 state = detailState,
+                backgroundKey = appContainer.peekBackgroundKey(),
                 onSourceSelected = { sourceId -> detailViewModel.selectSource(sourceId) },
                 onEpisodeSelected = { episodeId -> detailViewModel.selectEpisode(episodeId) },
                 onPlayPressed = {

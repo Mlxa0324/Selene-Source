@@ -190,7 +190,9 @@ class TvPreferencesStore(
     private var themeKey: String = DEFAULT_THEME_KEY
 
     /** 背景色标识。 */
-    private var backgroundKey: String = DEFAULT_BACKGROUND_KEY
+    private var backgroundKey: String = sharedPreferences
+        ?.getString(KEY_BACKGROUND_KEY, DEFAULT_BACKGROUND_KEY)
+        ?: DEFAULT_BACKGROUND_KEY
 
     /** 焦点效果标识。 */
     private var focusEffectKey: String = DEFAULT_FOCUS_EFFECT_KEY
@@ -249,8 +251,31 @@ class TvPreferencesStore(
     suspend fun getThemeKey(): String = themeKey
     suspend fun saveThemeKey(key: String) { themeKey = key }
 
+    /**
+     * 读取当前进程内的背景色同步快照。
+     *
+     * 导航组合详情页时不能等待异步读取，因此使用这份设置页刚保存后的内存值。
+     *
+     * @return 当前背景色标识。
+     */
+    fun peekBackgroundKey(): String = backgroundKey
+
     suspend fun getBackgroundKey(): String = backgroundKey
-    suspend fun saveBackgroundKey(key: String) { backgroundKey = key }
+
+    /**
+     * 保存背景色标识。
+     *
+     * @param key 设置页选中的背景标识。
+     */
+    suspend fun saveBackgroundKey(key: String) {
+        // 先更新内存快照，让当前详情页导航立即读取到新设置。
+        backgroundKey = key
+        // 再写入本地偏好，确保应用重启后仍沿用相同背景。
+        sharedPreferences
+            ?.edit()
+            ?.putString(KEY_BACKGROUND_KEY, key)
+            ?.apply()
+    }
 
     suspend fun getFocusEffectKey(): String = focusEffectKey
     suspend fun saveFocusEffectKey(key: String) { focusEffectKey = key }
@@ -328,6 +353,9 @@ class TvPreferencesStore(
 
         /** 播放器内核持久化键。 */
         private const val KEY_PLAYER_KERNEL = "player_kernel"
+
+        /** 详情等页面背景色持久化键。 */
+        private const val KEY_BACKGROUND_KEY = "background_key"
 
         /** ExoPlayer 内核标识。 */
         private const val PLAYER_KERNEL_EXO = "exo"

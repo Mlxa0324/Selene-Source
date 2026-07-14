@@ -33,6 +33,22 @@ object TvTokens {
     val Background = Color(0xFF1A1D29)
 
     /**
+     * 根据设置页背景标识解析详情等页面的基础背景色。
+     *
+     * @param backgroundKey 设置页保存的背景标识。
+     * @return 对应背景色；未知标识回退默认深蓝。
+     */
+    fun resolveBackgroundColor(backgroundKey: String): Color {
+        return when (backgroundKey) {
+            "deep_blue" -> Background
+            "pure_black" -> Color(0xFF000000)
+            "dark_purple" -> Color(0xFF2D1B4E)
+            "deep_green" -> Color(0xFF064E3B)
+            else -> Background
+        }
+    }
+
+    /**
      * TV 端页面卡片背景色。
      */
     val Surface = Color(0xFF272C30)

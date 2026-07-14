@@ -754,6 +754,15 @@ class TvAppContainer(
     }
 
     /**
+     * 读取详情等页面进入时使用的背景色同步快照。
+     *
+     * @return 设置页当前保存的背景色标识。
+     */
+    fun peekBackgroundKey(): String {
+        return preferencesStore.peekBackgroundKey()
+    }
+
+    /**
      * 保存播放器内核偏好，并返回当前环境下真实会生效的内核。
      *
      * @param kernel 用户选择的内核标识。
@@ -985,6 +994,7 @@ class TvAppContainer(
         },
     ): TvSettingsViewModel {
         val currentPlayerKernel = peekPlayerKernel()
+        val currentBackgroundKey = peekBackgroundKey()
         return TvSettingsViewModel(
             initialState = TvSettingsUiState(
                 serverUrl = gatewayConfig.baseUrl,
@@ -993,6 +1003,8 @@ class TvAppContainer(
                 danmakuApi = gatewayConfig.danmakuBaseUrl,
                 // 设置页首屏展示必须与当前真实播放内核一致，避免界面显示 Exo、实际仍走 WebView。
                 playerKernelKey = currentPlayerKernel,
+                // 设置页重新进入时保留当前背景选项，与详情页使用同一份配置。
+                backgroundKey = currentBackgroundKey,
             ),
             loadCacheSize = loadCacheSize,
             clearCache = clearCache,
