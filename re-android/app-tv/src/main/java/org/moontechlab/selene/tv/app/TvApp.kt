@@ -292,14 +292,14 @@ private fun TvTopNavigationBar(
             TvClockText()
         }
 
-        // 左侧主菜单：位置与原先胶囊行一致，仅样式改为文字 + 选中下划线。
+        // 左侧主菜单：与 LOGO 左对齐；无背景文字 + 选中主题色下划线。
         TvDestinationGroup(
             destinations = TvDestination.primaryMenuDestinations,
             currentRoute = currentRoute,
             contentFocusRequester = contentFocusRequester,
             topDestinationFocusRequesters = topDestinationFocusRequesters,
-            // 与改样式前一致，避免 tab 间距漂移。
-            horizontalSpacing = 12.dp,
+            // 文字 tab 略松一点，避免挤在一起发闷。
+            horizontalSpacing = 18.dp,
             navigateOnFocus = true,
             itemStyle = TvNavItemStyle.TextUnderline,
             topNavHasFocus = topNavHasFocus,
@@ -464,20 +464,18 @@ private fun TvNavigationPill(
         selected || isFocused -> TvTokens.FocusFill
         else -> TvTokens.Surface
     }
-    // 主菜单：未选中主题色文字；选中用 Accent；获焦未选中白字便于定位。
-    // 快捷胶囊：选中/获焦白字，否则主题色文字。
+    // 主菜单：未选中正文色；选中/获焦（焦点即切页）统一 Accent 字 + 线。
+    // 快捷胶囊：选中/获焦白字，否则正文色。
     val labelColor = when {
-        isTextUnderline && selected -> TvTokens.Accent
-        isTextUnderline && isFocused -> Color.White
+        isTextUnderline && (selected || isFocused) -> TvTokens.Accent
         isTextUnderline -> TvTokens.TextPrimary
         selected || isFocused -> Color.White
         else -> TvTokens.TextPrimary
     }
-    // 主菜单仅选中显示主题色下划线；获焦未选中用白线提示遥控器位置。
+    // 主菜单：选中或获焦才画主题色下划线，未选中不画线。
     val underlineColor = when {
         !isTextUnderline -> Color.Transparent
-        selected -> TvTokens.Accent
-        isFocused -> TvTokens.FocusBorder
+        selected || isFocused -> TvTokens.Accent
         else -> Color.Transparent
     }
 
@@ -555,41 +553,38 @@ private fun TvNavigationPill(
         .focusable(interactionSource = interactionSource)
 
     if (isTextUnderline) {
-        // 主菜单：无背景，主题色文字 + 选中下划线。
-        // 注意：下划线绝不能裸用 fillMaxWidth() 撑满 Row，否则首项占满整行、后续 tab 被挤没。
-        // 用 IntrinsicSize.Max 让宽度跟文案，再 fillMaxWidth 画与字同宽的下划线。
-        // 无 start 内边距，与上方 LOGO 左缘对齐（父级已有 PageHorizontalPadding）。
+        // 主菜单：无背景；未选中正文色；选中 Accent 字 + 紧贴下划线。
+        // IntrinsicSize.Max：宽度跟字，禁止 fillMaxWidth 撑满 Row 挤掉后续 tab。
+        // start 无额外 padding，与上方 IvyTV LOGO 左缘对齐。
         Box(
             modifier = Modifier
                 .height(TvTokens.TopActionHeight)
-                .then(focusAndClickModifier)
-                // 右侧留一点热区间距，左侧 0 保证与 LOGO 左对齐。
-                .padding(end = 4.dp),
+                .then(focusAndClickModifier),
             contentAlignment = Alignment.CenterStart,
         ) {
             Column(
                 modifier = Modifier.width(IntrinsicSize.Max),
-                horizontalAlignment = Alignment.Start,
-                // 文案与下划线整体垂直居中于导航行高。
+                horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 16.sp,
-                        fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
+                        fontSize = 17.sp,
+                        fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.Medium,
+                        letterSpacing = 0.3.sp,
                     ),
                     color = labelColor,
                     maxLines = 1,
                 )
-                // 下划线紧贴文字下方（肉眼挨着），略加高一点。
-                Spacer(modifier = Modifier.height(2.dp))
+                // 字与线 1dp 贴合；线高 3dp 克制，圆角略收。
+                Spacer(modifier = Modifier.height(1.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(4.dp)
-                        .widthIn(min = 16.dp)
-                        .clip(RoundedCornerShape(2.dp))
+                        .height(3.dp)
+                        .widthIn(min = 14.dp)
+                        .clip(RoundedCornerShape(1.5.dp))
                         .background(underlineColor),
                 )
             }

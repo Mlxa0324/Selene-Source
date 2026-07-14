@@ -219,16 +219,14 @@ class TvAppFocusContractTest {
         assertThat(topNavSource).contains("itemStyle = TvNavItemStyle.Pill")
         assertThat(pillSource).contains("isTextUnderline")
         assertThat(pillSource).contains("TvTokens.Accent")
-        // 选中态文字必须用主题色 Accent，不能仍是白字。
-        assertThat(pillSource).contains("isTextUnderline && selected -> TvTokens.Accent")
+        // 选中/获焦文字用主题色 Accent。
+        assertThat(pillSource).contains("isTextUnderline && (selected || isFocused) -> TvTokens.Accent")
         assertThat(pillSource).contains("Color.Transparent")
-        // 下划线宽度跟文案，禁止裸 fillMaxWidth 把首项撑满整行挤掉后续 tab。
+        // 下划线宽度跟文案；贴字 1dp、线高 3dp；与 LOGO 左对齐。
         assertThat(pillSource).contains("IntrinsicSize.Max")
-        // 与 LOGO 左对齐：主菜单项无 start 内边距；下划线贴字且略加高。
-        assertThat(pillSource).contains("padding(end = 4.dp)")
-        assertThat(pillSource).contains("Spacer(modifier = Modifier.height(2.dp))")
-        assertThat(pillSource).contains(".height(4.dp)")
-        assertThat(topNavSource).contains("horizontalSpacing = 12.dp")
+        assertThat(pillSource).contains("Spacer(modifier = Modifier.height(1.dp))")
+        assertThat(pillSource).contains(".height(3.dp)")
+        assertThat(topNavSource).contains("horizontalSpacing = 18.dp")
     }
 
     /**
