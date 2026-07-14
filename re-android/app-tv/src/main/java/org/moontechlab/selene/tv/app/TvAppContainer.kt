@@ -32,6 +32,7 @@ import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneDanmakuApi
 import org.moontechlab.selene.tv.core.network.SeleneBangumiApi
 import org.moontechlab.selene.tv.core.network.SeleneDoubanApi
+import org.moontechlab.selene.tv.core.network.ExternalSearchSuggestionService
 import org.moontechlab.selene.tv.core.network.SeleneTvGatewayClient
 import org.moontechlab.selene.tv.core.network.SeleneTvNetworkFactory
 import org.moontechlab.selene.tv.core.network.SeleneTvSearchStreamClient
@@ -337,6 +338,8 @@ class TvAppContainer(
     },
     private val recommendDiagnosticSink: TvDetailRecommendDiagnosticSink = DEFAULT_TV_DETAIL_RECOMMEND_DIAGNOSTIC_SINK,
     private val searchRecommendCache: TvSearchRecommendCache = TvSearchRecommendCache(),
+    private val externalSearchSuggestionService: ExternalSearchSuggestionService =
+        ExternalSearchSuggestionService(),
 ) {
     /** 后台客户端按需创建，避免缺配置时启动阶段直接抛错。 */
     private val gatewayClient: SeleneTvGatewayClient? by lazy {
@@ -452,19 +455,25 @@ class TvAppContainer(
                 )
             },
             loadSuggestions = { query ->
-                // 后端暂无首字母联想接口时，先用历史 + 热词本地过滤，保证交互链路完整。
-                val currentHistory = runCatching {
-                    ensureSession()
-                    TvSearchRepository(requireGatewayClient().tvApi).readSearchHistory()
+                // 对齐 Flutter SearchService.searchRecommand：
+                // 1) 优先腾讯/爱奇艺/芒果外部首字母联想
+                // 2) 外部为空时回退后台搜索资源，取标题列表
+                val external = runCatching {
+                    externalSearchSuggestionService.fetchSuggestions(query)
                 }.getOrDefault(emptyList())
-                val seeds = currentHistory + listOf(
-                    "热门电影", "高分剧集", "动漫新番", "综艺更新",
-                    "庆余年", "繁花", "三体", "漫长的季节", "狂飙",
-                )
-                seeds.filter { word ->
-                    word.replace(" ", "").contains(query, ignoreCase = true) ||
-                        pinyinInitialsMatch(word, query)
-                }.distinct().take(18)
+                if (external.isNotEmpty()) {
+                    external
+                } else {
+                    runCatching {
+                        ensureSession()
+                        TvSearchRepository(requireGatewayClient().tvApi)
+                            .search(query)
+                            .results
+                            .map { card -> card.title.trim() }
+                            .filter { title -> title.isNotEmpty() }
+                            .distinct()
+                    }.getOrDefault(emptyList())
+                }
             },
             searchStream = searchStreamClient,
             batchSearch = { query ->
