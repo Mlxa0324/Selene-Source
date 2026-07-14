@@ -470,6 +470,9 @@ private fun TvLibraryFilterRow(
 /**
  * TV 视频库筛选选项卡片。
  *
+ * 宽度随文案自适应（二字「全部」、四字「欧美剧」等左右内边距一致），
+ * 禁止写死 minWidth，否则短文案焦点框比底宽、横移几何也对不齐。
+ *
  * @param option 筛选选项。
  * @param selected 是否已确认选中。
  * @param focusRequesters 面板入口时绑定到真实筛选项的焦点请求器。
@@ -493,9 +496,12 @@ private fun TvLibraryFilterChip(
         hasFocus -> CATEGORY_FILTER_CHIP_FOCUSED_TEXT
         else -> TvTokens.TextPrimary
     }
+    val chipShape = RoundedCornerShape(TvTokens.CardRadius)
     TvFocusableCard(
+        // 不设固定 min 宽：外层焦点框与内层底同宽，随文字伸缩。
+        // 仅保留 max，避免极端长文案撑破一行。
         modifier = Modifier
-            .widthIn(min = 64.dp, max = 112.dp)
+            .widthIn(max = 160.dp)
             .onFocusChanged { focusState ->
                 // 视觉高亮直接跟随真实 Compose 焦点，不再额外记忆离开前的筛选项。
                 hasFocus = focusState.isFocused
@@ -503,13 +509,13 @@ private fun TvLibraryFilterChip(
         focusRequesters = focusRequesters,
         onPressed = onSelected,
     ) {
-        // 内层背景标记已选与最近焦点，外层焦点描边交给 TvFocusableCard。
+        // 内层背景与焦点描边同宽；水平 padding 固定，二字/四字仅内容区变宽。
         Text(
             text = option.title,
             modifier = Modifier
                 .background(
                     color = backgroundColor,
-                    shape = RoundedCornerShape(TvTokens.CardRadius),
+                    shape = chipShape,
                 )
                 .padding(horizontal = 14.dp, vertical = 8.dp),
             maxLines = 1,

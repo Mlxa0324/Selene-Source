@@ -149,6 +149,22 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
+     * 筛选项宽度随文案自适应，禁止固定 minWidth 导致二字选项焦点框比底宽。
+     */
+    @Test
+    fun category_filter_chip_width_follows_label_without_fixed_min_width() {
+        val source = readLibraryRouteSource()
+        val chipSource = source
+            .substringAfter("private fun TvLibraryFilterChip(")
+            .substringBefore("private fun TvVideoCard.toPosterItem(")
+
+        assertThat(chipSource).contains("widthIn(max = 160.dp)")
+        assertThat(chipSource).doesNotContain("widthIn(min = 64.dp")
+        assertThat(chipSource).doesNotContain("min = 64.dp, max = 112.dp")
+        assertThat(chipSource).contains("padding(horizontal = 14.dp, vertical = 8.dp)")
+    }
+
+    /**
      * 读取当前模块的 Route 源码。
      *
      * @return Route 源码文本。
