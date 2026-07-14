@@ -298,8 +298,8 @@ private fun TvTopNavigationBar(
             currentRoute = currentRoute,
             contentFocusRequester = contentFocusRequester,
             topDestinationFocusRequesters = topDestinationFocusRequesters,
-            // 文字 tab 略松一点，避免挤在一起发闷。
-            horizontalSpacing = 18.dp,
+            // 恢复接近原先胶囊行的视觉间距（胶囊时 12 间距 + 左右 16 内边距 ≈ 文案间更疏）。
+            horizontalSpacing = 28.dp,
             navigateOnFocus = true,
             itemStyle = TvNavItemStyle.TextUnderline,
             topNavHasFocus = topNavHasFocus,
@@ -570,9 +570,14 @@ private fun TvNavigationPill(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 17.sp,
-                        fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.Medium,
-                        letterSpacing = 0.3.sp,
+                        // 比正文略大一号，整体加粗，选中再加重。
+                        fontSize = 19.sp,
+                        fontWeight = if (selected || isFocused) {
+                            FontWeight.ExtraBold
+                        } else {
+                            FontWeight.Bold
+                        },
+                        letterSpacing = 0.4.sp,
                     ),
                     color = labelColor,
                     maxLines = 1,

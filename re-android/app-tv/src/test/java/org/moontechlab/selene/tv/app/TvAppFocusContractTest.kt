@@ -226,7 +226,10 @@ class TvAppFocusContractTest {
         assertThat(pillSource).contains("IntrinsicSize.Max")
         assertThat(pillSource).contains("Spacer(modifier = Modifier.height(1.dp))")
         assertThat(pillSource).contains(".height(3.dp)")
-        assertThat(topNavSource).contains("horizontalSpacing = 18.dp")
+        assertThat(pillSource).contains("fontSize = 19.sp")
+        assertThat(pillSource).contains("FontWeight.ExtraBold")
+        // 左右间距接近原先胶囊视觉疏密度。
+        assertThat(topNavSource).contains("horizontalSpacing = 28.dp")
     }
 
     /**
