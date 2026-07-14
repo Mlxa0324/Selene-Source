@@ -4,10 +4,12 @@ import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +33,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -48,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
@@ -65,7 +70,10 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
@@ -105,6 +113,13 @@ private val NcatBackground = Color(0xFF11131C)
 
 /** 右侧介绍卡片半透明底色。 */
 private val NcatInfoPanelSurface = Color(0xCC1A1D27)
+
+/**
+ * 预览播放器舞台底色。
+ *
+ * 与右侧简介卡同系冷蓝黑，避免 [TvTokens.Surface] 偏青灰在详情页显得突兀。
+ */
+private val NcatPreviewStageBase = Color(0xFF171B26)
 
 /** TV 详情页截图版卡片底色。 */
 private val NcatSurface = Color(0xFF454852)
@@ -186,6 +201,7 @@ private fun Modifier.ncatDescriptionBackdropEffect(showOverlay: Boolean): Modifi
  * @param onRecommendClick 相关推荐点击回调。
  * @param playerSurface 预览播放器内容。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvDetailRoute(
     state: TvDetailUiState = TvDetailUiState(),
@@ -277,6 +293,8 @@ fun TvDetailRoute(
     val detailScrollScope = rememberCoroutineScope()
     // 简介全屏浮层开关：摘要获焦确认后展示完整文案。
     var showDescriptionOverlay by rememberSaveable { mutableStateOf(false) }
+    // 「返回顶部」专用：记录切换线路分区在滚动内容中的 Y，焦点移动不再强制顶/底锚。
+    var sourceSectionYPx by remember { mutableIntStateOf(0) }
 
     Box(
         modifier = Modifier
@@ -296,7 +314,8 @@ fun TvDetailRoute(
                 // 只模糊下方详情内容，浮层作为同级上层继续保持清晰。
                 .ncatDescriptionBackdropEffect(showDescriptionOverlay)
                 .verticalScroll(detailScrollState)
-                .padding(bottom = 80.dp),
+                // 底部加长，相关推荐整卡可贴底。
+                .padding(bottom = 120.dp),
         ) {
             NcatDetailTopBar(
                 focusTargets = focusTargets,
@@ -329,21 +348,29 @@ fun TvDetailRoute(
                 state = state,
                 focusTargets = focusTargets,
                 currentSourceFocusRequester = currentSourceFocusRequester,
+                previewFillColor = detailPreviewFillColor(detailBackgroundColor),
                 onPlayPressed = onPlayPressed,
                 onFavoriteToggle = onFavoriteToggle,
                 onOpenDescription = { showDescriptionOverlay = true },
                 playerSurface = playerSurface,
             )
 
-            NcatSourceRail(
-                sourceOptions = sourceOptions,
-                isSearching = state.isMoreSourcesLoading,
-                emptyPlaybackCompleted = state.emptyPlaybackCompleted,
-                focusTargets = focusTargets,
-                currentEpisodeFocusRequester = currentEpisodeFocusRequester,
-                listState = sourceListState,
-                onSourceSelected = onSourceSelected,
-            )
+            Column(
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    // 仅供「返回顶部」按钮定位，焦点获焦不再强制纵向滚到顶/底。
+                    sourceSectionYPx = coordinates.positionInParent().y.toInt().coerceAtLeast(0)
+                },
+            ) {
+                NcatSourceRail(
+                    sourceOptions = sourceOptions,
+                    isSearching = state.isMoreSourcesLoading,
+                    emptyPlaybackCompleted = state.emptyPlaybackCompleted,
+                    focusTargets = focusTargets,
+                    currentEpisodeFocusRequester = currentEpisodeFocusRequester,
+                    listState = sourceListState,
+                    onSourceSelected = onSourceSelected,
+                )
+            }
 
             NcatEpisodeGroupRail(
                 groups = episodeGroups,
@@ -374,7 +401,9 @@ fun TvDetailRoute(
                     hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
                     onBackToTop = {
                         detailScrollScope.launch {
-                            detailScrollState.animateScrollTo(0)
+                            // 显式「返回顶部」：回到切换线路分区，不与焦点 bringIntoView 抢动画。
+                            val target = sourceSectionYPx.coerceIn(0, detailScrollState.maxValue)
+                            detailScrollState.animateScrollTo(target)
                         }
                     },
                     onExitClick = onExitClick,
@@ -594,9 +623,13 @@ private fun NcatDetailTopBar(
                 leadingGlyphSize = 22.sp,
                 width = 94.dp,
                 focusRequester = focusTargets.search,
-                modifier = Modifier.focusProperties {
-                    down = focusTargets.player
-                },
+                modifier = Modifier
+                    .tvBringFocusedItemIntoView()
+                    .focusProperties {
+                        down = focusTargets.player
+                        // 顶行最上：上键不再逃出详情内容区。
+                        up = FocusRequester.Cancel
+                    },
                 onClick = { onSearchClick?.invoke() },
             )
             Text(
@@ -673,6 +706,7 @@ private fun NcatDetailHero(
     state: TvDetailUiState,
     focusTargets: TvDetailFocusTargets,
     currentSourceFocusRequester: FocusRequester?,
+    previewFillColor: Color,
     onPlayPressed: (() -> Unit)?,
     onFavoriteToggle: (() -> Unit)?,
     onOpenDescription: () -> Unit,
@@ -697,9 +731,8 @@ private fun NcatDetailHero(
                 modifier = Modifier
                     .width(panelWidth)
                     .height(panelHeight),
-                title = state.currentEpisode?.title ?: state.detail?.title.orEmpty(),
                 sourceName = state.currentSource?.name.orEmpty(),
-                posterUrl = state.detail?.posterUrl.orEmpty(),
+                fillColor = previewFillColor,
                 focusTargets = focusTargets,
                 currentSourceFocusRequester = currentSourceFocusRequester,
                 onPlayPressed = onPlayPressed,
@@ -729,9 +762,8 @@ private fun NcatDetailHero(
 /**
  * 截图式预览播放器。
  *
- * @param title 当前标题。
- * @param sourceName 当前线路名称。
- * @param posterUrl 海报兜底地址。
+ * @param sourceName 当前线路名称（仅加载文案，不用于铺海报）。
+ * @param fillColor 初始化/加载中纯色底，禁止影片海报与纯黑。
  * @param modifier 外层修饰器。
  * @param focusTargets 焦点请求器。
  * @param currentSourceFocusRequester 当前线路焦点。
@@ -746,9 +778,8 @@ private fun NcatDetailHero(
  */
 @Composable
 private fun NcatPreviewPanel(
-    title: String,
     sourceName: String,
-    posterUrl: String,
+    fillColor: Color,
     modifier: Modifier = Modifier,
     focusTargets: TvDetailFocusTargets,
     currentSourceFocusRequester: FocusRequester?,
@@ -763,6 +794,10 @@ private fun NcatPreviewPanel(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    // 初始化与缓冲阶段不挂影片画面，只铺纯色；真正开播后再显示 Surface。
+    val showPlayerSurface = playerSurface != null &&
+        previewPlaybackStarted &&
+        !previewIsLoading
     Box(
         modifier = modifier
             // 高度由 Hero 按 16:9 统一下发，避免与右侧简介错高。
@@ -775,9 +810,11 @@ private fun NcatPreviewPanel(
                 shape = RoundedCornerShape(18.dp),
             )
             .focusRequester(focusTargets.player)
+            .tvBringFocusedItemIntoView()
             .focusProperties {
                 up = focusTargets.search
                 right = focusTargets.description
+                left = FocusRequester.Cancel
                 down = currentSourceFocusRequester ?: FocusRequester.Default
             }
             .focusable(interactionSource = interactionSource)
@@ -791,19 +828,20 @@ private fun NcatPreviewPanel(
                 }
             },
     ) {
-        if (playerSurface != null && previewPlaybackStarted) {
-            playerSurface()
-        } else {
-            NcatPreviewPlaceholder(
-                title = title,
+        // 底层始终纯色，避免加载瞬间闪出黑底或海报。
+        NcatPreviewSolidFill(fillColor = fillColor)
+        if (showPlayerSurface) {
+            playerSurface!!()
+        }
+        if (previewIsLoading || !showPlayerSurface) {
+            // 详情预览专用：转圈 + IvyTV + 文案同一列排版，避免两层居中叠在一起。
+            NcatPreviewBrandStage(
                 sourceName = sourceName,
-                posterUrl = posterUrl,
+                isLoading = previewIsLoading,
+                networkSpeed = previewNetworkSpeed,
             )
         }
-        if (previewIsLoading) {
-            NcatPreviewLoadingOverlay(previewNetworkSpeed)
-        }
-        if (previewPlaybackStarted && previewDurationMs > 0L) {
+        if (previewPlaybackStarted && previewDurationMs > 0L && showPlayerSurface) {
             NcatPreviewProgressBar(
                 isPlaying = previewIsPlaying,
                 positionMs = previewPositionMs,
@@ -814,106 +852,131 @@ private fun NcatPreviewPanel(
 }
 
 /**
- * 播放器占位内容。
+ * 预览区舞台底。
  *
- * @param title 当前标题。
- * @param sourceName 当前线路名称。
- * @param posterUrl 海报兜底地址。
+ * 轻纵向渐变：上沿略提亮、底部略沉，贴近播放舞台而不是平板色块。
+ *
+ * @param fillColor 舞台主色（非纯黑）。
  */
 @Composable
-private fun NcatPreviewPlaceholder(
-    title: String,
-    sourceName: String,
-    posterUrl: String,
-) {
+private fun NcatPreviewSolidFill(fillColor: Color) {
+    val top = Color(
+        red = (fillColor.red + 0.04f).coerceIn(0f, 1f),
+        green = (fillColor.green + 0.04f).coerceIn(0f, 1f),
+        blue = (fillColor.blue + 0.05f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
+    val bottom = Color(
+        red = (fillColor.red * 0.78f).coerceIn(0f, 1f),
+        green = (fillColor.green * 0.78f).coerceIn(0f, 1f),
+        blue = (fillColor.blue * 0.86f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF061A23)),
+            .background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0f to top,
+                        0.48f to fillColor,
+                        1f to bottom,
+                    ),
+                ),
+            ),
+    )
+}
+
+/**
+ * 详情预览区品牌舞台（仅详情页小窗使用）。
+ *
+ * 把转圈、IvyTV、分隔线与下方文案收进同一 Column，避免原先「品牌层 + 加载层」双居中重叠。
+ *
+ * @param sourceName 线路名。
+ * @param isLoading 是否加载中（显示转圈与状态行）。
+ * @param networkSpeed 当前网速 B/s，>0 时显示速度文案。
+ */
+@Composable
+private fun BoxScope.NcatPreviewBrandStage(
+    sourceName: String,
+    isLoading: Boolean,
+    networkSpeed: Long,
+) {
+    val statusLine = when {
+        !isLoading -> null
+        networkSpeed > 0L -> formatSpeed(networkSpeed)
+        else -> "加载中"
+    }
+    val caption = if (sourceName.isBlank()) {
+        "精彩马上开始"
+    } else {
+        "精彩马上开始 · $sourceName"
+    }
+    Column(
+        modifier = Modifier
+            .align(Alignment.Center)
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        if (posterUrl.isNotBlank() || title.isNotBlank()) {
-            TvCachedTitlePosterImage(
-                title = title,
-                posterUrl = posterUrl,
-                contentDescription = title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.3f)),
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.42f)),
-            )
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 19.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // 仅保留品牌名，不展示外部网址。
-            Text(
-                text = "IvyTV",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Black,
-            )
-            Box(
-                modifier = Modifier
-                    .width(240.dp)
-                    .height(1.dp)
-                    .background(TvTokens.Accent.copy(alpha = 0.45f)),
-            )
-            Text(
-                text = if (sourceName.isBlank()) "精彩马上开始" else "精彩马上开始 · $sourceName",
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
         Text(
-            text = "提醒：请勿随意相信视频上广告、网址、电影、二维码等！",
-            color = Color.White.copy(alpha = 0.86f),
-            fontSize = 12.sp,
+            text = "IvyTV",
+            color = Color.White,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Black,
+        )
+        Spacer(Modifier.height(10.dp))
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 23.dp, bottom = 20.dp),
+                .width(220.dp)
+                .height(1.dp)
+                .background(TvTokens.Accent.copy(alpha = 0.5f)),
+        )
+        if (isLoading) {
+            Spacer(Modifier.height(14.dp))
+            CircularProgressIndicator(
+                color = TvTokens.Accent,
+                modifier = Modifier.size(26.dp),
+                strokeWidth = 2.dp,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = statusLine.orEmpty(),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White.copy(alpha = 0.92f),
+            )
+        }
+        Spacer(Modifier.height(if (isLoading) 10.dp else 12.dp))
+        Text(
+            text = caption,
+            color = Color.White.copy(alpha = 0.88f),
+            fontSize = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 /**
- * 预览播放器加载层。
+ * 预览区填充色：与右侧简介卡/页面背景同系冷蓝黑，禁止纯黑与青灰脱节。
  *
- * @param previewNetworkSpeed 当前网速。
+ * @param pageBackground 详情页背景色。
+ * @return 预览区舞台主色。
  */
-@Composable
-private fun NcatPreviewLoadingOverlay(previewNetworkSpeed: Long) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.45f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(
-                color = TvTokens.Accent,
-                modifier = Modifier.size(25.dp),
-                strokeWidth = 2.dp,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = if (previewNetworkSpeed > 0L) formatSpeed(previewNetworkSpeed) else "加载中",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White.copy(alpha = 0.94f),
-            )
-        }
+private fun detailPreviewFillColor(pageBackground: Color): Color {
+    // 纯黑主题也落舞台深蓝灰，不铺 #000。
+    val channelSum = pageBackground.red + pageBackground.green + pageBackground.blue
+    if (channelSum < 0.06f) {
+        return NcatPreviewStageBase
     }
+    // 以页面主题色相为主，混入舞台冷色，与简介卡视觉对齐。
+    return Color(
+        red = (pageBackground.red * 0.58f + NcatPreviewStageBase.red * 0.42f).coerceIn(0f, 1f),
+        green = (pageBackground.green * 0.58f + NcatPreviewStageBase.green * 0.42f).coerceIn(0f, 1f),
+        blue = (pageBackground.blue * 0.58f + NcatPreviewStageBase.blue * 0.42f).coerceIn(0f, 1f),
+        alpha = 1f,
+    )
 }
 
 /**
@@ -1119,12 +1182,14 @@ private fun NcatInfoPanel(
                 label = "全屏",
                 selected = false,
                 focusRequester = focusTargets.fullscreen,
-                modifier = Modifier.focusProperties {
-                    up = focusTargets.description
-                    left = focusTargets.player
-                    right = focusTargets.favorite
-                    down = currentSourceFocusRequester ?: FocusRequester.Default
-                },
+                modifier = Modifier
+                    .tvBringFocusedItemIntoView()
+                    .focusProperties {
+                        up = focusTargets.description
+                        left = focusTargets.player
+                        right = focusTargets.favorite
+                        down = currentSourceFocusRequester ?: FocusRequester.Default
+                    },
                 onPressed = { onPlayPressed?.invoke() },
                 iconContent = { NcatFullscreenGlyph(modifier = Modifier.size(22.dp), color = Color.White) },
             )
@@ -1133,12 +1198,14 @@ private fun NcatInfoPanel(
                 label = "收藏",
                 selected = state.isFavorite,
                 focusRequester = focusTargets.favorite,
-                modifier = Modifier.focusProperties {
-                    up = focusTargets.description
-                    left = focusTargets.fullscreen
-                    right = focusTargets.favorite
-                    down = currentSourceFocusRequester ?: FocusRequester.Default
-                },
+                modifier = Modifier
+                    .tvBringFocusedItemIntoView()
+                    .focusProperties {
+                        up = focusTargets.description
+                        left = focusTargets.fullscreen
+                        right = FocusRequester.Cancel
+                        down = currentSourceFocusRequester ?: FocusRequester.Default
+                    },
                 onPressed = { onFavoriteToggle?.invoke() },
                 iconContent = {
                     NcatFavoriteGlyph(
@@ -1367,14 +1434,23 @@ private fun NcatSourceRail(
                 option = option,
                 focusRequester = focusTargets.sources.getOrNull(index),
                 modifier = Modifier
+                    .tvBringFocusedItemIntoView()
                     .focusProperties {
                         up = focusTargets.player
                         down = currentEpisodeFocusRequester ?: focusTargets.episodeGroups.firstOrNull()
                             ?: focusTargets.recommends.firstOrNull()
                             ?: FocusRequester.Default
-                        left = focusTargets.sources.getOrNull((index - 1).coerceAtLeast(0)) ?: FocusRequester.Default
-                        right = focusTargets.sources.getOrNull((index + 1).coerceAtMost(sourceOptions.lastIndex))
-                            ?: FocusRequester.Default
+                        // 首/末项禁止 left/right 指回自己，否则永远到不了横向边界。
+                        left = if (index > 0) {
+                            focusTargets.sources.getOrNull(index - 1) ?: FocusRequester.Cancel
+                        } else {
+                            FocusRequester.Cancel
+                        }
+                        right = if (index < sourceOptions.lastIndex) {
+                            focusTargets.sources.getOrNull(index + 1) ?: FocusRequester.Cancel
+                        } else {
+                            FocusRequester.Cancel
+                        }
                     }
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
@@ -1383,6 +1459,7 @@ private fun NcatSourceRail(
                                 newlyFocusedIndex = index,
                             )
                             activeFocusedIndex = index
+                            // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
                             if (shouldScroll) {
                                 scrollDetailOptionIntoView(
                                     listState = listState,
@@ -1568,6 +1645,7 @@ private fun NcatEpisodeGroupRail(
                 selected = episode.selected,
                 focusRequester = focusTargets.episodes.getOrNull(episode.episodeIndex),
                 modifier = Modifier
+                    .tvBringFocusedItemIntoView()
                     .focusProperties {
                         up = currentSourceFocusRequester ?: FocusRequester.Default
                         // 有分组时下键进分组；否则进推荐/底部。
@@ -1576,11 +1654,19 @@ private fun NcatEpisodeGroupRail(
                             .takeIf { showGroupChoices }
                             ?: focusTargets.recommends.firstOrNull()
                             ?: focusTargets.backTop
-                        left = focusTargets.episodes.getOrNull((episode.episodeIndex - 1).coerceAtLeast(0))
-                            ?: FocusRequester.Default
-                        right = focusTargets.episodes.getOrNull(
-                            (episode.episodeIndex + 1).coerceAtMost(totalCount - 1),
-                        ) ?: FocusRequester.Default
+                        // 左右只在本组内移动，首/末项到边界即停。
+                        left = if (index > 0) {
+                            val prev = selectedGroup.episodes[index - 1]
+                            focusTargets.episodes.getOrNull(prev.episodeIndex) ?: FocusRequester.Cancel
+                        } else {
+                            FocusRequester.Cancel
+                        }
+                        right = if (index < selectedGroup.episodes.lastIndex) {
+                            val next = selectedGroup.episodes[index + 1]
+                            focusTargets.episodes.getOrNull(next.episodeIndex) ?: FocusRequester.Cancel
+                        } else {
+                            FocusRequester.Cancel
+                        }
                     }
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
@@ -1589,6 +1675,7 @@ private fun NcatEpisodeGroupRail(
                                 newlyFocusedIndex = index,
                             )
                             activeEpisodeFocusedIndex = index
+                            // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
                             if (shouldScroll) {
                                 scrollDetailOptionIntoView(
                                     listState = episodeListState,
@@ -1620,6 +1707,7 @@ private fun NcatEpisodeGroupRail(
                     selected = group.selected,
                     focusRequester = focusTargets.episodeGroups.getOrNull(index),
                     modifier = Modifier
+                        .tvBringFocusedItemIntoView()
                         .focusProperties {
                             // 分组在选集下方：上键回选集，下键去推荐。
                             up = currentEpisodeFocusRequester
@@ -1630,11 +1718,16 @@ private fun NcatEpisodeGroupRail(
                                 ?: FocusRequester.Default
                             down = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
                                 ?: focusTargets.backTop
-                            left = focusTargets.episodeGroups.getOrNull((index - 1).coerceAtLeast(0))
-                                ?: FocusRequester.Default
-                            right = focusTargets.episodeGroups.getOrNull(
-                                (index + 1).coerceAtMost(groups.lastIndex),
-                            ) ?: FocusRequester.Default
+                            left = if (index > 0) {
+                                focusTargets.episodeGroups.getOrNull(index - 1) ?: FocusRequester.Cancel
+                            } else {
+                                FocusRequester.Cancel
+                            }
+                            right = if (index < groups.lastIndex) {
+                                focusTargets.episodeGroups.getOrNull(index + 1) ?: FocusRequester.Cancel
+                            } else {
+                                FocusRequester.Cancel
+                            }
                         }
                         .onFocusChanged { focusState ->
                             if (focusState.isFocused) {
@@ -1647,6 +1740,7 @@ private fun NcatEpisodeGroupRail(
                                 if (!group.selected) {
                                     onGroupSelected?.invoke(group.groupIndex)
                                 }
+                                // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
                                 if (shouldScroll) {
                                     scrollDetailOptionIntoView(
                                         listState = episodeGroupListState,
@@ -1847,6 +1941,7 @@ private fun NcatRecommendRail(
                     focusRequester = focusTargets.recommends.getOrNull(index),
                     onPressed = { onRecommendClick?.invoke(card) },
                     modifier = Modifier
+                        .tvBringFocusedItemIntoView()
                         .focusProperties {
                             up = focusTargets.episodeGroups
                                 .firstOrNull()
@@ -1854,9 +1949,16 @@ private fun NcatRecommendRail(
                                 ?: focusTargets.episodes.firstOrNull()
                                 ?: FocusRequester.Default
                             down = focusTargets.backTop
-                            left = focusTargets.recommends.getOrNull((index - 1).coerceAtLeast(0)) ?: FocusRequester.Default
-                            right = focusTargets.recommends.getOrNull((index + 1).coerceAtMost(cards.lastIndex))
-                                ?: FocusRequester.Default
+                            left = if (index > 0) {
+                                focusTargets.recommends.getOrNull(index - 1) ?: FocusRequester.Cancel
+                            } else {
+                                FocusRequester.Cancel
+                            }
+                            right = if (index < cards.lastIndex) {
+                                focusTargets.recommends.getOrNull(index + 1) ?: FocusRequester.Cancel
+                            } else {
+                                FocusRequester.Cancel
+                            }
                         }
                         .onFocusChanged { focusState ->
                             if (focusState.isFocused) {
@@ -1865,6 +1967,7 @@ private fun NcatRecommendRail(
                                     newlyFocusedIndex = index,
                                 )
                                 activeFocusedIndex = index
+                                // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
                                 if (shouldScroll) {
                                     scrollDetailOptionIntoView(
                                         listState = listState,
@@ -2034,26 +2137,34 @@ private fun NcatBottomActions(
                 label = "返回顶部",
                 leadingIcon = { NcatBottomActionGlyph(kind = NcatBottomActionIcon.BackToTop) },
                 focusRequester = focusTargets.backTop,
-                modifier = Modifier.focusProperties {
-                    up = focusTargets.recommends.firstOrNull()
-                        ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
-                        ?: focusTargets.episodes.firstOrNull()
-                        ?: FocusRequester.Default
-                    right = focusTargets.random
-                },
+                modifier = Modifier
+                    .tvBringFocusedItemIntoView()
+                    .focusProperties {
+                        up = focusTargets.recommends.firstOrNull()
+                            ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
+                            ?: focusTargets.episodes.firstOrNull()
+                            ?: FocusRequester.Default
+                        down = FocusRequester.Cancel
+                        left = FocusRequester.Cancel
+                        right = focusTargets.random
+                    },
                 onClick = onBackToTop,
             )
             NcatBottomPill(
                 label = "随便看看",
                 leadingIcon = { NcatBottomActionGlyph(kind = NcatBottomActionIcon.RandomBrowse) },
                 focusRequester = focusTargets.random,
-                modifier = Modifier.focusProperties {
-                    up = focusTargets.recommends.firstOrNull()
-                        ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
-                        ?: focusTargets.episodes.firstOrNull()
-                        ?: FocusRequester.Default
-                    left = focusTargets.backTop
-                },
+                modifier = Modifier
+                    .tvBringFocusedItemIntoView()
+                    .focusProperties {
+                        up = focusTargets.recommends.firstOrNull()
+                            ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
+                            ?: focusTargets.episodes.firstOrNull()
+                            ?: FocusRequester.Default
+                        down = FocusRequester.Cancel
+                        left = focusTargets.backTop
+                        right = FocusRequester.Cancel
+                    },
                 onClick = { onExitClick?.invoke() },
             )
         }
@@ -2451,22 +2562,97 @@ private fun NcatFullscreenGlyph(modifier: Modifier = Modifier, color: Color = Co
     }
 }
 
+/**
+ * 横向列表获焦后滚动（仅在同轨左右相邻切换时调用）。
+ *
+ * 目标：靠近左右边界时真正到边，中间项仅被裁切时才跟手；
+ * 不做「第 2 项强制最左」等额外 pin，避免上下切层或中段跳动。
+ *
+ * - 首项：滚到 offset=0（真正最左）
+ * - 末项：滚到 maxScrollExtent（真正最右，末卡完整露出）
+ * - 中间：仅当左右被裁切时滚入视口
+ */
 private fun scrollDetailOptionIntoView(
     listState: LazyListState,
     focusedIndex: Int,
     itemCount: Int,
     scrollScope: CoroutineScope,
 ) {
-    val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
-        focusedIndex = focusedIndex,
-        itemCount = itemCount,
-    )
-    val alreadyAtTarget = listState.firstVisibleItemIndex == targetIndex &&
-        (targetIndex != 0 || listState.firstVisibleItemScrollOffset == 0)
-    if (alreadyAtTarget) return
-    scrollScope.launch {
-        listState.animateScrollToItem(index = targetIndex, scrollOffset = 0)
+    if (itemCount <= 0 || focusedIndex !in 0 until itemCount) {
+        return
     }
+    scrollScope.launch {
+        val lastIndex = itemCount - 1
+        when {
+            focusedIndex == 0 -> {
+                // 首项：真正到最左。
+                if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                    listState.animateScrollToItem(index = 0, scrollOffset = 0)
+                }
+            }
+            focusedIndex >= lastIndex -> {
+                // 末项：先滚到末项可见，再大幅 scrollBy 夹到 max，真正到最右。
+                listState.animateScrollToItem(index = lastIndex)
+                if (listState.canScrollForward) {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.firstOrNull { item -> item.index == lastIndex }
+                    val overflow = if (last != null) {
+                        (last.offset + last.size - info.viewportEndOffset).toFloat().coerceAtLeast(0f)
+                    } else {
+                        0f
+                    }
+                    // overflow 对齐末项右缘；再推一截以吃掉 endPadding，夹到真正 max。
+                    val push = (overflow + info.viewportEndOffset.toFloat()).coerceAtLeast(1f)
+                    listState.animateScrollBy(push)
+                }
+            }
+            else -> {
+                val layoutInfo = listState.layoutInfo
+                val visible = layoutInfo.visibleItemsInfo
+                val target = visible.firstOrNull { info -> info.index == focusedIndex }
+                if (target == null) {
+                    listState.animateScrollToItem(index = focusedIndex)
+                    return@launch
+                }
+                val viewportStart = layoutInfo.viewportStartOffset
+                val viewportEnd = layoutInfo.viewportEndOffset
+                val itemStart = target.offset
+                val itemEnd = target.offset + target.size
+                val edgeSafePx = 8
+                when {
+                    itemStart < viewportStart + edgeSafePx -> {
+                        listState.animateScrollToItem(index = focusedIndex)
+                    }
+                    itemEnd > viewportEnd - edgeSafePx -> {
+                        // 右缘裁切：用 scrollBy 刚好露出，避免 animateScrollToItem 把项钉到最左造成跳动。
+                        val overflow = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
+                        if (overflow > 1f) {
+                            listState.animateScrollBy(overflow)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 获焦时把控件滚入纵向可视区（详情页 verticalScroll 用）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private fun Modifier.tvBringFocusedItemIntoView(): Modifier = composed {
+    val bringIntoViewRequester = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
+    this
+        .bringIntoViewRequester(bringIntoViewRequester)
+        .onFocusChanged { focusState ->
+            // 仅 isFocused：避免父容器 hasFocus 与子项各滚一次导致上下抖。
+            if (focusState.isFocused) {
+                scope.launch {
+                    bringIntoViewRequester.bringIntoView()
+                }
+            }
+        }
 }
 
 /**

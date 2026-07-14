@@ -230,12 +230,19 @@ fun TvPlayerRoute(
         state.isSeekOverlayVisible,
         state.seekOverlayPositionMs,
         state.seekOverlayDirection,
+        state.isPlayerLoading,
     ) {
-        if (state.isSeekOverlayVisible) {
-            // Flutter TV 的 seek 中心提示停留约 1.2 秒后自动淡出。
-            delay(1_200)
-            viewModel.hideSeekOverlay()
+        if (!state.isSeekOverlayVisible) {
+            return@LaunchedEffect
         }
+        // 长按 seek 松手后进入缓冲：立刻让中心转圈接手，不再叠 seek 时间提示。
+        if (state.isPlayerLoading) {
+            viewModel.hideSeekOverlay()
+            return@LaunchedEffect
+        }
+        // Flutter TV 的 seek 中心提示停留约 1.2 秒后自动淡出。
+        delay(1_200)
+        viewModel.hideSeekOverlay()
     }
 
     DisposableEffect(continuousSeekState) {
@@ -273,6 +280,10 @@ fun TvPlayerRoute(
                 if (event.type == KeyEventType.KeyUp && event.key.isSeekDirectionKey()) {
                     // 方向键松手立刻停止连续 seek，避免松手后进度继续跳动。
                     continuousSeekState.stop()
+                    // 松手后若内核已在缓冲，收起中心 seek 提示，改由加载转圈接管。
+                    if (state.isPlayerLoading) {
+                        viewModel.hideSeekOverlay()
+                    }
                     return@onPreviewKeyEvent true
                 }
                 if (event.type != KeyEventType.KeyDown) {
@@ -577,6 +588,23 @@ fun TvPlayerRoute(
                                     requestNearestSecondaryMenuFocus(index)
                                 }
                             },
+                            // 一级左右：在菜单项间移动，首/末到边界即停（不环回、不指回自己）。
+                            onArrowLeft = if (index > 0) {
+                                {
+                                    bumpMenuInteraction()
+                                    primaryMenuFocusRequesters.requestFocusAt(index - 1)
+                                }
+                            } else {
+                                null
+                            },
+                            onArrowRight = if (index < PLAYER_PRIMARY_MENU_ITEMS.lastIndex) {
+                                {
+                                    bumpMenuInteraction()
+                                    primaryMenuFocusRequesters.requestFocusAt(index + 1)
+                                }
+                            } else {
+                                null
+                            },
                             onClick = {
                                 bumpMenuInteraction()
                                 viewModel.openMenu(menu)
@@ -723,6 +751,10 @@ private fun TvPlayerPlaylistMenu(
             runCatching { requester.requestFocus() }
         }
     }
+    // 本组每一集独立焦点，左右才能真正走到首/末集。
+    val episodeFocusRequesters = remember(safeGroup, group.size) {
+        List(group.size) { FocusRequester() }
+    }
 
     Column(
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -740,12 +772,14 @@ private fun TvPlayerPlaylistMenu(
                 val isFirst = i == 0
                 val isLast = i == group.lastIndex
                 val isCurrent = ep.id == currentEpisodeId
-                val itemModifier = when {
-                    isCurrent && currentEpisodeFocusRequester != null ->
-                        Modifier.focusRequester(currentEpisodeFocusRequester)
-                    isFirst && currentEpisodeFocusRequester != null && currentInGroupIndex == 0 ->
-                        Modifier.focusRequester(currentEpisodeFocusRequester)
-                    else -> Modifier
+                val episodeRequester = episodeFocusRequesters.getOrNull(i)
+                // 当前集优先挂 secondary 落点（一级上键），否则挂本组 requester。
+                val resolvedModifier = if (isCurrent && currentEpisodeFocusRequester != null) {
+                    Modifier.focusRequester(currentEpisodeFocusRequester)
+                } else if (episodeRequester != null) {
+                    Modifier.focusRequester(episodeRequester)
+                } else {
+                    Modifier
                 }
                 TvPlayerMenuChip(
                     label = ep.title.ifBlank {
@@ -753,7 +787,7 @@ private fun TvPlayerPlaylistMenu(
                         "第${absoluteIndex.toString().padStart(2, '0')}集"
                     },
                     selected = isCurrent,
-                    modifier = itemModifier,
+                    modifier = resolvedModifier,
                     // 有三级分组时下键进分组；否则直接回一级当前选中项。
                     onArrowDown = if (showGroupChoices) {
                         { requestCurrentGroupFocus() }
@@ -762,19 +796,35 @@ private fun TvPlayerPlaylistMenu(
                     },
                     onArrowUp = onArrowUp,
                     onClick = { onEpisodeSelected(ep.id) },
-                    onArrowLeft = if (isFirst && safeGroup > 0) {
-                        {
-                            selectedGroup = safeGroup - 1
+                    onArrowLeft = when {
+                        !isFirst -> {
+                            {
+                                episodeFocusRequesters.getOrNull(i - 1)?.let { requester ->
+                                    runCatching { requester.requestFocus() }
+                                }
+                            }
                         }
-                    } else {
-                        null
+                        safeGroup > 0 -> {
+                            {
+                                selectedGroup = safeGroup - 1
+                            }
+                        }
+                        else -> null
                     },
-                    onArrowRight = if (isLast && safeGroup < groups.lastIndex) {
-                        {
-                            selectedGroup = safeGroup + 1
+                    onArrowRight = when {
+                        !isLast -> {
+                            {
+                                episodeFocusRequesters.getOrNull(i + 1)?.let { requester ->
+                                    runCatching { requester.requestFocus() }
+                                }
+                            }
                         }
-                    } else {
-                        null
+                        safeGroup < groups.lastIndex -> {
+                            {
+                                selectedGroup = safeGroup + 1
+                            }
+                        }
+                        else -> null
                     },
                 )
             }
@@ -1040,7 +1090,8 @@ private fun TvPlayerSourceMenu(
                                     newlyFocusedIndex = i,
                                 )
                             activeFocusedIndex = i
-                            if (shouldScroll) {
+                            // 首/末项强制滚到位，中间项仅同轨相邻才滚。
+                            if (shouldScroll || i == 0 || i == sources.lastIndex) {
                                 scrollPlayerMenuChipIntoView(
                                     listState = listState,
                                     index = i,
@@ -1053,6 +1104,25 @@ private fun TvPlayerSourceMenu(
                     onCenterXChanged = { centerX -> onItemCenterXChanged?.invoke(i, centerX) },
                     // 下键回一级当前选中项；上键不在二级内循环抢焦点。
                     onArrowDown = onArrowDown,
+                    // 左右：在线路列表内移动，首/末到边界停止。
+                    onArrowLeft = if (i > 0) {
+                        {
+                            focusRequesters.getOrNull(i - 1)?.let { requester ->
+                                runCatching { requester.requestFocus() }
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                    onArrowRight = if (i < sources.lastIndex) {
+                        {
+                            focusRequesters.getOrNull(i + 1)?.let { requester ->
+                                runCatching { requester.requestFocus() }
+                            }
+                        }
+                    } else {
+                        null
+                    },
                     onClick = { onSourceSelected(src.id) },
                 )
             }
@@ -1094,6 +1164,16 @@ private fun TvPlayerAspectRatioMenu(
                 modifier = itemModifier,
                 onCenterXChanged = { centerX -> onItemCenterXChanged?.invoke(index, centerX) },
                 onArrowDown = onArrowDown,
+                onArrowLeft = if (index > 0) {
+                    { focusRequesters.requestFocusAt(index - 1) }
+                } else {
+                    null
+                },
+                onArrowRight = if (index < PLAYER_ASPECT_RATIO_OPTIONS.lastIndex) {
+                    { focusRequesters.requestFocusAt(index + 1) }
+                } else {
+                    null
+                },
                 onClick = { onResizeModeSelected(resizeMode) },
             )
         }
@@ -1134,6 +1214,16 @@ private fun TvPlayerSpeedMenu(
                 modifier = itemModifier,
                 onCenterXChanged = { centerX -> onItemCenterXChanged?.invoke(index, centerX) },
                 onArrowDown = onArrowDown,
+                onArrowLeft = if (index > 0) {
+                    { focusRequesters.requestFocusAt(index - 1) }
+                } else {
+                    null
+                },
+                onArrowRight = if (index < PLAYER_SPEED_OPTIONS.lastIndex) {
+                    { focusRequesters.requestFocusAt(index + 1) }
+                } else {
+                    null
+                },
                 onClick = { onPlaybackSpeedSelected(playbackSpeed) },
             )
         }
@@ -1202,6 +1292,16 @@ private fun TvPlayerOtherMenu(
                     modifier = itemModifier,
                     onCenterXChanged = { centerX -> onItemCenterXChanged?.invoke(index, centerX) },
                     onArrowDown = onArrowDown,
+                    onArrowLeft = if (index > 0) {
+                        { focusRequesters.requestFocusAt(index - 1) }
+                    } else {
+                        null
+                    },
+                    onArrowRight = if (index < PLAYER_OTHER_MENU_ITEMS.lastIndex) {
+                        { focusRequesters.requestFocusAt(index + 1) }
+                    } else {
+                        null
+                    },
                     onClick = {
                         // 弹幕项和手动匹配项分别承接 Flutter TV 的两个真实动作。
                         when (item) {
@@ -2313,6 +2413,9 @@ private fun resolvePlaylistMenuLabel(playbackRequest: PlaybackRequest?): String 
  * @param itemCount 列表总数。
  * @param scrollScope 滚动协程作用域。
  */
+/**
+ * 全屏二级菜单横向列表滚入可视区，并保证首/末项能真正到位。
+ */
 private fun scrollPlayerMenuChipIntoView(
     listState: LazyListState,
     index: Int,
@@ -2324,29 +2427,32 @@ private fun scrollPlayerMenuChipIntoView(
     }
     scrollScope.launch {
         val lastIndex = itemCount - 1
-        if (index >= lastIndex) {
-            // 滚到最右：末卡落在 end padding 内侧，视觉有边距。
-            listState.animateScrollToItem(lastIndex)
-            return@launch
-        }
-        val visible = listState.layoutInfo.visibleItemsInfo
-        val target = visible.firstOrNull { info -> info.index == index }
-        val viewportEnd = listState.layoutInfo.viewportEndOffset
-        val viewportStart = listState.layoutInfo.viewportStartOffset
-        if (target == null) {
-            listState.animateScrollToItem(index)
-            return@launch
-        }
-        // 右侧被裁或贴边过紧时，向左推进一格，给获焦放大留空。
-        val rightOverflow = target.offset + target.size - viewportEnd
-        val leftOverflow = viewportStart - target.offset
         when {
-            rightOverflow > 0 -> {
-                val nextFirst = (listState.firstVisibleItemIndex + 1).coerceAtMost(index)
-                listState.animateScrollToItem(nextFirst)
+            index <= 0 -> {
+                // 最左：完整露出 start padding 与首项。
+                listState.animateScrollToItem(index = 0, scrollOffset = 0)
             }
-            leftOverflow > 0 -> {
-                listState.animateScrollToItem(index)
+            index >= lastIndex -> {
+                // 最右：末项对齐视口起点，配合 end padding 完整露出。
+                listState.animateScrollToItem(index = lastIndex, scrollOffset = 0)
+            }
+            else -> {
+                val layoutInfo = listState.layoutInfo
+                val visible = layoutInfo.visibleItemsInfo
+                val target = visible.firstOrNull { info -> info.index == index }
+                if (target == null) {
+                    listState.animateScrollToItem(index)
+                    return@launch
+                }
+                val viewportEnd = layoutInfo.viewportEndOffset
+                val viewportStart = layoutInfo.viewportStartOffset
+                val rightOverflow = target.offset + target.size - viewportEnd
+                val leftOverflow = viewportStart - target.offset
+                val edgeSafePx = 8
+                when {
+                    leftOverflow > edgeSafePx -> listState.animateScrollToItem(index)
+                    rightOverflow > edgeSafePx -> listState.animateScrollToItem(index)
+                }
             }
         }
     }

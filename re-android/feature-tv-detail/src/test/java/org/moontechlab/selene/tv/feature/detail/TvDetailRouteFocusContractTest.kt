@@ -199,11 +199,17 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("state = episodeGroupListState")
         assertThat(source).contains(".onFocusChanged { focusState ->")
         assertThat(source).contains("scrollDetailOptionIntoView(")
-        assertThat(source).contains("scrollDetailOptionIntoView(")
-                assertThat(source).contains("firstVisibleItemScrollOffset")
+        assertThat(source).contains("firstVisibleItemScrollOffset")
         assertThat(source).contains("scrollOffset = 0")
         assertThat(source).contains("listState.animateScrollToItem(")
-        assertThat(source).contains("index = targetIndex")
+        // 首项到最左、末项 scrollBy 夹到 max，中间仅裁切时跟手。
+        assertThat(source).contains("focusedIndex == 0")
+        assertThat(source).contains("listState.canScrollForward")
+        assertThat(source).contains("listState.animateScrollBy(")
+        // 纵向只靠 bringIntoView，禁止焦点时再强制顶/底锚 animateScroll（会抖）。
+        assertThat(source).doesNotContain("scrollDetailToSourceTop")
+        assertThat(source).doesNotContain("scrollDetailToRecommendBottom")
+        assertThat(source).doesNotContain("onRailItemFocused")
     }
 
     /**
@@ -305,6 +311,9 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("if (shouldScroll)")
         assertThat(source).contains("scrollDetailOptionIntoView(")
         assertThat(source).contains("recommendListState = rememberSaveable(")
+        // 上下跨层进入不得因 index<=1 / 末项 额外强制横向 pin。
+        assertThat(source).doesNotContain("shouldScroll || index <= 1")
+        assertThat(source).doesNotContain("前 2 项保持最左")
     }
 
     private fun readRouteSource(): String {

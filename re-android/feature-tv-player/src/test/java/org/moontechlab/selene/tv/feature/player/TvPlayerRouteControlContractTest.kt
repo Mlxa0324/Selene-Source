@@ -517,6 +517,34 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
+     * 一级菜单左右必须在项间移动，首/末边界停止，避免永远到不了最左/最右。
+     */
+    @Test
+    fun route_primary_menu_has_horizontal_edge_navigation() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("onArrowLeft = if (index > 0)")
+        assertThat(source).contains("onArrowRight = if (index < PLAYER_PRIMARY_MENU_ITEMS.lastIndex)")
+        assertThat(source).contains("primaryMenuFocusRequesters.requestFocusAt(index - 1)")
+        assertThat(source).contains("primaryMenuFocusRequesters.requestFocusAt(index + 1)")
+    }
+
+    /**
+     * 二级横向滚动必须对首/末项强制到位。
+     */
+    @Test
+    fun route_secondary_menu_scroll_handles_first_and_last() {
+        val source = readRouteSource()
+        val scrollSource = source.substringAfter("private fun scrollPlayerMenuChipIntoView(")
+            .substringBefore("private const val PLAYER_MENU_AUTO_HIDE_MS")
+
+        assertThat(scrollSource).contains("index <= 0")
+        assertThat(scrollSource).contains("index >= lastIndex")
+        assertThat(scrollSource).contains("animateScrollToItem(index = 0")
+        assertThat(scrollSource).contains("animateScrollToItem(index = lastIndex")
+    }
+
+    /**
      * 空间就近几何：一级 X 应落到中心最近的二级项。
      */
     @Test
@@ -624,7 +652,7 @@ class TvPlayerRouteControlContractTest {
         assertThat(sourceMenu).contains("scrollPlayerMenuChipIntoView(")
         assertThat(sourceMenu).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
         assertThat(sourceMenu).contains("rememberSaveable(saver = LazyListState.Saver)")
-        assertThat(sourceMenu).contains("if (shouldScroll) {")
+        assertThat(sourceMenu).contains("if (shouldScroll || i == 0 || i == sources.lastIndex)")
         assertThat(sourceMenu).contains("TransformOrigin(1f, 0.5f)")
         assertThat(sourceMenu).contains("TransformOrigin(0f, 0.5f)")
         assertThat(sourceMenu).contains("focusScaleOrigin = when {")

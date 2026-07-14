@@ -102,6 +102,11 @@ class ExoPlayerEngine(
                 startProgressTicker()
             } else {
                 stopProgressTicker()
+                // 缓冲中（含长按 seek 松手后）保持 Loading，避免被 Paused 冲掉导致中心转圈闪没。
+                if (player.getPlaybackState() == Player.STATE_BUFFERING) {
+                    mutableState.value = PlayerState.Loading
+                    return
+                }
                 mutableState.value = PlayerState.Paused(snapshot = snapshot)
             }
         }
