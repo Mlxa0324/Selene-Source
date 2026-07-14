@@ -1,9 +1,15 @@
 package org.moontechlab.selene.tv.app
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
 import org.moontechlab.selene.tv.core.data.storage.TvPreferencesStore
@@ -44,6 +50,7 @@ import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnostic
 import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticSink
 import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticStage
 import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendLoadState
+import org.moontechlab.selene.tv.feature.search.TvSearchRecommendCache
 
 /**
  * 校验 TV 应用容器的本地后台配置装配。
@@ -672,6 +679,88 @@ class TvAppContainerTest {
             .inOrder()
         assertThat(viewModel.state.value.recommendLoadState)
             .isEqualTo(TvDetailRecommendLoadState.Loaded)
+    }
+
+    /**
+     * 详情相关推荐加载成功后应写入搜索页推荐缓存，供搜索「影片推荐」复用。
+     */
+    @Test
+    fun createDetailViewModel_records_recommends_into_search_cache() = runTest {
+        val searchCache = TvSearchRecommendCache()
+        val fakeClient = FakeGatewayClient(
+            detailHandler = { source, id ->
+                TvSearchResultResponse(
+                    id = id,
+                    title = "有推荐影片",
+                    episodes = listOf("https://cdn.test/recommend.m3u8"),
+                    episodeTitles = listOf("正片"),
+                    source = source,
+                    sourceName = "线路 A",
+                    year = "2026",
+                    doubanId = 1_292_052,
+                )
+            },
+        )
+        val container = TvAppContainer(
+            gatewayConfig = completeGatewayConfig(),
+            gatewayClientFactory = { _, _ -> fakeClient },
+            doubanApiFactory = { FakeHomeDoubanApi() },
+            doubanHtmlSourceFactory = {
+                DoubanSubjectHtmlSource { RECOMMENDATION_HTML }
+            },
+            searchRecommendCache = searchCache,
+        )
+        val detailViewModel = container.createDetailViewModel(
+            source = "source-a",
+            videoTitle = "有推荐影片",
+        )
+
+        detailViewModel.load(videoId = "video-with-douban")
+
+        assertThat(searchCache.peekCachedRecommends().map { card -> card.id })
+            .containsExactly("1111111", "2222222")
+            .inOrder()
+    }
+
+    /**
+     * 搜索页 bootstrap 优先使用详情沉淀的推荐，而不是直接拉豆瓣热门。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun createSearchViewModel_prefers_detail_recommend_cache() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val searchCache = TvSearchRecommendCache()
+            searchCache.recordDetailRecommends(
+                source = "src",
+                videoId = "v1",
+                title = "用户看过",
+                recommends = listOf(
+                    org.moontechlab.selene.tv.core.data.model.TvVideoCard(
+                        id = "from-detail-1",
+                        source = "douban",
+                        title = "详情相关1",
+                        posterUrl = "https://img.test/1.jpg",
+                    ),
+                ),
+            )
+            val container = TvAppContainer(
+                gatewayConfig = completeGatewayConfig(),
+                gatewayClientFactory = { _, _ -> FakeGatewayClient() },
+                doubanApiFactory = { FakeHomeDoubanApi() },
+                searchRecommendCache = searchCache,
+            )
+            val searchViewModel = container.createSearchViewModel()
+
+            searchViewModel.bootstrap()
+            advanceUntilIdle()
+
+            assertThat(searchViewModel.state.value.recommendCards.map { card -> card.id })
+                .containsExactly("from-detail-1")
+        } finally {
+            Dispatchers.resetMain()
+        }
     }
 
     /**

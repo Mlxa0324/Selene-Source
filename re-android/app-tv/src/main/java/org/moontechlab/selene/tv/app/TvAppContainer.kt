@@ -67,6 +67,7 @@ import org.moontechlab.selene.tv.feature.player.TvPlayerViewModel
 import org.moontechlab.selene.tv.feature.player.TvPlayerDanmakuComment
 import org.moontechlab.selene.tv.feature.player.TvPlayerDanmakuLoadResult
 import org.moontechlab.selene.tv.feature.search.TvSearchBootstrapData
+import org.moontechlab.selene.tv.feature.search.TvSearchRecommendCache
 import org.moontechlab.selene.tv.feature.search.TvSearchViewModel
 import org.moontechlab.selene.tv.feature.settings.TvDanmakuMatchViewModel
 import org.moontechlab.selene.tv.feature.settings.TvDanmakuSearchAnime
@@ -299,6 +300,7 @@ private const val MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH = 160
  * @property bangumiApiFactory Bangumi 日历 API 工厂。
  * @property doubanHtmlSourceFactory 豆瓣详情 HTML 数据源工厂。
  * @property recommendDiagnosticSink 详情推荐诊断接收器。
+ * @property searchRecommendCache 搜索页推荐缓存（复用最近详情相关推荐）。
  */
 class TvAppContainer(
     private val gatewayConfig: TvLocalGatewayConfig,
@@ -334,6 +336,7 @@ class TvAppContainer(
         SeleneTvNetworkFactory.createDoubanHtmlApi()
     },
     private val recommendDiagnosticSink: TvDetailRecommendDiagnosticSink = DEFAULT_TV_DETAIL_RECOMMEND_DIAGNOSTIC_SINK,
+    private val searchRecommendCache: TvSearchRecommendCache = TvSearchRecommendCache(),
 ) {
     /** 后台客户端按需创建，避免缺配置时启动阶段直接抛错。 */
     private val gatewayClient: SeleneTvGatewayClient? by lazy {
@@ -433,14 +436,12 @@ class TvAppContainer(
                 ensureSession()
                 val repository = TvSearchRepository(requireGatewayClient().tvApi)
                 val history = runCatching { repository.readSearchHistory() }.getOrDefault(emptyList())
-                // 搜索页推荐优先复用豆瓣热门分类，对齐 Flutter 首页缓存兜底语义。
+                // 对齐 Flutter TvSearchRecommendService：
+                // 1) 优先合并最近两个详情页「相关推荐」（用户近期浏览沉淀）
+                // 2) 无缓存时兜底：热门剧集 10 + 热门综艺 10
                 val recommends = runCatching {
-                    doubanRepository.loadCategory(
-                        DoubanCategoryParams(
-                            kind = "tv",
-                            category = "热门",
-                            type = "tv",
-                        ),
+                    searchRecommendCache.loadSearchRecommends(
+                        fallbackLoader = ::loadSearchFallbackHotRecommends,
                     )
                 }.getOrDefault(emptyList())
                 TvSearchBootstrapData(
@@ -693,7 +694,7 @@ class TvAppContainer(
                         )
                     },
                 )
-                if (resolvedDoubanId == null) {
+                val recommends = if (resolvedDoubanId == null) {
                     // 身份解析在 App 层完成，缺失事件也由同一层记录，避免 ViewModel 猜测业务 ID。
                     runCatching {
                         recommendDiagnosticSink.record(
@@ -708,8 +709,50 @@ class TvAppContainer(
                 } else {
                     doubanRepository.loadDetailRecommends(resolvedDoubanId)
                 }
+                // 搜索页推荐被动复用最近详情相关推荐，不额外主动查询。
+                if (recommends.isNotEmpty()) {
+                    searchRecommendCache.recordDetailRecommends(
+                        source = entry.source,
+                        videoId = entry.videoId,
+                        title = detail?.title.orEmpty()
+                            .ifBlank { entry.title }
+                            .ifBlank { entry.videoId },
+                        recommends = recommends,
+                    )
+                }
+                recommends
             },
         )
+    }
+
+    /**
+     * 搜索页推荐兜底：热门剧集 + 热门综艺各 10 条。
+     *
+     * 对齐 Flutter [TvSearchRecommendService.loadFallbackHotRecommends]，
+     * 不主动查电影热门。
+     *
+     * @return 去重前的拼接列表（外层再 dedupe）。
+     */
+    private suspend fun loadSearchFallbackHotRecommends(): List<TvVideoCard> {
+        val tvShows = runCatching {
+            doubanRepository.loadCategory(
+                DoubanCategoryParams(
+                    kind = "tv",
+                    category = "最近热门",
+                    type = "tv",
+                ),
+            )
+        }.getOrDefault(emptyList()).take(10)
+        val varietyShows = runCatching {
+            doubanRepository.loadCategory(
+                DoubanCategoryParams(
+                    kind = "tv",
+                    category = "show",
+                    type = "show",
+                ),
+            )
+        }.getOrDefault(emptyList()).take(10)
+        return tvShows + varietyShows
     }
 
     /**
