@@ -99,6 +99,7 @@ class TvPlayerRouteControlContractTest {
 
     /**
      * 方向键 KeyUp 分支必须先停止连续 seek，再消费本次松手事件。
+     * 菜单打开时不得吞 KeyUp，否则一级/二级/三级横向移动全部失灵。
      */
     @Test
     fun route_direction_key_up_branch_stops_continuous_seek_before_consuming_event() {
@@ -108,6 +109,9 @@ class TvPlayerRouteControlContractTest {
         val keyUpBranchStart = source.indexOf(keyUpCondition)
 
         assertThat(keyUpBranchStart).isAtLeast(0)
+        // 菜单打开时优先放行，禁止根节点抢菜单左右 KeyUp。
+        assertThat(source).contains("菜单打开时：左右/上下 KeyUp 必须留给菜单 chip 自己处理")
+        assertThat(source.indexOf("if (state.isMenuVisible)")).isLessThan(keyUpBranchStart)
 
         // 只截取方向键 KeyUp 分支，避免其它生命周期 stop 调用造成契约误判。
         val keyUpBranchEnd = source.indexOf(

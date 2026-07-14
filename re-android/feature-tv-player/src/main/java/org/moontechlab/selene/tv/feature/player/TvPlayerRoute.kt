@@ -278,8 +278,23 @@ fun TvPlayerRoute(
             .background(Color.Black)
             .focusRequester(playerRootFocusRequester)
             .onPreviewKeyEvent { event ->
+                // ESC 在菜单内外都由根节点处理（先关菜单，再退出）。
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    continuousSeekState.stop()
+                    if (state.isMenuVisible) {
+                        viewModel.closeMenu()
+                    } else {
+                        onExitRequested()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                // 菜单打开时：左右/上下 KeyUp 必须留给菜单 chip 自己处理。
+                // 根节点若吞掉 KeyUp，一级/二级/三级横向焦点会完全失灵。
+                if (state.isMenuVisible) {
+                    return@onPreviewKeyEvent false
+                }
                 if (event.type == KeyEventType.KeyUp && event.key.isSeekDirectionKey()) {
-                    // 方向键松手：停连续 seek，并进入“等画面”加载转圈。
+                    // 仅无菜单时：松手停连续 seek，并进入“等画面”加载转圈。
                     continuousSeekState.stop()
                     return@onPreviewKeyEvent true
                 }
@@ -287,24 +302,11 @@ fun TvPlayerRoute(
                     return@onPreviewKeyEvent false
                 }
                 when (event.key) {
-                    Key.Escape -> {
-                        continuousSeekState.stop()
-                        if (state.isMenuVisible) {
-                            // 键盘 ESC 先收起菜单；系统返回键统一交给 BackHandler，避免一次按键被消费两遍。
-                            viewModel.closeMenu()
-                        } else {
-                            onExitRequested()
-                        }
-                        true
-                    }
                     Key.DirectionCenter,
                     Key.Enter,
                     Key.NumPadEnter,
                     Key.Spacebar,
                     -> {
-                        if (state.isMenuVisible) {
-                            return@onPreviewKeyEvent false
-                        }
                         // 先露出壳层再切播放，避免隐藏态误以为无响应。
                         revealChrome()
                         // Flutter TV 全屏页菜单未弹出时，确认键只切换播放暂停。
@@ -312,9 +314,6 @@ fun TvPlayerRoute(
                         true
                     }
                     Key.DirectionLeft -> {
-                        if (state.isMenuVisible) {
-                            return@onPreviewKeyEvent false
-                        }
                         revealChrome()
                         if (event.isSeekRepeatEvent()) {
                             // 原生 repeat 只维持长按态，实际连续节拍由内部 100ms tick 控制。
@@ -328,9 +327,6 @@ fun TvPlayerRoute(
                         true
                     }
                     Key.DirectionRight -> {
-                        if (state.isMenuVisible) {
-                            return@onPreviewKeyEvent false
-                        }
                         revealChrome()
                         if (event.isSeekRepeatEvent()) {
                             // 原生 repeat 只消费不下发 seek，避免叠加内部 tick 后过快跳动。
@@ -344,9 +340,6 @@ fun TvPlayerRoute(
                         true
                     }
                     Key.DirectionDown -> {
-                        if (state.isMenuVisible) {
-                            return@onPreviewKeyEvent false
-                        }
                         continuousSeekState.stop()
                         // Flutter TV 全屏页下键呼出底部菜单，默认进入播放列表。
                         viewModel.openMenu(PLAYER_MENU_PLAYLIST)
