@@ -219,6 +219,8 @@ class TvAppFocusContractTest {
         assertThat(topNavSource).contains("itemStyle = TvNavItemStyle.Pill")
         assertThat(pillSource).contains("isTextUnderline")
         assertThat(pillSource).contains("TvTokens.Accent")
+        // 选中态文字必须用主题色 Accent，不能仍是白字。
+        assertThat(pillSource).contains("isTextUnderline && selected -> TvTokens.Accent")
         assertThat(pillSource).contains("Color.Transparent")
         // 下划线宽度跟文案，禁止裸 fillMaxWidth 把首项撑满整行挤掉后续 tab。
         assertThat(pillSource).contains("IntrinsicSize.Max")

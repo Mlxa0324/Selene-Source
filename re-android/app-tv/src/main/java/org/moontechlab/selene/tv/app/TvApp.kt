@@ -464,9 +464,11 @@ private fun TvNavigationPill(
         selected || isFocused -> TvTokens.FocusFill
         else -> TvTokens.Surface
     }
-    // 主菜单：主题色文字；选中/获焦略提亮。快捷胶囊保持白字。
+    // 主菜单：未选中主题色文字；选中用 Accent；获焦未选中白字便于定位。
+    // 快捷胶囊：选中/获焦白字，否则主题色文字。
     val labelColor = when {
-        isTextUnderline && (selected || isFocused) -> Color.White
+        isTextUnderline && selected -> TvTokens.Accent
+        isTextUnderline && isFocused -> Color.White
         isTextUnderline -> TvTokens.TextPrimary
         selected || isFocused -> Color.White
         else -> TvTokens.TextPrimary
