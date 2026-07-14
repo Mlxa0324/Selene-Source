@@ -364,9 +364,11 @@ class TvPlayerViewModelTest {
             startPositionMs = 12_000L,
         )
         val engine = RecordingPlayerEngine(durationMs = 60_000L)
+        // 单测关闭最短窗口，专注「按住不转 / 松手转 / 起播消」语义。
         val viewModel = TvPlayerViewModel(
             initialRequest = request,
             playerEngine = engine,
+            postSeekMinVisibleMs = 0L,
         )
         viewModel.loadInitialRequest()
         val observeJob = backgroundScope.launch {
@@ -383,10 +385,17 @@ class TvPlayerViewModelTest {
         assertThat(viewModel.state.value.isSeekOverlayVisible).isTrue()
         assertThat(viewModel.state.value.shouldShowLoadingOverlay()).isFalse()
 
-        // 松手：收起时间提示，进入等画面加载动画。
+        // 松手：收起时间提示；缓冲中保持转圈（不因瞬间 Playing 被立刻清掉）。
+        engine.emitState(PlayerState.Loading)
         viewModel.onSeekGestureReleased()
         assertThat(viewModel.state.value.isSeekGestureActive).isFalse()
         assertThat(viewModel.state.value.isSeekOverlayVisible).isFalse()
+        assertThat(viewModel.state.value.isPostSeekLoading).isTrue()
+        assertThat(viewModel.state.value.shouldShowLoadingOverlay()).isTrue()
+
+        // 缓冲中持续转圈。
+        engine.emitState(PlayerState.Loading)
+        runCurrent()
         assertThat(viewModel.state.value.isPostSeekLoading).isTrue()
         assertThat(viewModel.state.value.shouldShowLoadingOverlay()).isTrue()
 

@@ -2,6 +2,8 @@ package org.moontechlab.selene.tv.feature.player
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -164,6 +166,10 @@ class TvPlayerViewModel(
     private val saveSkipIntroSeconds: suspend (Int) -> Unit = {},
     private val saveSkipOutroSeconds: suspend (Int) -> Unit = {},
     private val savePlaybackProgress: (PlaybackRequest, Long, Long) -> Unit = { _, _, _ -> },
+    /** 松手转圈最短可见毫秒；单测可置 0 避免依赖真实时钟/Main delay。 */
+    private val postSeekMinVisibleMs: Long = POST_SEEK_LOADING_MIN_VISIBLE_MS,
+    /** 单调时钟毫秒；默认 currentTimeMillis，避免单测 mock SystemClock。 */
+    private val elapsedRealtimeMs: () -> Long = { System.currentTimeMillis() },
 ) {
     /** 播放器内部状态。 */
     private val mutableState = MutableStateFlow(
@@ -191,6 +197,18 @@ class TvPlayerViewModel(
 
     /** 当前全屏媒体最近一次保存对应的媒体身份。 */
     private var lastSavedProgressIdentity: PlaybackIdentity? = null
+
+    /** 松手后加载动画会话（用于最短展示与取消旧任务）。 */
+    private var postSeekSessionId: Int = 0
+
+    /** 松手时刻（elapsedRealtime），保证转圈至少可见一小段。 */
+    private var postSeekReleasedAtElapsedMs: Long = 0L
+
+    /** 松手后最短展示/收口任务。 */
+    private var postSeekLoadingJob: Job? = null
+
+    /** ViewModel 内部协程（松手转圈收口用；Default 避免单测无 Main 崩溃）。 */
+    private val viewModelScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /**
      * 将详情页传入的播放请求下发给播放器内核。
@@ -525,6 +543,8 @@ class TvPlayerViewModel(
      * 左右方向键按下：进入 seek 手势，按住期间只展示时间提示，不展示加载转圈。
      */
     fun onSeekGestureStarted() {
+        postSeekLoadingJob?.cancel()
+        postSeekSessionId += 1
         mutableState.value = mutableState.value.copy(
             isSeekGestureActive = true,
             isPostSeekLoading = false,
@@ -533,8 +553,15 @@ class TvPlayerViewModel(
 
     /**
      * 左右方向键松手：收起 seek 提示，展示加载转圈直到画面就绪起播。
+     *
+     * 注意：松手后**不能**立刻用当前 Playing/Paused 清掉转圈——缓存 seek 时内核常仍是
+     * Playing，会导致转圈一闪没有。最短展示 + 缓冲结束后的 Playing/Paused 再收口。
      */
     fun onSeekGestureReleased() {
+        postSeekLoadingJob?.cancel()
+        postSeekSessionId += 1
+        val session = postSeekSessionId
+        postSeekReleasedAtElapsedMs = elapsedRealtimeMs()
         seekOverlayDisplayBasePositionMs = null
         mutableState.value = mutableState.value.copy(
             isSeekGestureActive = false,
@@ -542,9 +569,64 @@ class TvPlayerViewModel(
             // 短按/长按松手统一进入“等画面”加载动画。
             isPostSeekLoading = true,
         )
-        // 用当前内核态立刻收口：已 Playing/Paused 则不硬撑；仍 Loading 则保持转圈。
-        playerEngine?.let { engine ->
-            syncPlayerState(engine.state.value)
+        // 最短展示后若已不在缓冲，主动收口；若仍 Loading，等 syncPlayerState 在起播时清。
+        val minVisible = postSeekMinVisibleMs.coerceAtLeast(0L)
+        if (minVisible == 0L) {
+            // 单测 / 关闭最短窗口：下一帧按内核态收口。
+            reconcilePostSeekLoading()
+        } else {
+            postSeekLoadingJob = viewModelScope.launch {
+                delay(minVisible)
+                if (session != postSeekSessionId) {
+                    return@launch
+                }
+                reconcilePostSeekLoading()
+            }
+        }
+    }
+
+    /**
+     * 松手加载动画收口：缓冲中继续转；Playing/Paused 就绪则消失。
+     */
+    fun reconcilePostSeekLoading() {
+        if (!mutableState.value.isPostSeekLoading) {
+            return
+        }
+        val engineState = playerEngine?.state?.value
+        val keep = resolveKeepPostSeekLoading(engineState)
+        if (!keep) {
+            mutableState.value = mutableState.value.copy(isPostSeekLoading = false)
+        }
+    }
+
+    /**
+     * 是否继续展示松手后加载转圈。
+     *
+     * @param playerState 当前内核状态；null 时按最短展示窗口保留。
+     */
+    private fun resolveKeepPostSeekLoading(playerState: PlayerState?): Boolean {
+        if (!mutableState.value.isPostSeekLoading) {
+            return false
+        }
+        // 仍在缓冲：一直转，直到起播。
+        if (playerState is PlayerState.Loading) {
+            return true
+        }
+        val minVisible = postSeekMinVisibleMs.coerceAtLeast(0L)
+        val elapsed = elapsedRealtimeMs() - postSeekReleasedAtElapsedMs
+        if (minVisible > 0L && elapsed < minVisible) {
+            // 最短展示未满：即便已 Playing 也先保住动画。
+            return true
+        }
+        return when (playerState) {
+            is PlayerState.Playing,
+            is PlayerState.Paused,
+            -> false
+            is PlayerState.Error,
+            PlayerState.Idle,
+            null,
+            -> false
+            PlayerState.Loading -> true
         }
     }
 
@@ -667,15 +749,8 @@ class TvPlayerViewModel(
         val snapshot = playerState.snapshotOrNull()
         val positionMs = snapshot?.positionMs ?: mutableState.value.currentPositionMs
         val request = mutableState.value.playbackRequest
-        // 起播/暂停就绪后结束松手加载动画；缓冲中保留，直到真正可出画。
-        val keepPostSeekLoading = when (playerState) {
-            is PlayerState.Loading -> mutableState.value.isPostSeekLoading
-            is PlayerState.Playing,
-            is PlayerState.Paused,
-            -> false
-            is PlayerState.Error -> false
-            PlayerState.Idle -> false
-        }
+        // 松手转圈：缓冲中保留；起播/就绪且最短展示已过再消失（见 resolveKeepPostSeekLoading）。
+        val keepPostSeekLoading = resolveKeepPostSeekLoading(playerState)
         mutableState.value = mutableState.value.copy(
             isPlayerLoading = playerState is PlayerState.Loading,
             isPlaybackPlaying = playerState is PlayerState.Playing,
@@ -1013,6 +1088,13 @@ val PLAYER_OTHER_MENU_ITEMS = listOf(
 
 /** 长按 seek 起始阈值，用于区分短按展示和长按慢速秒个位展示。 */
 private const val SEEK_LONG_PRESS_START_MS = 250L
+
+/**
+ * 松手后加载转圈最短可见时长。
+ *
+ * 缓存 seek 常瞬间仍是 Playing，若立刻收口用户看不到动画。
+ */
+private const val POST_SEEK_LOADING_MIN_VISIBLE_MS = 350L
 
 /** 全屏播放器续播进度保存间隔。 */
 private const val PROGRESS_SAVE_INTERVAL_MS = 10_000L
