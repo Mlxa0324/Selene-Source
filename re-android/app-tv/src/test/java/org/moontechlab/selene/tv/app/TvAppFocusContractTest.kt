@@ -205,6 +205,24 @@ class TvAppFocusContractTest {
     }
 
     /**
+     * 主菜单为无背景文字 + 选中下划线；右上角快捷仍为胶囊。
+     */
+    @Test
+    fun primary_menu_uses_text_underline_quick_access_keeps_pill() {
+        val source = readAppSource()
+        val topNavSource = readTopNavigationSource()
+        val pillSource = readNavigationPillSource()
+
+        assertThat(source).contains("enum class TvNavItemStyle")
+        assertThat(source).contains("TextUnderline")
+        assertThat(topNavSource).contains("itemStyle = TvNavItemStyle.TextUnderline")
+        assertThat(topNavSource).contains("itemStyle = TvNavItemStyle.Pill")
+        assertThat(pillSource).contains("isTextUnderline")
+        assertThat(pillSource).contains("TvTokens.Accent")
+        assertThat(pillSource).contains("Color.Transparent")
+    }
+
+    /**
      * 分类筛选打开时必须隐藏整套首页导航，并让返回键只关闭筛选而不离开当前分类页。
      */
     @Test

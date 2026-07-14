@@ -261,7 +261,7 @@ private fun TvTopNavigationBar(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 右上角快捷区：下键回到主菜单来源项（对齐 Flutter _focusActionSourceTab）。
+            // 右上角快捷区：胶囊样式；下键回到主菜单来源项。
             TvDestinationGroup(
                 destinations = TvDestination.quickAccessDestinations,
                 currentRoute = currentRoute,
@@ -269,6 +269,7 @@ private fun TvTopNavigationBar(
                 topDestinationFocusRequesters = topDestinationFocusRequesters,
                 horizontalSpacing = 10.dp,
                 navigateOnFocus = false,
+                itemStyle = TvNavItemStyle.Pill,
                 topNavHasFocus = topNavHasFocus,
                 pendingInternalFocusRoute = pendingInternalFocusRoute,
                 onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
@@ -289,14 +290,15 @@ private fun TvTopNavigationBar(
             TvClockText()
         }
 
-        // 左侧主菜单：上键进入右上角快捷首项（对齐 Flutter _focusFirstAction）。
+        // 左侧主菜单：无背景文字 + 选中下划线；上键进右上角快捷首项。
         TvDestinationGroup(
             destinations = TvDestination.primaryMenuDestinations,
             currentRoute = currentRoute,
             contentFocusRequester = contentFocusRequester,
             topDestinationFocusRequesters = topDestinationFocusRequesters,
-            horizontalSpacing = 12.dp,
+            horizontalSpacing = 20.dp,
             navigateOnFocus = true,
+            itemStyle = TvNavItemStyle.TextUnderline,
             topNavHasFocus = topNavHasFocus,
             pendingInternalFocusRoute = pendingInternalFocusRoute,
             onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
@@ -314,12 +316,24 @@ private fun TvTopNavigationBar(
 }
 
 /**
+ * 顶部导航项视觉样式。
+ */
+private enum class TvNavItemStyle {
+    /** 右上角快捷：圆角胶囊底 + 焦点描边。 */
+    Pill,
+
+    /** 主菜单：无背景，主题色文字，选中显示下划线。 */
+    TextUnderline,
+}
+
+/**
  * 渲染同一分区内的一组路由按钮。
  *
  * @param destinations 当前分区包含的路由集合。
  * @param currentRoute 当前选中的路由。
  * @param contentFocusRequester 内容区入口焦点请求器。
  * @param navigateOnFocus 是否在组内焦点移动时直接切换路由。
+ * @param itemStyle 本组导航项视觉样式（主菜单文字下划线 / 快捷胶囊）。
  * @param topNavHasFocus 整顶栏（主菜单+快捷）是否已持有焦点。
  * @param pendingInternalFocusRoute 显式组内/跨组移动的目标路由。
  * @param onPendingInternalFocusConsumed 消费一次 pending 落焦标记。
@@ -337,6 +351,7 @@ private fun TvDestinationGroup(
     topDestinationFocusRequesters: Map<String, FocusRequester>,
     horizontalSpacing: androidx.compose.ui.unit.Dp = 10.dp,
     navigateOnFocus: Boolean,
+    itemStyle: TvNavItemStyle = TvNavItemStyle.Pill,
     topNavHasFocus: Boolean,
     pendingInternalFocusRoute: String?,
     onPendingInternalFocusConsumed: () -> Unit,
@@ -361,6 +376,7 @@ private fun TvDestinationGroup(
                 label = destination.label,
                 iconGlyph = destination.iconGlyph,
                 selected = isSelected,
+                style = itemStyle,
                 supportsCategoryFilter = destination.supportsCategoryFilter(),
                 contentFocusRequester = contentFocusRequester,
                 focusRequester = topDestinationFocusRequesters[destination.route],
@@ -403,10 +419,11 @@ private fun TvDestinationGroup(
 }
 
 /**
- * TV 顶部导航胶囊按钮。
+ * TV 顶部导航项按钮。
  *
  * @param label 按钮文案。
  * @param selected 是否为当前路由。
+ * @param style 视觉样式（胶囊 / 文字下划线）。
  * @param contentFocusRequester 内容区入口焦点请求器。
  * @param useContentAsDownTarget 下键是否落到内容区；快捷区为 false，由 [onMoveDown] 回主菜单。
  * @param onFocused 焦点进入按钮时的回调。
@@ -421,6 +438,7 @@ private fun TvNavigationPill(
     label: String,
     iconGlyph: String?,
     selected: Boolean,
+    style: TvNavItemStyle = TvNavItemStyle.Pill,
     supportsCategoryFilter: Boolean = false,
     contentFocusRequester: FocusRequester,
     focusRequester: FocusRequester?,
@@ -436,124 +454,172 @@ private fun TvNavigationPill(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val pressPolicy = remember { TvRemotePressPolicy(hasLongPressHandler = false) }
-    val shape = RoundedCornerShape(TvTokens.TopActionRadius)
-    val backgroundColor = when {
-        selected -> TvTokens.FocusFill
-        isFocused -> TvTokens.FocusFill
+    val isTextUnderline = style == TvNavItemStyle.TextUnderline
+    val pillShape = RoundedCornerShape(TvTokens.TopActionRadius)
+    val pillBackground = when {
+        isTextUnderline -> Color.Transparent
+        selected || isFocused -> TvTokens.FocusFill
         else -> TvTokens.Surface
     }
+    // 主菜单：主题色文字；选中/获焦略提亮。快捷胶囊保持白字。
+    val labelColor = when {
+        isTextUnderline && (selected || isFocused) -> Color.White
+        isTextUnderline -> TvTokens.TextPrimary
+        selected || isFocused -> Color.White
+        else -> TvTokens.TextPrimary
+    }
+    // 主菜单仅选中显示主题色下划线；获焦未选中用白线提示遥控器位置。
+    val underlineColor = when {
+        !isTextUnderline -> Color.Transparent
+        selected -> TvTokens.Accent
+        isFocused -> TvTokens.FocusBorder
+        else -> Color.Transparent
+    }
 
-    Box(
-        modifier = Modifier
-            .height(TvTokens.TopActionHeight)
-            .clip(shape)
-            .background(backgroundColor)
-            .border(
-                width = 2.dp,
-                color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
-                shape = shape,
-            )
-            .focusProperties {
-                // 主菜单下键进内容；快捷区下键由 onMoveDown 显式回主菜单，禁用默认 down。
-                down = if (useContentAsDownTarget) {
-                    contentFocusRequester
-                } else {
-                    FocusRequester.Cancel
-                }
+    val focusAndClickModifier = Modifier
+        .focusProperties {
+            // 主菜单下键进内容；快捷区下键由 onMoveDown 显式回主菜单，禁用默认 down。
+            down = if (useContentAsDownTarget) {
+                contentFocusRequester
+            } else {
+                FocusRequester.Cancel
             }
-            .then(
-                if (focusRequester != null) {
-                    // 请求器必须挂在真实 focusable 之前，确保初始焦点落到按钮本身。
-                    Modifier.focusRequester(focusRequester)
-                } else {
-                    Modifier
-                },
-            )
-            .onPreviewKeyEvent { event ->
-                if (event.key == Key.DirectionLeft || event.key == Key.DirectionRight) {
-                    if (event.type == KeyEventType.KeyDown) {
-                        // 顶部导航左右键使用显式相邻目标，避免默认几何搜索被重定向逻辑抵消。
-                        if (event.key == Key.DirectionLeft) {
-                            onMoveLeft()
-                        } else {
-                            onMoveRight()
-                        }
-                    }
-                    return@onPreviewKeyEvent true
-                }
-                if (event.key == Key.DirectionUp && onMoveUp != null) {
-                    if (event.type == KeyEventType.KeyDown) {
-                        onMoveUp()
-                    }
-                    return@onPreviewKeyEvent true
-                }
-                if (event.key == Key.DirectionDown && onMoveDown != null) {
-                    if (event.type == KeyEventType.KeyDown) {
-                        onMoveDown()
-                    }
-                    return@onPreviewKeyEvent true
-                }
-                if (!event.key.isTvConfirmKey()) {
-                    return@onPreviewKeyEvent false
-                }
-                val action = when (event.type) {
-                    KeyEventType.KeyDown -> pressPolicy.onKeyDown(
-                        isRepeat = pressPolicy.isPressing,
-                    )
-                    KeyEventType.KeyUp -> pressPolicy.onKeyUp()
-                    else -> TvRemotePressAction.None
-                }
-                if (action == TvRemotePressAction.ShortPress) {
-                    // 对齐 Flutter：电影/剧集/动漫/综艺在当前 tab 确认键向下弹出分类筛选。
-                    // 首页等非分类 tab 不处理为筛选，交给默认导航/下探。
-                    when {
-                        selected && supportsCategoryFilter -> onFilterToggle()
-                        !selected -> onClick()
-                        else -> Unit
+        }
+        .then(
+            if (focusRequester != null) {
+                // 请求器必须挂在真实 focusable 之前，确保初始焦点落到按钮本身。
+                Modifier.focusRequester(focusRequester)
+            } else {
+                Modifier
+            },
+        )
+        .onPreviewKeyEvent { event ->
+            if (event.key == Key.DirectionLeft || event.key == Key.DirectionRight) {
+                if (event.type == KeyEventType.KeyDown) {
+                    // 顶部导航左右键使用显式相邻目标，避免默认几何搜索被重定向逻辑抵消。
+                    if (event.key == Key.DirectionLeft) {
+                        onMoveLeft()
+                    } else {
+                        onMoveRight()
                     }
                 }
-                true
+                return@onPreviewKeyEvent true
             }
-            .onFocusChanged { focusState ->
-                if (focusState.isFocused) {
-                    // 顶部主菜单需要复刻 Flutter TV 的焦点即切换交互。
-                    onFocused()
+            if (event.key == Key.DirectionUp && onMoveUp != null) {
+                if (event.type == KeyEventType.KeyDown) {
+                    onMoveUp()
                 }
+                return@onPreviewKeyEvent true
             }
-            .pointerInput(onClick) {
-                detectTapGestures(
-                    onTap = {
-                        // 鼠标和触摸点击不再依赖 clickable，避免生成额外焦点节点。
-                        onClick()
-                    },
+            if (event.key == Key.DirectionDown && onMoveDown != null) {
+                if (event.type == KeyEventType.KeyDown) {
+                    onMoveDown()
+                }
+                return@onPreviewKeyEvent true
+            }
+            if (!event.key.isTvConfirmKey()) {
+                return@onPreviewKeyEvent false
+            }
+            val action = when (event.type) {
+                KeyEventType.KeyDown -> pressPolicy.onKeyDown(
+                    isRepeat = pressPolicy.isPressing,
                 )
+                KeyEventType.KeyUp -> pressPolicy.onKeyUp()
+                else -> TvRemotePressAction.None
             }
-            .focusable(interactionSource = interactionSource)
-            .padding(horizontal = 16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            if (action == TvRemotePressAction.ShortPress) {
+                // 对齐 Flutter：电影/剧集/动漫/综艺在当前 tab 确认键向下弹出分类筛选。
+                when {
+                    selected && supportsCategoryFilter -> onFilterToggle()
+                    !selected -> onClick()
+                    else -> Unit
+                }
+            }
+            true
+        }
+        .onFocusChanged { focusState ->
+            if (focusState.isFocused) {
+                onFocused()
+            }
+        }
+        .pointerInput(onClick) {
+            detectTapGestures(
+                onTap = { onClick() },
+            )
+        }
+        .focusable(interactionSource = interactionSource)
+
+    if (isTextUnderline) {
+        // 主菜单：无背景，主题色文字 + 选中下划线。
+        Box(
+            modifier = Modifier
+                .height(TvTokens.TopActionHeight)
+                .then(focusAndClickModifier)
+                .padding(horizontal = 4.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            if (!iconGlyph.isNullOrBlank()) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
                 Text(
-                    text = iconGlyph,
+                    text = label,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
                     ),
-                    color = Color.White,
+                    color = labelColor,
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                // 下划线与文案同宽：未选中透明，选中主题色，获焦未选中白线提示。
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(underlineColor),
                 )
             }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontSize = 16.sp,
-                    fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
-                ),
-                color = if (selected || isFocused) Color.White else TvTokens.TextPrimary,
-            )
+        }
+    } else {
+        // 右上角快捷：胶囊底 + 焦点描边。
+        Box(
+            modifier = Modifier
+                .height(TvTokens.TopActionHeight)
+                .clip(pillShape)
+                .background(pillBackground)
+                .border(
+                    width = 2.dp,
+                    color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
+                    shape = pillShape,
+                )
+                .then(focusAndClickModifier)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!iconGlyph.isNullOrBlank()) {
+                    Text(
+                        text = iconGlyph,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
+                        color = Color.White,
+                    )
+                }
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 16.sp,
+                        fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
+                    ),
+                    color = labelColor,
+                )
+            }
         }
     }
 }
