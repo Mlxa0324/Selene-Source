@@ -207,6 +207,23 @@ class TvHomeViewModelTest {
     }
 
     /**
+     * 筛选项仅获得焦点时不能改写已确认条件，确认键才允许触发分类刷新。
+     */
+    @Test
+    fun focusLibraryFilter_preserves_selected_option_until_confirmed() {
+        val viewModel = TvVideoLibraryViewModel(
+            categoryKey = "movie",
+            loadCategory = { _, _, _ -> emptyList() },
+        )
+
+        viewModel.focusFilter(filterKey = "分类", optionKey = "全部")
+
+        val classFilter = viewModel.state.value.availableFilters.first { filter -> filter.key == "分类" }
+        assertThat(classFilter.selectedOption.key).isEqualTo("热门")
+        assertThat(classFilter.focusedOption.key).isEqualTo("全部")
+    }
+
+    /**
      * 分类网格焦点移动应约束在视频数量范围内。
      */
     @Test

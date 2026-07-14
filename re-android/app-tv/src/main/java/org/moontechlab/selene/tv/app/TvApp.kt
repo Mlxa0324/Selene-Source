@@ -1,4 +1,5 @@
 package org.moontechlab.selene.tv.app
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import coil.Coil
@@ -123,6 +124,10 @@ fun TvApp() {
             }
             var showCategoryFilter by remember { mutableStateOf(false) }
             val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
+            BackHandler(enabled = showCategoryFilter) {
+                // 筛选展示时返回键只收起面板，保留当前分类页和已加载的 Grid。
+                showCategoryFilter = false
+            }
             LaunchedEffect(currentRoute) {
                 // 切换顶层页面后重置筛选面板可见态。
                 showCategoryFilter = false
@@ -137,8 +142,8 @@ fun TvApp() {
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background),
             ) {
-                if (currentRoute in TvDestination.primaryMenuDestinations.map { it.route }) {
-                    // 顶级导航只在主标签页展示，子页面（搜索/历史/收藏/设置/播放器）不显示。
+                if (isPrimaryRoute && !showCategoryFilter) {
+                    // 分类筛选展开时隐藏完整首页导航，为筛选和海报 Grid 释放垂直空间。
                     TvTopNavigationBar(
                         currentRoute = currentRoute,
                         contentFocusRequester = contentFocusRequester,
@@ -155,12 +160,8 @@ fun TvApp() {
                             }
                         },
                         onFilterToggle = {
-                            val opening = !showCategoryFilter
-                            showCategoryFilter = opening
-                            if (opening) {
-                                // 弹出筛选后把焦点下探到内容区，方便遥控器直接操作筛选项。
-                                contentFocusRequester.requestFocus()
-                            }
+                            // 仅切换当前分类页的内联筛选状态，不创建或跳转新路由。
+                            showCategoryFilter = !showCategoryFilter
                         },
                     )
                 }

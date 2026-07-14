@@ -689,7 +689,8 @@ private fun TvRemoteVideoLibraryRoute(
             categoryScope.launch { viewModel.load() }
         },
         onFilterOptionFocused = { filterKey, optionKey ->
-            viewModel.applyFilter(filterKey, optionKey)
+            // 焦点移动只记录停留位置，避免未确认就替换当前筛选和网格数据。
+            viewModel.focusFilter(filterKey, optionKey)
         },
         onApproachingEnd = {
             categoryScope.launch { viewModel.loadNextPage() }

@@ -31,6 +31,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param headerContent 网格顶部内容（全宽 span，随网格滚动）。
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给首张海报。
  * @param onItemClick 卡片点击回调。
+ * @param prefetchRows 距离末尾多少行时开始触发下一页预取。
  * @param onApproachingEnd 焦点接近列表末尾时触发，用于触底加载下一页。
  */
 @Composable
@@ -41,8 +42,11 @@ fun TvPosterGrid(
     headerContent: (@Composable () -> Unit)? = null,
     firstItemFocusRequester: FocusRequester? = null,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
+    prefetchRows: Int = 3,
     onApproachingEnd: (() -> Unit)? = null,
 ) {
+    // 预取行数至少保留一行，避免外部错误配置导致末尾分页失效。
+    val resolvedPrefetchRows = prefetchRows.coerceAtLeast(1)
     val designMetrics = LocalTvDesignMetrics.current
     val gridState = rememberSaveable(
         designMetrics.viewportWidth.toInt(),
@@ -114,8 +118,8 @@ fun TvPosterGrid(
                                 }
                             }
                         }
-                        // 焦点落到倒数三行时提前触发下一页请求。
-                        val approachingEnd = index >= items.size - columns * 3
+                        // 焦点进入预取阈值时后台请求下一页，避免用户触底后停在加载态。
+                        val approachingEnd = index >= items.size - columns * resolvedPrefetchRows
                         if (hasFocus && approachingEnd && onApproachingEnd != null) {
                             onApproachingEnd()
                         }

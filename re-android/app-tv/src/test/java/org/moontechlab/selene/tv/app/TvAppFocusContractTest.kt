@@ -177,4 +177,16 @@ class TvAppFocusContractTest {
         assertThat(source).contains("selected && supportsCategoryFilter")
         assertThat(source).contains("destination.supportsCategoryFilter()")
     }
+
+    /**
+     * 分类筛选打开时必须隐藏整套首页导航，并让返回键只关闭筛选而不离开当前分类页。
+     */
+    @Test
+    fun category_filter_hides_home_navigation_and_back_closes_only_filter() {
+        val source = readAppSource()
+
+        assertThat(source).contains("BackHandler(enabled = showCategoryFilter)")
+        assertThat(source).contains("if (isPrimaryRoute && !showCategoryFilter)")
+        assertThat(source).contains("showCategoryFilter = false")
+    }
 }

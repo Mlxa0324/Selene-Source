@@ -403,6 +403,17 @@ class TvVideoLibraryViewModel(
             hasMore = true,
         )
     }
+
+    /**
+     * 记录筛选面板的当前焦点，不改变已确认筛选条件或触发数据刷新。
+     *
+     * @param filterKey 筛选行标识。
+     * @param optionKey 当前焦点选项标识。
+     */
+    fun focusFilter(filterKey: String, optionKey: String) {
+        // 遥控器浏览仅更新焦点记忆，确认键才调用 applyFilter 修改查询参数。
+        mutableState.value = mutableState.value.focusFilterOption(filterKey, optionKey)
+    }
 }
 
 /** 首页主菜单标识。 */
