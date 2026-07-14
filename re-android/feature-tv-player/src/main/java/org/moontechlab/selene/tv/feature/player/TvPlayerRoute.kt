@@ -164,9 +164,10 @@ fun TvPlayerRoute(
         viewModel.loadDanmakuForCurrentRequest()
     }
 
-    LaunchedEffect(state.isMenuVisible, state.selectedTopMenu, state.allEpisodes, state.availableSources) {
+    LaunchedEffect(state.isMenuVisible) {
         if (state.isMenuVisible) {
-            // 展开后优先落到当前二级菜单（播放列表/线路），一级菜单用下键回落。
+            // 菜单刚展开时优先落到当前二级菜单（播放列表/线路），一级菜单用下键回落。
+            // 一级菜单左右切换只更新二级内容，不能因状态变化再次抢走焦点。
             // 二级无项时再落一级，避免“上键无响应”。
             val secondaryReady = when (state.selectedTopMenu) {
                 PLAYER_MENU_PLAYLIST -> state.allEpisodes.isNotEmpty()
@@ -538,7 +539,7 @@ fun TvPlayerRoute(
                             onClick = {
                                 bumpMenuInteraction()
                                 viewModel.openMenu(menu)
-                                requestSelectedSecondaryMenuFocus()
+                                // 一级确认只切换当前分类；进入二级菜单必须由上键明确触发。
                             },
                         )
                     }

@@ -41,7 +41,7 @@ class TvPlayerRouteControlContractTest {
         val source = readRouteSource()
 
         assertThat(source).contains("val playerRootFocusRequester = remember { FocusRequester() }")
-        assertThat(source).contains("LaunchedEffect(state.isMenuVisible, state.selectedTopMenu, state.allEpisodes, state.availableSources)")
+        assertThat(source).contains("LaunchedEffect(state.isMenuVisible) {")
         assertThat(source).contains("playerRootFocusRequester.requestFocus()")
         assertThat(source).contains("requestSelectedSecondaryMenuFocus()")
         assertThat(source).contains(".focusRequester(playerRootFocusRequester)")
@@ -436,6 +436,30 @@ class TvPlayerRouteControlContractTest {
         assertThat(menuChipSource).contains(".onFocusChanged { focusState ->")
         assertThat(menuChipSource).contains("if (focusState.isFocused)")
         assertThat(menuChipSource).contains("onFocused?.invoke()")
+    }
+
+    /**
+     * 一级菜单左右切换只更新二级内容，焦点必须留在一级菜单，用户按上键后才进入二级菜单。
+     */
+    @Test
+    fun route_primary_menu_horizontal_switch_does_not_move_focus_to_secondary_row() {
+        val source = readRouteSource()
+        val primaryMenuSource = source
+            .substringAfter("// 一级菜单：左右切换分类，上键回二级，下键停在一级。")
+            .substringBefore("        } else {")
+        val primaryMenuClickSource = primaryMenuSource
+            .substringAfter("onClick = {")
+            .substringBefore("},\n                        )")
+
+        // 自动焦点仅在菜单由关闭变为打开时执行，切换一级分类不能再次触发。
+        assertThat(source).contains("LaunchedEffect(state.isMenuVisible) {")
+        assertThat(source).doesNotContain(
+            "LaunchedEffect(state.isMenuVisible, state.selectedTopMenu, state.allEpisodes, state.availableSources)",
+        )
+        // 进入二级菜单必须继续只由一级菜单的上键显式触发。
+        assertThat(source).contains("onArrowUp = {")
+        assertThat(source).contains("requestSelectedSecondaryMenuFocus()")
+        assertThat(primaryMenuClickSource).doesNotContain("requestSelectedSecondaryMenuFocus()")
     }
 
     /**
