@@ -204,11 +204,28 @@ private fun TvTopNavigationBar(
     }
     val selectedTopDestinationFocusRequester = selectedTopDestination
         ?.let { destination -> topDestinationFocusRequesters[destination.route] }
+    // 整顶栏（主菜单 + 右上角快捷）共用焦点态，避免跨组上下移动被当成“从内容区进入”而拉回选中主 tab。
+    var topNavHasFocus by remember { mutableStateOf(false) }
+    var pendingInternalFocusRoute by remember { mutableStateOf<String?>(null) }
+    // 主菜单上键进快捷区时记录来源 tab，快捷区下键原路返回。
+    var lastActionSourceRoute by remember { mutableStateOf<String?>(null) }
+    val primaryRoutes = remember {
+        TvDestination.primaryMenuDestinations.map { destination -> destination.route }.toSet()
+    }
+    val firstQuickAccessRoute = TvDestination.quickAccessDestinations.firstOrNull()?.route
+
+    fun moveFocusToRoute(route: String) {
+        val requester = topDestinationFocusRequesters[route] ?: return
+        pendingInternalFocusRoute = route
+        topNavHasFocus = true
+        runCatching { requester.requestFocus() }
+    }
 
     LaunchedEffect(selectedTopDestination?.route) {
         if (selectedTopDestinationFocusRequester != null) {
             // 首屏真实焦点先落到当前入口，用户按一次下键即可进入内容卡片。
             selectedTopDestinationFocusRequester.requestFocus()
+            topNavHasFocus = true
         }
     }
 
@@ -220,7 +237,13 @@ private fun TvTopNavigationBar(
                 top = 28.dp,
                 end = TvTokens.PageHorizontalPadding,
                 bottom = 24.dp,
-            ),
+            )
+            .onFocusChanged { focusState ->
+                if (!focusState.hasFocus) {
+                    // 焦点彻底离开顶栏后，下一次从内容区上来才触发选中项重定向。
+                    topNavHasFocus = false
+                }
+            },
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(
@@ -238,6 +261,7 @@ private fun TvTopNavigationBar(
 
             Spacer(modifier = Modifier.weight(1f))
 
+            // 右上角快捷区：下键回到主菜单来源项（对齐 Flutter _focusActionSourceTab）。
             TvDestinationGroup(
                 destinations = TvDestination.quickAccessDestinations,
                 currentRoute = currentRoute,
@@ -245,7 +269,19 @@ private fun TvTopNavigationBar(
                 topDestinationFocusRequesters = topDestinationFocusRequesters,
                 horizontalSpacing = 10.dp,
                 navigateOnFocus = false,
+                topNavHasFocus = topNavHasFocus,
+                pendingInternalFocusRoute = pendingInternalFocusRoute,
+                onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
+                onTopNavGainedFocus = { topNavHasFocus = true },
+                onRequestInternalFocus = ::moveFocusToRoute,
                 onNavigate = onNavigate,
+                onMoveDownFromGroup = {
+                    val sourceRoute = lastActionSourceRoute
+                        ?.takeIf { route -> route in primaryRoutes }
+                        ?: currentRoute?.takeIf { route -> route in primaryRoutes }
+                        ?: TvDestination.primaryMenuDestinations.first().route
+                    moveFocusToRoute(sourceRoute)
+                },
             )
 
             Spacer(modifier = Modifier.width(24.dp))
@@ -253,6 +289,7 @@ private fun TvTopNavigationBar(
             TvClockText()
         }
 
+        // 左侧主菜单：上键进入右上角快捷首项（对齐 Flutter _focusFirstAction）。
         TvDestinationGroup(
             destinations = TvDestination.primaryMenuDestinations,
             currentRoute = currentRoute,
@@ -260,8 +297,18 @@ private fun TvTopNavigationBar(
             topDestinationFocusRequesters = topDestinationFocusRequesters,
             horizontalSpacing = 12.dp,
             navigateOnFocus = true,
+            topNavHasFocus = topNavHasFocus,
+            pendingInternalFocusRoute = pendingInternalFocusRoute,
+            onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
+            onTopNavGainedFocus = { topNavHasFocus = true },
+            onRequestInternalFocus = ::moveFocusToRoute,
             onNavigate = onNavigate,
             onFilterToggle = onFilterToggle,
+            onMoveUpFromItem = { sourceRoute ->
+                lastActionSourceRoute = sourceRoute
+                val targetRoute = firstQuickAccessRoute ?: return@TvDestinationGroup
+                moveFocusToRoute(targetRoute)
+            },
         )
     }
 }
@@ -273,7 +320,14 @@ private fun TvTopNavigationBar(
  * @param currentRoute 当前选中的路由。
  * @param contentFocusRequester 内容区入口焦点请求器。
  * @param navigateOnFocus 是否在组内焦点移动时直接切换路由。
+ * @param topNavHasFocus 整顶栏（主菜单+快捷）是否已持有焦点。
+ * @param pendingInternalFocusRoute 显式组内/跨组移动的目标路由。
+ * @param onPendingInternalFocusConsumed 消费一次 pending 落焦标记。
+ * @param onTopNavGainedFocus 标记顶栏已获焦。
+ * @param onRequestInternalFocus 组内左右移动时请求焦点。
  * @param onNavigate 顶部标签点击后的跳转回调。
+ * @param onMoveUpFromItem 组内某项上键（主菜单 → 右上角快捷）。
+ * @param onMoveDownFromGroup 组内下键（快捷区 → 主菜单来源项）。
  */
 @Composable
 private fun TvDestinationGroup(
@@ -283,31 +337,19 @@ private fun TvDestinationGroup(
     topDestinationFocusRequesters: Map<String, FocusRequester>,
     horizontalSpacing: androidx.compose.ui.unit.Dp = 10.dp,
     navigateOnFocus: Boolean,
+    topNavHasFocus: Boolean,
+    pendingInternalFocusRoute: String?,
+    onPendingInternalFocusConsumed: () -> Unit,
+    onTopNavGainedFocus: () -> Unit,
+    onRequestInternalFocus: (String) -> Unit,
     onNavigate: (TvDestination) -> Unit,
     onFilterToggle: () -> Unit = {},
+    onMoveUpFromItem: ((sourceRoute: String) -> Unit)? = null,
+    onMoveDownFromGroup: (() -> Unit)? = null,
 ) {
-    var hasGroupFocus by remember { mutableStateOf(false) }
-    var pendingInternalFocusRoute by remember { mutableStateOf<String?>(null) }
     val activePillFocusRequester = currentRoute?.let { topDestinationFocusRequesters[it] }
 
-    fun moveFocusInsideGroup(targetDestination: TvDestination?) {
-        val targetFocusRequester = targetDestination
-            ?.let { destination -> topDestinationFocusRequesters[destination.route] }
-            ?: return
-
-        // 左右键明确标记为组内移动，避免目标 tab 获焦后被外部进入逻辑拉回当前 tab。
-        pendingInternalFocusRoute = targetDestination.route
-        hasGroupFocus = true
-        targetFocusRequester.requestFocus()
-    }
-
     Row(
-        modifier = Modifier.onFocusChanged { focusState ->
-            if (!focusState.hasFocus) {
-                // 离开整组后重置状态，下一次从内容区进入时不误触发切页。
-                hasGroupFocus = false
-            }
-        },
         horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -322,28 +364,38 @@ private fun TvDestinationGroup(
                 supportsCategoryFilter = destination.supportsCategoryFilter(),
                 contentFocusRequester = contentFocusRequester,
                 focusRequester = topDestinationFocusRequesters[destination.route],
+                // 快捷区自管下键回主菜单，不再直达内容区。
+                useContentAsDownTarget = onMoveDownFromGroup == null,
                 onFocused = {
                     val isPendingInternalMove = pendingInternalFocusRoute == destination.route
-                    val movingInsideGroup = hasGroupFocus || isPendingInternalMove
+                    // 顶栏内跨组（主菜单↔快捷）与组内左右都算“内部移动”，禁止拉回选中主 tab。
+                    val movingInsideTopNav = topNavHasFocus || isPendingInternalMove
                     if (isPendingInternalMove) {
-                        // 本次左右键落焦已消费，后续外部进入仍需要走选中项重定向。
-                        pendingInternalFocusRoute = null
+                        onPendingInternalFocusConsumed()
                     }
-                    if (!movingInsideGroup && !isSelected && activePillFocusRequester != null) {
+                    if (!movingInsideTopNav && !isSelected && activePillFocusRequester != null) {
                         // 从内容区上来的焦点落到非当前 tab 时，重定向到选中 tab，
                         // 确保下键始终回到正确的内容区位置。
-                        activePillFocusRequester.requestFocus()
+                        runCatching { activePillFocusRequester.requestFocus() }
                     } else {
                         // Flutter TV 主菜单左右移动时焦点即切页；快捷入口仍保持确认键进入。
-                        if (navigateOnFocus && movingInsideGroup && !isSelected) {
+                        if (navigateOnFocus && movingInsideTopNav && !isSelected) {
                             onNavigate(destination)
                         }
-                        hasGroupFocus = true
+                        onTopNavGainedFocus()
                     }
                 },
                 onClick = { onNavigate(destination) },
-                onMoveLeft = { moveFocusInsideGroup(previousDestination) },
-                onMoveRight = { moveFocusInsideGroup(nextDestination) },
+                onMoveLeft = {
+                    previousDestination?.route?.let(onRequestInternalFocus)
+                },
+                onMoveRight = {
+                    nextDestination?.route?.let(onRequestInternalFocus)
+                },
+                onMoveUp = onMoveUpFromItem?.let { moveUp ->
+                    { moveUp(destination.route) }
+                },
+                onMoveDown = onMoveDownFromGroup,
                 onFilterToggle = onFilterToggle,
             )
         }
@@ -356,10 +408,13 @@ private fun TvDestinationGroup(
  * @param label 按钮文案。
  * @param selected 是否为当前路由。
  * @param contentFocusRequester 内容区入口焦点请求器。
+ * @param useContentAsDownTarget 下键是否落到内容区；快捷区为 false，由 [onMoveDown] 回主菜单。
  * @param onFocused 焦点进入按钮时的回调。
  * @param onClick 点击后的跳转回调。
  * @param onMoveLeft 左键移动到组内上一个按钮。
  * @param onMoveRight 右键移动到组内下一个按钮。
+ * @param onMoveUp 上键（主菜单进右上角快捷）。
+ * @param onMoveDown 下键（快捷区回主菜单）。
  */
 @Composable
 private fun TvNavigationPill(
@@ -369,10 +424,13 @@ private fun TvNavigationPill(
     supportsCategoryFilter: Boolean = false,
     contentFocusRequester: FocusRequester,
     focusRequester: FocusRequester?,
+    useContentAsDownTarget: Boolean = true,
     onFocused: () -> Unit,
     onClick: () -> Unit,
     onMoveLeft: () -> Unit,
     onMoveRight: () -> Unit,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null,
     onFilterToggle: () -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -396,8 +454,12 @@ private fun TvNavigationPill(
                 shape = shape,
             )
             .focusProperties {
-                // 向下焦点目标交给 Compose 默认搜索，避免遥控器只在顶部导航区域循环。
-                down = contentFocusRequester
+                // 主菜单下键进内容；快捷区下键由 onMoveDown 显式回主菜单，禁用默认 down。
+                down = if (useContentAsDownTarget) {
+                    contentFocusRequester
+                } else {
+                    FocusRequester.Cancel
+                }
             }
             .then(
                 if (focusRequester != null) {
@@ -416,6 +478,18 @@ private fun TvNavigationPill(
                         } else {
                             onMoveRight()
                         }
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.DirectionUp && onMoveUp != null) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        onMoveUp()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.DirectionDown && onMoveDown != null) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        onMoveDown()
                     }
                     return@onPreviewKeyEvent true
                 }

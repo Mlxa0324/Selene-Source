@@ -23,17 +23,18 @@ class TvAppFocusContractTest {
     }
 
     /**
-     * 顶部导航下方向键必须交给 focusProperties 的 down 目标，不在预览按键里提前消费。
+     * 主菜单下方向键交给 focusProperties → 内容区；快捷区下键由 onMoveDown 回主菜单。
      */
     @Test
-    fun navigation_down_key_uses_focus_properties_without_preview_consumption() {
+    fun navigation_down_key_uses_focus_properties_or_explicit_callback() {
         val source = readAppSource()
         val pillSource = readNavigationPillSource()
 
-        assertThat(source).contains("down = contentFocusRequester")
+        assertThat(source).contains("down = if (useContentAsDownTarget)")
+        assertThat(source).contains("contentFocusRequester")
         assertThat(source).doesNotContain("import androidx.compose.ui.platform.LocalFocusManager")
         assertThat(source).doesNotContain("import androidx.compose.ui.focus.FocusDirection")
-        assertThat(pillSource).doesNotContain("Key.DirectionDown")
+        assertThat(pillSource).contains("onMoveDown != null")
         assertThat(pillSource).doesNotContain("onFocusContent()")
     }
 
@@ -46,7 +47,8 @@ class TvAppFocusContractTest {
 
         assertThat(source).contains("import androidx.compose.ui.focus.focusProperties")
         assertThat(source).contains("contentFocusRequester: FocusRequester")
-        assertThat(source).contains("down = contentFocusRequester")
+        assertThat(source).contains("useContentAsDownTarget")
+        assertThat(source).contains("contentFocusRequester")
     }
 
     /**
@@ -67,15 +69,39 @@ class TvAppFocusContractTest {
     fun navigation_pill_handles_left_right_inside_current_group() {
         val groupSource = readDestinationGroupSource()
         val pillSource = readNavigationPillSource()
+        val topNavSource = readTopNavigationSource()
 
-        assertThat(groupSource).contains("var pendingInternalFocusRoute by remember")
+        assertThat(topNavSource).contains("var pendingInternalFocusRoute by remember")
         assertThat(groupSource).contains("destinations.forEachIndexed")
-        assertThat(groupSource).contains("moveFocusInsideGroup(previousDestination)")
-        assertThat(groupSource).contains("moveFocusInsideGroup(nextDestination)")
+        assertThat(groupSource).contains("previousDestination?.route?.let(onRequestInternalFocus)")
+        assertThat(groupSource).contains("nextDestination?.route?.let(onRequestInternalFocus)")
         assertThat(pillSource).contains("onMoveLeft: () -> Unit")
         assertThat(pillSource).contains("onMoveRight: () -> Unit")
         assertThat(pillSource).contains("Key.DirectionLeft")
         assertThat(pillSource).contains("Key.DirectionRight")
+    }
+
+    /**
+     * 主菜单上键必须进入右上角快捷首项；快捷区下键回到主菜单来源项。
+     * 跨组移动依赖顶栏级 topNavHasFocus，禁止被“外部进入重定向”拉回选中主 tab。
+     */
+    @Test
+    fun primary_menu_up_reaches_quick_access_and_down_returns() {
+        val topNavSource = readTopNavigationSource()
+        val groupSource = readDestinationGroupSource()
+        val pillSource = readNavigationPillSource()
+
+        assertThat(topNavSource).contains("topNavHasFocus")
+        assertThat(topNavSource).contains("lastActionSourceRoute")
+        assertThat(topNavSource).contains("onMoveUpFromItem")
+        assertThat(topNavSource).contains("onMoveDownFromGroup")
+        assertThat(topNavSource).contains("quickAccessDestinations")
+        assertThat(topNavSource).contains("firstQuickAccessRoute")
+        assertThat(groupSource).contains("movingInsideTopNav")
+        assertThat(groupSource).contains("onMoveUp = onMoveUpFromItem")
+        assertThat(groupSource).contains("onMoveDown = onMoveDownFromGroup")
+        assertThat(pillSource).contains("Key.DirectionUp")
+        assertThat(pillSource).contains("onMoveUp != null")
     }
 
     /**
@@ -164,7 +190,7 @@ class TvAppFocusContractTest {
     private fun readNavigationPillSource(): String {
         val source = readAppSource()
         return source.substringAfter("private fun TvNavigationPill(")
-            .substringBefore("/**\n * TV 顶部当前时间。")
+            .substringBefore("/**\n * 记住顶层入口到焦点请求器的映射。")
     }
 
     /**
