@@ -44,6 +44,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -1183,7 +1184,7 @@ private fun RecommendRail(
     }
     // 推荐区用横向轨道，避免嵌在 verticalScroll 中再次套 LazyVerticalGrid。
     // 契约（对齐 TV 横向列表 skill / 详情页 LazyRow）：
-    // 1) 视口贴齐右面板左右缘（负向抵消父级 content 水平 padding）
+    // 1) 视口贴齐右面板左右缘（layout 外扩，禁止负 padding，会崩溃）
     // 2) 左右停靠边距只写在 LazyRow contentPadding，且可独立设置
     // 3) 滚动时卡片可从面板缘进出；静止时首/末卡仍有呼吸边距
     // onReturnToLeftPanel/onBack 由外层词块或状态面板入口承接；海报轨首项承接 entryFocus。
@@ -1198,13 +1199,42 @@ private fun RecommendRail(
                 totalEpisodes = video.totalEpisodes,
             )
         },
-        // 抵消右面板 horizontal content padding，让横滑视口贴齐面板圆角内缘。
-        modifier = Modifier.padding(horizontal = -RightPanelContentHorizontal),
+        // 用 layout 外扩抵消父级 content 水平 padding，贴齐面板圆角内缘。
+        modifier = Modifier.horizontalBleed(RightPanelContentHorizontal),
         firstItemFocusRequester = entryFocusRequester,
         contentStartPadding = RecommendRailStartPadding,
         contentEndPadding = RecommendRailEndPadding,
         onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
     )
+}
+
+/**
+ * 左右外扩 [bleed]，在父级已有对称水平 padding 时让子项视口贴齐容器缘。
+ *
+ * 不用负 [Modifier.padding]：Compose 要求 padding ≥ 0，负值会抛
+ * `IllegalArgumentException: Padding must be non-negative`。
+ *
+ * @param bleed 单侧外扩量（通常等于父级 horizontal padding）。
+ * @return 布局后左右各多占 [bleed] 的修饰器。
+ */
+private fun Modifier.horizontalBleed(bleed: Dp): Modifier {
+    if (bleed <= 0.dp) {
+        return this
+    }
+    return layout { measurable, constraints ->
+        val bleedPx = bleed.roundToPx().coerceAtLeast(0)
+        val expandedMaxWidth = (constraints.maxWidth + bleedPx * 2).coerceAtLeast(0)
+        val placeable = measurable.measure(
+            constraints.copy(
+                minWidth = 0,
+                maxWidth = expandedMaxWidth,
+            ),
+        )
+        // 对外仍报告父级可用宽度，内容向左偏移 bleed，使左右对称外扩。
+        layout(constraints.maxWidth, placeable.height) {
+            placeable.placeRelative(-bleedPx, 0)
+        }
+    }
 }
 
 @Composable

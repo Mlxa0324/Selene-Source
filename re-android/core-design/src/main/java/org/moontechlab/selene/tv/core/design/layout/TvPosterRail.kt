@@ -22,8 +22,8 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * TV 横向海报带。
  *
  * 横向边距应写在 [contentStartPadding] / [contentEndPadding]（可左右独立），
- * 不要用父级大边距夹死视口：父级若已有水平 padding，调用方可用负向
- * `Modifier.padding(horizontal = -parentPad)` 让视口贴齐容器缘，
+ * 不要用父级大边距夹死视口：父级若已有水平 padding，调用方应用 layout 外扩
+ * （不可用负 padding，Compose 会抛 Padding must be non-negative），
  * 静止时仍靠 contentPadding 形成视觉边距，滚动时卡片可从边缘进出。
  *
  * @param items 影视卡片列表。
