@@ -824,8 +824,8 @@ private fun TvPlayerPlaylistMenu(
                                     newlyFocusedIndex = i,
                                 )
                             activeEpisodeFocusedIndex = i
-                            // 同轨左右相邻、或首/末项：必须滚入可视区（含真正到边）。
-                            if (shouldScroll || i == 0 || i == group.lastIndex) {
+                            // 仅同轨左右相邻时平滑跟手；上下跨层进入不拽列表。
+                            if (shouldScroll) {
                                 scrollPlayerMenuChipIntoView(
                                     listState = episodeListState,
                                     index = i,
@@ -943,7 +943,7 @@ private fun TvPlayerPlaylistMenu(
                                     newlyFocusedIndex = gi,
                                 )
                             activeGroupFocusedIndex = gi
-                            if (shouldScroll || gi == 0 || gi == groups.lastIndex) {
+                            if (shouldScroll) {
                                 scrollPlayerMenuChipIntoView(
                                     listState = groupListState,
                                     index = gi,
@@ -1165,8 +1165,8 @@ private fun TvPlayerSourceMenu(
                                     newlyFocusedIndex = i,
                                 )
                             activeFocusedIndex = i
-                            // 首/末项强制滚到位，中间项仅同轨相邻才滚。
-                            if (shouldScroll || i == 0 || i == sources.lastIndex) {
+                            // 仅同轨左右相邻时平滑跟手；禁止首/末强制整页钉边。
+                            if (shouldScroll) {
                                 scrollPlayerMenuChipIntoView(
                                     listState = listState,
                                     index = i,
@@ -2492,18 +2492,15 @@ private fun resolvePlaylistMenuLabel(playbackRequest: PlaybackRequest?): String 
 
 
 /**
- * 播放器二级菜单 chip 获焦后滚进可视安全区。
+ * 全屏二级/三级菜单横向列表：平滑跟手滚入可视区。
  *
- * 末项对齐列表末尾，利用 end contentPadding 形成贴边滚动后的右边距；
- * 其余项尽量完整露出，避免焦点放大被右边缘裁切。
+ * 只按裁切量 scrollBy，禁止 animateScrollToItem 把项钉到视口左缘
+ * （那会在倒数第二→末项时像整页切换）。
  *
  * @param listState 横向列表状态。
  * @param index 获焦下标。
  * @param itemCount 列表总数。
  * @param scrollScope 滚动协程作用域。
- */
-/**
- * 全屏二级菜单横向列表滚入可视区，并保证首/末项能真正到位。
  */
 private fun scrollPlayerMenuChipIntoView(
     listState: LazyListState,
@@ -2515,49 +2512,31 @@ private fun scrollPlayerMenuChipIntoView(
         return
     }
     scrollScope.launch {
-        val lastIndex = itemCount - 1
+        val edgeSafePx = 12
+        // 未进入布局时先滚近目标，再按真实几何微调（仍避免大段 pin）。
+        var target = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { info -> info.index == index }
+        if (target == null) {
+            listState.animateScrollToItem(index = index)
+            target = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { info -> info.index == index }
+                ?: return@launch
+        }
+        val layoutInfo = listState.layoutInfo
+        val viewportStart = layoutInfo.viewportStartOffset
+        val viewportEnd = layoutInfo.viewportEndOffset
+        val itemStart = target.offset
+        val itemEnd = target.offset + target.size
+        val leftDelta = (itemStart - (viewportStart + edgeSafePx)).toFloat()
+        val rightDelta = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
         when {
-            index <= 0 -> {
-                // 最左：完整露出 start padding 与首项。
-                if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
-                    listState.animateScrollToItem(index = 0, scrollOffset = 0)
-                }
+            leftDelta < 0f -> {
+                // 左侧被裁：向左滚刚好露出（负 delta）。
+                listState.animateScrollBy(leftDelta)
             }
-            index >= lastIndex -> {
-                // 最右：先滚到末项，再 scrollBy 夹到 max，保证末集完整可见。
-                listState.animateScrollToItem(index = lastIndex)
-                if (listState.canScrollForward) {
-                    val info = listState.layoutInfo
-                    val last = info.visibleItemsInfo.firstOrNull { item -> item.index == lastIndex }
-                    val overflow = if (last != null) {
-                        (last.offset + last.size - info.viewportEndOffset).toFloat().coerceAtLeast(0f)
-                    } else {
-                        0f
-                    }
-                    val push = (overflow + info.viewportEndOffset.toFloat()).coerceAtLeast(1f)
-                    listState.animateScrollBy(push)
-                }
-            }
-            else -> {
-                val layoutInfo = listState.layoutInfo
-                val visible = layoutInfo.visibleItemsInfo
-                val target = visible.firstOrNull { info -> info.index == index }
-                if (target == null) {
-                    listState.animateScrollToItem(index)
-                    return@launch
-                }
-                val viewportEnd = layoutInfo.viewportEndOffset
-                val viewportStart = layoutInfo.viewportStartOffset
-                val edgeSafePx = 8
-                val leftOverflow = viewportStart + edgeSafePx - target.offset
-                val rightOverflow = target.offset + target.size - (viewportEnd - edgeSafePx)
-                when {
-                    leftOverflow > 0 -> listState.animateScrollToItem(index)
-                    rightOverflow > 0 -> {
-                        // 右缘裁切：用 scrollBy 刚好露出，避免每次钉到最左造成跳动。
-                        listState.animateScrollBy(rightOverflow.toFloat())
-                    }
-                }
+            rightDelta > 0f -> {
+                // 右侧被裁：向右滚刚好露出，末项/倒数第二都同一套平滑策略。
+                listState.animateScrollBy(rightDelta)
             }
         }
     }

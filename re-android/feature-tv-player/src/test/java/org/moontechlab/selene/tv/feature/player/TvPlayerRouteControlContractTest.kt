@@ -538,7 +538,7 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
-     * 二级横向滚动必须对首/末项强制到位。
+     * 二级/三级横向滚动必须平滑 scrollBy 跟手，禁止末项整页 pin 造成“翻页感”。
      */
     @Test
     fun route_secondary_menu_scroll_handles_first_and_last() {
@@ -546,10 +546,13 @@ class TvPlayerRouteControlContractTest {
         val scrollSource = source.substringAfter("private fun scrollPlayerMenuChipIntoView(")
             .substringBefore("private const val PLAYER_MENU_AUTO_HIDE_MS")
 
-        assertThat(scrollSource).contains("index <= 0")
-        assertThat(scrollSource).contains("index >= lastIndex")
-        assertThat(scrollSource).contains("animateScrollToItem(index = 0")
-        assertThat(scrollSource).contains("animateScrollToItem(index = lastIndex")
+        assertThat(scrollSource).contains("animateScrollBy(")
+        assertThat(scrollSource).contains("leftDelta")
+        assertThat(scrollSource).contains("rightDelta")
+        // 不再用 animateScrollToItem 把末项钉到视口起点（整页切换感）。
+        assertThat(scrollSource).doesNotContain("index >= lastIndex")
+        assertThat(scrollSource).doesNotContain("animateScrollToItem(index = lastIndex")
+        assertThat(scrollSource).doesNotContain("animateScrollToItem(index = 0")
     }
 
     /**
@@ -660,7 +663,8 @@ class TvPlayerRouteControlContractTest {
         assertThat(sourceMenu).contains("scrollPlayerMenuChipIntoView(")
         assertThat(sourceMenu).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
         assertThat(sourceMenu).contains("rememberSaveable(saver = LazyListState.Saver)")
-        assertThat(sourceMenu).contains("if (shouldScroll || i == 0 || i == sources.lastIndex)")
+        assertThat(sourceMenu).contains("if (shouldScroll)")
+        assertThat(sourceMenu).doesNotContain("shouldScroll || i == 0 || i == sources.lastIndex")
         assertThat(sourceMenu).contains("TransformOrigin(1f, 0.5f)")
         assertThat(sourceMenu).contains("TransformOrigin(0f, 0.5f)")
         assertThat(sourceMenu).contains("focusScaleOrigin = when {")
