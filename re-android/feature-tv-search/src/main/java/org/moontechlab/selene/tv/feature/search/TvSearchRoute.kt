@@ -233,8 +233,22 @@ fun TvSearchRoute(
                         lastKeyboardCol = col
                         rightPanelEntryFocus.requestFocus()
                     },
-                    onArrowDownFromBottom = { clearButtonFocus.requestFocus() },
-                    onArrowUpFromTop = { deleteButtonFocus.requestFocus() },
+                    // 底行下键：落到操作行对应按钮（列映射），形成与操作行的环形贯通。
+                    onArrowDownFromBottom = { col ->
+                        when {
+                            col <= 1 -> clearButtonFocus.requestFocus()
+                            col <= 3 -> searchButtonFocus.requestFocus()
+                            else -> deleteButtonFocus.requestFocus()
+                        }
+                    },
+                    // 顶行上键：落到操作行（整页上下环形：顶↔底）。
+                    onArrowUpFromTop = { col ->
+                        when {
+                            col <= 1 -> clearButtonFocus.requestFocus()
+                            col <= 3 -> searchButtonFocus.requestFocus()
+                            else -> deleteButtonFocus.requestFocus()
+                        }
+                    },
                     onBack = {
                         if (!onConsumeBack()) {
                             onBack()
@@ -261,7 +275,11 @@ fun TvSearchRoute(
                         }
                     },
                     onArrowUpToKeyboard = { col ->
-                        keyFocusRequesters[KeyboardRows - 1][col].requestFocus()
+                        keyFocusRequesters[KeyboardRows - 1][col.coerceIn(0, KeyboardColumns - 1)]
+                            .requestFocus()
+                    },
+                    onArrowDownToKeyboard = { col ->
+                        keyFocusRequesters[0][col.coerceIn(0, KeyboardColumns - 1)].requestFocus()
                     },
                     onArrowRightFromDelete = {
                         rightPanelEntryFocus.requestFocus()
@@ -368,7 +386,8 @@ private fun SearchInputDisplay(query: String) {
 /**
  * 6×6 字母数字虚拟键盘。
  *
- * 键盘按键只消费方向键和确认键的 KeyUp，Back 键全程放行。
+ * 焦点：行内左环形、右缘进右面板；顶/底行与下方操作按钮上下贯通环形。
+ * 键盘按键只消费方向键和确认键，Back 键全程放行。
  *
  * @param focusRequesters 键位焦点矩阵。
  * @param onKeyPressed 确认某键。
@@ -383,8 +402,8 @@ private fun TvKeyboard(
     focusRequesters: List<List<FocusRequester>>,
     onKeyPressed: (String) -> Unit,
     onArrowRightFromEdge: (row: Int, col: Int) -> Unit,
-    onArrowDownFromBottom: () -> Unit,
-    onArrowUpFromTop: () -> Unit,
+    onArrowDownFromBottom: (col: Int) -> Unit,
+    onArrowUpFromTop: (col: Int) -> Unit,
     onBack: () -> Unit,
     onFocusChanged: (row: Int, col: Int) -> Unit,
 ) {
@@ -393,6 +412,7 @@ private fun TvKeyboard(
             Row(horizontalArrangement = Arrangement.spacedBy(KeySpacing)) {
                 keys.forEachIndexed { col, keyLabel ->
                     val isRightEdge = col == keys.lastIndex
+                    val isLeftEdge = col == 0
                     val isTopRow = row == 0
                     val isBottomRow = row == KeyboardRows - 1
                     val interactionSource = remember { MutableInteractionSource() }
@@ -427,23 +447,34 @@ private fun TvKeyboard(
                                 KeyPreviewHandler(
                                     onEnter = { onKeyPressed(keyLabel) },
                                     onLeft = {
-                                        if (col > 0) focusRequesters[row][col - 1].requestFocus()
+                                        if (isLeftEdge) {
+                                            // 行内左环形：首列左键落到本行末列。
+                                            focusRequesters[row][keys.lastIndex].requestFocus()
+                                        } else {
+                                            focusRequesters[row][col - 1].requestFocus()
+                                        }
                                     },
                                     onRight = {
-                                        if (isRightEdge) onArrowRightFromEdge(row, col)
-                                        else focusRequesters[row][col + 1].requestFocus()
+                                        if (isRightEdge) {
+                                            // 右缘仍进右面板（保留跨栏逻辑）。
+                                            onArrowRightFromEdge(row, col)
+                                        } else {
+                                            focusRequesters[row][col + 1].requestFocus()
+                                        }
                                     },
                                     onUp = {
-                                        if (isTopRow) onArrowUpFromTop()
-                                        else {
+                                        if (isTopRow) {
+                                            onArrowUpFromTop(col)
+                                        } else {
                                             focusRequesters[row - 1][
                                                 col.coerceAtMost(KeyboardKeys[row - 1].lastIndex),
                                             ].requestFocus()
                                         }
                                     },
                                     onDown = {
-                                        if (isBottomRow) onArrowDownFromBottom()
-                                        else {
+                                        if (isBottomRow) {
+                                            onArrowDownFromBottom(col)
+                                        } else {
                                             focusRequesters[row + 1][
                                                 col.coerceAtMost(KeyboardKeys[row + 1].lastIndex),
                                             ].requestFocus()
@@ -473,6 +504,8 @@ private fun TvKeyboard(
 /**
  * 清空 / 搜索 / 删除三操作。
  *
+ * 三键左右可切换；左右两端环形互跳；上下与键盘首/末行贯通。
+ *
  * @param clearFocus 清空按钮焦点。
  * @param searchFocus 搜索按钮焦点。
  * @param deleteFocus 删除按钮焦点。
@@ -480,7 +513,8 @@ private fun TvKeyboard(
  * @param onSearch 提交当前输入。
  * @param onDelete 删除末字符。
  * @param onBack 返回。
- * @param onArrowUpToKeyboard 上移回键盘对应列。
+ * @param onArrowUpToKeyboard 上移回键盘底行对应列。
+ * @param onArrowDownToKeyboard 下移回键盘顶行对应列（整页上下环形）。
  * @param onArrowRightFromDelete 删除键右移进右面板。
  */
 @Composable
@@ -493,6 +527,7 @@ private fun SearchActionRow(
     onDelete: () -> Unit,
     onBack: () -> Unit,
     onArrowUpToKeyboard: (col: Int) -> Unit,
+    onArrowDownToKeyboard: (col: Int) -> Unit,
     onArrowRightFromDelete: () -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -501,7 +536,10 @@ private fun SearchActionRow(
             focusRequester = clearFocus,
             primary = false,
             onClick = onClear,
+            onLeft = { deleteFocus.requestFocus() },
+            onRight = { searchFocus.requestFocus() },
             onUp = { onArrowUpToKeyboard(0) },
+            onDown = { onArrowDownToKeyboard(0) },
             onBack = onBack,
         )
         SearchActionButton(
@@ -509,7 +547,10 @@ private fun SearchActionRow(
             focusRequester = searchFocus,
             primary = true,
             onClick = onSearch,
+            onLeft = { clearFocus.requestFocus() },
+            onRight = { deleteFocus.requestFocus() },
             onUp = { onArrowUpToKeyboard(2) },
+            onDown = { onArrowDownToKeyboard(2) },
             onBack = onBack,
         )
         SearchActionButton(
@@ -517,8 +558,10 @@ private fun SearchActionRow(
             focusRequester = deleteFocus,
             primary = false,
             onClick = onDelete,
-            onUp = { onArrowUpToKeyboard(5) },
+            onLeft = { searchFocus.requestFocus() },
             onRight = onArrowRightFromDelete,
+            onUp = { onArrowUpToKeyboard(5) },
+            onDown = { onArrowDownToKeyboard(5) },
             onBack = onBack,
         )
     }
@@ -531,8 +574,10 @@ private fun SearchActionRow(
  * @param focusRequester 焦点请求器。
  * @param primary 是否主操作（搜索）。
  * @param onClick 点击/确认。
+ * @param onLeft 左方向。
+ * @param onRight 右方向。
  * @param onUp 上方向。
- * @param onRight 右方向（仅删除需要）。
+ * @param onDown 下方向。
  * @param onBack 返回。
  */
 @Composable
@@ -541,8 +586,10 @@ private fun RowScope.SearchActionButton(
     focusRequester: FocusRequester,
     primary: Boolean,
     onClick: () -> Unit,
-    onUp: () -> Unit,
+    onLeft: (() -> Unit)? = null,
     onRight: (() -> Unit)? = null,
+    onUp: () -> Unit,
+    onDown: () -> Unit = {},
     onBack: () -> Unit = {},
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -575,9 +622,10 @@ private fun RowScope.SearchActionButton(
             .onPreviewKeyEvent(
                 KeyPreviewHandler(
                     onEnter = onClick,
-                    onDown = { /* stay */ },
-                    onUp = onUp,
+                    onLeft = onLeft,
                     onRight = onRight,
+                    onUp = onUp,
+                    onDown = onDown,
                     onBack = onBack,
                 ),
             )
@@ -950,6 +998,7 @@ private fun WordTileGrid(
                             label = "wordTileBg",
                         )
                         val isFirst = index == 0
+                        val lastIndex = words.lastIndex
 
                         Box(
                             modifier = Modifier
@@ -972,19 +1021,35 @@ private fun WordTileGrid(
                                 .onPreviewKeyEvent(
                                     KeyPreviewHandler(
                                         onEnter = { onWordClick(word) },
-                                        // 左缘回键盘；同行/跨行焦点逻辑保持原搜索页契约。
+                                        // 左缘回键盘；词块网格内左右环形。
                                         onLeft = {
                                             if (col == 0) onReturnToLeftPanel()
                                             else focusRequesters.getOrNull(index - 1)?.requestFocus()
                                         },
                                         onRight = {
-                                            focusRequesters.getOrNull(index + 1)?.requestFocus()
+                                            val next = if (index < lastIndex) index + 1 else 0
+                                            focusRequesters.getOrNull(next)?.requestFocus()
                                         },
                                         onUp = {
-                                            focusRequesters.getOrNull(index - columns)?.requestFocus()
+                                            val up = index - columns
+                                            if (up >= 0) {
+                                                focusRequesters.getOrNull(up)?.requestFocus()
+                                            } else {
+                                                // 顶行上键：落到末行同列（环形）。
+                                                val lastRow = rows - 1
+                                                val target = (lastRow * columns + col).coerceAtMost(lastIndex)
+                                                focusRequesters.getOrNull(target)?.requestFocus()
+                                            }
                                         },
                                         onDown = {
-                                            focusRequesters.getOrNull(index + columns)?.requestFocus()
+                                            val down = index + columns
+                                            if (down <= lastIndex) {
+                                                focusRequesters.getOrNull(down)?.requestFocus()
+                                            } else {
+                                                // 底行下键：回到首行同列（环形）。
+                                                focusRequesters.getOrNull(col.coerceAtMost(lastIndex))
+                                                    ?.requestFocus()
+                                            }
                                         },
                                         onBack = onBack,
                                     ),
@@ -1135,6 +1200,7 @@ private fun SearchResultPanel(
             )
 
             else -> {
+                // 右栏已有内边距：4 列更宽更好看，左右 padding 收紧避免卡片过瘦。
                 TvPosterGrid(
                     items = state.resultCards.map { video ->
                         TvPosterItem(
@@ -1146,8 +1212,10 @@ private fun SearchResultPanel(
                             totalEpisodes = video.totalEpisodes,
                         )
                     },
-                    columns = 5,
+                    columns = 4,
                     modifier = Modifier.fillMaxSize(),
+                    contentHorizontalPadding = 4.dp,
+                    contentBottomPadding = 16.dp,
                     firstItemFocusRequester = entryFocusRequester,
                     onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
                 )

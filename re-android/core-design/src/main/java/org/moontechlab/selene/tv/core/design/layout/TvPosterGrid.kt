@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 
@@ -31,6 +32,8 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param headerContent 网格顶部内容（全宽 span，随网格滚动）。
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给首张海报。
  * @param onItemClick 卡片点击回调。
+ * @param contentHorizontalPadding 网格左右 contentPadding；容器内嵌时可减小。
+ * @param contentBottomPadding 网格底部 contentPadding。
  * @param prefetchRows 距离末尾多少行时开始触发下一页预取。
  * @param onApproachingEnd 焦点接近列表末尾时触发，用于触底加载下一页。
  */
@@ -42,6 +45,8 @@ fun TvPosterGrid(
     headerContent: (@Composable () -> Unit)? = null,
     firstItemFocusRequester: FocusRequester? = null,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
+    contentHorizontalPadding: Dp = TvListLayoutMetrics.GridHorizontalPadding,
+    contentBottomPadding: Dp = TvListLayoutMetrics.GridBottomPadding,
     prefetchRows: Int = 3,
     onApproachingEnd: (() -> Unit)? = null,
 ) {
@@ -71,9 +76,9 @@ fun TvPosterGrid(
         ),
         state = gridState,
         contentPadding = PaddingValues(
-            start = TvListLayoutMetrics.GridHorizontalPadding,
-            end = TvListLayoutMetrics.GridHorizontalPadding,
-            bottom = TvListLayoutMetrics.GridBottomPadding,
+            start = contentHorizontalPadding,
+            end = contentHorizontalPadding,
+            bottom = contentBottomPadding,
         ),
         verticalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
         horizontalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
