@@ -104,6 +104,21 @@ class TvNavGraphPlayerContractTest {
     }
 
     /**
+     * 详情顶栏搜索必须跳转到与首页相同的搜索页路由。
+     */
+    @Test
+    fun detail_route_search_navigates_to_shell_search_page() {
+        val source = readNavGraphSource()
+        val detailRouteSource = source.substringAfter("TvDetailRoute(")
+            .substringBefore("playerSurface =")
+
+        assertThat(detailRouteSource).contains("onSearchClick =")
+        assertThat(detailRouteSource).contains("TvDestination.Search.route")
+        assertThat(detailRouteSource).contains("launchSingleTop = true")
+        assertThat(detailRouteSource).contains("flushDetailProgress()")
+    }
+
+    /**
      * WebView 画面层必须把真实播放事件回灌给同一个播放内核，驱动进度条和暂停态。
      */
     @Test

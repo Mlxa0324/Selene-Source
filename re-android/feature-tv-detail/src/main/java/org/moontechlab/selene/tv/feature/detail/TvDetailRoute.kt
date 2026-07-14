@@ -618,11 +618,11 @@ private fun NcatDetailTopBar(
             horizontalArrangement = Arrangement.spacedBy(11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 样式与首页右上角快捷「搜索」对齐：胶囊 + 图标 + 自适应宽度。
             NcatTopPill(
                 label = "搜索",
                 leadingGlyph = "⌕",
-                leadingGlyphSize = 22.sp,
-                width = 94.dp,
+                leadingGlyphSize = 19.sp,
                 focusRequester = focusTargets.search,
                 modifier = Modifier
                     .tvBringFocusedItemIntoView()
@@ -644,10 +644,9 @@ private fun NcatDetailTopBar(
 }
 
 /**
- * 顶部胶囊按钮。
+ * 顶部胶囊按钮（对齐首页右上角快捷入口：高度 / 圆角 / 底色 / 描边）。
  *
  * @param label 展示文案。
- * @param width 按钮固定宽度。
  * @param leadingGlyph 文案前的图标字符。
  * @param leadingGlyphSize 图标字符字号。
  * @param focusRequester 焦点请求器。
@@ -657,34 +656,62 @@ private fun NcatDetailTopBar(
 @Composable
 private fun NcatTopPill(
     label: String,
-    width: Dp,
     leadingGlyph: String? = null,
-    leadingGlyphSize: TextUnit = 16.sp,
+    leadingGlyphSize: TextUnit = 19.sp,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    NcatPillFocusButton(
-        modifier = modifier.height(36.dp).width(width),
-        focusRequester = focusRequester,
-        cornerRadius = 19.dp,
-        onClick = onClick,
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(TvTokens.TopActionRadius)
+    val backgroundColor = if (isFocused) TvTokens.FocusFill else TvTokens.Surface
+    Box(
+        modifier = modifier
+            .height(TvTokens.TopActionHeight)
+            .clip(shape)
+            .background(backgroundColor)
+            .border(
+                width = 2.dp,
+                color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
+                shape = shape,
+            )
+            .focusRequester(focusRequester)
+            .onPreviewKeyEvent { event ->
+                // 与首页快捷入口一致：确认键在 KeyDown 触发，避免仅 KeyUp 时无反应。
+                val isConfirm = event.key == Key.Enter ||
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Spacebar
+                if (!isConfirm) {
+                    return@onPreviewKeyEvent false
+                }
+                if (event.type == KeyEventType.KeyDown) {
+                    onClick()
+                }
+                true
+            }
+            .ncatClickable(onClick)
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 搜索按钮将放大镜独立放大，保证 TV 远距离下仍清晰可辨。
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             if (!leadingGlyph.isNullOrBlank()) {
                 Text(
                     text = leadingGlyph,
-                    color = Color.White.copy(alpha = 0.94f),
+                    color = Color.White,
                     fontSize = leadingGlyphSize,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(Modifier.width(4.dp))
             }
             Text(
                 text = label,
-                color = Color.White.copy(alpha = 0.88f),
-                fontSize = 13.sp,
+                color = Color.White,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )

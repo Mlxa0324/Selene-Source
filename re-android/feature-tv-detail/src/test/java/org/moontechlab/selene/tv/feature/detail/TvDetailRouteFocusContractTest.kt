@@ -57,18 +57,24 @@ class TvDetailRouteFocusContractTest {
     }
 
     /**
-     * 顶部按钮必须是固定宽度，避免在窄一点的 TV 视口里撑爆顶部栏。
+     * 顶部搜索入口对齐首页右上角快捷胶囊（高度/圆角/底色/水平内边距），宽度随文案。
      */
     @Test
-    fun detail_top_bar_uses_fixed_width_actions() {
+    fun detail_top_bar_search_matches_home_quick_access_pill() {
         val source = readRouteSource()
+        val topPillSource = source
+            .substringAfter("private fun NcatTopPill(")
+            .substringBefore("/**\n * 截图式 Hero 区。")
 
-        assertThat(source).contains("width = 94.dp")
         assertThat(source).contains("fontSize = 28.sp")
-        assertThat(source).contains(".width(width)")
-        assertThat(source).doesNotContain(".widthIn(min = 118.dp)")
         assertThat(source).contains("contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding)")
-        assertThat(source).contains("width = 94.dp")
+        assertThat(source).doesNotContain("width = 94.dp")
+        assertThat(topPillSource).contains("TvTokens.TopActionHeight")
+        assertThat(topPillSource).contains("TvTokens.TopActionRadius")
+        assertThat(topPillSource).contains("TvTokens.Surface")
+        assertThat(topPillSource).contains("TvTokens.FocusFill")
+        assertThat(topPillSource).contains("padding(horizontal = 16.dp)")
+        assertThat(topPillSource).contains("fontSize = 16.sp")
     }
 
     /**
@@ -83,7 +89,7 @@ class TvDetailRouteFocusContractTest {
 
         assertThat(source).contains("label = \"搜索\"")
         assertThat(source).contains("leadingGlyph = \"⌕\"")
-        assertThat(source).contains("leadingGlyphSize = 22.sp")
+        assertThat(source).contains("leadingGlyphSize = 19.sp")
         assertThat(topPillSource).contains("Row(")
         assertThat(topPillSource).contains("fontSize = leadingGlyphSize")
     }

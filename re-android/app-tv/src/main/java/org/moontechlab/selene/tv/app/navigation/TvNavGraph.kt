@@ -576,6 +576,13 @@ fun TvNavGraph(
                 onDismissResume = { detailViewModel.dismissResumePrompt() },
                 onEpisodeGroupSelected = { group -> detailViewModel.selectEpisodeGroup(group) },
                 onHistoryClick = { navController.navigate(TvDestination.History.route) },
+                // 与首页右上角「搜索」同一入口：进入壳层搜索页。
+                onSearchClick = {
+                    flushDetailProgress()
+                    navController.navigate(TvDestination.Search.route) {
+                        launchSingleTop = true
+                    }
+                },
                 onExitClick = {
                     flushDetailProgress()
                     navController.previousBackStackEntry
