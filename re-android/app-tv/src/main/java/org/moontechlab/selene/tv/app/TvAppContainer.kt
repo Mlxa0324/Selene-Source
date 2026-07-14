@@ -606,11 +606,41 @@ class TvAppContainer(
                 )
             },
             loadFavoriteState = { entry ->
+                ensureSession()
                 TvFavoritesRepository(requireGatewayClient().tvApi)
-                    .readFavorites().any { it.id == entry.videoId }
+                    .isFavorite(source = entry.source, videoId = entry.videoId)
             },
-            saveFavoriteState = { _, _ ->
-                // 收藏写入待后续接入 Favorite API
+            saveFavoriteState = { entry, detail, favorited ->
+                if (entry != null && entry.videoId.isNotBlank()) {
+                    ensureSession()
+                    val repo = TvFavoritesRepository(requireGatewayClient().tvApi)
+                    if (favorited) {
+                        val currentSource = detail?.sources
+                            ?.firstOrNull { source -> source.source == entry.source }
+                            ?: detail?.sources?.firstOrNull()
+                        repo.saveFavorite(
+                            source = entry.source.ifBlank { currentSource?.source.orEmpty() },
+                            videoId = entry.videoId,
+                            title = detail?.title.orEmpty()
+                                .ifBlank { entry.title }
+                                .ifBlank { entry.videoId },
+                            sourceName = currentSource?.name
+                                .orEmpty()
+                                .ifBlank { detail?.sourceName.orEmpty() },
+                            year = detail?.year.orEmpty().ifBlank { entry.year },
+                            cover = detail?.posterUrl.orEmpty().ifBlank { entry.posterUrl },
+                            totalEpisodes = currentSource?.episodes?.size
+                                ?: detail?.sources?.maxOfOrNull { source -> source.episodes.size }
+                                ?: 0,
+                            origin = "detail",
+                        )
+                    } else {
+                        repo.deleteFavorite(
+                            source = entry.source,
+                            videoId = entry.videoId,
+                        )
+                    }
+                }
             },
             loadResumeRecord = { entry ->
                 val record = resolveResumeRecord(

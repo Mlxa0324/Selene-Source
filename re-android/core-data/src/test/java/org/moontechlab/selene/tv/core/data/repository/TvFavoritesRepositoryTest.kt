@@ -71,4 +71,56 @@ class TvFavoritesRepositoryTest {
 
         assertThat(deletedKey).isEqualTo("source_a+video_a")
     }
+
+    /**
+     * 保存收藏时应按 Flutter 请求体写入 key + favorite 字段。
+     */
+    @Test
+    fun saveFavorite_posts_flutter_compatible_payload() = runTest {
+        var savedKey: String? = null
+        var savedTitle: String? = null
+        val repository = TvFavoritesRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun saveFavorite(
+                    request: org.moontechlab.selene.tv.core.network.model.TvFavoriteUpsertRequest,
+                ) {
+                    savedKey = request.key
+                    savedTitle = request.favorite.title
+                }
+            },
+        )
+
+        repository.saveFavorite(
+            source = "source_a",
+            videoId = "video_a",
+            title = "痴迷",
+            sourceName = "爱奇艺",
+            year = "2025",
+            cover = "cover.jpg",
+            totalEpisodes = 1,
+        )
+
+        assertThat(savedKey).isEqualTo("source_a+video_a")
+        assertThat(savedTitle).isEqualTo("痴迷")
+    }
+
+    /**
+     * 收藏回显应按 source+id 精确匹配。
+     */
+    @Test
+    fun isFavorite_matches_source_and_id() = runTest {
+        val repository = TvFavoritesRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getFavorites(): Map<String, TvFavoriteResponse> {
+                    return mapOf(
+                        "source_a+video_a" to TvFavoriteResponse(title = "A"),
+                        "source_b+video_a" to TvFavoriteResponse(title = "B"),
+                    )
+                }
+            },
+        )
+
+        assertThat(repository.isFavorite(source = "source_a", videoId = "video_a")).isTrue()
+        assertThat(repository.isFavorite(source = "source_c", videoId = "video_a")).isFalse()
+    }
 }

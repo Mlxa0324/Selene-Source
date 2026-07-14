@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.network
 
 import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
+import org.moontechlab.selene.tv.core.network.model.TvFavoriteUpsertRequest
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
@@ -65,6 +66,16 @@ interface SeleneTvApi {
      */
     @GET("api/favorites")
     suspend fun getFavorites(): Map<String, TvFavoriteResponse>
+
+    /**
+     * 保存单条收藏。
+     *
+     * @param request 与 Flutter `/api/favorites` 对齐的保存请求体。
+     */
+    @POST("api/favorites")
+    suspend fun saveFavorite(
+        @Body request: TvFavoriteUpsertRequest,
+    )
 
     /**
      * 删除单条收藏。

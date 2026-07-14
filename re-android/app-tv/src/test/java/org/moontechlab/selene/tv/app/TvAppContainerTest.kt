@@ -983,6 +983,11 @@ private class FakeGatewayClient(
             return emptyMap()
         }
 
+        /** 记录测试收藏保存。 */
+        override suspend fun saveFavorite(
+            request: org.moontechlab.selene.tv.core.network.model.TvFavoriteUpsertRequest,
+        ) = Unit
+
         /** 记录测试收藏删除。 */
         override suspend fun deleteFavorite(key: String) = Unit
 

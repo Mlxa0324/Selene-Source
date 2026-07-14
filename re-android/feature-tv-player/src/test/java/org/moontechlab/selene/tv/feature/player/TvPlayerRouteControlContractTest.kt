@@ -3,6 +3,7 @@ package org.moontechlab.selene.tv.feature.player
 import com.google.common.truth.Truth.assertThat
 import java.io.File
 import org.junit.Test
+import org.moontechlab.selene.tv.core.player.api.PlaybackSource
 
 /**
  * 校验 TV 播放器壳层遥控器控制契约。
@@ -458,8 +459,12 @@ class TvPlayerRouteControlContractTest {
         )
         // 进入二级菜单必须继续只由一级菜单的上键显式触发。
         assertThat(source).contains("onArrowUp = {")
+        assertThat(source).contains("requestNearestSecondaryMenuFocus(index)")
+        // 播放线路例外：一级上键落到当前选中线路，不是空间就近。
+        assertThat(source).contains("if (menu == PLAYER_MENU_SOURCES)")
         assertThat(source).contains("requestSelectedSecondaryMenuFocus()")
         assertThat(primaryMenuClickSource).doesNotContain("requestSelectedSecondaryMenuFocus()")
+        assertThat(primaryMenuClickSource).doesNotContain("requestNearestSecondaryMenuFocus")
     }
 
     /**
@@ -477,11 +482,106 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("primaryMenuFocusRequesters[index]")
         assertThat(source).contains("secondaryMenuFocusRequesters")
         assertThat(source).contains("requestSelectedSecondaryMenuFocus")
+        assertThat(source).contains("requestNearestSecondaryMenuFocus")
         assertThat(source).contains("requestSelectedPrimaryMenuFocus")
+        assertThat(source).contains("TvPlayerMenuFocusGeometry")
+        assertThat(source).contains("resolveNearestSecondaryIndex")
+        assertThat(source).contains("onGloballyPositioned")
+        assertThat(source).contains("boundsInWindow")
         assertThat(menuChipSource).contains("onArrowUp: (() -> Unit)? = null")
         assertThat(menuChipSource).contains("onArrowDown: (() -> Unit)? = null")
         assertThat(menuChipSource).contains("Key.DirectionUp ->")
         assertThat(menuChipSource).contains("Key.DirectionDown ->")
+        // 自定义方向键必须在 KeyDown 也消费，避免系统先挪焦点再被 KeyUp 抢回首项。
+        assertThat(menuChipSource).contains("自定义方向键：KeyDown 也要消费")
+    }
+
+    /**
+     * 播放线路二级菜单必须为每一项挂 FocusRequester，一级上键按屏幕 X 就近落点。
+     */
+    @Test
+    fun route_source_menu_focus_targets_each_source_for_nearest_entry() {
+        val source = readRouteSource()
+        val sourceMenu = source.substringAfter("private fun TvPlayerSourceMenu(")
+            .substringBefore("/**\n * TV 全屏播放器画面比例二级菜单。")
+
+        assertThat(source).contains("PLAYER_MENU_SOURCES -> state.availableSources.size.coerceAtLeast(1)")
+        assertThat(sourceMenu).contains("focusRequesters: List<FocusRequester>")
+        assertThat(sourceMenu).contains("focusRequesters.getOrNull(i)")
+        assertThat(sourceMenu).contains("onItemCenterXChanged")
+        assertThat(sourceMenu).doesNotContain("isFirst && focusRequester != null")
+        // 播放线路一级上键：当前选中线路；其它一级：空间就近。
+        assertThat(source).contains("if (menu == PLAYER_MENU_SOURCES)")
+        assertThat(source).contains("requestNearestSecondaryMenuFocus(index)")
+        assertThat(source).contains("menuFocusGeometry.resolveNearestSecondaryIndex")
+    }
+
+    /**
+     * 空间就近几何：一级 X 应落到中心最近的二级项。
+     */
+    @Test
+    fun menu_focus_geometry_picks_secondary_with_closest_center_x() {
+        val geometry = TvPlayerMenuFocusGeometry()
+        geometry.updatePrimaryCenterX(1, 400f)
+        geometry.updateSecondaryCenterX(0, 100f)
+        geometry.updateSecondaryCenterX(1, 250f)
+        geometry.updateSecondaryCenterX(2, 420f)
+        geometry.updateSecondaryCenterX(3, 700f)
+
+        assertThat(geometry.resolveNearestSecondaryIndex(primaryIndex = 1, fallbackIndex = 0))
+            .isEqualTo(2)
+    }
+
+    /**
+     * 当前线路高亮必须兼容 request 短键与列表 source::videoId 复合键。
+     */
+    @Test
+    fun current_source_selected_matches_short_key_and_composite_id() {
+        val composite = PlaybackSource(id = "bfzy::12345", name = "暴风资源")
+        val shortKey = PlaybackSource(id = "bfzy", name = "暴风资源")
+
+        assertThat(
+            isCurrentPlaybackSource(
+                source = composite,
+                currentSourceId = "bfzy",
+                currentSourceName = "",
+            ),
+        ).isTrue()
+        assertThat(
+            isCurrentPlaybackSource(
+                source = shortKey,
+                currentSourceId = "bfzy::12345",
+                currentSourceName = "",
+            ),
+        ).isTrue()
+        assertThat(
+            isCurrentPlaybackSource(
+                source = PlaybackSource(id = "other::1", name = "量子影视"),
+                currentSourceId = "bfzy",
+                currentSourceName = "暴风资源",
+            ),
+        ).isFalse()
+        assertThat(
+            isCurrentPlaybackSource(
+                source = PlaybackSource(id = "other::1", name = "暴风资源"),
+                currentSourceId = "unknown",
+                currentSourceName = "暴风资源",
+            ),
+        ).isTrue()
+    }
+
+    /**
+     * 二级坐标清空后应回退 fallback，避免用脏数据。
+     */
+    @Test
+    fun menu_focus_geometry_falls_back_when_secondary_empty() {
+        val geometry = TvPlayerMenuFocusGeometry()
+        geometry.updatePrimaryCenterX(0, 120f)
+        geometry.updateSecondaryCenterX(3, 500f)
+        geometry.clearSecondary()
+
+        assertThat(geometry.resolveNearestSecondaryIndex(primaryIndex = 0, fallbackIndex = 1))
+            .isEqualTo(1)
     }
 
     /**
@@ -562,6 +662,33 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("playbackRequest = state.playbackRequest")
         assertThat(source).contains("resolvePlaylistMenuLabel")
         assertThat(source).contains("PLAYER_MENU_PLAYLIST ->")
+    }
+
+    /**
+     * 全屏播放列表：选集在上、分组在下；分组用无背景样式；下键回一级当前选中项。
+     */
+    @Test
+    fun route_playlist_menu_puts_groups_below_episodes_with_detail_style() {
+        val source = readRouteSource()
+        val playlistSource = source.substringAfter("private fun TvPlayerPlaylistMenu(")
+            .substringBefore("/**\n * TV 全屏播放器播放线路二级菜单。")
+
+        // 布局：先渲染选集 LazyRow，再渲染分组。
+        val episodeItems = playlistSource.indexOf("items(group.size)")
+        val groupChoice = playlistSource.indexOf("TvPlayerEpisodeGroupChoice(")
+        assertThat(episodeItems).isAtLeast(0)
+        assertThat(groupChoice).isAtLeast(0)
+        assertThat(episodeItems).isLessThan(groupChoice)
+
+        // 分组无背景样式组件存在。
+        assertThat(source).contains("private fun TvPlayerEpisodeGroupChoice(")
+        assertThat(source).contains("// 顶线：未选中浅灰，选中/获焦主题红；无整块背景。")
+
+        // 二级/三级下键回一级当前选中项。
+        assertThat(source).contains("onArrowDownToPrimary = requestSelectedPrimaryMenuFocus")
+        assertThat(playlistSource).contains("onArrowDownToPrimary")
+        assertThat(playlistSource).contains("requestCurrentGroupFocus")
+        assertThat(playlistSource).contains("requestCurrentEpisodeFocus")
     }
 
     /**

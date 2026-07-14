@@ -2,8 +2,15 @@ package org.moontechlab.selene.tv.core.player.exo
 
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.moontechlab.selene.tv.core.design.threading.DispatcherProvider
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
@@ -31,6 +38,12 @@ class ExoPlayerEngine(
     /** 最近一次播放快照。 */
     private var lastSnapshot: PlaybackSnapshot? = null
 
+    /** 引擎生命周期作用域；进度轮询走 Default，避免测试 Main 调度器被 delay 占死。 */
+    private val engineScope = CoroutineScope(SupervisorJob() + dispatchers.main)
+
+    /** 播放中进度轮询任务。 */
+    private var progressTickerJob: Job? = null
+
     /** 当前播放器状态。 */
     override val state: StateFlow<PlayerState> = mutableState
 
@@ -44,19 +57,23 @@ class ExoPlayerEngine(
         override fun onPlaybackStateChanged(playbackState: Int) {
             when (playbackState) {
                 Player.STATE_BUFFERING -> {
+                    stopProgressTicker()
                     mutableState.value = PlayerState.Loading
                 }
 
                 Player.STATE_READY -> {
                     val snapshot = refreshSnapshotFromPlayer() ?: return
-                    mutableState.value = if (player.isCurrentlyPlaying()) {
-                        PlayerState.Playing(snapshot)
+                    if (player.isCurrentlyPlaying()) {
+                        mutableState.value = PlayerState.Playing(snapshot)
+                        startProgressTicker()
                     } else {
-                        PlayerState.Paused(snapshot = snapshot)
+                        stopProgressTicker()
+                        mutableState.value = PlayerState.Paused(snapshot = snapshot)
                     }
                 }
 
                 Player.STATE_ENDED -> {
+                    stopProgressTicker()
                     val snapshot = refreshSnapshotFromPlayer() ?: return
                     val endedSnapshot = snapshot.copy(positionMs = snapshot.durationMs)
                     lastSnapshot = endedSnapshot
@@ -64,6 +81,7 @@ class ExoPlayerEngine(
                 }
 
                 Player.STATE_IDLE -> {
+                    stopProgressTicker()
                     // Idle 只在释放或尚未真正准备完成时出现，不主动覆盖已有错误态。
                     if (mutableState.value !is PlayerState.Error) {
                         mutableState.value = PlayerState.Idle
@@ -79,10 +97,12 @@ class ExoPlayerEngine(
          */
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             val snapshot = refreshSnapshotFromPlayer() ?: return
-            mutableState.value = if (isPlaying) {
-                PlayerState.Playing(snapshot)
+            if (isPlaying) {
+                mutableState.value = PlayerState.Playing(snapshot)
+                startProgressTicker()
             } else {
-                PlayerState.Paused(snapshot = snapshot)
+                stopProgressTicker()
+                mutableState.value = PlayerState.Paused(snapshot = snapshot)
             }
         }
 
@@ -107,6 +127,7 @@ class ExoPlayerEngine(
             message: String,
             cause: Throwable?,
         ) {
+            stopProgressTicker()
             mutableState.value = PlayerState.Error(
                 message = message,
                 cause = cause,
@@ -135,12 +156,14 @@ class ExoPlayerEngine(
         withContext(dispatchers.main) {
             player.play()
             lastSnapshot?.let { snapshot -> mutableState.value = PlayerState.Playing(snapshot) }
+            startProgressTicker()
         }
     }
 
     /** 暂停播放。 */
     override suspend fun pause() {
         withContext(dispatchers.main) {
+            stopProgressTicker()
             player.pause()
             mutableState.value = PlayerState.Paused(snapshot = lastSnapshot)
         }
@@ -210,7 +233,10 @@ class ExoPlayerEngine(
      * @throws IllegalStateException 尚未加载播放请求时抛出。
      */
     override suspend fun captureSnapshot(): PlaybackSnapshot = withContext(dispatchers.main) {
-        lastSnapshot ?: throw IllegalStateException("尚未加载播放请求，无法捕获播放快照")
+        // 优先回读底层实时位置，避免详情/全屏 UI 拿到停在 00:00 的陈旧快照。
+        refreshSnapshotFromPlayer()
+            ?: lastSnapshot
+            ?: throw IllegalStateException("尚未加载播放请求，无法捕获播放快照")
     }
 
     /**
@@ -230,10 +256,13 @@ class ExoPlayerEngine(
     /** 释放播放器资源。 */
     override suspend fun release() {
         withContext(dispatchers.main) {
+            stopProgressTicker()
             player.setEventCallback(null)
             player.release()
             mutableState.value = PlayerState.Idle
             lastSnapshot = null
+            // 释放后作用域一并关闭，避免进度轮询泄漏；共享宿主会重建引擎实例。
+            engineScope.cancel()
         }
     }
 
@@ -269,13 +298,54 @@ class ExoPlayerEngine(
     }
 
     /**
+     * 启动播放进度轮询。
+     *
+     * Media3 不会在正常播放时持续派发位置事件，详情页/全屏进度条依赖本轮询刷新时间。
+     */
+    private fun startProgressTicker() {
+        if (progressTickerJob?.isActive == true) {
+            return
+        }
+        // delay 放在 Default，避免测试 Main 调度器被 delay 占死；
+        // 但 ExoPlayer 任何读写都必须在 application 主线程，禁止在 Default 上碰 player。
+        progressTickerJob = engineScope.launch(dispatchers.default) {
+            while (isActive) {
+                delay(POSITION_TICK_INTERVAL_MS)
+                // 仅读 StateFlow 可在后台；真正访问 Exo 统一切 main。
+                if (mutableState.value !is PlayerState.Playing) {
+                    continue
+                }
+                withContext(dispatchers.main) {
+                    if (mutableState.value !is PlayerState.Playing) {
+                        return@withContext
+                    }
+                    if (!player.isCurrentlyPlaying()) {
+                        return@withContext
+                    }
+                    val snapshot = refreshSnapshotFromPlayer() ?: return@withContext
+                    mutableState.value = PlayerState.Playing(snapshot)
+                }
+            }
+        }
+    }
+
+    /**
+     * 停止播放进度轮询。
+     */
+    private fun stopProgressTicker() {
+        progressTickerJob?.cancel()
+        progressTickerJob = null
+    }
+
+    /**
      * 读取底层播放器当前快照。
      *
      * @return 已同步底层时间和时长的快照；尚未加载时返回空。
      */
     private fun refreshSnapshotFromPlayer(): PlaybackSnapshot? {
         val snapshot = lastSnapshot ?: return null
-        val duration = player.getDurationMs().coerceAtLeast(0L)
+        val rawDuration = player.getDurationMs()
+        val duration = if (rawDuration > 0L) rawDuration else snapshot.durationMs.coerceAtLeast(0L)
         val position = player.getCurrentPositionMs().coerceAtLeast(0L)
         return snapshot.copy(
             durationMs = duration,
@@ -283,5 +353,10 @@ class ExoPlayerEngine(
         ).also { refreshed ->
             lastSnapshot = refreshed
         }
+    }
+
+    private companion object {
+        /** 播放进度轮询间隔，兼顾 UI 流畅与主线程开销。 */
+        private const val POSITION_TICK_INTERVAL_MS = 500L
     }
 }

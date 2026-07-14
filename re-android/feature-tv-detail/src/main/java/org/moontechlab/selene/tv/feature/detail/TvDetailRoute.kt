@@ -77,7 +77,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CoroutineScope
@@ -86,6 +85,7 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
+import org.moontechlab.selene.tv.core.design.layout.TvCachedTitlePosterImage
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -285,6 +285,7 @@ fun TvDetailRoute(
     ) {
         // 主海报固定铺满页面，不随详情内容滚动。
         NcatDetailBackdrop(
+            title = detail?.title.orEmpty(),
             posterUrl = detail?.posterUrl.orEmpty(),
             backgroundColor = detailBackgroundColor,
         )
@@ -476,35 +477,36 @@ private fun rememberDetailFocusTargets(
  *
  * 以主图/海报铺满整页，滚动内容层叠在上方，背景本身不随滚动移动。
  *
+ * @param title 影片名，用于封面失败时同名 URL 回退。
  * @param posterUrl 海报地址。
  * @param backgroundColor 设置页选择的海报缺失兜底背景色。
  */
 @Composable
 private fun NcatDetailBackdrop(
+    title: String,
     posterUrl: String,
     backgroundColor: Color,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
-        if (posterUrl.isNotBlank()) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                // 以顶部为起点，再向下偏移总高度的 1/10。
-                // BiasAlignment 垂直：-1 顶、0 中、1 底；-1 + 0.2 = -0.8。
-                alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.8f),
-                // 轻微模糊，避免海报像素放大后的马赛克感。
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(radius = 18.dp),
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(backgroundColor),
-            )
-        }
+        // 底层兜底色：封面失败/无缓存时仍可见设置页背景。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(backgroundColor),
+        )
+        TvCachedTitlePosterImage(
+            title = title,
+            posterUrl = posterUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            // 以顶部为起点，再向下偏移总高度的 1/10。
+            // BiasAlignment 垂直：-1 顶、0 中、1 底；-1 + 0.2 = -0.8。
+            alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.8f),
+            // 轻微模糊，避免海报像素放大后的马赛克感。
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(radius = 18.dp),
+        )
         // 自上而下压暗，保证标题和线路文字可读。
         Box(
             modifier = Modifier
@@ -829,9 +831,10 @@ private fun NcatPreviewPlaceholder(
             .fillMaxSize()
             .background(Color(0xFF061A23)),
     ) {
-        if (posterUrl.isNotBlank()) {
-            AsyncImage(
-                model = posterUrl,
+        if (posterUrl.isNotBlank() || title.isNotBlank()) {
+            TvCachedTitlePosterImage(
+                title = title,
+                posterUrl = posterUrl,
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -1940,9 +1943,10 @@ private fun NcatRecommendCard(
                     }
                 },
         ) {
-            if (card.posterUrl.isNotBlank()) {
-                AsyncImage(
-                    model = card.posterUrl,
+            if (card.posterUrl.isNotBlank() || card.title.isNotBlank()) {
+                TvCachedTitlePosterImage(
+                    title = card.title,
+                    posterUrl = card.posterUrl,
                     contentDescription = card.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),

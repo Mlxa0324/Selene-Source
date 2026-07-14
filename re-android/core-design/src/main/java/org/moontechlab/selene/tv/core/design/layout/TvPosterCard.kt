@@ -38,8 +38,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import android.util.Log
-import coil.compose.AsyncImage
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 
@@ -156,17 +154,14 @@ private fun TvPosterCover(
             .clip(radius)
             .background(Brush.verticalGradient(colors)),
     ) {
-        if (item.posterUrl.isNotBlank()) {
-            // 打印图片请求地址，方便排查封面加载问题
-            Log.d("SeleneTV", "封面请求: title=${item.title}, url=${item.posterUrl}")
-            // Flutter TV 使用真实封面图；Kotlin TV 也优先展示接口返回的 posterUrl。
-            AsyncImage(
-                model = item.posterUrl,
-                contentDescription = item.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        // 接口图失败/为空时，按片名精准匹配回退到会话内成功加载过的 URL（Coil 磁盘缓存可直接出图）。
+        TvCachedTitlePosterImage(
+            title = item.title,
+            posterUrl = item.posterUrl,
+            contentDescription = item.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
         Box(
             modifier = Modifier
                 .fillMaxSize()

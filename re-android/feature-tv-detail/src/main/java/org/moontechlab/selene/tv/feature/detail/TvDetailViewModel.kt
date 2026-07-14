@@ -13,7 +13,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.moontechlab.selene.tv.core.data.model.TvEpisode
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
@@ -311,7 +313,7 @@ class TvDetailViewModel(
     private val loadRecommends: suspend (TvDetailEntry, TvVideoDetail?) -> List<TvVideoCard> = { _, _ -> emptyList() },
     private val loadResumeRecord: suspend (TvDetailEntry) -> TvDetailResumeRecord? = { null },
     private val loadFavoriteState: suspend (TvDetailEntry) -> Boolean = { false },
-    private val saveFavoriteState: suspend (TvDetailEntry?, Boolean) -> Unit = { _, _ -> },
+    private val saveFavoriteState: suspend (TvDetailEntry?, TvVideoDetail?, Boolean) -> Unit = { _, _, _ -> },
     private val savePlaybackProgress: (PlaybackRequest, Long, Long) -> Unit = { _, _, _ -> },
     private val playerEngine: PlayerEngine? = null,
     private val previewDispatcher: CoroutineDispatcher = Dispatchers.Main,
@@ -560,7 +562,14 @@ class TvDetailViewModel(
         val newFavorite = !state.isFavorite
         mutableState.value = state.copy(isFavorite = newFavorite)
         CoroutineScope(Dispatchers.IO).launch {
-            saveFavoriteState(currentEntry, newFavorite)
+            // 写入失败时回滚 UI，避免“点了收藏但服务端未落库”的假回显。
+            runCatching {
+                saveFavoriteState(currentEntry, state.detail, newFavorite)
+            }.onFailure {
+                if (mutableState.value.isFavorite == newFavorite) {
+                    mutableState.value = mutableState.value.copy(isFavorite = !newFavorite)
+                }
+            }
         }
     }
 
@@ -825,12 +834,37 @@ class TvDetailViewModel(
                     return@launch
                 }
             }
-            engine.state.collect { playerState ->
-                applyPreviewPlayerState(
-                    playerState = playerState,
-                    expectedRequest = request,
-                    serial = serial,
-                )
+            // 进度轮询放在 Default 调度器，避免占用测试的 StandardTestDispatcher 导致 advanceUntilIdle 死循环。
+            val progressJob = CoroutineScope(Dispatchers.Default).launch {
+                while (isActive) {
+                    delay(PREVIEW_POSITION_TICK_INTERVAL_MS)
+                    val playerState = engine.state.value
+                    if (playerState !is PlayerState.Playing) {
+                        continue
+                    }
+                    if (!playerState.matchesPlaybackRequest(request)) {
+                        continue
+                    }
+                    val snapshot = runCatching { engine.captureSnapshot() }.getOrNull() ?: continue
+                    withContext(previewDispatcher) {
+                        applyPreviewPlayerState(
+                            playerState = PlayerState.Playing(snapshot),
+                            expectedRequest = request,
+                            serial = serial,
+                        )
+                    }
+                }
+            }
+            try {
+                engine.state.collect { playerState ->
+                    applyPreviewPlayerState(
+                        playerState = playerState,
+                        expectedRequest = request,
+                        serial = serial,
+                    )
+                }
+            } finally {
+                progressJob.cancel()
             }
         }
     }
@@ -1545,6 +1579,9 @@ class TvDetailViewModel(
 
         /** 详情页预览续播进度保存间隔。 */
         const val PROGRESS_SAVE_INTERVAL_MS = 10_000L
+
+        /** 详情页预览进度条主动抓取间隔。 */
+        const val PREVIEW_POSITION_TICK_INTERVAL_MS = 500L
 
         /** 预览进度尚未初始化的分段值。 */
         const val UNINITIALIZED_PROGRESS_BUCKET = -1L

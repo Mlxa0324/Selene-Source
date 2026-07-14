@@ -1,7 +1,13 @@
 package org.moontechlab.selene.tv.feature.player
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.player.api.PlaybackEpisode
 import org.moontechlab.selene.tv.core.player.api.PlaybackIdentity
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
@@ -319,9 +325,27 @@ class TvPlayerViewModel(
      */
     suspend fun observePlayerState() {
         val engine = playerEngine ?: return
-        engine.state.collect { playerState ->
-            // WebView/Exo 的真实进度、暂停和错误都以播放器内核状态为准。
-            syncPlayerState(playerState)
+        coroutineScope {
+            // 进度轮询放在 Default，避免和测试调度器绑死；UI 同步仍走 collect 主路径。
+            val progressJob = CoroutineScope(Dispatchers.Default).launch {
+                while (isActive) {
+                    delay(POSITION_TICK_INTERVAL_MS)
+                    val playerState = engine.state.value
+                    if (playerState !is PlayerState.Playing) {
+                        continue
+                    }
+                    val snapshot = runCatching { engine.captureSnapshot() }.getOrNull() ?: continue
+                    syncPlayerState(PlayerState.Playing(snapshot))
+                }
+            }
+            try {
+                engine.state.collect { playerState ->
+                    // WebView/Exo 的真实进度、暂停和错误都以播放器内核状态为准。
+                    syncPlayerState(playerState)
+                }
+            } finally {
+                progressJob.cancel()
+            }
         }
     }
 
@@ -937,6 +961,9 @@ private const val SEEK_LONG_PRESS_START_MS = 250L
 
 /** 全屏播放器续播进度保存间隔。 */
 private const val PROGRESS_SAVE_INTERVAL_MS = 10_000L
+
+/** 全屏播放进度主动抓取间隔。 */
+private const val POSITION_TICK_INTERVAL_MS = 500L
 
 /** 续播进度尚未初始化的分段值。 */
 private const val UNINITIALIZED_PROGRESS_BUCKET = -1L

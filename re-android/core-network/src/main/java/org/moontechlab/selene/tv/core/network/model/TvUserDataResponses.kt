@@ -102,3 +102,40 @@ data class TvFavoriteResponse(
     val saveTime: Long? = null,
     val origin: String? = null,
 )
+
+/**
+ * TV 收藏保存请求体。
+ *
+ * 与 Flutter `/api/favorites` POST 对齐：`{ key, favorite }`。
+ *
+ * @property key 后端 `source+id` 记录键。
+ * @property favorite 收藏内容。
+ */
+data class TvFavoriteUpsertRequest(
+    val key: String,
+    val favorite: TvFavoriteUpsertBody,
+)
+
+/**
+ * TV 收藏保存内容。
+ *
+ * @property title 影视标题。
+ * @property sourceName 播放来源名称。
+ * @property year 上映年份。
+ * @property cover 封面地址。
+ * @property totalEpisodes 总集数。
+ * @property saveTime 最近保存时间戳（毫秒）。
+ * @property origin 收藏来源描述。
+ */
+data class TvFavoriteUpsertBody(
+    val title: String = "",
+    @SerializedName("source_name")
+    val sourceName: String = "",
+    val year: String = "",
+    val cover: String = "",
+    @SerializedName("total_episodes")
+    val totalEpisodes: Int = 0,
+    @SerializedName("save_time")
+    val saveTime: Long = 0L,
+    val origin: String = "",
+)

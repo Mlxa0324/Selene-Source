@@ -115,4 +115,161 @@ class TvPlaybackRepositoryTest {
         assertThat(savedRequest?.record?.playTime).isEqualTo(125)
         assertThat(savedRequest?.record?.searchTitle).isEqualTo("测试影片")
     }
+
+    /**
+     * 保存时必须先 upsert 当前 key，再删除同名其它 key，不能先删后存。
+     */
+    @Test
+    fun savePlayRecord_writes_current_before_deleting_same_title_duplicates() = runTest {
+        val events = mutableListOf<String>()
+        val store = mutableMapOf(
+            "old_source+old_id" to TvPlayRecordResponse(
+                title = "痴迷",
+                searchTitle = "痴迷",
+                saveTime = 10L,
+            ),
+            "source_a+video_a" to TvPlayRecordResponse(
+                title = "痴迷",
+                searchTitle = "痴迷",
+                saveTime = 5L,
+            ),
+        )
+        val repository = TvPlaybackRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+                    return store.toMap()
+                }
+
+                override suspend fun savePlayRecord(request: TvPlayRecordUpsertRequest) {
+                    events += "save:${request.key}"
+                    store[request.key] = TvPlayRecordResponse(
+                        title = request.record.title,
+                        searchTitle = request.record.searchTitle,
+                        saveTime = request.record.saveTime,
+                    )
+                }
+
+                override suspend fun deletePlayRecord(key: String) {
+                    events += "delete:$key"
+                    store.remove(key)
+                }
+            },
+        )
+
+        repository.savePlayRecord(
+            TvVideoCard(
+                id = "video_a",
+                source = "source_a",
+                title = "痴迷",
+                posterUrl = "",
+                searchTitle = "痴迷",
+                saveTime = 99L,
+            ),
+        )
+
+        assertThat(events.first()).isEqualTo("save:source_a+video_a")
+        assertThat(events).contains("delete:old_source+old_id")
+        assertThat(events).doesNotContain("delete:source_a+video_a")
+        assertThat(store.keys).containsExactly("source_a+video_a")
+    }
+
+    /**
+     * 读取继续观看时，同名多条应通过接口删到只剩最新一条。
+     */
+    @Test
+    fun readContinueWatching_purges_same_title_duplicates_via_api() = runTest {
+        val store = mutableMapOf(
+            "source_old+id_old" to TvPlayRecordResponse(
+                title = "痴迷",
+                searchTitle = "痴迷",
+                saveTime = 10L,
+            ),
+            "source_new+id_new" to TvPlayRecordResponse(
+                title = "痴迷",
+                searchTitle = "痴迷",
+                saveTime = 30L,
+            ),
+            "source_x+id_x" to TvPlayRecordResponse(
+                title = "另一部",
+                searchTitle = "另一部",
+                saveTime = 20L,
+            ),
+        )
+        val deleted = mutableListOf<String>()
+        val repository = TvPlaybackRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+                    return store.toMap()
+                }
+
+                override suspend fun deletePlayRecord(key: String) {
+                    deleted += key
+                    store.remove(key)
+                }
+            },
+        )
+
+        val cards = repository.readContinueWatching()
+
+        assertThat(deleted).containsExactly("source_old+id_old")
+        assertThat(cards.map { it.id }).containsExactly("id_new", "id_x").inOrder()
+    }
+
+    /**
+     * 删除同名失败时不能丢掉刚保存的记录。
+     */
+    @Test
+    fun savePlayRecord_keeps_saved_record_when_duplicate_delete_fails() = runTest {
+        val store = mutableMapOf(
+            "old_source+old_id" to TvPlayRecordResponse(
+                title = "痴迷",
+                searchTitle = "痴迷",
+                saveTime = 10L,
+            ),
+        )
+        val repository = TvPlaybackRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+                    return store.toMap()
+                }
+
+                override suspend fun savePlayRecord(request: TvPlayRecordUpsertRequest) {
+                    store[request.key] = TvPlayRecordResponse(
+                        title = request.record.title,
+                        searchTitle = request.record.searchTitle,
+                        saveTime = request.record.saveTime,
+                    )
+                }
+
+                override suspend fun deletePlayRecord(key: String) {
+                    error("delete failed")
+                }
+            },
+        )
+
+        repository.savePlayRecord(
+            TvVideoCard(
+                id = "video_a",
+                source = "source_a",
+                title = "痴迷",
+                posterUrl = "",
+                searchTitle = "痴迷",
+                saveTime = 99L,
+            ),
+        )
+
+        // 删重失败：新旧都在，但当前 key 一定还在。
+        assertThat(store.keys).contains("source_a+video_a")
+        assertThat(store.keys).contains("old_source+old_id")
+    }
+
+    /**
+     * 标题规范化应折叠空白并忽略大小写。
+     */
+    @Test
+    fun normalizePlayRecordTitle_collapses_whitespace_and_case() {
+        assertThat(normalizePlayRecordTitle("  痴  迷 ", null)).isEqualTo("痴 迷")
+        assertThat(normalizePlayRecordTitle("Title", " Search  Title ")).isEqualTo("search title")
+        assertThat(normalizePlayRecordTitle(null, null)).isEmpty()
+    }
 }

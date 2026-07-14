@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.network
 
 import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
+import org.moontechlab.selene.tv.core.network.model.TvFavoriteUpsertRequest
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
@@ -35,6 +36,9 @@ internal open class FakeSeleneTvApi : SeleneTvApi {
     override suspend fun getFavorites(): Map<String, TvFavoriteResponse> {
         return emptyMap()
     }
+
+    /** 记录测试收藏保存。 */
+    override suspend fun saveFavorite(request: TvFavoriteUpsertRequest) = Unit
 
     /** 记录测试收藏删除。 */
     override suspend fun deleteFavorite(key: String) = Unit

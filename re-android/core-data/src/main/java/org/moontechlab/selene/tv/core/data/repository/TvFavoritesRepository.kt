@@ -3,6 +3,8 @@ package org.moontechlab.selene.tv.core.data.repository
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.network.SeleneTvApi
 import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
+import org.moontechlab.selene.tv.core.network.model.TvFavoriteUpsertBody
+import org.moontechlab.selene.tv.core.network.model.TvFavoriteUpsertRequest
 
 /**
  * TV 收藏夹仓库。
@@ -25,12 +27,89 @@ class TvFavoritesRepository(
     }
 
     /**
+     * 判断指定视频是否已收藏。
+     *
+     * @param source 播放来源标识。
+     * @param videoId 视频 ID。
+     * @return 已收藏时返回 true。
+     */
+    suspend fun isFavorite(
+        source: String,
+        videoId: String,
+    ): Boolean {
+        val normalizedId = videoId.trim()
+        if (normalizedId.isBlank()) {
+            return false
+        }
+        val normalizedSource = source.trim()
+        val targetKey = toRecordKey(source = normalizedSource, id = normalizedId)
+        return readFavorites().any { card ->
+            // 优先 source+id 精确匹配；source 缺失时退化为 id 匹配，兼容旧收藏数据。
+            card.toRecordKey() == targetKey ||
+                (normalizedSource.isBlank() && card.id == normalizedId) ||
+                (card.source.isBlank() && card.id == normalizedId)
+        }
+    }
+
+    /**
+     * 保存单条收藏。
+     *
+     * @param source 播放来源标识。
+     * @param videoId 视频 ID。
+     * @param title 影视标题。
+     * @param sourceName 线路名称。
+     * @param year 年份。
+     * @param cover 封面地址。
+     * @param totalEpisodes 总集数。
+     * @param origin 收藏来源描述。
+     */
+    suspend fun saveFavorite(
+        source: String,
+        videoId: String,
+        title: String,
+        sourceName: String = "",
+        year: String = "",
+        cover: String = "",
+        totalEpisodes: Int = 0,
+        origin: String = "detail",
+    ) {
+        val key = toRecordKey(source = source, id = videoId)
+        api.saveFavorite(
+            TvFavoriteUpsertRequest(
+                key = key,
+                favorite = TvFavoriteUpsertBody(
+                    title = title,
+                    sourceName = sourceName,
+                    year = year,
+                    cover = cover,
+                    totalEpisodes = totalEpisodes.coerceAtLeast(0),
+                    saveTime = System.currentTimeMillis(),
+                    origin = origin,
+                ),
+            ),
+        )
+    }
+
+    /**
      * 删除单条收藏。
      *
      * @param video 收藏卡片。
      */
     suspend fun deleteFavorite(video: TvVideoCard) {
         deleteFavoriteByKey(video.toRecordKey())
+    }
+
+    /**
+     * 按来源和视频 ID 删除收藏。
+     *
+     * @param source 播放来源标识。
+     * @param videoId 视频 ID。
+     */
+    suspend fun deleteFavorite(
+        source: String,
+        videoId: String,
+    ) {
+        deleteFavoriteByKey(toRecordKey(source = source, id = videoId))
     }
 
     /**
@@ -76,6 +155,26 @@ class TvFavoritesRepository(
      * @return `source+id` 格式的 key。
      */
     private fun TvVideoCard.toRecordKey(): String {
-        return if (source.isBlank()) id else "$source+$id"
+        return toRecordKey(source = source, id = id)
+    }
+
+    /**
+     * 组装 Flutter 兼容的收藏 key。
+     *
+     * @param source 播放来源标识。
+     * @param id 视频 ID。
+     * @return `source+id`；source 为空时仅返回 id。
+     */
+    private fun toRecordKey(
+        source: String,
+        id: String,
+    ): String {
+        val normalizedId = id.trim()
+        val normalizedSource = source.trim()
+        return if (normalizedSource.isBlank()) {
+            normalizedId
+        } else {
+            "$normalizedSource+$normalizedId"
+        }
     }
 }
