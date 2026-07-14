@@ -65,7 +65,29 @@ private const val KeyboardColumns = 6
 private const val KeyboardRows = 6
 private val KeyHeight: Dp = 44.dp
 private val KeySpacing: Dp = 7.dp
+/** 左右面板之间的间距。 */
 private val RightPanelStartPadding: Dp = 24.dp
+/**
+ * 右面板内容区水平内边距（标题、历史/热词词块共用）。
+ *
+ * 影片推荐轨会负向抵消这一层，改由 LazyRow 自己的 contentPadding 管左右停靠，
+ * 这样横滑时卡片能从面板缘进出，不被父级大边距二次夹死。
+ */
+private val RightPanelContentHorizontal: Dp = 22.dp
+/** 右面板内容区垂直内边距。 */
+private val RightPanelContentVertical: Dp = 20.dp
+/**
+ * 影片推荐轨左侧 contentPadding。
+ *
+ * 静止态首卡与「影片推荐」标题左缘对齐；与 [RightPanelContentHorizontal] 解耦，可单独调。
+ */
+private val RecommendRailStartPadding: Dp = RightPanelContentHorizontal
+/**
+ * 影片推荐轨右侧 contentPadding。
+ *
+ * 末端收口用，默认可大于左侧，保证末卡获焦描边/放大不贴面板右缘。
+ */
+private val RecommendRailEndPadding: Dp = 32.dp
 private val PanelRadius: Dp = 22.dp
 private val ControlRadius: Dp = 14.dp
 
@@ -298,7 +320,10 @@ fun TvSearchRoute(
                     .clip(RoundedCornerShape(PanelRadius))
                     .background(SearchPalette.RightPanel)
                     .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(PanelRadius))
-                    .padding(horizontal = 22.dp, vertical = 20.dp),
+                    .padding(
+                        horizontal = RightPanelContentHorizontal,
+                        vertical = RightPanelContentVertical,
+                    ),
             ) {
                 RightPanel(
                     state = state,
@@ -1157,6 +1182,10 @@ private fun RecommendRail(
         return
     }
     // 推荐区用横向轨道，避免嵌在 verticalScroll 中再次套 LazyVerticalGrid。
+    // 契约（对齐 TV 横向列表 skill / 详情页 LazyRow）：
+    // 1) 视口贴齐右面板左右缘（负向抵消父级 content 水平 padding）
+    // 2) 左右停靠边距只写在 LazyRow contentPadding，且可独立设置
+    // 3) 滚动时卡片可从面板缘进出；静止时首/末卡仍有呼吸边距
     // onReturnToLeftPanel/onBack 由外层词块或状态面板入口承接；海报轨首项承接 entryFocus。
     TvPosterRail(
         items = cards.map { video ->
@@ -1169,10 +1198,11 @@ private fun RecommendRail(
                 totalEpisodes = video.totalEpisodes,
             )
         },
+        // 抵消右面板 horizontal content padding，让横滑视口贴齐面板圆角内缘。
+        modifier = Modifier.padding(horizontal = -RightPanelContentHorizontal),
         firstItemFocusRequester = entryFocusRequester,
-        // 右面板已有 horizontal 22.dp；再叠 RailStartPadding 会比「影片推荐」标题偏右。
-        contentStartPadding = 0.dp,
-        contentEndPadding = 24.dp,
+        contentStartPadding = RecommendRailStartPadding,
+        contentEndPadding = RecommendRailEndPadding,
         onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
     )
 }

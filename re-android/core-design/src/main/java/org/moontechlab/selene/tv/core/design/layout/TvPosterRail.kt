@@ -21,13 +21,18 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 /**
  * TV 横向海报带。
  *
+ * 横向边距应写在 [contentStartPadding] / [contentEndPadding]（可左右独立），
+ * 不要用父级大边距夹死视口：父级若已有水平 padding，调用方可用负向
+ * `Modifier.padding(horizontal = -parentPad)` 让视口贴齐容器缘，
+ * 静止时仍靠 contentPadding 形成视觉边距，滚动时卡片可从边缘进出。
+ *
  * @param items 影视卡片列表。
  * @param modifier 外层修饰器。
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给最近业务海报。
  * @param onRailFocused 横向分区获焦回调，用于驱动外层页面纵向滚动。
  * @param onItemClick 卡片点击回调。
- * @param contentStartPadding 列表左 contentPadding；已在带边距容器内（如搜索右栏）可传 0。
- * @param contentEndPadding 列表右 contentPadding。
+ * @param contentStartPadding 列表左 contentPadding（首卡静止左停靠，与右侧可不同）。
+ * @param contentEndPadding 列表右 contentPadding（末卡末端收口，与左侧可不同）。
  * @param trailingContent 列表尾部附加内容。
  */
 @Composable

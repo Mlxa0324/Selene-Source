@@ -87,6 +87,27 @@ class TvSearchRouteFocusContractTest {
     }
 
     /**
+     * 影片推荐横滑：左右 contentPadding 独立；视口贴齐面板缘，不被父级大边距夹死。
+     */
+    @Test
+    fun recommend_rail_uses_independent_content_padding_and_bleeds_to_panel_edge() {
+        val source = readRouteSource()
+        val recommendRail = source
+            .substringAfter("private fun RecommendRail(")
+            .substringBefore("@Composable\nprivate fun SearchResultPanel(")
+
+        assertThat(source).contains("RecommendRailStartPadding")
+        assertThat(source).contains("RecommendRailEndPadding")
+        assertThat(source).contains("RightPanelContentHorizontal")
+        // 左右停靠独立，不得写死成对称 0 / 同一常量混用。
+        assertThat(recommendRail).contains("contentStartPadding = RecommendRailStartPadding")
+        assertThat(recommendRail).contains("contentEndPadding = RecommendRailEndPadding")
+        // 负向抵消父级 content 水平 padding，滚动时卡片可从面板缘进出。
+        assertThat(recommendRail).contains("padding(horizontal = -RightPanelContentHorizontal)")
+        assertThat(recommendRail).doesNotContain("contentStartPadding = 0.dp")
+    }
+
+    /**
      * 读取搜索 Route 源码。
      *
      * @return Route 源码文本。
