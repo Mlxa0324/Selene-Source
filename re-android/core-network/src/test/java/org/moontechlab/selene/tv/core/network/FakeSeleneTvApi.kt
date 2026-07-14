@@ -3,6 +3,7 @@ package org.moontechlab.selene.tv.core.network
 import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
+import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
 import org.moontechlab.selene.tv.core.network.model.TvSearchResourceResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
@@ -20,6 +21,9 @@ internal open class FakeSeleneTvApi : SeleneTvApi {
     override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
         return emptyMap()
     }
+
+    /** 记录测试播放历史保存。 */
+    override suspend fun savePlayRecord(request: TvPlayRecordUpsertRequest) = Unit
 
     /** 记录测试播放历史删除。 */
     override suspend fun deletePlayRecord(key: String) = Unit

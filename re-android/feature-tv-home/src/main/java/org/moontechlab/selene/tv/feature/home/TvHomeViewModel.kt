@@ -244,10 +244,12 @@ data class TvVideoLibraryUiState(
  * 优先使用 observeHome，哪个分区先返回就先展示哪块。
  *
  * @property loadHome 首页一次性加载函数（兼容旧测试与兜底）。
+ * @property loadContinueWatching 继续观看分区单独刷新函数。
  * @property observeHome 首页分区流式加载函数；返回 null 时退回 loadHome。
  */
 class TvHomeViewModel(
     private val loadHome: suspend () -> TvHomePayload,
+    private val loadContinueWatching: suspend () -> List<TvVideoCard> = { emptyList() },
     private val observeHome: (() -> Flow<TvHomeSectionProgress>)? = null,
 ) {
     /** 首页内部状态。 */
@@ -266,8 +268,6 @@ class TvHomeViewModel(
         mutableState.value = mutableState.value.copy(
             isLoading = true,
             errorMessage = null,
-            // 刷新时先清空旧分区，避免旧块与新块混排。
-            sections = emptyList(),
         )
         val stream = observeHome
         if (stream != null) {
@@ -307,6 +307,24 @@ class TvHomeViewModel(
                     isLoading = false,
                     errorMessage = throwable.message ?: "首页数据加载失败",
                 )
+            }
+    }
+
+    /**
+     * 单独刷新继续观看分区。
+     *
+     * 返回首页时只更新续播块，避免整页重新清空后闪动。
+     */
+    suspend fun refreshContinueWatching() {
+        runCatching { loadContinueWatching() }
+            .onSuccess { videos ->
+                val latestState = mutableState.value
+                mutableState.value = latestState.copy(
+                    sections = latestState.sections.withContinueWatchingVideos(videos),
+                )
+            }
+            .onFailure {
+                // 局部续播刷新失败时保留当前首页内容，不额外打断用户浏览。
             }
     }
 }
@@ -883,6 +901,36 @@ private fun List<TvHomeSection>.normalizedForFlutterTvHome(
             section.key == "continue_watching" && section.videos.isEmpty()
         }
         .toList()
+}
+
+/**
+ * 用最新继续观看结果替换首页中的续播分区。
+ *
+ * @param videos 最新续播视频列表。
+ * @return 仅替换续播块后的首页分区。
+ */
+private fun List<TvHomeSection>.withContinueWatchingVideos(
+    videos: List<TvVideoCard>,
+): List<TvHomeSection> {
+    val continueSection = TvHomeSection(
+        key = "continue_watching",
+        title = "继续观看",
+        videos = videos,
+    )
+    val sectionsWithoutContinue = filterNot { section -> section.key == "continue_watching" }
+    return if (videos.isEmpty()) {
+        sectionsWithoutContinue
+    } else if (any { section -> section.key == "continue_watching" }) {
+        map { section ->
+            if (section.key == "continue_watching") {
+                continueSection
+            } else {
+                section
+            }
+        }
+    } else {
+        listOf(continueSection) + sectionsWithoutContinue
+    }
 }
 
 /**

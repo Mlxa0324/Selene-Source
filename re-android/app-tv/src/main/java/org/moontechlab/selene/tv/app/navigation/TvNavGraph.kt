@@ -21,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import coil.Coil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.moontechlab.selene.tv.app.TvAppContainer
@@ -97,7 +98,7 @@ fun TvNavGraph(
         startDestination = TvDestination.Home.route,
         modifier = modifier,
     ) {
-        composable(TvDestination.Home.route) {
+        composable(TvDestination.Home.route) { backStackEntry ->
             val homeViewModel = remember(appContainer) {
                 appContainer.createHomeViewModel()
             }
@@ -105,6 +106,17 @@ fun TvNavGraph(
             val homeScope = rememberCoroutineScope()
             LaunchedEffect(homeViewModel) {
                 homeViewModel.load()
+            }
+            LaunchedEffect(backStackEntry, homeViewModel) {
+                backStackEntry.savedStateHandle
+                    .getStateFlow(HOME_CONTINUE_WATCHING_REFRESH_KEY, false)
+                    .collect { shouldRefresh ->
+                        if (!shouldRefresh) {
+                            return@collect
+                        }
+                        homeViewModel.refreshContinueWatching()
+                        backStackEntry.savedStateHandle[HOME_CONTINUE_WATCHING_REFRESH_KEY] = false
+                    }
             }
             TvHomeRoute(
                 state = homeState,
@@ -500,7 +512,21 @@ fun TvNavGraph(
                 onDismissResume = { detailViewModel.dismissResumePrompt() },
                 onEpisodeGroupSelected = { group -> detailViewModel.selectEpisodeGroup(group) },
                 onHistoryClick = { navController.navigate(TvDestination.History.route) },
-                onExitClick = { navController.popBackStack() },
+                onExitClick = {
+                    val homeRefreshHandle = navController.previousBackStackEntry?.savedStateHandle
+                    appContainer.persistPlaybackProgressAsync(
+                        request = detailState.playbackRequest,
+                        positionMs = detailState.previewPositionMs
+                            .takeIf { positionMs -> positionMs > 0L }
+                            ?: detailState.playbackRequest?.startPositionMs
+                            ?: 0L,
+                        durationMs = detailState.previewDurationMs,
+                        onFinished = {
+                            homeRefreshHandle?.set(HOME_CONTINUE_WATCHING_REFRESH_KEY, true)
+                        },
+                    )
+                    navController.popBackStack()
+                },
                 onRecommendClick = { card ->
                     // 相关推荐与首页豆瓣卡片一致：用 douban 来源 + 标题进入详情兜底搜索。
                     val videoKey = TvDestination.Detail.createVideoKeyWithTitle(
@@ -613,6 +639,14 @@ fun TvNavGraph(
                     navController.navigate(TvDestination.DanmakuMatch.createRoute(query))
                 },
                 onExitRequested = {
+                    appContainer.persistPlaybackProgressAsync(
+                        request = playerViewModel.state.value.playbackRequest,
+                        positionMs = playerViewModel.state.value.currentPositionMs
+                            .takeIf { positionMs -> positionMs > 0L }
+                            ?: playerViewModel.state.value.playbackRequest?.startPositionMs
+                            ?: 0L,
+                        durationMs = playerViewModel.state.value.durationMs,
+                    )
                     // 播放器自身只发出退出意图，实际退栈由应用导航图负责。
                     navController.popBackStack()
                 },
@@ -646,6 +680,9 @@ private val playbackFlowRoutes = setOf(
     TvDestination.Player.route,
     TvDestination.DanmakuMatch.route,
 )
+
+/** 详情返回首页后触发继续观看局部刷新的 saved-state key。 */
+private const val HOME_CONTINUE_WATCHING_REFRESH_KEY = "home_refresh_continue_watching"
 
 /**
  * 将旧的导航暂存上下文映射为共享播放器上下文。
@@ -688,10 +725,6 @@ private fun TvRemoteVideoLibraryRoute(
         onFilterOptionSelected = { filterKey, optionKey ->
             viewModel.applyFilter(filterKey, optionKey)
             categoryScope.launch { viewModel.load() }
-        },
-        onFilterOptionFocused = { filterKey, optionKey ->
-            // 焦点移动只记录停留位置，避免未确认就替换当前筛选和网格数据。
-            viewModel.focusFilter(filterKey, optionKey)
         },
         onApproachingEnd = {
             categoryScope.launch { viewModel.loadNextPage() }

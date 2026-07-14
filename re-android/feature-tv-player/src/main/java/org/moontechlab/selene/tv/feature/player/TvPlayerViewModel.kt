@@ -3,6 +3,7 @@ package org.moontechlab.selene.tv.feature.player
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.moontechlab.selene.tv.core.player.api.PlaybackEpisode
+import org.moontechlab.selene.tv.core.player.api.PlaybackIdentity
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlaybackSource
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
@@ -10,6 +11,7 @@ import org.moontechlab.selene.tv.core.player.api.PlayerState
 import org.moontechlab.selene.tv.core.player.api.TvResizeMode
 import org.moontechlab.selene.tv.core.player.api.matchesPlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.snapshotOrNull
+import org.moontechlab.selene.tv.core.player.api.toPlaybackIdentity
 
 /**
  * TV 全屏播放器界面状态。
@@ -138,6 +140,7 @@ data class TvPlayerDanmakuComment(
  * @param loadSkipOutroSeconds 片尾跳过秒数读取器。
  * @param saveSkipIntroSeconds 片头跳过秒数保存器。
  * @param saveSkipOutroSeconds 片尾跳过秒数保存器。
+ * @param savePlaybackProgress 全屏播放进度保存器。
  */
 class TvPlayerViewModel(
     initialRequest: PlaybackRequest? = null,
@@ -150,6 +153,7 @@ class TvPlayerViewModel(
     private val loadSkipOutroSeconds: suspend () -> Int = { 0 },
     private val saveSkipIntroSeconds: suspend (Int) -> Unit = {},
     private val saveSkipOutroSeconds: suspend (Int) -> Unit = {},
+    private val savePlaybackProgress: (PlaybackRequest, Long, Long) -> Unit = { _, _, _ -> },
 ) {
     /** 播放器内部状态。 */
     private val mutableState = MutableStateFlow(
@@ -171,6 +175,12 @@ class TvPlayerViewModel(
 
     /** 上一次检查弹幕发射的播放时间，单位秒。 */
     private var lastDanmakuCheckTimeSeconds: Double = DANMAKU_UNCHECKED_TIME_SECONDS
+
+    /** 当前全屏媒体最近一次已保存的续播分段。 */
+    private var lastSavedProgressBucket: Long = UNINITIALIZED_PROGRESS_BUCKET
+
+    /** 当前全屏媒体最近一次保存对应的媒体身份。 */
+    private var lastSavedProgressIdentity: PlaybackIdentity? = null
 
     /**
      * 将详情页传入的播放请求下发给播放器内核。
@@ -599,6 +609,7 @@ class TvPlayerViewModel(
     private fun syncPlayerState(playerState: PlayerState) {
         val snapshot = playerState.snapshotOrNull()
         val positionMs = snapshot?.positionMs ?: mutableState.value.currentPositionMs
+        val request = mutableState.value.playbackRequest
         mutableState.value = mutableState.value.copy(
             isPlayerLoading = playerState is PlayerState.Loading,
             isPlaybackPlaying = playerState is PlayerState.Playing,
@@ -616,10 +627,52 @@ class TvPlayerViewModel(
             selectedResizeMode = snapshot?.resizeMode ?: mutableState.value.selectedResizeMode,
             playerErrorMessage = (playerState as? PlayerState.Error)?.message,
         )
+        if (snapshot != null && request != null && playerState.matchesPlaybackRequest(request)) {
+            // 只有当前快照仍属于目标媒体时，才允许写入续播记录，避免切集交界处误存旧进度。
+            maybeSavePlaybackProgress(
+                request = request,
+                positionMs = snapshot.positionMs,
+                durationMs = snapshot.durationMs,
+            )
+        }
         emitDanmakuByPosition(
             positionMs = positionMs,
             canEmit = playerState is PlayerState.Playing,
         )
+    }
+
+    /**
+     * 按 10 秒分段保存全屏播放进度。
+     *
+     * 进入新媒体时只更新当前分段基线，不立刻重复写库；
+     * 同一媒体回退到更早位置时立即覆盖，保证续播时间点跟随真实当前位置。
+     *
+     * @param request 当前播放请求。
+     * @param positionMs 当前播放位置，单位毫秒。
+     * @param durationMs 当前总时长，单位毫秒。
+     */
+    private fun maybeSavePlaybackProgress(
+        request: PlaybackRequest,
+        positionMs: Long,
+        durationMs: Long,
+    ) {
+        val identity = request.toPlaybackIdentity()
+        val currentBucket = (positionMs.coerceAtLeast(0L) / PROGRESS_SAVE_INTERVAL_MS)
+        if (lastSavedProgressIdentity != identity) {
+            lastSavedProgressIdentity = identity
+            lastSavedProgressBucket = currentBucket
+            return
+        }
+        if (currentBucket < lastSavedProgressBucket) {
+            savePlaybackProgress(request, positionMs, durationMs)
+            lastSavedProgressBucket = currentBucket
+            return
+        }
+        if (currentBucket <= lastSavedProgressBucket || currentBucket <= 0L) {
+            return
+        }
+        savePlaybackProgress(request, positionMs, durationMs)
+        lastSavedProgressBucket = currentBucket
     }
 
     /**
@@ -881,6 +934,12 @@ val PLAYER_OTHER_MENU_ITEMS = listOf(
 
 /** 长按 seek 起始阈值，用于区分短按展示和长按慢速秒个位展示。 */
 private const val SEEK_LONG_PRESS_START_MS = 250L
+
+/** 全屏播放器续播进度保存间隔。 */
+private const val PROGRESS_SAVE_INTERVAL_MS = 10_000L
+
+/** 续播进度尚未初始化的分段值。 */
+private const val UNINITIALIZED_PROGRESS_BUCKET = -1L
 
 /** Flutter TV 弹幕发射最小检查间隔，避免同一时间点被高频状态流重复推送。 */
 private const val DANMAKU_MIN_CHECK_INTERVAL_SECONDS = 0.15

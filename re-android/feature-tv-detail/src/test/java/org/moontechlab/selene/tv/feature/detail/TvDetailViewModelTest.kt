@@ -420,6 +420,47 @@ class TvDetailViewModelTest {
     }
 
     /**
+     * 详情页预览播放时，应每跨过 10 秒分段保存一次播放进度。
+     */
+    @Test
+    fun load_saves_preview_progress_every_ten_seconds() = runTest {
+        val previewEngine = FailingPreviewPlayerEngine()
+        val savedProgress = mutableListOf<Triple<PlaybackRequest, Long, Long>>()
+        val viewModel = TvDetailViewModel(
+            loadExactSources = {
+                TvDetailSourcesResult(
+                    sources = listOf(
+                        playableSource(source = "source-a", videoId = "exact-video", episodeCount = 1),
+                    ),
+                )
+            },
+            loadMoreSources = { _, _ -> TvDetailSourcesResult() },
+            savePlaybackProgress = { request, positionMs, durationMs ->
+                savedProgress += Triple(request, positionMs, durationMs)
+            },
+            playerEngine = previewEngine,
+            previewDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        viewModel.load(defaultEntry())
+        runCurrent()
+        val request = requireNotNull(viewModel.state.value.playbackRequest)
+
+        previewEngine.emitState(PlayerState.Playing(request.toSnapshot(positionMs = 9_000L)))
+        runCurrent()
+        previewEngine.emitState(PlayerState.Playing(request.toSnapshot(positionMs = 10_000L)))
+        runCurrent()
+        previewEngine.emitState(PlayerState.Playing(request.toSnapshot(positionMs = 19_000L)))
+        runCurrent()
+        previewEngine.emitState(PlayerState.Playing(request.toSnapshot(positionMs = 20_000L)))
+        runCurrent()
+
+        assertThat(savedProgress.map { (_, positionMs, _) -> positionMs })
+            .containsExactly(10_000L, 20_000L)
+            .inOrder()
+    }
+
+    /**
      * 详情页切到全屏再返回时，后台加载任务不能因为重复进入页面而再发起一轮。
      */
     @Test

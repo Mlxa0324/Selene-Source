@@ -18,6 +18,7 @@ import org.moontechlab.selene.tv.core.data.model.TvEpisode
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.data.model.TvVideoDetail
 import org.moontechlab.selene.tv.core.data.model.TvVideoSource
+import org.moontechlab.selene.tv.core.player.api.PlaybackIdentity
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.api.PlayerState
@@ -241,9 +242,14 @@ data class TvDetailUiState(
                 videoId = source.videoId.ifBlank { currentDetail.id },
                 videoTitle = currentDetail.title,
                 sourceId = source.source.ifBlank { source.id },
+                sourceName = source.name,
                 episodeId = episode.id,
                 episodeIndex = episodeIndex,
                 episodeTitle = episode.title,
+                videoYear = currentDetail.year,
+                posterUrl = currentDetail.posterUrl,
+                totalEpisodes = source.episodes.size,
+                searchTitle = currentDetail.title,
                 url = playbackUrl,
                 startPositionMs = previewPositionMs.takeIf { position -> position > 0L } ?: resumePositionMs,
             )
@@ -288,6 +294,7 @@ data class TvDetailSourcesResult(
  * @property loadResumeRecord 续播记录加载器。
  * @property loadFavoriteState 收藏状态加载器。
  * @property saveFavoriteState 收藏状态保存器。
+ * @property savePlaybackProgress 预览播放器进度保存器。
  * @property playerEngine 预览播放器内核。
  * @property previewDispatcher 预览播放器协程调度器。
  * @property recommendDiagnosticSink 推荐诊断接收器。
@@ -305,6 +312,7 @@ class TvDetailViewModel(
     private val loadResumeRecord: suspend (TvDetailEntry) -> TvDetailResumeRecord? = { null },
     private val loadFavoriteState: suspend (TvDetailEntry) -> Boolean = { false },
     private val saveFavoriteState: suspend (TvDetailEntry?, Boolean) -> Unit = { _, _ -> },
+    private val savePlaybackProgress: (PlaybackRequest, Long, Long) -> Unit = { _, _, _ -> },
     private val playerEngine: PlayerEngine? = null,
     private val previewDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val recommendDiagnosticSink: TvDetailRecommendDiagnosticSink = TvDetailRecommendDiagnosticSink { },
@@ -336,6 +344,12 @@ class TvDetailViewModel(
 
     /** 已经启动推荐调度的详情加载序号。 */
     private var recommendStartedSerial: Long? = null
+
+    /** 当前预览媒体最近一次已保存的续播分段。 */
+    private var lastPreviewSavedBucket: Long = UNINITIALIZED_PROGRESS_BUCKET
+
+    /** 当前预览媒体最近一次保存对应的媒体身份。 */
+    private var lastPreviewSavedIdentity: PlaybackIdentity? = null
 
     /**
      * 兼容旧路由的详情加载入口。
@@ -385,6 +399,8 @@ class TvDetailViewModel(
         recommendStartedSerial = null
         currentEntry = entry
         previewPlayerJob?.cancel()
+        lastPreviewSavedIdentity = null
+        lastPreviewSavedBucket = UNINITIALIZED_PROGRESS_BUCKET
         mutableState.value = TvDetailUiState(
             detail = entry.toBaseDetail(emptyList()),
             isLoading = true,
@@ -855,6 +871,11 @@ class TvDetailViewModel(
                     previewNetworkSpeed = snapshot.networkSpeedBytesPerSecond,
                     previewPlaybackStarted = true,
                 )
+                maybeSavePreviewProgress(
+                    request = expectedRequest,
+                    positionMs = snapshot.positionMs,
+                    durationMs = snapshot.durationMs,
+                )
                 // 只有当前媒体真实进入 Playing 后，才按 Flutter TV 契约延迟加载推荐。
                 scheduleRecommends(
                     serial = serial,
@@ -876,6 +897,13 @@ class TvDetailViewModel(
                     previewPositionMs = snapshot?.positionMs ?: state.previewPositionMs,
                     previewDurationMs = snapshot?.durationMs ?: state.previewDurationMs,
                 )
+                if (snapshot != null) {
+                    maybeSavePreviewProgress(
+                        request = expectedRequest,
+                        positionMs = snapshot.positionMs,
+                        durationMs = snapshot.durationMs,
+                    )
+                }
             }
 
             is PlayerState.Loading -> {
@@ -900,6 +928,40 @@ class TvDetailViewModel(
 
             is PlayerState.Idle -> Unit
         }
+    }
+
+    /**
+     * 按 10 秒分段保存详情页预览进度。
+     *
+     * 进入新媒体时只记录当前分段基线，不立即重复保存；
+     * 同一媒体回退到更早位置时立即覆盖，保证续播时间点跟随真实当前位置。
+     *
+     * @param request 当前播放请求。
+     * @param positionMs 当前播放位置，单位毫秒。
+     * @param durationMs 当前总时长，单位毫秒。
+     */
+    private fun maybeSavePreviewProgress(
+        request: PlaybackRequest,
+        positionMs: Long,
+        durationMs: Long,
+    ) {
+        val identity = request.toPlaybackIdentity()
+        val currentBucket = (positionMs.coerceAtLeast(0L) / PROGRESS_SAVE_INTERVAL_MS)
+        if (lastPreviewSavedIdentity != identity) {
+            lastPreviewSavedIdentity = identity
+            lastPreviewSavedBucket = currentBucket
+            return
+        }
+        if (currentBucket < lastPreviewSavedBucket) {
+            savePlaybackProgress(request, positionMs, durationMs)
+            lastPreviewSavedBucket = currentBucket
+            return
+        }
+        if (currentBucket <= lastPreviewSavedBucket || currentBucket <= 0L) {
+            return
+        }
+        savePlaybackProgress(request, positionMs, durationMs)
+        lastPreviewSavedBucket = currentBucket
     }
 
     /**
@@ -1170,6 +1232,8 @@ class TvDetailViewModel(
         recommendJob?.cancel()
         activeLoadVideoId = null
         recommendStartedSerial = null
+        lastPreviewSavedIdentity = null
+        lastPreviewSavedBucket = UNINITIALIZED_PROGRESS_BUCKET
         backgroundScope?.cancel()
         backgroundScope = null
     }
@@ -1478,6 +1542,12 @@ class TvDetailViewModel(
 
         /** 真实预览开始后等待推荐加载的毫秒数。 */
         const val RECOMMEND_PLAYING_DELAY_MS = 2_000L
+
+        /** 详情页预览续播进度保存间隔。 */
+        const val PROGRESS_SAVE_INTERVAL_MS = 10_000L
+
+        /** 预览进度尚未初始化的分段值。 */
+        const val UNINITIALIZED_PROGRESS_BUCKET = -1L
 
         /** 推荐失败诊断允许保留的最大消息长度。 */
         const val MAX_RECOMMEND_DIAGNOSTIC_MESSAGE_LENGTH = 160

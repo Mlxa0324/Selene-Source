@@ -25,6 +25,7 @@ import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeSectionResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
+import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
 import org.moontechlab.selene.tv.core.network.model.TvSearchResourceResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
@@ -352,6 +353,80 @@ class TvAppContainerTest {
         assertThat(state.detail?.id).isEqualTo("search-video-2")
         assertThat(state.currentSourceId).isEqualTo("source-c::search-video-2")
         assertThat(state.playbackRequest?.url).isEqualTo("https://cdn.test/fallback.m3u8")
+    }
+
+    /**
+     * 资料源入口缺少精确 `source+id` 时，详情页仍应按标题命中最新续播记录恢复集数和时间点。
+     */
+    @Test
+    fun createDetailViewModel_matches_resume_record_by_title_when_route_source_is_metadata_only() = runTest {
+        val fakeClient = FakeGatewayClient(
+            playRecordsHandler = {
+                mapOf(
+                    "source-real+play-video" to TvPlayRecordResponse(
+                        title = "测试影片",
+                        sourceName = "线路 Real",
+                        year = "2026",
+                        cover = "https://img.test/poster.jpg",
+                        index = 3,
+                        totalEpisodes = 8,
+                        playTime = 125,
+                        totalTime = 3_600,
+                        saveTime = 30L,
+                        searchTitle = "测试影片",
+                    ),
+                )
+            },
+            detailHandler = { _, _ ->
+                TvSearchResultResponse(
+                    id = "douban-123",
+                    source = "douban",
+                    title = "测试影片",
+                    episodes = emptyList(),
+                )
+            },
+            searchHandler = { query ->
+                assertThat(query).isEqualTo("测试影片")
+                TvSearchResponse(
+                    results = listOf(
+                        TvSearchResultResponse(
+                            id = "play-video",
+                            title = "测试影片",
+                            episodes = listOf(
+                                "https://cdn.test/1.m3u8",
+                                "https://cdn.test/2.m3u8",
+                                "https://cdn.test/3.m3u8",
+                                "https://cdn.test/4.m3u8",
+                            ),
+                            episodeTitles = listOf("第 1 集", "第 2 集", "第 3 集", "第 4 集"),
+                            source = "source-real",
+                            sourceName = "线路 Real",
+                            year = "2026",
+                        ),
+                    ),
+                )
+            },
+        )
+        val container = TvAppContainer(
+            gatewayConfig = TvLocalGatewayConfig(
+                baseUrl = "http://127.0.0.1:3000",
+                username = "demo",
+                password = "secret",
+            ),
+            gatewayClientFactory = { _, _ -> fakeClient },
+        )
+        val viewModel = container.createDetailViewModel(
+            source = "douban",
+            videoTitle = "测试影片",
+        )
+
+        viewModel.load(videoId = "douban-123")
+
+        val state = viewModel.state.value
+        assertThat(state.currentSourceId).isEqualTo("source-real::play-video")
+        assertThat(state.currentEpisodeId).isEqualTo("source-real::play-video-2")
+        assertThat(state.playbackRequest?.episodeIndex).isEqualTo(2)
+        assertThat(state.playbackRequest?.startPositionMs).isEqualTo(125_000L)
     }
 
     /**
@@ -852,6 +927,8 @@ class TvAppContainerTest {
  * 测试用后台客户端。
  */
 private class FakeGatewayClient(
+    private val playRecordsHandler: suspend () -> Map<String, TvPlayRecordResponse> = { emptyMap() },
+    private val savePlayRecordHandler: suspend (TvPlayRecordUpsertRequest) -> Unit = {},
     private val searchHandler: suspend (String) -> TvSearchResponse = { TvSearchResponse(results = emptyList()) },
     private val detailHandler: suspend (String, String) -> TvSearchResultResponse = { source, id ->
         TvSearchResultResponse(id = id, source = source, title = "测试详情")
@@ -887,7 +964,12 @@ private class FakeGatewayClient(
 
         /** 返回测试播放历史。 */
         override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
-            return emptyMap()
+            return playRecordsHandler()
+        }
+
+        /** 记录测试播放历史保存。 */
+        override suspend fun savePlayRecord(request: TvPlayRecordUpsertRequest) {
+            savePlayRecordHandler(request)
         }
 
         /** 记录测试播放历史删除。 */

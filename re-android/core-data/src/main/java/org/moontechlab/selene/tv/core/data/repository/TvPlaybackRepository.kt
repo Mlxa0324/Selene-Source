@@ -3,6 +3,8 @@ package org.moontechlab.selene.tv.core.data.repository
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.network.SeleneTvApi
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
+import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertBody
+import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
 
 /**
  * TV 播放记录仓库。
@@ -25,6 +27,15 @@ class TvPlaybackRepository(
         return remoteApi.getPlayRecords()
             .map { (key, record) -> record.toVideoCard(key) }
             .sortedByDescending { card -> card.saveTime }
+    }
+
+    /**
+     * 保存单条播放历史。
+     *
+     * @param video 当前播放记录卡片。
+     */
+    suspend fun savePlayRecord(video: TvVideoCard) {
+        api?.savePlayRecord(video.toUpsertRequest())
     }
 
     /**
@@ -83,6 +94,33 @@ class TvPlaybackRepository(
      */
     private fun TvVideoCard.toRecordKey(): String {
         return if (source.isBlank()) id else "$source+$id"
+    }
+
+    /**
+     * 将卡片转换成 Flutter 兼容的播放历史保存请求。
+     *
+     * @return `/api/playrecords` 请求体。
+     */
+    private fun TvVideoCard.toUpsertRequest(): TvPlayRecordUpsertRequest {
+        val safePlayTime = playTime.coerceAtLeast(0)
+        val safeTotalTime = totalTime
+            .coerceAtLeast(0)
+            .coerceAtLeast(if (safePlayTime > 0) safePlayTime + 1 else 0)
+        return TvPlayRecordUpsertRequest(
+            key = toRecordKey(),
+            record = TvPlayRecordUpsertBody(
+                title = title,
+                sourceName = sourceName,
+                year = year,
+                cover = posterUrl,
+                index = episodeIndex.coerceAtLeast(1),
+                totalEpisodes = totalEpisodes.coerceAtLeast(0),
+                playTime = safePlayTime,
+                totalTime = safeTotalTime,
+                saveTime = saveTime.coerceAtLeast(0L),
+                searchTitle = searchTitle.ifBlank { title },
+            ),
+        )
     }
 }
 

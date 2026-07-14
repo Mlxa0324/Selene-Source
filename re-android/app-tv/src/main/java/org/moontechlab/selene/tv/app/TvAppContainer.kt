@@ -50,8 +50,13 @@ import org.moontechlab.selene.tv.feature.detail.TvDetailRecommendDiagnosticStage
 import org.moontechlab.selene.tv.feature.detail.TvDetailResumeRecord
 import org.moontechlab.selene.tv.feature.detail.TvDetailViewModel
 import org.moontechlab.selene.tv.feature.history.TvHistoryViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.moontechlab.selene.tv.feature.detail.TvDetailSourcesResult
 import org.moontechlab.selene.tv.feature.home.TvHomeSectionProgress
 import org.moontechlab.selene.tv.feature.home.TvHomeViewModel
@@ -359,6 +364,9 @@ class TvAppContainer(
         TvDanmakuManualMatchRepository(preferencesStore = preferencesStore)
     }
 
+    /** 应用级 IO 任务作用域。 */
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** 豆瓣代理 API 接口。 */
     private val doubanApi by lazy {
         doubanApiFactory()
@@ -400,6 +408,7 @@ class TvAppContainer(
     fun createHomeViewModel(): TvHomeViewModel {
         return TvHomeViewModel(
             loadHome = ::loadHome,
+            loadContinueWatching = ::loadContinueWatching,
             // 分区流式回填：哪个接口先返回就先展示哪块。
             observeHome = ::observeHome,
         )
@@ -604,9 +613,10 @@ class TvAppContainer(
                 // 收藏写入待后续接入 Favorite API
             },
             loadResumeRecord = { entry ->
-                val record = TvPlaybackRepository(api = requireGatewayClient().tvApi)
-                    .readContinueWatching()
-                    .firstOrNull { card -> card.source == entry.source && card.id == entry.videoId }
+                val record = resolveResumeRecord(
+                    entry = entry,
+                    cards = loadContinueWatching(),
+                )
                 record?.let { card ->
                     TvDetailResumeRecord(
                         source = card.source,
@@ -615,6 +625,15 @@ class TvAppContainer(
                         episodeIndex = (card.episodeIndex - 1).coerceAtLeast(0),
                         positionMs = card.playTime * 1000L,
                         sourceName = card.sourceName,
+                    )
+                }
+            },
+            savePlaybackProgress = { request, positionMs, durationMs ->
+                ioScope.launch {
+                    persistPlaybackProgress(
+                        request = request,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
                     )
                 }
             },
@@ -678,6 +697,15 @@ class TvAppContainer(
             loadSkipOutroSeconds = preferencesStore::getSkipOutroSeconds,
             saveSkipIntroSeconds = preferencesStore::saveSkipIntroSeconds,
             saveSkipOutroSeconds = preferencesStore::saveSkipOutroSeconds,
+            savePlaybackProgress = { request, positionMs, durationMs ->
+                ioScope.launch {
+                    persistPlaybackProgress(
+                        request = request,
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                    )
+                }
+            },
         )
     }
 
@@ -1131,6 +1159,69 @@ class TvAppContainer(
     }
 
     /**
+     * 单独读取继续观看列表。
+     *
+     * @return 最新播放历史卡片列表。
+     */
+    private suspend fun loadContinueWatching(): List<TvVideoCard> {
+        ensureSession()
+        return TvPlaybackRepository(api = requireGatewayClient().tvApi).readContinueWatching()
+    }
+
+    /**
+     * 立即持久化当前播放进度。
+     *
+     * @param request 当前播放请求。
+     * @param positionMs 当前播放位置，单位毫秒。
+     * @param durationMs 当前总时长，单位毫秒。
+     */
+    suspend fun persistPlaybackProgress(
+        request: PlaybackRequest?,
+        positionMs: Long,
+        durationMs: Long,
+    ) {
+        val safeRequest = request ?: return
+        runCatching {
+            ensureSession()
+            TvPlaybackRepository(api = requireGatewayClient().tvApi)
+                .savePlayRecord(
+                    safeRequest.toPlayRecordCard(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                    ),
+                )
+        }.onFailure {
+            // 进度保存失败不阻塞详情/播放器返回，后续 10 秒轮询会继续兜底补写。
+        }
+    }
+
+    /**
+     * 在应用级 IO 作用域后台保存播放进度。
+     *
+     * @param request 当前播放请求。
+     * @param positionMs 当前播放位置，单位毫秒。
+     * @param durationMs 当前总时长，单位毫秒。
+     * @param onFinished 保存流程结束后的主线程回调。
+     */
+    fun persistPlaybackProgressAsync(
+        request: PlaybackRequest?,
+        positionMs: Long,
+        durationMs: Long,
+        onFinished: () -> Unit = {},
+    ) {
+        ioScope.launch {
+            persistPlaybackProgress(
+                request = request,
+                positionMs = positionMs,
+                durationMs = durationMs,
+            )
+            withContext(Dispatchers.Main.immediate) {
+                onFinished()
+            }
+        }
+    }
+
+    /**
      * 观察首页分区流式加载进度。
      *
      * @return 分区先到先显示的进度流。
@@ -1192,6 +1283,126 @@ class TvAppContainer(
         const val LOCAL_CONFIG_MISSING_MESSAGE =
             "请填写 re-android/local.gateway.properties 后重新构建 TV 应用"
     }
+}
+
+/**
+ * 按详情入口解析当前最可信的续播记录。
+ *
+ * 兼容 Flutter TV 语义：精确 `source+id` 优先，其次允许资料源入口按标题回源命中最新记录。
+ *
+ * @param entry 当前详情入口。
+ * @param cards 已按保存时间倒序的播放记录列表。
+ * @return 最适合当前详情入口的续播记录。
+ */
+private fun resolveResumeRecord(
+    entry: TvDetailEntry,
+    cards: List<TvVideoCard>,
+): TvVideoCard? {
+    cards.firstOrNull { card ->
+        card.source == entry.source && card.id == entry.videoId
+    }?.let { return it }
+
+    val entryTitleKeys = buildSet {
+        add(entry.title.resumeMatchKey())
+        add(entry.searchTitle.resumeMatchKey())
+        add(entry.resolvedSearchTitle.resumeMatchKey())
+    }.filter { key -> key.isNotBlank() }
+    val entryYear = entry.year.trim()
+    fun TvVideoCard.matchesEntryTitle(): Boolean {
+        val cardTitleKey = title.resumeMatchKey()
+        val cardSearchTitleKey = searchTitle.resumeMatchKey()
+        return entryTitleKeys.any { key ->
+            key == cardTitleKey || key == cardSearchTitleKey
+        }
+    }
+
+    if (entry.videoId.isNotBlank()) {
+        cards.firstOrNull { card ->
+            card.id == entry.videoId && card.matchesEntryTitle() && card.matchesEntryYear(entryYear)
+        }?.let { return it }
+    }
+
+    if (entry.source.isMetadataOnlySource()) {
+        cards.firstOrNull { card ->
+            card.matchesEntryTitle() && card.matchesEntryYear(entryYear)
+        }?.let { return it }
+    }
+
+    cards.firstOrNull { card ->
+        card.id == entry.videoId
+    }?.let { return it }
+
+    return null
+}
+
+/**
+ * 将播放请求转换成可直接保存的播放历史卡片。
+ *
+ * @param positionMs 当前播放位置，单位毫秒。
+ * @param durationMs 当前总时长，单位毫秒。
+ * @return Flutter `/api/playrecords` 兼容卡片模型。
+ */
+private fun PlaybackRequest.toPlayRecordCard(
+    positionMs: Long,
+    durationMs: Long,
+): TvVideoCard {
+    val safePositionSeconds = positionMs
+        .coerceAtLeast(0L)
+        .div(1_000L)
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
+    val safeDurationSeconds = durationMs
+        .coerceAtLeast(positionMs.coerceAtLeast(0L) + 1_000L)
+        .div(1_000L)
+        .coerceAtMost(Int.MAX_VALUE.toLong())
+        .toInt()
+    return TvVideoCard(
+        id = videoId,
+        source = sourceId,
+        title = videoTitle,
+        sourceName = sourceName,
+        year = videoYear,
+        posterUrl = posterUrl,
+        totalEpisodes = totalEpisodes.coerceAtLeast(0),
+        episodeIndex = (episodeIndex + 1).coerceAtLeast(1),
+        playTime = safePositionSeconds,
+        totalTime = safeDurationSeconds,
+        saveTime = System.currentTimeMillis(),
+        searchTitle = searchTitle.ifBlank { videoTitle },
+    )
+}
+
+/**
+ * 统一规范化续播标题匹配键。
+ *
+ * @return 去空白、小写后的比较键。
+ */
+private fun String.resumeMatchKey(): String {
+    return replace(Regex("\\s+"), "").trim().lowercase()
+}
+
+/**
+ * 判断详情入口来源是否属于资料源。
+ *
+ * @return 资料源或空来源时返回 true。
+ */
+private fun String.isMetadataOnlySource(): Boolean {
+    val normalized = trim().lowercase()
+    return normalized.isBlank() || normalized == "douban" || normalized == "bangumi"
+}
+
+/**
+ * 判断播放记录年份是否兼容当前详情入口。
+ *
+ * @param entryYear 当前详情入口年份。
+ * @return 任一侧缺失年份时放行；否则要求完全一致。
+ */
+private fun TvVideoCard.matchesEntryYear(entryYear: String): Boolean {
+    val normalizedEntryYear = entryYear.trim().lowercase()
+    val normalizedCardYear = year.trim().lowercase()
+    return normalizedEntryYear.isBlank() ||
+        normalizedCardYear.isBlank() ||
+        normalizedEntryYear == normalizedCardYear
 }
 
 /**

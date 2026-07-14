@@ -236,6 +236,47 @@ class TvPlayerViewModelTest {
     }
 
     /**
+     * 全屏播放器播放时，应每跨过 10 秒分段保存一次播放进度。
+     */
+    @Test
+    fun observePlayerState_saves_progress_every_ten_seconds() = runTest {
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-2",
+            url = "https://cdn.test/video.m3u8",
+        )
+        val engine = RecordingPlayerEngine(durationMs = 120_000L)
+        val savedProgress = mutableListOf<Triple<PlaybackRequest, Long, Long>>()
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+            savePlaybackProgress = { savedRequest, positionMs, durationMs ->
+                savedProgress += Triple(savedRequest, positionMs, durationMs)
+            },
+        )
+        viewModel.loadInitialRequest()
+        val observeJob = backgroundScope.launch {
+            viewModel.observePlayerState()
+        }
+        runCurrent()
+
+        engine.emitState(PlayerState.Playing(request.toTestSnapshot(positionMs = 9_000L, durationMs = 120_000L)))
+        runCurrent()
+        engine.emitState(PlayerState.Playing(request.toTestSnapshot(positionMs = 10_000L, durationMs = 120_000L)))
+        runCurrent()
+        engine.emitState(PlayerState.Playing(request.toTestSnapshot(positionMs = 19_000L, durationMs = 120_000L)))
+        runCurrent()
+        engine.emitState(PlayerState.Playing(request.toTestSnapshot(positionMs = 20_000L, durationMs = 120_000L)))
+        runCurrent()
+
+        assertThat(savedProgress.map { (_, positionMs, _) -> positionMs })
+            .containsExactly(10_000L, 20_000L)
+            .inOrder()
+        observeJob.cancel()
+    }
+
+    /**
      * 播放器已加载但暂停时，确认键语义应调用播放。
      */
     @Test

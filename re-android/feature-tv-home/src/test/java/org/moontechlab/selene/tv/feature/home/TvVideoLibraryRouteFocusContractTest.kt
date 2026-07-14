@@ -68,8 +68,20 @@ class TvVideoLibraryRouteFocusContractTest {
 
         assertThat(filterPanelSource).contains("contentFocusRequester: FocusRequester? = null")
         assertThat(filterPanelSource).contains("entryFocusRequester =")
-        assertThat(source).contains("widthIn(min = 56.dp, max = 96.dp)")
-        assertThat(source).contains("vertical = 7.dp")
+        assertThat(source).contains("widthIn(min = 64.dp, max = 112.dp)")
+        assertThat(source).contains("vertical = 8.dp")
+    }
+
+    /**
+     * 筛选芯片获焦时必须使用高对比底色和深色文字，避免焦点移动过去看不清。
+     */
+    @Test
+    fun category_filter_chip_uses_high_contrast_focus_style() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("CATEGORY_FILTER_CHIP_FOCUSED_FILL")
+        assertThat(source).contains("CATEGORY_FILTER_CHIP_FOCUSED_TEXT")
+        assertThat(source).contains("fontWeight = if (selected || hasFocus) FontWeight.SemiBold else FontWeight.Medium")
     }
 
     /**
@@ -88,19 +100,40 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
-     * 筛选展开后，从影视 Grid 返回时必须恢复到最后离开的筛选项，不能直接关闭面板。
+     * 筛选展开后，从影视 Grid 返回筛选区时必须按向上几何就近移动，不能回跳最后焦点项。
      */
     @Test
-    fun category_filter_back_from_grid_restores_last_filter_focus_before_dismissal() {
+    fun category_filter_back_from_grid_moves_focus_up_to_nearest_filter_before_dismissal() {
         val source = readRouteSource()
         val filterPanelSource = source
             .substringAfter("private fun TvLibraryFilterPanel(")
             .substringBefore("private fun TvLibraryFilterRow(")
+        val filterRowSource = source
+            .substringAfter("private fun TvLibraryFilterRow(")
+            .substringBefore("private fun TvLibraryFilterChip(")
 
-        assertThat(source).contains("event.key != Key.Back")
-        assertThat(source).contains("filterFocusRequester?.requestFocus()")
-        assertThat(source).contains("onFilterFocusRequesterReady = { focusRequester ->")
-        assertThat(filterPanelSource).contains("lastFocusedFilterKey")
+        assertThat(source).contains("LocalFocusManager.current")
+        assertThat(source).contains("FocusDirection.Up")
+        assertThat(source).contains("focusManager.moveFocus(FocusDirection.Up)")
+        assertThat(source).doesNotContain("filterFocusRequester?.requestFocus()")
+        assertThat(filterPanelSource).doesNotContain("lastFocusedFilterKey")
+        assertThat(filterRowSource).doesNotContain("restoreFocusRequester")
+    }
+
+    /**
+     * 分类筛选行只保留横向停留 offset，纵向离开再返回时不得把横向列表复位到首项。
+     */
+    @Test
+    fun category_filter_rows_keep_horizontal_offset_without_restoring_last_focused_chip() {
+        val source = readRouteSource()
+        val filterRowSource = source
+            .substringAfter("private fun TvLibraryFilterRow(")
+            .substringBefore("private fun TvLibraryFilterChip(")
+
+        assertThat(filterRowSource).contains("rememberSaveable(")
+        assertThat(filterRowSource).contains("saver = LazyListState.Saver")
+        assertThat(filterRowSource).contains("state = listState")
+        assertThat(filterRowSource).doesNotContain("restoreFocusRequester")
     }
 
     /**

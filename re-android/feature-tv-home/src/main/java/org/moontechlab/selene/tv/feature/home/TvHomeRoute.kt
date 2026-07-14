@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -43,6 +44,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,6 +72,15 @@ private const val CATEGORY_PAGE_PREFETCH_ROWS = 5
 
 /** 紧凑筛选面板保留的核心条件，优先保留分类以兼容默认简单筛选。 */
 private val CATEGORY_FILTER_PANEL_KEYS = listOf("分类", "类型", "地区", "年代")
+
+/** 分类筛选项默认底色。 */
+private val CATEGORY_FILTER_CHIP_IDLE_FILL = Color(0xFF313744)
+
+/** 分类筛选项获焦底色。 */
+private val CATEGORY_FILTER_CHIP_FOCUSED_FILL = Color(0xFFF1F4F8)
+
+/** 分类筛选项获焦文字色。 */
+private val CATEGORY_FILTER_CHIP_FOCUSED_TEXT = Color(0xFF0F141A)
 
 /**
  * TV 首页路由。
@@ -237,7 +249,6 @@ fun TvHomeRoute(
  * @param contentFocusRequester 内容区入口焦点请求器。
  * @param onVideoClick 视频卡片点击回调。
  * @param onFilterOptionSelected 筛选确认回调。
- * @param onFilterOptionFocused 筛选焦点变化回调。
  */
 @Composable
 fun TvVideoLibraryRoute(
@@ -246,11 +257,10 @@ fun TvVideoLibraryRoute(
     showFilter: Boolean = false,
     onVideoClick: (String) -> Unit = {},
     onFilterOptionSelected: ((String, String) -> Unit)? = null,
-    onFilterOptionFocused: ((String, String) -> Unit)? = null,
     onApproachingEnd: (() -> Unit)? = null,
 ) {
-    // Grid 返回时恢复筛选焦点，优先回到用户最后操作的筛选项。
-    var filterFocusRequester by remember { mutableStateOf<FocusRequester?>(null) }
+    val focusManager = LocalFocusManager.current
+    var consumeGridBackKeyUp by remember { mutableStateOf(false) }
     LaunchedEffect(showFilter, contentFocusRequester) {
         if (showFilter) {
             // 面板完成组合后再请求焦点，确保确认键打开时直接落到首个筛选项。
@@ -290,12 +300,7 @@ fun TvVideoLibraryRoute(
             TvLibraryFilterPanel(
                 filters = state.availableFilters,
                 contentFocusRequester = contentFocusRequester,
-                onFilterFocusRequesterReady = { focusRequester ->
-                    // 面板把当前最后焦点项的请求器交给 Grid 返回链路使用。
-                    filterFocusRequester = focusRequester
-                },
                 onOptionSelected = onFilterOptionSelected,
-                onOptionFocused = onFilterOptionFocused,
             )
         }
 
@@ -317,10 +322,17 @@ fun TvVideoLibraryRoute(
                         return@onPreviewKeyEvent false
                     }
                     if (event.type == KeyEventType.KeyDown) {
-                        filterFocusRequester?.requestFocus()
+                        // 返回键等价一次“向上离开 Grid”，交给系统按几何就近回到筛选区。
+                        consumeGridBackKeyUp = focusManager.moveFocus(FocusDirection.Up)
+                        return@onPreviewKeyEvent consumeGridBackKeyUp
                     }
-                    // KeyDown 和 KeyUp 都消费，避免系统返回键在焦点切换后继续关闭面板。
-                    filterFocusRequester != null
+                    if (event.type == KeyEventType.KeyUp) {
+                        // 仅消费已成功上移焦点的返回键抬起事件，避免系统继续关闭筛选面板。
+                        val shouldConsume = consumeGridBackKeyUp
+                        consumeGridBackKeyUp = false
+                        return@onPreviewKeyEvent shouldConsume
+                    }
+                    false
                 },
                 // 展开筛选时内容入口交给首个筛选项，避免焦点落到下方 Grid。
                 firstItemFocusRequester = if (showFilter) null else contentFocusRequester,
@@ -347,35 +359,17 @@ fun TvVideoLibraryRoute(
  *
  * @param filters 筛选行列表。
  * @param contentFocusRequester 筛选打开时接收入口焦点的首项请求器。
- * @param onFilterFocusRequesterReady 向 Grid 返回链路提供最后筛选焦点的请求器。
  * @param onOptionSelected 筛选确认回调。
- * @param onOptionFocused 筛选焦点变化回调。
  */
 @Composable
 private fun TvLibraryFilterPanel(
     filters: List<TvLibraryFilter>,
     contentFocusRequester: FocusRequester? = null,
-    onFilterFocusRequesterReady: (FocusRequester) -> Unit = {},
     onOptionSelected: ((String, String) -> Unit)?,
-    onOptionFocused: ((String, String) -> Unit)?,
 ) {
     // 仅展示四项高频条件，排序优先，给下方海报 Grid 保留更多首屏空间。
     val visibleFilters = CATEGORY_FILTER_PANEL_KEYS.mapNotNull { filterKey ->
         filters.firstOrNull { filter -> filter.key == filterKey }
-    }
-    val restoreFocusRequester = remember { FocusRequester() }
-    var lastFocusedFilterKey by remember {
-        mutableStateOf(visibleFilters.firstOrNull()?.key.orEmpty())
-    }
-    LaunchedEffect(restoreFocusRequester) {
-        // 初始化时把第一个可用筛选项作为 Grid 返回的安全兜底。
-        onFilterFocusRequesterReady(restoreFocusRequester)
-    }
-    LaunchedEffect(visibleFilters) {
-        if (visibleFilters.none { filter -> filter.key == lastFocusedFilterKey }) {
-            // 条件变化导致原筛选行消失时，回退到面板首行。
-            lastFocusedFilterKey = visibleFilters.firstOrNull()?.key.orEmpty()
-        }
     }
     Column(
         modifier = Modifier
@@ -413,15 +407,7 @@ private fun TvLibraryFilterPanel(
             TvLibraryFilterRow(
                 filter = filter,
                 entryFocusRequester = contentFocusRequester.takeIf { filterIndex == 0 },
-                restoreFocusRequester = restoreFocusRequester.takeIf {
-                    filter.key == lastFocusedFilterKey
-                },
                 onOptionSelected = onOptionSelected,
-                onOptionFocused = { filterKey, optionKey ->
-                    // 记录离开筛选面板前的真实行，供 Grid 返回时原位恢复。
-                    lastFocusedFilterKey = filterKey
-                    onOptionFocused?.invoke(filterKey, optionKey)
-                },
             )
         }
     }
@@ -432,18 +418,23 @@ private fun TvLibraryFilterPanel(
  *
  * @param filter 筛选行数据。
  * @param entryFocusRequester 筛选面板入口焦点请求器，仅绑定首行首项。
- * @param restoreFocusRequester Grid 返回时恢复最后焦点项的请求器，仅绑定最后焦点行。
  * @param onOptionSelected 筛选确认回调。
- * @param onOptionFocused 筛选焦点变化回调。
  */
 @Composable
 private fun TvLibraryFilterRow(
     filter: TvLibraryFilter,
     entryFocusRequester: FocusRequester? = null,
-    restoreFocusRequester: FocusRequester? = null,
     onOptionSelected: ((String, String) -> Unit)?,
-    onOptionFocused: ((String, String) -> Unit)?,
 ) {
+    val designMetrics = LocalTvDesignMetrics.current
+    val listState = rememberSaveable(
+        filter.key,
+        designMetrics.viewportWidth.toInt(),
+        designMetrics.viewportHeight.toInt(),
+        saver = LazyListState.Saver,
+    ) {
+        LazyListState()
+    }
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -457,22 +448,18 @@ private fun TvLibraryFilterRow(
         )
         LazyRow(
             modifier = Modifier.weight(1f),
+            state = listState,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(filter.options, key = { _, option -> option.key }) { optionIndex, option ->
                 TvLibraryFilterChip(
                     option = option,
                     selected = option.key == filter.selectedOption.key,
-                    focused = option.key == filter.focusedOption.key,
                     focusRequesters = listOfNotNull(
                         entryFocusRequester.takeIf { optionIndex == 0 },
-                        restoreFocusRequester.takeIf { option.key == filter.focusedOption.key },
                     ),
                     onSelected = {
                         onOptionSelected?.invoke(filter.key, option.key)
-                    },
-                    onFocused = {
-                        onOptionFocused?.invoke(filter.key, option.key)
                     },
                 )
             }
@@ -485,33 +472,33 @@ private fun TvLibraryFilterRow(
  *
  * @param option 筛选选项。
  * @param selected 是否已确认选中。
- * @param focused 是否为状态记录的焦点。
- * @param focusRequesters 面板入口与 Grid 返回时绑定到真实筛选项的焦点请求器。
+ * @param focusRequesters 面板入口时绑定到真实筛选项的焦点请求器。
  * @param onSelected 筛选确认回调。
- * @param onFocused 焦点进入回调。
  */
 @Composable
 private fun TvLibraryFilterChip(
     option: TvLibraryFilterOption,
     selected: Boolean,
-    focused: Boolean,
     focusRequesters: List<FocusRequester> = emptyList(),
     onSelected: () -> Unit,
-    onFocused: () -> Unit,
 ) {
+    var hasFocus by remember { mutableStateOf(false) }
     val backgroundColor = when {
         selected -> TvTokens.Accent
-        focused -> TvTokens.FocusFill
-        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+        hasFocus -> CATEGORY_FILTER_CHIP_FOCUSED_FILL
+        else -> CATEGORY_FILTER_CHIP_IDLE_FILL
+    }
+    val textColor = when {
+        selected -> TvTokens.TextPrimary
+        hasFocus -> CATEGORY_FILTER_CHIP_FOCUSED_TEXT
+        else -> TvTokens.TextPrimary
     }
     TvFocusableCard(
         modifier = Modifier
-            .widthIn(min = 56.dp, max = 96.dp)
+            .widthIn(min = 64.dp, max = 112.dp)
             .onFocusChanged { focusState ->
-                if (focusState.isFocused) {
-                    // 焦点进入时把筛选停留位置回传给状态层，支持从 Grid 返回筛选区。
-                    onFocused()
-                }
+                // 视觉高亮直接跟随真实 Compose 焦点，不再额外记忆离开前的筛选项。
+                hasFocus = focusState.isFocused
             },
         focusRequesters = focusRequesters,
         onPressed = onSelected,
@@ -521,15 +508,15 @@ private fun TvLibraryFilterChip(
             text = option.title,
             modifier = Modifier
                 .background(
-                color = backgroundColor,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
-            )
-                .padding(horizontal = 12.dp, vertical = 7.dp),
+                    color = backgroundColor,
+                    shape = RoundedCornerShape(TvTokens.CardRadius),
+                )
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            color = if (selected) TvTokens.TextPrimary else MaterialTheme.colorScheme.onSurface,
+            fontWeight = if (selected || hasFocus) FontWeight.SemiBold else FontWeight.Medium,
+            color = textColor,
         )
     }
 }

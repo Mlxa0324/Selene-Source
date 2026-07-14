@@ -3,10 +3,13 @@ package org.moontechlab.selene.tv.core.network
 import org.moontechlab.selene.tv.core.network.model.TvFavoriteResponse
 import org.moontechlab.selene.tv.core.network.model.TvHomeResponse
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
+import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
 import org.moontechlab.selene.tv.core.network.model.TvSearchResourceResponse
 import org.moontechlab.selene.tv.core.network.model.TvSearchResponse
 import retrofit2.http.DELETE
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Query
 
 /**
@@ -28,6 +31,16 @@ interface SeleneTvApi {
      */
     @GET("api/playrecords")
     suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse>
+
+    /**
+     * 保存单条播放历史。
+     *
+     * @param request 与 Flutter `/api/playrecords` 对齐的保存请求体。
+     */
+    @POST("api/playrecords")
+    suspend fun savePlayRecord(
+        @Body request: TvPlayRecordUpsertRequest,
+    )
 
     /**
      * 删除单条播放历史。

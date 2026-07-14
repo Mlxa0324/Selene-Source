@@ -1,8 +1,12 @@
 package org.moontechlab.selene.tv.feature.home
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvHomePayload
@@ -12,6 +16,7 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 /**
  * 校验 TV 首页状态管理契约。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class TvHomeViewModelTest {
     /**
      * 首页加载后应展示分区，并保持主菜单仍选中首页。
@@ -105,6 +110,59 @@ class TvHomeViewModelTest {
 
         assertThat(viewModel.state.value.isLoading).isFalse()
         assertThat(viewModel.state.value.errorMessage).isEqualTo("网络异常")
+    }
+
+    /**
+     * 首页二次刷新时不能先清空旧分区，避免返回首页时列表闪一下。
+     */
+    @Test
+    fun loadHome_refresh_keeps_existing_sections_until_new_payload_arrives() = runTest {
+        val secondLoadGate = CompletableDeferred<Unit>()
+        var loadCalls = 0
+        val viewModel = TvHomeViewModel(
+            loadHome = {
+                loadCalls += 1
+                if (loadCalls == 1) {
+                    TvHomePayload(
+                        sections = listOf(
+                            TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                        ),
+                    )
+                } else {
+                    secondLoadGate.await()
+                    TvHomePayload(
+                        sections = listOf(
+                            TvHomeSection(key = "hot_tv_shows", title = "热门剧集", videos = emptyList()),
+                        ),
+                    )
+                }
+            },
+        )
+
+        viewModel.load()
+
+        val refreshJob = backgroundScope.launch {
+            viewModel.load()
+        }
+        runCurrent()
+
+        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
+            "hot_movies",
+            "hot_tv_shows",
+            "bangumi_calendar",
+            "hot_shows",
+        ).inOrder()
+        assertThat(viewModel.state.value.isLoading).isTrue()
+
+        secondLoadGate.complete(Unit)
+        refreshJob.join()
+
+        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
+            "hot_movies",
+            "hot_tv_shows",
+            "bangumi_calendar",
+            "hot_shows",
+        ).inOrder()
     }
 
 
@@ -221,6 +279,51 @@ class TvHomeViewModelTest {
         val classFilter = viewModel.state.value.availableFilters.first { filter -> filter.key == "分类" }
         assertThat(classFilter.selectedOption.key).isEqualTo("热门")
         assertThat(classFilter.focusedOption.key).isEqualTo("全部")
+    }
+
+    /**
+     * 详情页返回首页时，只刷新继续观看分区且不能清空其它内容区。
+     */
+    @Test
+    fun refreshContinueWatching_updates_only_continue_section() = runTest {
+        val refreshGate = CompletableDeferred<Unit>()
+        val viewModel = TvHomeViewModel(
+            loadHome = {
+                TvHomePayload(
+                    sections = listOf(
+                        TvHomeSection(
+                            key = "continue_watching",
+                            title = "继续观看",
+                            videos = listOf(TvVideoCard(id = "resume-old", title = "旧续播", posterUrl = "")),
+                        ),
+                        TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                    ),
+                )
+            },
+            loadContinueWatching = {
+                refreshGate.await()
+                listOf(TvVideoCard(id = "resume-new", title = "新续播", posterUrl = ""))
+            },
+        )
+
+        viewModel.load()
+
+        val refreshJob = backgroundScope.launch {
+            viewModel.refreshContinueWatching()
+        }
+        runCurrent()
+
+        assertThat(viewModel.state.value.sections.first().videos.map { it.id })
+            .containsExactly("resume-old")
+        assertThat(viewModel.state.value.sections.map { it.key }).contains("hot_movies")
+
+        refreshGate.complete(Unit)
+        refreshJob.join()
+
+        assertThat(viewModel.state.value.sections.first().key).isEqualTo("continue_watching")
+        assertThat(viewModel.state.value.sections.first().videos.map { it.id })
+            .containsExactly("resume-new")
+        assertThat(viewModel.state.value.sections.map { it.key }).contains("hot_movies")
     }
 
     /**
