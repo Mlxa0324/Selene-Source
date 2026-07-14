@@ -1,7 +1,6 @@
 package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,9 +12,9 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +25,9 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 
 /**
  * TV 纵向海报网格。
+ *
+ * 方向键使用显式行列邻居（同列上下 / 同行左右），避免 Compose 默认焦点搜索
+ * 在「封面不满格宽」时退化成线性上一项，出现「上行最后一个」而不是「正上方」的误跳。
  *
  * @param items 影视卡片列表。
  * @param columns 每行列数。
@@ -59,6 +61,7 @@ fun TvPosterGrid(
 ) {
     // 预取行数至少保留一行，避免外部错误配置导致末尾分页失效。
     val resolvedPrefetchRows = prefetchRows.coerceAtLeast(1)
+    val safeColumns = columns.coerceAtLeast(1)
     val designMetrics = LocalTvDesignMetrics.current
     val gridState = rememberSaveable(
         designMetrics.viewportWidth.toInt(),
@@ -67,7 +70,13 @@ fun TvPosterGrid(
     ) {
         LazyGridState()
     }
+    // 首卡 requester 即 itemFocusRequesters[0]，单挂避免双 FocusRequester 失效。
     val firstCardFocusRequester = remember { FocusRequester() }
+    val itemFocusRequesters = remember(items.size) {
+        List(items.size) { index ->
+            if (index == 0) firstCardFocusRequester else FocusRequester()
+        }
+    }
     val scrollScope = rememberCoroutineScope()
     var lastFocusedItemIndex by rememberSaveable(
         designMetrics.viewportWidth.toInt(),
@@ -75,9 +84,11 @@ fun TvPosterGrid(
     ) {
         mutableIntStateOf(0)
     }
+    // 全宽 header 占 1 个 lazy 下标，animateScrollToItem 必须加上偏移。
+    val headerLazyOffset = if (headerContent != null) 1 else 0
 
     LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
+        columns = GridCells.Fixed(safeColumns),
         modifier = modifier.posterFocusGroup(
             firstCardFocusRequester = firstCardFocusRequester,
         ),
@@ -98,18 +109,18 @@ fun TvPosterGrid(
         }
         itemsIndexed(items, key = ::posterListItemKey) { index, item ->
             val bindsContentEntry = index == lastFocusedItemIndex
-            val cardFocusRequesters = if (index == 0) {
-                // 首卡承接网格首次进入；顶部导航下探优先回到最近真实获焦卡片。
-                listOfNotNull(
-                    firstCardFocusRequester,
-                    if (bindsContentEntry) firstItemFocusRequester else null,
-                )
-            } else if (bindsContentEntry) {
-                // 纵向浏览到靠后卡片后，从顶部导航下探必须回到当前业务位置。
-                listOfNotNull(firstItemFocusRequester)
-            } else {
-                emptyList()
+            val cardFocusRequesters = buildList {
+                // 每项挂索引 requester，供方向键同列/同行就近移动。
+                itemFocusRequesters.getOrNull(index)?.let { add(it) }
+                if (bindsContentEntry && firstItemFocusRequester != null) {
+                    // 顶部下探回到最近业务卡；index0 时与 firstCard 为同一对象已在列表中。
+                    if (index != 0 || firstItemFocusRequester !== firstCardFocusRequester) {
+                        add(firstItemFocusRequester)
+                    }
+                }
             }
+            val column = index % safeColumns
+            val lastIndex = items.lastIndex
             BoxWithConstraints(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.TopCenter,
@@ -124,20 +135,45 @@ fun TvPosterGrid(
                     item = item,
                     cardWidth = resolvedCardWidth,
                     focusRequesters = cardFocusRequesters,
+                    // 显式行列邻居：上/下同列，左/右同行；禁止退化到「上一行最后一个」。
+                    focusProperties = {
+                        left = if (column > 0) {
+                            itemFocusRequesters[index - 1]
+                        } else {
+                            FocusRequester.Cancel
+                        }
+                        right = if (column < safeColumns - 1 && index < lastIndex) {
+                            itemFocusRequesters[index + 1]
+                        } else {
+                            FocusRequester.Cancel
+                        }
+                        up = if (index >= safeColumns) {
+                            itemFocusRequesters[index - safeColumns]
+                        } else {
+                            // 首行交给系统几何搜索（顶栏/筛选），不在网格内线性回退。
+                            FocusRequester.Default
+                        }
+                        down = if (index + safeColumns <= lastIndex) {
+                            itemFocusRequesters[index + safeColumns]
+                        } else {
+                            FocusRequester.Cancel
+                        }
+                    },
                     onClick = onItemClick?.let { click -> { click(item) } },
                     onFocusChanged = { hasFocus ->
                         if (hasFocus) {
                             // 记录真实业务焦点，避免首卡被 LazyGrid 回收后顶部下探没有目标。
                             lastFocusedItemIndex = index
-                            if (index != gridState.firstVisibleItemIndex) {
+                            val lazyIndex = index + headerLazyOffset
+                            if (lazyIndex != gridState.firstVisibleItemIndex) {
                                 scrollScope.launch {
                                     // 网格按行滚动，保持当前行在重新入场时稳定可见。
-                                    gridState.animateScrollToItem(index)
+                                    gridState.animateScrollToItem(lazyIndex)
                                 }
                             }
                         }
                         // 焦点进入预取阈值时后台请求下一页，避免用户触底后停在加载态。
-                        val approachingEnd = index >= items.size - columns * resolvedPrefetchRows
+                        val approachingEnd = index >= items.size - safeColumns * resolvedPrefetchRows
                         if (hasFocus && approachingEnd && onApproachingEnd != null) {
                             onApproachingEnd()
                         }

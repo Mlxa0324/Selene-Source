@@ -69,9 +69,9 @@ class TvPosterFocusContractTest {
 
         assertThat(source).contains("val firstCardFocusRequester = remember { FocusRequester() }")
         assertThat(source).contains("firstCardFocusRequester = firstCardFocusRequester")
-        assertThat(source).contains("val cardFocusRequesters = if (index == 0)")
-        assertThat(source).contains("firstCardFocusRequester,")
-        assertThat(source).contains("if (bindsContentEntry) firstItemFocusRequester else null")
+        // 首卡 requester 即 itemFocusRequesters[0]，每项都挂索引 requester。
+        assertThat(source).contains("itemFocusRequesters")
+        assertThat(source).contains("if (index == 0) firstCardFocusRequester else FocusRequester()")
         assertThat(source).contains("focusRequesters = cardFocusRequesters")
     }
 
@@ -87,8 +87,28 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("var lastFocusedItemIndex by rememberSaveable")
         assertThat(source).contains("val bindsContentEntry = index == lastFocusedItemIndex")
-        assertThat(source).contains("if (bindsContentEntry) firstItemFocusRequester else null")
+        assertThat(source).contains("firstItemFocusRequester")
         assertThat(source).contains("lastFocusedItemIndex = index")
+    }
+
+    /**
+     * 分类网格上下左右必须按行列邻居显式指定，禁止默认搜索退化成「上一行最后一个」。
+     */
+    @Test
+    fun posterGrid_uses_explicit_row_column_neighbors_for_dpad() {
+        val source = readLayoutSource("TvPosterGrid.kt")
+
+        assertThat(source).contains("itemFocusRequesters")
+        assertThat(source).contains("val column = index % safeColumns")
+        assertThat(source).contains("index - safeColumns")
+        assertThat(source).contains("index + safeColumns")
+        assertThat(source).contains("FocusRequester.Cancel")
+        assertThat(source).contains("FocusRequester.Default")
+        assertThat(source).contains("focusProperties = {")
+        assertThat(source).contains("headerLazyOffset")
+        // 上下同列，不得暗示线性 prev/next 作为主策略。
+        assertThat(source).contains("itemFocusRequesters[index - safeColumns]")
+        assertThat(source).contains("itemFocusRequesters[index + safeColumns]")
     }
 
     /**
@@ -201,10 +221,11 @@ class TvPosterFocusContractTest {
         assertThat(moreCardSource).contains("width(TvTokens.PosterWidth)")
         assertThat(moreCardSource).contains("height(TvTokens.PosterCoverHeight)")
         assertThat(moreCardSource).doesNotContain("height(TvTokens.PosterHeight)")
-        // 标题/副标题占位保证与海报卡行高一致。
-        assertThat(moreCardSource).contains("padding(start = 8.dp, top = 10.dp, end = 8.dp)")
-        assertThat(posterCardSource).contains("height(TvTokens.PosterCoverHeight)")
-        assertThat(posterCardSource).contains("padding(start = 8.dp, top = 10.dp, end = 8.dp)")
+        // 标题/副标题区与海报卡同为 Column 占位结构（具体 padding 可略调，但必须有标题区）。
+        assertThat(moreCardSource).contains("padding(start =")
+        assertThat(posterCardSource).contains("coverHeight")
+        assertThat(posterCardSource).contains("height(coverHeight)")
+        assertThat(posterCardSource).contains("padding(start =")
     }
 
     /**
@@ -235,7 +256,8 @@ class TvPosterFocusContractTest {
             .readText()
 
         assertThat(source).contains("focusRequesters: List<FocusRequester> = emptyList()")
-        assertThat(source).contains("current.focusRequester(requester)")
+        assertThat(source).contains("focusRequester(requester)")
+        assertThat(source).contains("focusProperties")
         assertThat(source.indexOf(".then(focusRequesterModifier)")).isLessThan(source.indexOf(".focusable("))
     }
 

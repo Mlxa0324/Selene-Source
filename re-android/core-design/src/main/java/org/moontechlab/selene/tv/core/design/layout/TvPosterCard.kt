@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusProperties
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -50,6 +51,7 @@ import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
  * @param focusRequesters 需要绑定到真实卡片焦点节点的请求器。
  * @param onFocusChanged 卡片焦点变化回调。
  * @param onClick 卡片点击回调。
+ * @param focusProperties 可选方向键焦点图（网格同列就近移动）。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -63,6 +65,7 @@ fun TvPosterCard(
      * 卡片宽度；默认全局海报宽。搜索等网格可传入单元格宽，封面高度按比例缩放。
      */
     cardWidth: Dp = TvTokens.PosterWidth,
+    focusProperties: (FocusProperties.() -> Unit)? = null,
 ) {
     var hasCardFocus by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -107,6 +110,7 @@ fun TvPosterCard(
             focusRequesters = focusRequesters,
             enabled = onClick != null,
             onPressed = onClick,
+            focusProperties = focusProperties,
         ) {
             TvPosterCover(
                 item = item,

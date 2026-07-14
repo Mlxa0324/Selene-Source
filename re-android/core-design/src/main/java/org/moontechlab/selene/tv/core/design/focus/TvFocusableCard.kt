@@ -12,10 +12,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusProperties
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -30,6 +31,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param enabled 是否允许获得焦点。
  * @param onPressed 确认键短按或鼠标点击回调。
  * @param onLongPressed 确认键长按回调。
+ * @param focusProperties 可选方向键焦点图（网格同列就近等），挂在真实 focusable 上。
  * @param content 卡片内容。
  */
 @Composable
@@ -39,6 +41,7 @@ fun TvFocusableCard(
     enabled: Boolean = true,
     onPressed: (() -> Unit)? = null,
     onLongPressed: (() -> Unit)? = null,
+    focusProperties: (FocusProperties.() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -48,9 +51,10 @@ fun TvFocusableCard(
     val pressPolicy = remember(onLongPressed) {
         TvRemotePressPolicy(hasLongPressHandler = onLongPressed != null)
     }
-    val focusRequesterModifier: Modifier = focusRequesters.fold<FocusRequester, Modifier>(Modifier) { current, requester ->
-        // 多个入口共享同一个真实焦点节点，避免外层容器成为不可见中转焦点。
-        current.focusRequester(requester)
+    // 仅叠加 focusRequester，初始用 Modifier 避免把外层 modifier 叠两次。
+    var focusRequesterModifier: Modifier = Modifier
+    focusRequesters.forEach { requester ->
+        focusRequesterModifier = focusRequesterModifier.focusRequester(requester)
     }
     Box(
         modifier = modifier
@@ -80,6 +84,14 @@ fun TvFocusableCard(
             }
             // 鼠标左键 / 触摸点击与确认键等价，不额外生成 focusable。
             .tvPointerClickable(enabled = enabled, onClick = onPressed)
+            .then(
+                if (focusProperties != null) {
+                    // 方向键邻居必须挂在 focusable 之前的同一焦点目标上。
+                    Modifier.focusProperties(focusProperties)
+                } else {
+                    Modifier
+                },
+            )
             .then(focusRequesterModifier)
             .focusable(
                 enabled = enabled,
