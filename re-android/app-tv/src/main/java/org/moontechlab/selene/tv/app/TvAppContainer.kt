@@ -1608,20 +1608,3 @@ private fun TvDanmakuCommentPayload.toPlayerDanmakuComment(): TvPlayerDanmakuCom
         color = color,
     )
 }
-
-/**
- * 粗粒度首字母匹配：仅当候选词中文首字母序列包含 query 时命中。
- *
- * 这里不做完整拼音库，先提供可测的本地联想路径。
- *
- * @param word 候选词。
- * @param query 首字母查询。
- * @return 是否命中。
- */
-private fun pinyinInitialsMatch(word: String, query: String): Boolean {
-    if (query.isBlank()) {
-        return false
-    }
-    // 无拼音库时退化为包含判断，避免误伤英文种子词。
-    return word.uppercase().startsWith(query.uppercase())
-}
