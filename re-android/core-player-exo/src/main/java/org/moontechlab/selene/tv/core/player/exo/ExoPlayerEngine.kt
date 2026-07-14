@@ -150,7 +150,14 @@ class ExoPlayerEngine(
             mutableState.value = PlayerState.Loading
             lastSnapshot = request.toSnapshot()
             player.setEventCallback(playerEventCallback)
-            player.loadMedia(request.url)
+            // 续播：把 startPositionMs 交给 setMediaItem 起播点，避免只 prepare 后从 0 开始。
+            player.loadMedia(
+                url = request.url,
+                startPositionMs = request.startPositionMs.coerceAtLeast(0L),
+            )
+            if (request.startPositionMs > 0L) {
+                lastSnapshot = lastSnapshot?.copy(positionMs = request.startPositionMs)
+            }
             // Exo 首播必须显式 play，不能只 prepare 后等外部确认键。
             player.play()
         }

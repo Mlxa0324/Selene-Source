@@ -25,6 +25,7 @@ import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.api.PlayerState
 import org.moontechlab.selene.tv.core.player.api.matchesPlaybackRequest
+import org.moontechlab.selene.tv.core.player.api.snapshotOrNull
 import org.moontechlab.selene.tv.core.player.api.toPlaybackIdentity
 
 /**
@@ -708,11 +709,14 @@ class TvDetailViewModel(
         }
         val episodeId = selectedSource.resolveInitialEpisodeId(state)
         val hasPlayableEpisodes = selectedSource.hasPlayableEpisodes()
+        // 起播前把预览进度对齐续播点，避免 playbackRequest 依赖 resume 时 UI 仍显示 0。
+        val seedPositionMs = state.resumePositionMs.coerceAtLeast(0L)
         mutableState.value = state.copy(
             currentSourceId = selectedSource.id,
             currentEpisodeId = episodeId,
             resumeEpisodeId = episodeId.takeIf { it.isNotBlank() },
             selectedEpisodeGroup = episodeId.toEpisodeGroup(selectedSource),
+            previewPositionMs = seedPositionMs,
             previewPlaybackStarted = hasPlayableEpisodes,
             previewIsLoading = hasPlayableEpisodes,
         )
@@ -807,7 +811,13 @@ class TvDetailViewModel(
         previewPlayerJob?.cancel()
         previewPlayerJob = CoroutineScope(previewDispatcher).launch {
             if (engine.state.value.matchesPlaybackRequest(request)) {
-                // 详情页重新接管共享会话时，如果底层仍是同一媒体，只同步状态，不重新 load。
+                // 同一媒体：若请求带续播点且当前进度差得远，强制 seek 到续播点。
+                val currentPos = engine.state.value.snapshotOrNull()?.positionMs ?: 0L
+                val targetPos = request.startPositionMs
+                if (targetPos > 0L && kotlin.math.abs(currentPos - targetPos) > 2_000L) {
+                    runCatching { engine.seekTo(targetPos) }
+                    runCatching { engine.play() }
+                }
                 applyPreviewPlayerState(
                     playerState = engine.state.value,
                     expectedRequest = request,

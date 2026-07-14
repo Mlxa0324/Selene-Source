@@ -39,6 +39,34 @@ class ExoPlayerEngineTest {
 
         assertThat(adapter.loadedMediaUrl).isEqualTo("https://cdn.test/video.m3u8")
         assertThat(adapter.playCalls).isEqualTo(1)
+        assertThat(adapter.lastLoadStartPositionMs).isEqualTo(0L)
+    }
+
+    /**
+     * 续播请求必须把 startPositionMs 下发给底层 loadMedia，不能忽略后从头播。
+     */
+    @Test
+    fun load_passes_start_position_to_adapter_for_resume() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler, name = "main")
+        val adapter = RecordingExoPlayerAdapter()
+        val engine = ExoPlayerEngine(
+            player = adapter,
+            dispatchers = TestDispatcherProvider(main = mainDispatcher),
+        )
+
+        engine.load(
+            request = org.moontechlab.selene.tv.core.player.api.PlaybackRequest(
+                videoId = "video-1",
+                sourceId = "source-a",
+                episodeId = "episode-1",
+                url = "https://cdn.test/video.m3u8",
+                startPositionMs = 125_000L,
+            ),
+        )
+        testScheduler.advanceUntilIdle()
+
+        assertThat(adapter.lastLoadStartPositionMs).isEqualTo(125_000L)
+        assertThat(adapter.playCalls).isEqualTo(1)
     }
 
     /**
@@ -161,8 +189,12 @@ private class RecordingExoPlayerAdapter : ExoPlayerAdapter {
      *
      * @param url 媒体地址。
      */
-    override suspend fun loadMedia(url: String) {
+    /** 最近一次 load 的起播位置。 */
+    var lastLoadStartPositionMs: Long = 0L
+
+    override suspend fun loadMedia(url: String, startPositionMs: Long) {
         loadedMediaUrl = url
+        lastLoadStartPositionMs = startPositionMs
     }
 
     /** 返回 null ExoPlayer 供测试。 */

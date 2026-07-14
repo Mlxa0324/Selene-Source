@@ -84,6 +84,9 @@ fun WebViewPlayerSurface(
 /**
  * 构建内置 HLS 播放页地址。
  *
+ * 注意：不要把 startPositionMs 写进 URL。详情预览进度会持续变化，
+ * 若写进 query 会触发 WebView 反复 loadUrl 重载。
+ *
  * @param playbackUrl 真实播放地址。
  * @return 带播放地址参数的 asset 页面地址。
  */

@@ -164,8 +164,12 @@ class AndroidExoPlayerAdapter(
      *
      * @param url 媒体资源地址。
      */
-    override suspend fun loadMedia(url: String) {
-        exoPlayer.setMediaItem(MediaItem.fromUri(url))
+    override suspend fun loadMedia(url: String, startPositionMs: Long) {
+        // 第二参数为起播位置：续播时直接落到 startPositionMs，避免 load 后再 seek 被冲掉。
+        exoPlayer.setMediaItem(
+            MediaItem.fromUri(url),
+            startPositionMs.coerceAtLeast(0L),
+        )
         exoPlayer.prepare()
     }
 

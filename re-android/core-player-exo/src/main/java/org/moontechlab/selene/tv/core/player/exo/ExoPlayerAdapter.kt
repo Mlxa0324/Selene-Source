@@ -11,8 +11,9 @@ interface ExoPlayerAdapter {
      * 加载媒体资源。
      *
      * @param url 媒体资源地址。
+     * @param startPositionMs 起播位置，单位毫秒；>0 时从该点起播（续播）。
      */
-    suspend fun loadMedia(url: String)
+    suspend fun loadMedia(url: String, startPositionMs: Long = 0L)
 
     /**
      * 跳转到指定播放位置。

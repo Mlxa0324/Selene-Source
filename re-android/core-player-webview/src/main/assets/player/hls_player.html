@@ -28,6 +28,8 @@
     const sourceUrl = new URLSearchParams(window.location.search).get('url') || '';
     let networkSpeedBytesPerSecond = 0;
     let playRequested = true;
+    // 元数据未就绪时先缓存 seek，避免续播命令落在 loadedmetadata 前被丢掉。
+    let pendingSeekMs = null;
 
     function logPlayerIssue(message, detail) {
       const suffix = detail ? ` ${detail}` : '';
@@ -100,8 +102,8 @@
         player.pause();
       },
       seekTo(positionMs) {
-        const seconds = Math.max(0, Number(positionMs || 0) / 1000);
-        player.currentTime = seconds;
+        pendingSeekMs = Math.max(0, Number(positionMs || 0));
+        applyPendingSeek();
       },
       setPlaybackSpeed(speed) {
         const normalizedSpeed = Math.max(0.25, Number(speed || 1));
@@ -124,10 +126,32 @@
       },
     };
 
+    function applyPendingSeek() {
+      if (pendingSeekMs == null) {
+        return;
+      }
+      // HAVE_METADATA 及以上才可设 currentTime。
+      if (player.readyState < 1) {
+        return;
+      }
+      const seconds = pendingSeekMs / 1000;
+      try {
+        player.currentTime = seconds;
+        pendingSeekMs = null;
+        reportPlaybackEvent();
+      } catch (seekError) {
+        logPlayerIssue(
+          'seek failed',
+          seekError && seekError.message ? seekError.message : String(seekError),
+        );
+      }
+    }
+
     function requestPlayback() {
       if (!playRequested) {
         return;
       }
+      applyPendingSeek();
       const playPromise = player.play();
       if (playPromise && typeof playPromise.catch === 'function') {
         playPromise.catch((error) => {
@@ -142,8 +166,14 @@
     player.addEventListener('play', reportPlaybackEvent);
     player.addEventListener('pause', reportPlaybackEvent);
     player.addEventListener('ended', reportPlaybackEvent);
-    player.addEventListener('loadedmetadata', requestPlayback);
-    player.addEventListener('canplay', requestPlayback);
+    player.addEventListener('loadedmetadata', () => {
+      applyPendingSeek();
+      requestPlayback();
+    });
+    player.addEventListener('canplay', () => {
+      applyPendingSeek();
+      requestPlayback();
+    });
     player.addEventListener('error', () => {
       const error = player.error;
       logPlayerIssue('video error', error ? `code=${error.code}` : '');

@@ -41,6 +41,10 @@ class WebViewPlayerEngine(
             // 首次下发播放请求时直接起播，详情页预览播放器不能停在暂停快照。
             mutableState.value = PlayerState.Playing(snapshot = lastSnapshot ?: return@withContext)
             commandBus.send(WebViewPlayerCommand.Play)
+            // 续播：页面 ready 后 seek；命令总线异步下发，HTML 侧 loadedmetadata 也会读 startMs。
+            if (request.startPositionMs > 0L) {
+                commandBus.send(WebViewPlayerCommand.SeekTo(positionMs = request.startPositionMs))
+            }
         }
     }
 
