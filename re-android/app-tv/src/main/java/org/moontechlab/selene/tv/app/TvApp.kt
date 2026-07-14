@@ -15,6 +15,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -290,13 +292,14 @@ private fun TvTopNavigationBar(
             TvClockText()
         }
 
-        // 左侧主菜单：无背景文字 + 选中下划线；上键进右上角快捷首项。
+        // 左侧主菜单：位置与原先胶囊行一致，仅样式改为文字 + 选中下划线。
         TvDestinationGroup(
             destinations = TvDestination.primaryMenuDestinations,
             currentRoute = currentRoute,
             contentFocusRequester = contentFocusRequester,
             topDestinationFocusRequesters = topDestinationFocusRequesters,
-            horizontalSpacing = 20.dp,
+            // 与改样式前一致，避免 tab 间距漂移。
+            horizontalSpacing = 12.dp,
             navigateOnFocus = true,
             itemStyle = TvNavItemStyle.TextUnderline,
             topNavHasFocus = topNavHasFocus,
@@ -551,24 +554,29 @@ private fun TvNavigationPill(
 
     if (isTextUnderline) {
         // 主菜单：无背景，主题色文字 + 选中下划线。
+        // 注意：下划线绝不能裸用 fillMaxWidth() 撑满 Row，否则首项占满整行、后续 tab 被挤没。
+        // 用 IntrinsicSize.Max 让宽度跟文案，再 fillMaxWidth 画与字同宽的下划线。
         Box(
             modifier = Modifier
                 .height(TvTokens.TopActionHeight)
+                // 水平 padding 与原先胶囊接近，保持点击热区与视觉节奏。
                 .then(focusAndClickModifier)
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(
+                modifier = Modifier.width(IntrinsicSize.Max),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
                     text = label,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
                     ),
                     color = labelColor,
+                    maxLines = 1,
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 // 下划线与文案同宽：未选中透明，选中主题色，获焦未选中白线提示。
@@ -576,6 +584,7 @@ private fun TvNavigationPill(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(3.dp)
+                        .widthIn(min = 16.dp)
                         .clip(RoundedCornerShape(2.dp))
                         .background(underlineColor),
                 )

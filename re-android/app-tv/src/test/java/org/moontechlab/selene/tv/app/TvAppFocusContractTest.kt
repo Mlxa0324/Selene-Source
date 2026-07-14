@@ -220,6 +220,9 @@ class TvAppFocusContractTest {
         assertThat(pillSource).contains("isTextUnderline")
         assertThat(pillSource).contains("TvTokens.Accent")
         assertThat(pillSource).contains("Color.Transparent")
+        // 下划线宽度跟文案，禁止裸 fillMaxWidth 把首项撑满整行挤掉后续 tab。
+        assertThat(pillSource).contains("IntrinsicSize.Max")
+        assertThat(topNavSource).contains("horizontalSpacing = 12.dp")
     }
 
     /**
