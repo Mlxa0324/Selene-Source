@@ -758,14 +758,21 @@ private fun SearchDefaultPanel(
         return
     }
 
+    // 右栏各区块入口：不环形，历史↓热词↓推荐，可顺序离开。
+    val hotEntryFocus = remember { FocusRequester() }
+    val recommendEntryFocus = remember { FocusRequester() }
+    val hasHistory = state.searchHistory.isNotEmpty()
+    val hasHot = state.hotQueries.isNotEmpty()
+    val hasRecommend = state.recommendCards.isNotEmpty()
+
     SectionTitle(
         title = "搜索历史",
-        hint = if (state.searchHistory.isEmpty()) "暂无记录" else "${state.searchHistory.size} 条记录",
-        trailingActionLabel = if (state.searchHistory.isNotEmpty()) "清空" else null,
+        hint = if (!hasHistory) "暂无记录" else "${state.searchHistory.size} 条记录",
+        trailingActionLabel = if (hasHistory) "清空" else null,
         onTrailingAction = onClearHistory,
     )
     Spacer(modifier = Modifier.height(12.dp))
-    if (state.searchHistory.isEmpty()) {
+    if (!hasHistory) {
         SearchHintCard(
             title = "暂无搜索历史",
             message = "使用左侧键盘输入首字母，或点击搜索按钮。",
@@ -778,32 +785,49 @@ private fun SearchDefaultPanel(
             // 历史词直接搜索，对齐 Flutter onWordPressed -> _performSearch。
             onWordClick = onSearchHistoryClick,
             onBack = onBack,
+            onArrowDownFromBottom = {
+                when {
+                    hasHot -> runCatching { hotEntryFocus.requestFocus() }
+                    hasRecommend -> runCatching { recommendEntryFocus.requestFocus() }
+                }
+            },
         )
     }
 
-    if (state.hotQueries.isNotEmpty()) {
+    if (hasHot) {
         Spacer(modifier = Modifier.height(28.dp))
         SectionTitle("搜索热词", "${state.hotQueries.size} 个推荐词")
         Spacer(modifier = Modifier.height(12.dp))
         WordTileGrid(
             words = state.hotQueries,
-            entryFocusRequester = if (state.searchHistory.isEmpty()) entryFocusRequester else null,
+            entryFocusRequester = if (!hasHistory) entryFocusRequester else hotEntryFocus,
             onReturnToLeftPanel = onReturnToLeftPanel,
             // 热词只回填，不直接搜索。
             onWordClick = onHotQueryClick,
             onBack = onBack,
+            onArrowUpFromTop = {
+                if (hasHistory) {
+                    // 回到历史区入口（首项）。
+                    runCatching { entryFocusRequester.requestFocus() }
+                }
+            },
+            onArrowDownFromBottom = {
+                if (hasRecommend) {
+                    runCatching { recommendEntryFocus.requestFocus() }
+                }
+            },
         )
     }
 
     Spacer(modifier = Modifier.height(30.dp))
-    SectionTitle("影片推荐", if (state.recommendCards.isEmpty()) "暂无推荐" else "${state.recommendCards.size} 部")
+    SectionTitle("影片推荐", if (!hasRecommend) "暂无推荐" else "${state.recommendCards.size} 部")
     Spacer(modifier = Modifier.height(12.dp))
     RecommendRail(
         cards = state.recommendCards,
-        entryFocusRequester = if (state.searchHistory.isEmpty() && state.hotQueries.isEmpty()) {
-            entryFocusRequester
-        } else {
-            null
+        entryFocusRequester = when {
+            !hasHistory && !hasHot -> entryFocusRequester
+            hasRecommend -> recommendEntryFocus
+            else -> null
         },
         onReturnToLeftPanel = onReturnToLeftPanel,
         onVideoClick = onVideoClick,
@@ -861,6 +885,8 @@ private fun SearchSuggestionPanel(
         }
 
         else -> {
+            val recommendEntryFocus = remember { FocusRequester() }
+            val hasRecommend = state.recommendCards.isNotEmpty()
             WordTileGrid(
                 words = state.suggestions,
                 entryFocusRequester = entryFocusRequester,
@@ -868,14 +894,19 @@ private fun SearchSuggestionPanel(
                 // 联想词确认后直接搜索，并保留返回上下文。
                 onWordClick = onSuggestionClick,
                 onBack = onBack,
+                onArrowDownFromBottom = {
+                    if (hasRecommend) {
+                        runCatching { recommendEntryFocus.requestFocus() }
+                    }
+                },
             )
-            if (state.recommendCards.isNotEmpty()) {
+            if (hasRecommend) {
                 Spacer(modifier = Modifier.height(30.dp))
                 SectionTitle("影片推荐", "${state.recommendCards.size} 部")
                 Spacer(modifier = Modifier.height(12.dp))
                 RecommendRail(
                     cards = state.recommendCards,
-                    entryFocusRequester = null,
+                    entryFocusRequester = recommendEntryFocus,
                     onReturnToLeftPanel = onReturnToLeftPanel,
                     onVideoClick = onVideoClick,
                     onBack = onBack,
@@ -965,11 +996,16 @@ private fun SectionTitle(
 /**
  * 词块网格：历史 / 热词 / 联想共用。
  *
+ * 右侧内容区**不环形**：底行下键交给 [onArrowDownFromBottom] 离开本区，
+ * 顶行上键交给 [onArrowUpFromTop]；环形导航仅用于左侧键盘。
+ *
  * @param words 词列表。
  * @param entryFocusRequester 首项入口焦点。
  * @param onReturnToLeftPanel 左键回键盘。
  * @param onWordClick 词确认。
  * @param onBack 返回。
+ * @param onArrowDownFromBottom 底行下键（离开本网格）。
+ * @param onArrowUpFromTop 顶行上键（离开本网格）。
  */
 @Composable
 private fun WordTileGrid(
@@ -978,6 +1014,8 @@ private fun WordTileGrid(
     onReturnToLeftPanel: () -> Unit,
     onWordClick: (String) -> Unit,
     onBack: () -> Unit,
+    onArrowDownFromBottom: (() -> Unit)? = null,
+    onArrowUpFromTop: (() -> Unit)? = null,
 ) {
     val columns = 3
     val rows = (words.size + columns - 1) / columns
@@ -1021,24 +1059,22 @@ private fun WordTileGrid(
                                 .onPreviewKeyEvent(
                                     KeyPreviewHandler(
                                         onEnter = { onWordClick(word) },
-                                        // 左缘回键盘；词块网格内左右环形。
+                                        // 左缘回键盘；区内左右不环形。
                                         onLeft = {
                                             if (col == 0) onReturnToLeftPanel()
                                             else focusRequesters.getOrNull(index - 1)?.requestFocus()
                                         },
                                         onRight = {
-                                            val next = if (index < lastIndex) index + 1 else 0
-                                            focusRequesters.getOrNull(next)?.requestFocus()
+                                            if (index < lastIndex) {
+                                                focusRequesters.getOrNull(index + 1)?.requestFocus()
+                                            }
                                         },
                                         onUp = {
                                             val up = index - columns
                                             if (up >= 0) {
                                                 focusRequesters.getOrNull(up)?.requestFocus()
                                             } else {
-                                                // 顶行上键：落到末行同列（环形）。
-                                                val lastRow = rows - 1
-                                                val target = (lastRow * columns + col).coerceAtMost(lastIndex)
-                                                focusRequesters.getOrNull(target)?.requestFocus()
+                                                onArrowUpFromTop?.invoke()
                                             }
                                         },
                                         onDown = {
@@ -1046,9 +1082,8 @@ private fun WordTileGrid(
                                             if (down <= lastIndex) {
                                                 focusRequesters.getOrNull(down)?.requestFocus()
                                             } else {
-                                                // 底行下键：回到首行同列（环形）。
-                                                focusRequesters.getOrNull(col.coerceAtMost(lastIndex))
-                                                    ?.requestFocus()
+                                                // 底行下键：离开本区到下一区块，不循环回顶部。
+                                                onArrowDownFromBottom?.invoke()
                                             }
                                         },
                                         onBack = onBack,

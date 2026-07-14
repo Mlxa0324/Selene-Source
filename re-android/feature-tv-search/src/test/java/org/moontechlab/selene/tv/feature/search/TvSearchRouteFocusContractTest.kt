@@ -61,6 +61,24 @@ class TvSearchRouteFocusContractTest {
     }
 
     /**
+     * 右侧词块不环形：底行下键用 onArrowDownFromBottom 离开本区，禁止循环回顶部。
+     */
+    @Test
+    fun right_panel_word_tiles_do_not_wrap_vertically() {
+        val source = readRouteSource()
+        val wordGrid = source
+            .substringAfter("private fun WordTileGrid(")
+            .substringBefore("@Composable\nprivate fun RecommendRail(")
+
+        assertThat(wordGrid).contains("onArrowDownFromBottom")
+        assertThat(wordGrid).contains("onArrowUpFromTop")
+        assertThat(wordGrid).contains("底行下键：离开本区到下一区块，不循环回顶部")
+        assertThat(wordGrid).doesNotContain("底行下键：回到首行同列（环形）")
+        assertThat(source).contains("hotEntryFocus")
+        assertThat(source).contains("recommendEntryFocus")
+    }
+
+    /**
      * 读取搜索 Route 源码。
      *
      * @return Route 源码文本。
