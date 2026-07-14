@@ -48,13 +48,17 @@ sealed class TvDestination(
 
     /**
      * 播放历史页路由。
+     *
+     * 主菜单文字 tab，无图标。
      */
-    data object History : TvDestination("history", "播放历史", "↺")
+    data object History : TvDestination("history", "播放历史")
 
     /**
      * 收藏夹页路由。
+     *
+     * 主菜单文字 tab，无图标。
      */
-    data object Favorites : TvDestination("favorites", "收藏夹", "♥")
+    data object Favorites : TvDestination("favorites", "收藏夹")
 
     /**
      * 设置页路由。
@@ -316,7 +320,7 @@ sealed class TvDestination(
         }
 
         /**
-         * 左侧主菜单承载首页与内容分类入口。
+         * 左侧主菜单：首页、内容分类、播放历史、收藏夹。
          * 直播入口暂时隐藏，路由与实现保留便于后续恢复。
          */
         val primaryMenuDestinations = listOf(
@@ -325,15 +329,15 @@ sealed class TvDestination(
             Tv,
             Anime,
             Show,
+            History,
+            Favorites,
         )
 
         /**
-         * 右上角快捷入口承载搜索与工具页入口。
+         * 右上角快捷入口：搜索与设置。
          */
         val quickAccessDestinations = listOf(
             Search,
-            History,
-            Favorites,
             Settings,
         )
 

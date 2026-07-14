@@ -78,7 +78,7 @@ class TvDestinationTest {
     }
 
     /**
-     * 确认首页与内容分类属于左侧主菜单；直播暂时隐藏。
+     * 左侧主菜单：首页、分类、播放历史、收藏夹；直播暂时隐藏。
      */
     @Test
     fun primary_menu_destinations_expose_home_and_categories() {
@@ -90,13 +90,18 @@ class TvDestinationTest {
             "library/tv",
             "library/anime",
             "library/show",
+            "history",
+            "favorites",
         ).inOrder()
         assertThat(routes).doesNotContain("live")
         assertThat(TvDestination.topLevelDestinations.map { it.route }).doesNotContain("live")
+        // 主菜单文字 tab 不带图标。
+        assertThat(TvDestination.History.iconGlyph).isNull()
+        assertThat(TvDestination.Favorites.iconGlyph).isNull()
     }
 
     /**
-     * 确认搜索与工具页属于右上角快捷入口。
+     * 右上角快捷入口仅保留搜索与设置。
      */
     @Test
     fun quick_access_destinations_expose_expected_routes() {
@@ -104,14 +109,12 @@ class TvDestinationTest {
 
         assertThat(routes).containsExactly(
             "search",
-            "history",
-            "favorites",
             "settings",
         ).inOrder()
     }
 
     /**
-     * 确认快捷入口暴露图标符号，供顶部按钮渲染图标加文字。
+     * 右上角快捷入口暴露图标符号（搜索、设置）。
      */
     @Test
     fun quick_access_destinations_expose_icon_glyphs() {
@@ -119,8 +122,6 @@ class TvDestinationTest {
 
         assertThat(iconGlyphs).containsExactly(
             "⌕",
-            "↺",
-            "♥",
             "⚙",
         ).inOrder()
     }
@@ -151,6 +152,7 @@ class TvDestinationTest {
     fun topLevelDestinations_expose_tv_labels() {
         val labels = TvDestination.topLevelDestinations.map { it.label }
 
+        // topLevel 顺序：主菜单项在前，快捷入口在后。
         assertThat(labels).containsExactly(
             "首页",
             "电影",
