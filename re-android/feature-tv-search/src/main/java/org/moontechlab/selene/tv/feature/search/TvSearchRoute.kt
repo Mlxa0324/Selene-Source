@@ -1040,6 +1040,9 @@ private fun RecommendRail(
             )
         },
         firstItemFocusRequester = entryFocusRequester,
+        // 右面板已有 horizontal 22.dp；再叠 RailStartPadding 会比「影片推荐」标题偏右。
+        contentStartPadding = 0.dp,
+        contentEndPadding = 24.dp,
         onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
     )
 }

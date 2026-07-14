@@ -723,7 +723,8 @@ class TvPlayerRouteControlContractTest {
 
         // 分组无背景样式组件存在。
         assertThat(source).contains("private fun TvPlayerEpisodeGroupChoice(")
-        assertThat(source).contains("// 顶线：未选中浅灰，选中/获焦主题红；无整块背景。")
+        assertThat(source).contains("获焦：主题色文字；选中：主题色文字 + 底部下划线")
+        assertThat(playlistSource).contains("pendingInGroupFocusIndex")
 
         // 二级/三级下键回一级当前选中项。
         assertThat(source).contains("onArrowDownToPrimary = requestSelectedPrimaryMenuFocus")

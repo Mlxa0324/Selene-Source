@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 
@@ -25,6 +26,8 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给最近业务海报。
  * @param onRailFocused 横向分区获焦回调，用于驱动外层页面纵向滚动。
  * @param onItemClick 卡片点击回调。
+ * @param contentStartPadding 列表左 contentPadding；已在带边距容器内（如搜索右栏）可传 0。
+ * @param contentEndPadding 列表右 contentPadding。
  * @param trailingContent 列表尾部附加内容。
  */
 @Composable
@@ -34,6 +37,8 @@ fun TvPosterRail(
     firstItemFocusRequester: FocusRequester? = null,
     onRailFocused: (() -> Unit)? = null,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
+    contentStartPadding: Dp = TvListLayoutMetrics.RailStartPadding,
+    contentEndPadding: Dp = TvListLayoutMetrics.RailEndPadding,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val designMetrics = LocalTvDesignMetrics.current
@@ -66,8 +71,8 @@ fun TvPosterRail(
         ),
         state = listState,
         contentPadding = PaddingValues(
-            start = TvListLayoutMetrics.RailStartPadding,
-            end = TvListLayoutMetrics.RailEndPadding,
+            start = contentStartPadding,
+            end = contentEndPadding,
         ),
         horizontalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
     ) {

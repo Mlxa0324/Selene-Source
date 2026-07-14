@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
@@ -1013,7 +1014,8 @@ private fun BoxScope.NcatPreviewProgressBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (isPlaying) "▶" else "⏸",
+                // 播放中显示暂停符，暂停显示播放符，与真实状态一致。
+                text = if (isPlaying) "⏸" else "▶",
                 color = Color.White,
                 fontSize = 11.sp,
             )
@@ -1611,6 +1613,8 @@ private fun NcatEpisodeGroupRail(
     var activeGroupFocusedIndex by remember {
         mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
     }
+    // 跨组后待聚焦的全局 episodeIndex（等分组切换重建后再 requestFocus）。
+    var pendingEpisodeFocusIndex by remember { mutableStateOf<Int?>(null) }
     val totalCount = groups.sumOf { group -> group.episodes.size }
     val showGroupChoices = shouldShowDetailEpisodeGroupChoices(groups.size)
     NcatSectionHeader(
@@ -1629,17 +1633,38 @@ private fun NcatEpisodeGroupRail(
         return
     }
 
-    // 早版布局：选集在上，分组在下；长剧集时下方才出现分组条。
+    LaunchedEffect(selectedGroup.groupIndex, pendingEpisodeFocusIndex) {
+        val target = pendingEpisodeFocusIndex ?: return@LaunchedEffect
+        pendingEpisodeFocusIndex = null
+        activeEpisodeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+        delay(16)
+        val inGroupIndex = selectedGroup.episodes.indexOfFirst { ep -> ep.episodeIndex == target }
+        focusTargets.episodes.getOrNull(target)?.let { requester ->
+            runCatching { requester.requestFocus() }
+        }
+        if (inGroupIndex >= 0) {
+            scrollDetailOptionIntoView(
+                listState = episodeListState,
+                focusedIndex = inGroupIndex,
+                itemCount = selectedGroup.episodes.size,
+                scrollScope = scrollScope,
+            )
+        }
+    }
+
+    // 早版布局：选集在上、分组在下；长剧集时下方才出现分组条。
     LazyRow(
         state = episodeListState,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
         modifier = Modifier
-            .height(62.dp)
-            .padding(top = 3.dp),
+            .height(54.dp)
+            .padding(top = 2.dp),
     ) {
         items(selectedGroup.episodes.size, key = { index -> selectedGroup.episodes[index].episodeId }) { index ->
             val episode = selectedGroup.episodes[index]
+            val isFirst = index == 0
+            val isLast = index == selectedGroup.episodes.lastIndex
             NcatEpisodeChip(
                 label = episode.label,
                 selected = episode.selected,
@@ -1654,18 +1679,56 @@ private fun NcatEpisodeGroupRail(
                             .takeIf { showGroupChoices }
                             ?: focusTargets.recommends.firstOrNull()
                             ?: focusTargets.backTop
-                        // 左右只在本组内移动，首/末项到边界即停。
-                        left = if (index > 0) {
+                        // 组内相邻用系统焦点；边界跨组由 onPreviewKeyEvent 处理。
+                        left = if (!isFirst) {
                             val prev = selectedGroup.episodes[index - 1]
                             focusTargets.episodes.getOrNull(prev.episodeIndex) ?: FocusRequester.Cancel
                         } else {
                             FocusRequester.Cancel
                         }
-                        right = if (index < selectedGroup.episodes.lastIndex) {
+                        right = if (!isLast) {
                             val next = selectedGroup.episodes[index + 1]
                             focusTargets.episodes.getOrNull(next.episodeIndex) ?: FocusRequester.Cancel
                         } else {
                             FocusRequester.Cancel
+                        }
+                    }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) {
+                            return@onPreviewKeyEvent false
+                        }
+                        when (event.key) {
+                            Key.DirectionLeft -> {
+                                if (!isFirst) {
+                                    false
+                                } else if (showGroupChoices && selectedGroup.groupIndex > 0) {
+                                    val prevGroup = groups[selectedGroup.groupIndex - 1]
+                                    val lastEp = prevGroup.episodes.lastOrNull()
+                                    if (lastEp != null) {
+                                        pendingEpisodeFocusIndex = lastEp.episodeIndex
+                                        onGroupSelected?.invoke(prevGroup.groupIndex)
+                                    }
+                                    true
+                                } else {
+                                    true
+                                }
+                            }
+                            Key.DirectionRight -> {
+                                if (!isLast) {
+                                    false
+                                } else if (showGroupChoices && selectedGroup.groupIndex < groups.lastIndex) {
+                                    val nextGroup = groups[selectedGroup.groupIndex + 1]
+                                    val firstEp = nextGroup.episodes.firstOrNull()
+                                    if (firstEp != null) {
+                                        pendingEpisodeFocusIndex = firstEp.episodeIndex
+                                        onGroupSelected?.invoke(nextGroup.groupIndex)
+                                    }
+                                    true
+                                } else {
+                                    true
+                                }
+                            }
+                            else -> false
                         }
                     }
                     .onFocusChanged { focusState ->
@@ -1694,11 +1757,11 @@ private fun NcatEpisodeGroupRail(
     if (showGroupChoices) {
         LazyRow(
             state = episodeGroupListState,
-            horizontalArrangement = Arrangement.spacedBy(17.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
             modifier = Modifier
-                .height(61.dp)
-                .padding(top = 12.dp),
+                .height(40.dp)
+                .padding(top = 6.dp),
         ) {
             items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
                 val group = groups[index]
@@ -1762,6 +1825,8 @@ private fun NcatEpisodeGroupRail(
 /**
  * 截图式选集分组选项。
  *
+ * 获焦：主题色文字；选中：主题色文字 + 底部下划线。
+ *
  * @param label 分组文案。
  * @param selected 是否当前分组。
  * @param focusRequester 焦点请求器。
@@ -1778,15 +1843,15 @@ private fun NcatEpisodeGroupChoice(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val active = selected || isFocused
+    val emphasize = selected || isFocused
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.05f else 1f,
+        targetValue = if (isFocused) 1.04f else 1f,
         animationSpec = tween(140),
         label = "ncatEpisodeGroupScale",
     )
     Column(
         modifier = modifier
-            .widthIn(min = 60.dp)
+            .widthIn(min = 52.dp)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
@@ -1799,31 +1864,26 @@ private fun NcatEpisodeGroupChoice(
                 } else {
                     false
                 }
-            },
-        horizontalAlignment = Alignment.Start,
+            }
+            .padding(horizontal = 2.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Text(
+            text = label,
+            color = if (emphasize) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
+            fontSize = 15.sp,
+            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium,
+        )
+        Spacer(Modifier.height(4.dp))
+        // 仅选中显示底部主题色下划线；获焦未选中只改文字色。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(13.dp)
-                .padding(top = 5.dp)
-                .background(NcatSurface, RoundedCornerShape(2.dp)),
-        ) {
-            if (active) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(1f)
-                        .height(13.dp)
-                        .background(TvTokens.Accent, RoundedCornerShape(2.dp)),
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = label,
-            color = if (active) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
-            fontSize = 16.sp,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                .height(2.dp)
+                .background(
+                    if (selected) TvTokens.Accent else Color.Transparent,
+                    RoundedCornerShape(1.dp),
+                ),
         )
     }
 }

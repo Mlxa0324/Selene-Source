@@ -759,18 +759,38 @@ private fun TvPlayerPlaylistMenu(
     var activeGroupFocusedIndex by remember {
         mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
     }
+    // 跨组后待落点：组内 index（0=首集，last=末集）。
+    var pendingInGroupFocusIndex by remember { mutableStateOf<Int?>(null) }
     val episodeChipOverflowY = PLAYER_MENU_CHIP_HEIGHT * ((PLAYER_MENU_FOCUSED_SCALE - 1f) / 2f)
 
+    LaunchedEffect(safeGroup, pendingInGroupFocusIndex, group.size) {
+        val target = pendingInGroupFocusIndex ?: return@LaunchedEffect
+        pendingInGroupFocusIndex = null
+        activeEpisodeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+        delay(16)
+        val clamped = target.coerceIn(0, (group.size - 1).coerceAtLeast(0))
+        episodeFocusRequesters.getOrNull(clamped)?.let { requester ->
+            runCatching { requester.requestFocus() }
+        }
+        if (group.isNotEmpty()) {
+            scrollPlayerMenuChipIntoView(
+                listState = episodeListState,
+                index = clamped,
+                itemCount = group.size,
+                scrollScope = playlistScrollScope,
+            )
+        }
+    }
+
     Column(
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // 上方集数列表（用户所称三级/多集横滑）：同轨左右必须跟手滚动。
+        // 上方集数列表：同轨左右跟手；组边界无缝切到邻组首/末集。
         LazyRow(
             state = episodeListState,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(
                 start = TvTokens.PageHorizontalPadding,
-                // 末端加大 end pad，末集获焦放大后仍完整露出。
                 end = PLAYER_MENU_LIST_END_PADDING,
                 top = episodeChipOverflowY,
                 bottom = episodeChipOverflowY,
@@ -824,7 +844,6 @@ private fun TvPlayerPlaylistMenu(
                                     newlyFocusedIndex = i,
                                 )
                             activeEpisodeFocusedIndex = i
-                            // 仅同轨左右相邻时平滑跟手；上下跨层进入不拽列表。
                             if (shouldScroll) {
                                 scrollPlayerMenuChipIntoView(
                                     listState = episodeListState,
@@ -851,8 +870,11 @@ private fun TvPlayerPlaylistMenu(
                                 }
                             }
                         }
-                        safeGroup > 0 -> {
+                        showGroupChoices && safeGroup > 0 -> {
                             {
+                                // 跨到上一组末集，重组后平滑落焦。
+                                val prevLast = groups[safeGroup - 1].lastIndex
+                                pendingInGroupFocusIndex = prevLast
                                 selectedGroup = safeGroup - 1
                             }
                         }
@@ -866,8 +888,10 @@ private fun TvPlayerPlaylistMenu(
                                 }
                             }
                         }
-                        safeGroup < groups.lastIndex -> {
+                        showGroupChoices && safeGroup < groups.lastIndex -> {
                             {
+                                // 跨到下一组首集。
+                                pendingInGroupFocusIndex = 0
                                 selectedGroup = safeGroup + 1
                             }
                         }
@@ -877,18 +901,18 @@ private fun TvPlayerPlaylistMenu(
             }
         }
 
-        // 分组条：分组多时同样要横向跟手滚动。
+        // 分组条：紧凑间距；获焦主题色、选中主题色+下划线。
         if (showGroupChoices) {
             LazyRow(
                 state = groupListState,
-                horizontalArrangement = Arrangement.spacedBy(17.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(
                     start = TvTokens.PageHorizontalPadding,
                     end = PLAYER_MENU_LIST_END_PADDING,
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(40.dp)
                     .focusProperties {
                         onEnter = {
                             val isVerticalEnter =
@@ -908,9 +932,7 @@ private fun TvPlayerPlaylistMenu(
                         label = "$start-$end",
                         selected = gi == safeGroup,
                         focusRequester = groupFocusRequesters.getOrNull(gi),
-                        // 上键回集数当前集（就近：回到正在看的那一集）。
                         onArrowUp = { requestCurrentEpisodeFocus() },
-                        // 下键回一级当前选中项，不跳到一级首项。
                         onArrowDown = onArrowDownToPrimary,
                         onArrowLeft = if (gi > 0) {
                             {
@@ -933,7 +955,6 @@ private fun TvPlayerPlaylistMenu(
                             null
                         },
                         onFocused = {
-                            // 分组获焦即切换，对齐详情页“移动即切换”。
                             if (selectedGroup != gi) {
                                 selectedGroup = gi
                             }
@@ -961,7 +982,9 @@ private fun TvPlayerPlaylistMenu(
 }
 
 /**
- * 全屏播放列表分组选项（对齐详情页 NcatEpisodeGroupChoice：无背景块）。
+ * 全屏播放列表分组选项。
+ *
+ * 获焦：主题色文字；选中：主题色文字 + 底部下划线。
  *
  * @param label 分组文案，如 `1-20`。
  * @param selected 是否当前分组。
@@ -987,15 +1010,15 @@ private fun TvPlayerEpisodeGroupChoice(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val active = selected || isFocused
+    val emphasize = selected || isFocused
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.05f else 1f,
+        targetValue = if (isFocused) 1.04f else 1f,
         animationSpec = tween(140),
         label = "tvPlayerEpisodeGroupScale",
     )
     Column(
         modifier = Modifier
-            .widthIn(min = 60.dp)
+            .widthIn(min = 52.dp)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focusState ->
@@ -1038,32 +1061,25 @@ private fun TvPlayerEpisodeGroupChoice(
                     }
                     else -> false
                 }
-            },
-        horizontalAlignment = Alignment.Start,
+            }
+            .padding(horizontal = 2.dp, vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 顶线：未选中浅灰，选中/获焦主题红；无整块背景。
+        Text(
+            text = label,
+            color = if (emphasize) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
+            fontSize = 15.sp,
+            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(13.dp)
-                .padding(top = 5.dp)
-                .background(Color(0xFF454852), RoundedCornerShape(2.dp)),
-        ) {
-            if (active) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(13.dp)
-                        .background(TvTokens.Accent, RoundedCornerShape(2.dp)),
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = label,
-            color = if (active) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
-            fontSize = 15.sp,
-            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                .height(2.dp)
+                .background(
+                    if (selected) TvTokens.Accent else Color.Transparent,
+                    RoundedCornerShape(1.dp),
+                ),
         )
     }
 }
