@@ -40,10 +40,10 @@ class TvSearchRouteFocusContractTest {
     }
 
     /**
-     * 左下角三按钮必须可左右切换；结果网格 4 列更宽。
+     * 左下角三按钮必须可左右切换；结果网格 5 列铺满格宽。
      */
     @Test
-    fun left_action_row_supports_horizontal_focus_and_results_use_four_columns() {
+    fun left_action_row_supports_horizontal_focus_and_results_use_five_columns() {
         val source = readRouteSource()
 
         assertThat(source).contains("onLeft = { deleteFocus.requestFocus() }")
@@ -51,8 +51,10 @@ class TvSearchRouteFocusContractTest {
         assertThat(source).contains("onLeft = { clearFocus.requestFocus() }")
         assertThat(source).contains("onRight = { deleteFocus.requestFocus() }")
         assertThat(source).contains("onLeft = { searchFocus.requestFocus() }")
-        assertThat(source).contains("columns = 4")
-        assertThat(source).contains("contentHorizontalPadding = 4.dp")
+        assertThat(source).contains("columns = 5")
+        assertThat(source).contains("fillCellWidth = true")
+        assertThat(source).contains("contentHorizontalPadding = 2.dp")
+        assertThat(source).contains("horizontalSpacing = 12.dp")
         assertThat(source).contains("onArrowDownToKeyboard")
     }
 

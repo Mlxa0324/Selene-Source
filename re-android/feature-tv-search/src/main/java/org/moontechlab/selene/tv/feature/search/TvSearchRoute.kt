@@ -1200,7 +1200,7 @@ private fun SearchResultPanel(
             )
 
             else -> {
-                // 右栏已有内边距：4 列更宽更好看，左右 padding 收紧避免卡片过瘦。
+                // 5 列观感更满：卡片铺满格宽 + 收紧边距/间距，避免固定宽 158 显得瘦窄。
                 TvPosterGrid(
                     items = state.resultCards.map { video ->
                         TvPosterItem(
@@ -1212,10 +1212,13 @@ private fun SearchResultPanel(
                             totalEpisodes = video.totalEpisodes,
                         )
                     },
-                    columns = 4,
+                    columns = 5,
                     modifier = Modifier.fillMaxSize(),
-                    contentHorizontalPadding = 4.dp,
+                    contentHorizontalPadding = 2.dp,
                     contentBottomPadding = 16.dp,
+                    horizontalSpacing = 12.dp,
+                    verticalSpacing = 14.dp,
+                    fillCellWidth = true,
                     firstItemFocusRequester = entryFocusRequester,
                     onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
                 )

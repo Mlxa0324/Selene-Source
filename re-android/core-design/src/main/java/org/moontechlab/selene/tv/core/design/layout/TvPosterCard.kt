@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
@@ -58,6 +59,10 @@ fun TvPosterCard(
     focusRequesters: List<FocusRequester> = emptyList(),
     onFocusChanged: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    /**
+     * 卡片宽度；默认全局海报宽。搜索等网格可传入单元格宽，封面高度按比例缩放。
+     */
+    cardWidth: Dp = TvTokens.PosterWidth,
 ) {
     var hasCardFocus by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -70,6 +75,9 @@ fun TvPosterCard(
     val colors = remember {
         posterBrushColors()
     }
+    val coverHeight = remember(cardWidth) {
+        cardWidth * (TvTokens.PosterCoverHeight.value / TvTokens.PosterWidth.value)
+    }
     // 封面单独可焦时，默认 BringIntoView 只保证封面进视口；标题/副标题会被底部裁切。
     // 用整卡 requester 在获焦时把封面+文案一并滚入可见区。
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
@@ -77,13 +85,13 @@ fun TvPosterCard(
 
     Column(
         modifier = modifier
-            .width(TvTokens.PosterWidth)
+            .width(cardWidth)
             .bringIntoViewRequester(bringIntoViewRequester),
     ) {
         TvFocusableCard(
             modifier = Modifier
-                .width(TvTokens.PosterWidth)
-                .height(TvTokens.PosterCoverHeight)
+                .width(cardWidth)
+                .height(coverHeight)
                 .scale(scale)
                 .onFocusChanged { focusState ->
                     // 卡片高亮直接跟随真实焦点，避免焦点进入后视觉仍停在顶部导航。
@@ -104,12 +112,14 @@ fun TvPosterCard(
                 item = item,
                 colors = colors,
                 radius = radius,
+                cardWidth = cardWidth,
+                coverHeight = coverHeight,
             )
         }
         Column(
             // 封面与标题拉开一点，多轨纵向扫描时更易读。
-            modifier = Modifier.padding(start = 6.dp, top = 12.dp, end = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
+            modifier = Modifier.padding(start = 4.dp, top = 10.dp, end = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
                 text = item.title,
@@ -145,12 +155,14 @@ private fun TvPosterCover(
     item: TvPosterItem,
     colors: List<Color>,
     radius: RoundedCornerShape,
+    cardWidth: Dp = TvTokens.PosterWidth,
+    coverHeight: Dp = TvTokens.PosterCoverHeight,
 ) {
     val progressFraction = normalizedPosterProgress(item.progressFraction)
     Box(
         modifier = Modifier
-            .width(TvTokens.PosterWidth)
-            .height(TvTokens.PosterCoverHeight)
+            .width(cardWidth)
+            .height(coverHeight)
             .clip(radius)
             .background(Brush.verticalGradient(colors)),
     ) {

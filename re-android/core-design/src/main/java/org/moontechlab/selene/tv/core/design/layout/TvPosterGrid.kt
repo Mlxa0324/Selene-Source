@@ -2,6 +2,7 @@ package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -34,6 +35,9 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param onItemClick 卡片点击回调。
  * @param contentHorizontalPadding 网格左右 contentPadding；容器内嵌时可减小。
  * @param contentBottomPadding 网格底部 contentPadding。
+ * @param horizontalSpacing 列间距。
+ * @param verticalSpacing 行间距。
+ * @param fillCellWidth true 时卡片铺满单元格宽（搜索 5 列更舒展）；false 用全局固定海报宽。
  * @param prefetchRows 距离末尾多少行时开始触发下一页预取。
  * @param onApproachingEnd 焦点接近列表末尾时触发，用于触底加载下一页。
  */
@@ -47,6 +51,9 @@ fun TvPosterGrid(
     onItemClick: ((TvPosterItem) -> Unit)? = null,
     contentHorizontalPadding: Dp = TvListLayoutMetrics.GridHorizontalPadding,
     contentBottomPadding: Dp = TvListLayoutMetrics.GridBottomPadding,
+    horizontalSpacing: Dp = TvTokens.CardSpacing,
+    verticalSpacing: Dp = TvTokens.CardSpacing,
+    fillCellWidth: Boolean = false,
     prefetchRows: Int = 3,
     onApproachingEnd: (() -> Unit)? = null,
 ) {
@@ -80,8 +87,8 @@ fun TvPosterGrid(
             end = contentHorizontalPadding,
             bottom = contentBottomPadding,
         ),
-        verticalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
-        horizontalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
+        verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+        horizontalArrangement = Arrangement.spacedBy(horizontalSpacing),
     ) {
         // 网格头部（全宽，不获焦，随网格一起滚动）
         if (headerContent != null) {
@@ -103,13 +110,19 @@ fun TvPosterGrid(
             } else {
                 emptyList()
             }
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.TopCenter,
             ) {
-                // 单元格内居中，避免 7 列网格在宽屏上显得左重右轻。
+                // fillCellWidth：搜索 5 列铺满格宽；首页等仍用固定海报宽居中。
+                val resolvedCardWidth = if (fillCellWidth) {
+                    maxWidth
+                } else {
+                    TvTokens.PosterWidth
+                }
                 TvPosterCard(
                     item = item,
+                    cardWidth = resolvedCardWidth,
                     focusRequesters = cardFocusRequesters,
                     onClick = onItemClick?.let { click -> { click(item) } },
                     onFocusChanged = { hasFocus ->
