@@ -68,7 +68,9 @@ class TvVideoLibraryRouteFocusContractTest {
 
         assertThat(filterPanelSource).contains("contentFocusRequester: FocusRequester? = null")
         assertThat(filterPanelSource).contains("entryFocusRequester =")
-        assertThat(source).contains("widthIn(min = 64.dp, max = 112.dp)")
+        // 宽度随文案；仅 max 防极端长文案。
+        assertThat(source).contains("widthIn(max = 160.dp)")
+        assertThat(source).doesNotContain("widthIn(min = 64.dp, max = 112.dp)")
         assertThat(source).contains("vertical = 8.dp")
     }
 
@@ -156,7 +158,7 @@ class TvVideoLibraryRouteFocusContractTest {
         val source = readLibraryRouteSource()
         val chipSource = source
             .substringAfter("private fun TvLibraryFilterChip(")
-            .substringBefore("private fun TvVideoCard.toPosterItem(")
+            .substringBefore("/**\n * 将业务视频卡片转换成 TV 海报展示模型。")
 
         assertThat(chipSource).contains("widthIn(max = 160.dp)")
         assertThat(chipSource).doesNotContain("widthIn(min = 64.dp")
