@@ -155,7 +155,8 @@ class TvVideoLibraryRouteFocusContractTest {
      */
     @Test
     fun category_filter_chip_width_follows_label_without_fixed_min_width() {
-        val source = readLibraryRouteSource()
+        // 必须读全文件：readLibraryRouteSource 只截到筛选面板之前，不含 Chip。
+        val source = readRouteSource()
         val chipSource = source
             .substringAfter("private fun TvLibraryFilterChip(")
             .substringBefore("/**\n * 将业务视频卡片转换成 TV 海报展示模型。")
