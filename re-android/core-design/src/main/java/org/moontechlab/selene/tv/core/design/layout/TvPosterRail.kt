@@ -2,15 +2,15 @@ package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -25,6 +25,9 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * 不要用父级大边距夹死视口：父级若已有水平 padding，调用方应用 layout 外扩
  * （不可用负 padding，Compose 会抛 Padding must be non-negative），
  * 静止时仍靠 contentPadding 形成视觉边距，滚动时卡片可从边缘进出。
+ *
+ * 左右焦点使用显式邻居：末项右键 [FocusRequester.Cancel]，禁止跳出到页内其它控件
+ * （例如搜索页历史标题旁的「清空」）。
  *
  * @param items 影视卡片列表。
  * @param modifier 外层修饰器。
@@ -54,7 +57,13 @@ fun TvPosterRail(
     ) {
         LazyListState()
     }
+    // 首卡 requester 即 itemFocusRequesters[0]，单挂避免双 FocusRequester 失效。
     val firstCardFocusRequester = remember { FocusRequester() }
+    val itemFocusRequesters = remember(items.size) {
+        List(items.size) { index ->
+            if (index == 0) firstCardFocusRequester else FocusRequester()
+        }
+    }
     val scrollScope = rememberCoroutineScope()
     // 最近一次真实业务获焦下标，供顶部导航下探回到当前横向浏览位置。
     var lastFocusedItemIndex by rememberSaveable(
@@ -65,6 +74,8 @@ fun TvPosterRail(
     }
     // 本轨当前会话最近获焦下标；上下跨轨进入前清零，左右相邻步进才横向推进。
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
+    val lastIndex = items.lastIndex
+    val hasTrailing = trailingContent != null
 
     LazyRow(
         modifier = modifier.posterFocusGroup(
@@ -83,21 +94,37 @@ fun TvPosterRail(
     ) {
         itemsIndexed(items, key = ::posterListItemKey) { index, item ->
             val bindsContentEntry = index == lastFocusedItemIndex
-            val cardFocusRequesters = if (index == 0) {
-                // 首卡承接分组首次进入；顶部导航下探优先回到最近真实获焦卡片。
-                listOfNotNull(
-                    firstCardFocusRequester,
-                    if (bindsContentEntry) firstItemFocusRequester else null,
-                )
-            } else if (bindsContentEntry) {
-                // 横向浏览到靠后卡片后，从顶部导航下探必须回到当前可见业务位置。
-                listOfNotNull(firstItemFocusRequester)
-            } else {
-                emptyList()
+            val cardFocusRequesters = buildList {
+                itemFocusRequesters.getOrNull(index)?.let { add(it) }
+                if (bindsContentEntry && firstItemFocusRequester != null) {
+                    if (index != 0 || firstItemFocusRequester !== firstCardFocusRequester) {
+                        add(firstItemFocusRequester)
+                    }
+                }
             }
+            val isFirst = index == 0
+            val isLast = index == lastIndex
             TvPosterCard(
                 item = item,
                 focusRequesters = cardFocusRequesters,
+                // 显式左右邻居：末项右键 Cancel，禁止几何搜索跳到「清空」等页内控件。
+                focusProperties = {
+                    left = if (!isFirst) {
+                        itemFocusRequesters[index - 1]
+                    } else {
+                        // 首项左键交给系统（搜索页可回键盘；首页可回侧栏）。
+                        FocusRequester.Default
+                    }
+                    right = when {
+                        !isLast -> itemFocusRequesters[index + 1]
+                        // 有「查看更多」尾卡时允许落入尾卡；无尾卡则锁死右缘（搜索推荐等）。
+                        hasTrailing -> FocusRequester.Default
+                        else -> FocusRequester.Cancel
+                    }
+                    // 上下不锁死，便于搜索推荐区与上方词块几何切换。
+                    up = FocusRequester.Default
+                    down = FocusRequester.Default
+                },
                 onFocusChanged = { hasFocus ->
                     if (hasFocus) {
                         // 仅本轨会话内左右相邻切换才横向推进；上下跨轨就近落点保持横向位置。

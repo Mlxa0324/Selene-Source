@@ -38,10 +38,25 @@ class TvPosterFocusContractTest {
 
         assertThat(source).contains("val firstCardFocusRequester = remember { FocusRequester() }")
         assertThat(source).contains("firstCardFocusRequester = firstCardFocusRequester")
-        assertThat(source).contains("val cardFocusRequesters = if (index == 0)")
-        assertThat(source).contains("listOfNotNull(")
-        assertThat(source).contains("firstCardFocusRequester,")
+        assertThat(source).contains("itemFocusRequesters")
+        assertThat(source).contains("if (index == 0) firstCardFocusRequester else FocusRequester()")
         assertThat(source).contains("focusRequesters = cardFocusRequesters")
+    }
+
+    /**
+     * 横向海报带末项右键必须 Cancel，禁止跳出到页内其它控件（如搜索历史「清空」）。
+     */
+    @Test
+    fun posterRail_cancels_right_focus_on_last_item() {
+        val source = readLayoutSource("TvPosterRail.kt")
+
+        assertThat(source).contains("FocusRequester.Cancel")
+        assertThat(source).contains("isLast")
+        assertThat(source).contains("focusProperties = {")
+        assertThat(source).contains("right = when {")
+        assertThat(source).contains("!isLast -> itemFocusRequesters[index + 1]")
+        assertThat(source).contains("hasTrailing -> FocusRequester.Default")
+        assertThat(source).contains("itemFocusRequesters[index - 1]")
     }
 
     /**
@@ -56,7 +71,7 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("var lastFocusedItemIndex by rememberSaveable")
         assertThat(source).contains("val bindsContentEntry = index == lastFocusedItemIndex")
-        assertThat(source).contains("if (bindsContentEntry) firstItemFocusRequester else null")
+        assertThat(source).contains("firstItemFocusRequester")
         assertThat(source).contains("lastFocusedItemIndex = index")
     }
 
