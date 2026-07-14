@@ -1013,11 +1013,10 @@ private fun BoxScope.NcatPreviewProgressBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                // 播放中显示暂停符，暂停显示播放符，与真实状态一致。
-                text = if (isPlaying) "⏸" else "▶",
-                color = Color.White,
-                fontSize = 11.sp,
+            // 简约无色播控：纯白几何图标，不用彩色 emoji。
+            NcatPreviewPlayPauseGlyph(
+                isPlaying = isPlaying,
+                modifier = Modifier.size(12.dp),
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -1034,11 +1033,12 @@ private fun BoxScope.NcatPreviewProgressBar(
                     .clip(RoundedCornerShape(2.dp))
                     .background(Color.White.copy(alpha = 0.28f)),
             ) {
+                // 进度条也用中性白，不跟主题红抢色。
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(progress)
                         .height(3.dp)
-                        .background(TvTokens.Accent, RoundedCornerShape(2.dp)),
+                        .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(2.dp)),
                 )
             }
             Spacer(Modifier.width(10.dp))
@@ -1048,6 +1048,56 @@ private fun BoxScope.NcatPreviewProgressBar(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
             )
+        }
+    }
+}
+
+/**
+ * 详情预览进度条旁的简约播控图标（纯白、无底色、无主题色）。
+ *
+ * 播放中：双竖线暂停；暂停：三角播放。
+ *
+ * @param isPlaying 是否正在播放。
+ * @param modifier 外层尺寸。
+ */
+@Composable
+private fun NcatPreviewPlayPauseGlyph(
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val iconColor = Color.White.copy(alpha = 0.95f)
+    Canvas(modifier = modifier) {
+        if (isPlaying) {
+            // 暂停：两根细竖条。
+            val barW = size.width * 0.22f
+            val gap = size.width * 0.18f
+            val barH = size.height * 0.88f
+            val top = (size.height - barH) / 2f
+            val left1 = size.width / 2f - gap / 2f - barW
+            val left2 = size.width / 2f + gap / 2f
+            drawRoundRect(
+                color = iconColor,
+                topLeft = Offset(left1, top),
+                size = Size(barW, barH),
+                cornerRadius = CornerRadius(barW * 0.25f, barW * 0.25f),
+            )
+            drawRoundRect(
+                color = iconColor,
+                topLeft = Offset(left2, top),
+                size = Size(barW, barH),
+                cornerRadius = CornerRadius(barW * 0.25f, barW * 0.25f),
+            )
+        } else {
+            // 播放：向右三角。
+            val path = Path().apply {
+                val insetY = size.height * 0.08f
+                val insetX = size.width * 0.12f
+                moveTo(insetX, insetY)
+                lineTo(size.width - insetX * 0.4f, size.height / 2f)
+                lineTo(insetX, size.height - insetY)
+                close()
+            }
+            drawPath(path = path, color = iconColor, style = Fill)
         }
     }
 }
