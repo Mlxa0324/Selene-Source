@@ -702,6 +702,7 @@ class TvPlayerRouteControlContractTest {
 
     /**
      * 全屏播放列表：选集在上、分组在下；分组用无背景样式；下键回一级当前选中项。
+     * 集数横滑必须有 LazyListState + 获焦滚动，禁止“焦点在动列表不滚”。
      */
     @Test
     fun route_playlist_menu_puts_groups_below_episodes_with_detail_style() {
@@ -725,6 +726,14 @@ class TvPlayerRouteControlContractTest {
         assertThat(playlistSource).contains("onArrowDownToPrimary")
         assertThat(playlistSource).contains("requestCurrentGroupFocus")
         assertThat(playlistSource).contains("requestCurrentEpisodeFocus")
+
+        // 集数/分组横滑：state + 获焦 scrollPlayerMenuChipIntoView，禁止只动焦点不滚列表。
+        assertThat(playlistSource).contains("episodeListState")
+        assertThat(playlistSource).contains("groupListState")
+        assertThat(playlistSource).contains("scrollPlayerMenuChipIntoView(")
+        assertThat(playlistSource).contains("shouldAnimateHorizontalScroll(")
+        assertThat(playlistSource).contains("state = episodeListState")
+        assertThat(playlistSource).contains("state = groupListState")
     }
 
     /**

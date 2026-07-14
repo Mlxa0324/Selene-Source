@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -746,17 +747,48 @@ private fun TvPlayerPlaylistMenu(
     val episodeFocusRequesters = remember(safeGroup, group.size) {
         List(group.size) { FocusRequester() }
     }
+    // 集数横滑：焦点移动必须带动 LazyRow 滚动，否则右侧焦点跑出屏外。
+    val episodeListState = rememberSaveable(safeGroup, saver = LazyListState.Saver) {
+        LazyListState()
+    }
+    val groupListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val playlistScrollScope = rememberCoroutineScope()
+    var activeEpisodeFocusedIndex by remember(safeGroup) {
+        mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
+    }
+    var activeGroupFocusedIndex by remember {
+        mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
+    }
+    val episodeChipOverflowY = PLAYER_MENU_CHIP_HEIGHT * ((PLAYER_MENU_FOCUSED_SCALE - 1f) / 2f)
 
     Column(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // 二级：选集在上（对齐详情页）。
+        // 上方集数列表（用户所称三级/多集横滑）：同轨左右必须跟手滚动。
         LazyRow(
+            state = episodeListState,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(
                 start = TvTokens.PageHorizontalPadding,
-                end = TvTokens.PageHorizontalPadding,
+                // 末端加大 end pad，末集获焦放大后仍完整露出。
+                end = PLAYER_MENU_LIST_END_PADDING,
+                top = episodeChipOverflowY,
+                bottom = episodeChipOverflowY,
             ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(PLAYER_MENU_CHIP_HEIGHT + episodeChipOverflowY * 2)
+                .focusProperties {
+                    onEnter = {
+                        val isVerticalEnter =
+                            requestedFocusDirection == FocusDirection.Up ||
+                                requestedFocusDirection == FocusDirection.Down
+                        if (isVerticalEnter) {
+                            activeEpisodeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+                        }
+                    }
+                }
+                .focusGroup(),
         ) {
             items(group.size) { i ->
                 val ep = group[i]
@@ -765,7 +797,7 @@ private fun TvPlayerPlaylistMenu(
                 val isCurrent = ep.id == currentEpisodeId
                 val episodeRequester = episodeFocusRequesters.getOrNull(i)
                 // 当前集优先挂 secondary 落点（一级上键），否则挂本组 requester。
-                val resolvedModifier = if (isCurrent && currentEpisodeFocusRequester != null) {
+                val baseRequesterModifier = if (isCurrent && currentEpisodeFocusRequester != null) {
                     Modifier.focusRequester(currentEpisodeFocusRequester)
                 } else if (episodeRequester != null) {
                     Modifier.focusRequester(episodeRequester)
@@ -778,8 +810,32 @@ private fun TvPlayerPlaylistMenu(
                         "第${absoluteIndex.toString().padStart(2, '0')}集"
                     },
                     selected = isCurrent,
-                    modifier = resolvedModifier,
-                    // 有三级分组时下键进分组；否则直接回一级当前选中项。
+                    focusScaleOrigin = when {
+                        isFirst && isLast -> TransformOrigin.Center
+                        isFirst -> TransformOrigin(0f, 0.5f)
+                        isLast -> TransformOrigin(1f, 0.5f)
+                        else -> TransformOrigin.Center
+                    },
+                    modifier = baseRequesterModifier.onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            val shouldScroll =
+                                TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                    previousActiveIndex = activeEpisodeFocusedIndex,
+                                    newlyFocusedIndex = i,
+                                )
+                            activeEpisodeFocusedIndex = i
+                            // 同轨左右相邻、或首/末项：必须滚入可视区（含真正到边）。
+                            if (shouldScroll || i == 0 || i == group.lastIndex) {
+                                scrollPlayerMenuChipIntoView(
+                                    listState = episodeListState,
+                                    index = i,
+                                    itemCount = group.size,
+                                    scrollScope = playlistScrollScope,
+                                )
+                            }
+                        }
+                    },
+                    // 有分组条时下键进分组；否则直接回一级当前选中项。
                     onArrowDown = if (showGroupChoices) {
                         { requestCurrentGroupFocus() }
                     } else {
@@ -821,15 +877,29 @@ private fun TvPlayerPlaylistMenu(
             }
         }
 
-        // 三级：分组在下，样式对齐详情页（无背景 chip，仅底线 + 文字）。
+        // 分组条：分组多时同样要横向跟手滚动。
         if (showGroupChoices) {
             LazyRow(
+                state = groupListState,
                 horizontalArrangement = Arrangement.spacedBy(17.dp),
                 contentPadding = PaddingValues(
                     start = TvTokens.PageHorizontalPadding,
-                    end = TvTokens.PageHorizontalPadding,
+                    end = PLAYER_MENU_LIST_END_PADDING,
                 ),
-                modifier = Modifier.height(52.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .focusProperties {
+                        onEnter = {
+                            val isVerticalEnter =
+                                requestedFocusDirection == FocusDirection.Up ||
+                                    requestedFocusDirection == FocusDirection.Down
+                            if (isVerticalEnter) {
+                                activeGroupFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+                            }
+                        }
+                    }
+                    .focusGroup(),
             ) {
                 items(groups.size) { gi ->
                     val start = gi * PLAYER_PLAYLIST_GROUP_SIZE + 1
@@ -838,7 +908,7 @@ private fun TvPlayerPlaylistMenu(
                         label = "$start-$end",
                         selected = gi == safeGroup,
                         focusRequester = groupFocusRequesters.getOrNull(gi),
-                        // 上键回二级当前集（就近：回到正在看的那一集）。
+                        // 上键回集数当前集（就近：回到正在看的那一集）。
                         onArrowUp = { requestCurrentEpisodeFocus() },
                         // 下键回一级当前选中项，不跳到一级首项。
                         onArrowDown = onArrowDownToPrimary,
@@ -866,6 +936,20 @@ private fun TvPlayerPlaylistMenu(
                             // 分组获焦即切换，对齐详情页“移动即切换”。
                             if (selectedGroup != gi) {
                                 selectedGroup = gi
+                            }
+                            val shouldScroll =
+                                TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                    previousActiveIndex = activeGroupFocusedIndex,
+                                    newlyFocusedIndex = gi,
+                                )
+                            activeGroupFocusedIndex = gi
+                            if (shouldScroll || gi == 0 || gi == groups.lastIndex) {
+                                scrollPlayerMenuChipIntoView(
+                                    listState = groupListState,
+                                    index = gi,
+                                    itemCount = groups.size,
+                                    scrollScope = playlistScrollScope,
+                                )
                             }
                         },
                         onClick = { selectedGroup = gi },
@@ -2435,11 +2519,24 @@ private fun scrollPlayerMenuChipIntoView(
         when {
             index <= 0 -> {
                 // 最左：完整露出 start padding 与首项。
-                listState.animateScrollToItem(index = 0, scrollOffset = 0)
+                if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                    listState.animateScrollToItem(index = 0, scrollOffset = 0)
+                }
             }
             index >= lastIndex -> {
-                // 最右：末项对齐视口起点，配合 end padding 完整露出。
-                listState.animateScrollToItem(index = lastIndex, scrollOffset = 0)
+                // 最右：先滚到末项，再 scrollBy 夹到 max，保证末集完整可见。
+                listState.animateScrollToItem(index = lastIndex)
+                if (listState.canScrollForward) {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.firstOrNull { item -> item.index == lastIndex }
+                    val overflow = if (last != null) {
+                        (last.offset + last.size - info.viewportEndOffset).toFloat().coerceAtLeast(0f)
+                    } else {
+                        0f
+                    }
+                    val push = (overflow + info.viewportEndOffset.toFloat()).coerceAtLeast(1f)
+                    listState.animateScrollBy(push)
+                }
             }
             else -> {
                 val layoutInfo = listState.layoutInfo
@@ -2451,12 +2548,15 @@ private fun scrollPlayerMenuChipIntoView(
                 }
                 val viewportEnd = layoutInfo.viewportEndOffset
                 val viewportStart = layoutInfo.viewportStartOffset
-                val rightOverflow = target.offset + target.size - viewportEnd
-                val leftOverflow = viewportStart - target.offset
                 val edgeSafePx = 8
+                val leftOverflow = viewportStart + edgeSafePx - target.offset
+                val rightOverflow = target.offset + target.size - (viewportEnd - edgeSafePx)
                 when {
-                    leftOverflow > edgeSafePx -> listState.animateScrollToItem(index)
-                    rightOverflow > edgeSafePx -> listState.animateScrollToItem(index)
+                    leftOverflow > 0 -> listState.animateScrollToItem(index)
+                    rightOverflow > 0 -> {
+                        // 右缘裁切：用 scrollBy 刚好露出，避免每次钉到最左造成跳动。
+                        listState.animateScrollBy(rightOverflow.toFloat())
+                    }
                 }
             }
         }
