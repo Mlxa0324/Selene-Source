@@ -2,6 +2,7 @@ package org.moontechlab.selene.tv.app
 
 import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.logging.Logger
 import org.moontechlab.selene.tv.core.data.model.TvDanmakuAnimePayload
@@ -366,6 +367,13 @@ class TvAppContainer(
 
     /** 应用级 IO 任务作用域。 */
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * 播放进度已写入远端、首页“继续观看”尚未刷新。
+     *
+     * 详情/全屏任意路径保存成功后置位；首页 ON_RESUME 消费后局部刷新续播块。
+     */
+    private val continueWatchingDirty = AtomicBoolean(false)
 
     /** 豆瓣代理 API 接口。 */
     private val doubanApi by lazy {
@@ -1211,6 +1219,10 @@ class TvAppContainer(
         durationMs: Long,
     ) {
         val safeRequest = request ?: return
+        // 0 进度不写库，避免误覆盖已有续播。
+        if (positionMs <= 0L) {
+            return
+        }
         runCatching {
             ensureSession()
             TvPlaybackRepository(api = requireGatewayClient().tvApi)
@@ -1220,9 +1232,28 @@ class TvAppContainer(
                         durationMs = durationMs,
                     ),
                 )
+        }.onSuccess {
+            // 写库成功后标记首页续播脏，返回首页时局部刷新，而不是整页重载。
+            continueWatchingDirty.set(true)
         }.onFailure {
             // 进度保存失败不阻塞详情/播放器返回，后续 10 秒轮询会继续兜底补写。
         }
+    }
+
+    /**
+     * 首页恢复时消费“继续观看需刷新”标记。
+     *
+     * @return true 表示本次应刷新续播分区。
+     */
+    fun consumeContinueWatchingDirty(): Boolean {
+        return continueWatchingDirty.getAndSet(false)
+    }
+
+    /**
+     * 仅查询是否有未刷新的续播写库（不消费）。
+     */
+    fun isContinueWatchingDirty(): Boolean {
+        return continueWatchingDirty.get()
     }
 
     /**

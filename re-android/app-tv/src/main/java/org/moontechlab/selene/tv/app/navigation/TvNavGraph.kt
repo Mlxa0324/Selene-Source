@@ -1,7 +1,9 @@
 package org.moontechlab.selene.tv.app.navigation
 
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -13,6 +15,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -21,9 +26,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import coil.Coil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.app.TvAppContainer
 import org.moontechlab.selene.tv.app.TvSharedPlayerHost
 import org.moontechlab.selene.tv.app.TvSharedPlayerSession
@@ -117,6 +124,34 @@ fun TvNavGraph(
                         homeViewModel.refreshContinueWatching()
                         backStackEntry.savedStateHandle[HOME_CONTINUE_WATCHING_REFRESH_KEY] = false
                     }
+            }
+            // 从详情/全屏返回：进度写库成功会置脏。
+            // ON_RESUME 立即刷一次；另轮询兜底（写库比返回慢时也能刷到最新进度）。
+            val homeLifecycleOwner = LocalLifecycleOwner.current
+            DisposableEffect(homeLifecycleOwner, homeViewModel, appContainer) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event != Lifecycle.Event.ON_RESUME) {
+                        return@LifecycleEventObserver
+                    }
+                    if (!appContainer.consumeContinueWatchingDirty()) {
+                        return@LifecycleEventObserver
+                    }
+                    homeScope.launch {
+                        homeViewModel.refreshContinueWatching()
+                    }
+                }
+                homeLifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    homeLifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+            LaunchedEffect(homeViewModel, appContainer) {
+                while (true) {
+                    delay(1_500)
+                    if (appContainer.consumeContinueWatchingDirty()) {
+                        homeViewModel.refreshContinueWatching()
+                    }
+                }
             }
             TvHomeRoute(
                 state = homeState,
@@ -467,6 +502,33 @@ fun TvNavGraph(
                 }
             }
             val detailState by detailViewModel.state.collectAsState()
+            // 离开详情（系统返回/销毁）时用最新快照落库，不依赖“随便看看”按钮。
+            val detailProgressSnapshot = remember {
+                DetailPlaybackProgressSnapshot()
+            }
+            detailProgressSnapshot.request = detailState.playbackRequest
+            detailProgressSnapshot.positionMs = detailState.previewPositionMs
+                .takeIf { positionMs -> positionMs > 0L }
+                ?: detailState.playbackRequest?.startPositionMs
+                ?: 0L
+            detailProgressSnapshot.durationMs = detailState.previewDurationMs
+            val flushDetailProgress: () -> Unit = {
+                appContainer.persistPlaybackProgressAsync(
+                    request = detailProgressSnapshot.request,
+                    positionMs = detailProgressSnapshot.positionMs,
+                    durationMs = detailProgressSnapshot.durationMs,
+                )
+            }
+            BackHandler {
+                flushDetailProgress()
+                navController.popBackStack()
+            }
+            DisposableEffect(detailSessionKey) {
+                onDispose {
+                    // 任意离开详情（含返回首页、替换路由）都落一次当前进度。
+                    flushDetailProgress()
+                }
+            }
             LaunchedEffect(source, videoId, detailViewModel) {
                 detailViewModel.ensureLoaded(videoId)
             }
@@ -491,6 +553,8 @@ fun TvNavGraph(
                 onSourceSelected = { sourceId -> detailViewModel.selectSource(sourceId) },
                 onEpisodeSelected = { episodeId -> detailViewModel.selectEpisode(episodeId) },
                 onPlayPressed = {
+                    // 进全屏前先落库，避免只在全屏看很久、详情侧仍是旧点。
+                    flushDetailProgress()
                     detailState.playbackRequest?.let { request ->
                         val sources = detailState.detail?.sources.orEmpty().map {
                             org.moontechlab.selene.tv.core.player.api.PlaybackSource(it.id, it.name)
@@ -513,18 +577,10 @@ fun TvNavGraph(
                 onEpisodeGroupSelected = { group -> detailViewModel.selectEpisodeGroup(group) },
                 onHistoryClick = { navController.navigate(TvDestination.History.route) },
                 onExitClick = {
-                    val homeRefreshHandle = navController.previousBackStackEntry?.savedStateHandle
-                    appContainer.persistPlaybackProgressAsync(
-                        request = detailState.playbackRequest,
-                        positionMs = detailState.previewPositionMs
-                            .takeIf { positionMs -> positionMs > 0L }
-                            ?: detailState.playbackRequest?.startPositionMs
-                            ?: 0L,
-                        durationMs = detailState.previewDurationMs,
-                        onFinished = {
-                            homeRefreshHandle?.set(HOME_CONTINUE_WATCHING_REFRESH_KEY, true)
-                        },
-                    )
+                    flushDetailProgress()
+                    navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.set(HOME_CONTINUE_WATCHING_REFRESH_KEY, true)
                     navController.popBackStack()
                 },
                 onRecommendClick = { card ->
@@ -611,6 +667,26 @@ fun TvNavGraph(
                     allEpisodes = playbackContext?.episodes.orEmpty(),
                 )
             }
+            val playerUiState by playerViewModel.state.collectAsState()
+            // 全屏页销毁时兜底落库用的最新进度快照（需 collect 才能随播放推进）。
+            val playerProgressSnapshot = remember {
+                DetailPlaybackProgressSnapshot()
+            }
+            playerProgressSnapshot.request = playerUiState.playbackRequest
+            playerProgressSnapshot.positionMs = playerUiState.currentPositionMs
+                .takeIf { positionMs -> positionMs > 0L }
+                ?: playerUiState.playbackRequest?.startPositionMs
+                ?: 0L
+            playerProgressSnapshot.durationMs = playerUiState.durationMs
+            DisposableEffect(requestId) {
+                onDispose {
+                    appContainer.persistPlaybackProgressAsync(
+                        request = playerProgressSnapshot.request,
+                        positionMs = playerProgressSnapshot.positionMs,
+                        durationMs = playerProgressSnapshot.durationMs,
+                    )
+                }
+            }
             TvPlayerRoute(
                 playbackRequest = playbackRequest,
                 viewModel = playerViewModel,
@@ -640,12 +716,16 @@ fun TvNavGraph(
                 },
                 onExitRequested = {
                     appContainer.persistPlaybackProgressAsync(
-                        request = playerViewModel.state.value.playbackRequest,
-                        positionMs = playerViewModel.state.value.currentPositionMs
-                            .takeIf { positionMs -> positionMs > 0L }
-                            ?: playerViewModel.state.value.playbackRequest?.startPositionMs
-                            ?: 0L,
-                        durationMs = playerViewModel.state.value.durationMs,
+                        request = playerProgressSnapshot.request,
+                        positionMs = playerProgressSnapshot.positionMs,
+                        durationMs = playerProgressSnapshot.durationMs,
+                        onFinished = {
+                            // 全屏退出也可能直接回首页路径；用脏标记保证首页 ON_RESUME 刷新。
+                            runCatching {
+                                navController.getBackStackEntry(TvDestination.Home.route)
+                                    .savedStateHandle[HOME_CONTINUE_WATCHING_REFRESH_KEY] = true
+                            }
+                        },
                     )
                     // 播放器自身只发出退出意图，实际退栈由应用导航图负责。
                     navController.popBackStack()
@@ -653,6 +733,15 @@ fun TvNavGraph(
             )
         }
     }
+}
+
+/**
+ * 详情/全屏离开时用于落库的最新播放进度快照。
+ */
+private class DetailPlaybackProgressSnapshot {
+    var request: PlaybackRequest? = null
+    var positionMs: Long = 0L
+    var durationMs: Long = 0L
 }
 
 /**
