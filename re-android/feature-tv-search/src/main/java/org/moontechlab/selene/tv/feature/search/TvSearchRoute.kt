@@ -231,7 +231,8 @@ fun TvSearchRoute(
                     onArrowRightFromEdge = { row, col ->
                         lastKeyboardRow = row
                         lastKeyboardCol = col
-                        rightPanelEntryFocus.requestFocus()
+                        // 入口即历史/热词首项同一 FocusRequester，失败时不抛崩。
+                        runCatching { rightPanelEntryFocus.requestFocus() }
                     },
                     // 底行下键：落到操作行对应按钮（列映射），形成与操作行的环形贯通。
                     onArrowDownFromBottom = { col ->
@@ -282,7 +283,7 @@ fun TvSearchRoute(
                         keyFocusRequesters[0][col.coerceIn(0, KeyboardColumns - 1)].requestFocus()
                     },
                     onArrowRightFromDelete = {
-                        rightPanelEntryFocus.requestFocus()
+                        runCatching { rightPanelEntryFocus.requestFocus() }
                     },
                 )
             }
@@ -770,6 +771,14 @@ private fun SearchDefaultPanel(
         hint = if (!hasHistory) "暂无记录" else "${state.searchHistory.size} 条记录",
         trailingActionLabel = if (hasHistory) "清空" else null,
         onTrailingAction = onClearHistory,
+        // 标题旁「清空」可获焦；下/左落到历史首词，避免焦点悬空或锁死。
+        onTrailingArrowDown = {
+            runCatching { entryFocusRequester.requestFocus() }
+        },
+        onTrailingArrowLeft = {
+            runCatching { entryFocusRequester.requestFocus() }
+        },
+        onTrailingReturnToLeft = onReturnToLeftPanel,
     )
     Spacer(modifier = Modifier.height(12.dp))
     if (!hasHistory) {
@@ -923,6 +932,9 @@ private fun SearchSuggestionPanel(
  * @param hint 次要说明。
  * @param trailingActionLabel 右侧操作文案。
  * @param onTrailingAction 右侧操作回调。
+ * @param onTrailingArrowDown 标题操作钮下键（通常落到本区首词）。
+ * @param onTrailingArrowLeft 标题操作钮左键（落到本区首词）。
+ * @param onTrailingReturnToLeft 标题操作钮再左/需要回左栏时。
  */
 @Composable
 private fun SectionTitle(
@@ -930,6 +942,9 @@ private fun SectionTitle(
     hint: String,
     trailingActionLabel: String? = null,
     onTrailingAction: (() -> Unit)? = null,
+    onTrailingArrowDown: (() -> Unit)? = null,
+    onTrailingArrowLeft: (() -> Unit)? = null,
+    onTrailingReturnToLeft: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -976,6 +991,9 @@ private fun SectionTitle(
                     .onPreviewKeyEvent(
                         KeyPreviewHandler(
                             onEnter = onTrailingAction,
+                            onDown = onTrailingArrowDown,
+                            onLeft = onTrailingArrowLeft ?: onTrailingReturnToLeft,
+                            onUp = onTrailingReturnToLeft,
                         ),
                     )
                     .focusable(interactionSource = interactionSource)
@@ -1019,7 +1037,18 @@ private fun WordTileGrid(
 ) {
     val columns = 3
     val rows = (words.size + columns - 1) / columns
-    val focusRequesters = remember(words.size) { List(words.size) { FocusRequester() } }
+    // 每项只挂一个 FocusRequester。首项必须直接使用 entryFocusRequester 本体，
+    // 不能双挂两个 FocusRequester：Compose 上同一节点叠两个 requester 时，
+    // 入口 requestFocus / 区内移回 index0 会有一方失效，表现为「僵尸先生」死活上不去。
+    val focusRequesters = remember(words.size, entryFocusRequester) {
+        List(words.size) { index ->
+            if (index == 0 && entryFocusRequester != null) {
+                entryFocusRequester
+            } else {
+                FocusRequester()
+            }
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         for (row in 0 until rows) {
@@ -1035,8 +1064,8 @@ private fun WordTileGrid(
                             tween(140),
                             label = "wordTileBg",
                         )
-                        val isFirst = index == 0
                         val lastIndex = words.lastIndex
+                        val itemFocus = focusRequesters[index]
 
                         Box(
                             modifier = Modifier
@@ -1048,16 +1077,7 @@ private fun WordTileGrid(
                                     color = if (isFocused) Color.White else Color.White.copy(alpha = 0.05f),
                                     shape = RoundedCornerShape(12.dp),
                                 )
-                                // 每项都挂 focusRequesters[index]，保证区内左右能移到首项。
-                                // 首项额外挂 entryFocusRequester，承接从左栏进入右栏的入口焦点。
-                                .focusRequester(focusRequesters[index])
-                                .then(
-                                    if (isFirst && entryFocusRequester != null) {
-                                        Modifier.focusRequester(entryFocusRequester)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
+                                .focusRequester(itemFocus)
                                 .searchClickable({ onWordClick(word) })
                                 .onPreviewKeyEvent(
                                     KeyPreviewHandler(
@@ -1393,43 +1413,24 @@ private fun KeyPreviewHandler(
     onBack: (() -> Unit)? = null,
 ): (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { event ->
     val isKeyUp = event.type == KeyEventType.KeyUp
+    /**
+     * 仅在提供了对应回调时才消费该方向键。
+     * 若回调为 null 仍 return true，会把焦点锁死在只有 onEnter 的控件上
+     * （例如历史标题旁的「清空」），方向键全部失效。
+     */
+    fun handle(action: (() -> Unit)?): Boolean {
+        if (action == null) return false
+        if (isKeyUp) return true
+        action.invoke()
+        return true
+    }
     when (event.key) {
         Key.Back -> false // 全程放行给 NavHost
-        Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
-            if (isKeyUp) true
-            else {
-                onEnter?.invoke()
-                true
-            }
-        }
-        Key.DirectionUp -> {
-            if (isKeyUp) true
-            else {
-                onUp?.invoke()
-                true
-            }
-        }
-        Key.DirectionDown -> {
-            if (isKeyUp) true
-            else {
-                onDown?.invoke()
-                true
-            }
-        }
-        Key.DirectionLeft -> {
-            if (isKeyUp) true
-            else {
-                onLeft?.invoke()
-                true
-            }
-        }
-        Key.DirectionRight -> {
-            if (isKeyUp) true
-            else {
-                onRight?.invoke()
-                true
-            }
-        }
+        Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> handle(onEnter)
+        Key.DirectionUp -> handle(onUp)
+        Key.DirectionDown -> handle(onDown)
+        Key.DirectionLeft -> handle(onLeft)
+        Key.DirectionRight -> handle(onRight)
         else -> false
     }
 }

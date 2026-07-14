@@ -62,7 +62,7 @@ class TvSearchRouteFocusContractTest {
 
     /**
      * 右侧词块不环形：底行下键用 onArrowDownFromBottom 离开本区，禁止循环回顶部。
-     * 首项必须同时挂 focusRequesters[0] 与 entryFocusRequester，否则区内无法移回首项。
+     * 首项必须直接使用 entryFocusRequester 本体（单挂），禁止叠两个 FocusRequester。
      */
     @Test
     fun right_panel_word_tiles_do_not_wrap_vertically() {
@@ -75,10 +75,15 @@ class TvSearchRouteFocusContractTest {
         assertThat(wordGrid).contains("onArrowUpFromTop")
         assertThat(wordGrid).contains("底行下键：离开本区到下一区块，不循环回顶部")
         assertThat(wordGrid).doesNotContain("底行下键：回到首行同列（环形）")
-        assertThat(wordGrid).contains(".focusRequester(focusRequesters[index])")
-        assertThat(wordGrid).contains("首项额外挂 entryFocusRequester")
+        // 首项 = entry 本体，单挂；区内左右移回 index0 与左栏入口共用同一 requester。
+        assertThat(wordGrid).contains("index == 0 && entryFocusRequester != null")
+        assertThat(wordGrid).contains("entryFocusRequester")
+        assertThat(wordGrid).contains(".focusRequester(itemFocus)")
+        assertThat(wordGrid).doesNotContain("首项额外挂 entryFocusRequester")
         assertThat(source).contains("hotEntryFocus")
         assertThat(source).contains("recommendEntryFocus")
+        // 无回调的方向键不得吞键，避免标题「清空」锁死焦点。
+        assertThat(source).contains("if (action == null) return false")
     }
 
     /**
