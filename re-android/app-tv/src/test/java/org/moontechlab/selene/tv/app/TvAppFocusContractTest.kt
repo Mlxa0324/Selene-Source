@@ -115,9 +115,14 @@ class TvAppFocusContractTest {
         val pillSource = readNavigationPillSource()
 
         assertThat(source).contains("selectedTopDestination")
-        assertThat(topNavigationSource).contains("rememberTopDestinationFocusRequesters()")
+        // 请求器由壳层持有，便于内容区返回键 focusCurrentPrimaryTab。
+        assertThat(source).contains("rememberTopDestinationFocusRequesters()")
+        assertThat(source).contains("focusCurrentPrimaryTab")
+        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && !showCategoryFilter && !topNavHasFocus)")
+        assertThat(source).contains("Key.Escape")
         assertThat(topNavigationSource).contains("LaunchedEffect(selectedTopDestination?.route)")
         assertThat(topNavigationSource).contains("selectedTopDestinationFocusRequester.requestFocus()")
+        assertThat(topNavigationSource).contains("topDestinationFocusRequesters: Map<String, FocusRequester>")
         assertThat(groupSource).contains("focusRequester = topDestinationFocusRequesters[destination.route]")
         assertThat(pillSource).contains("focusRequester: FocusRequester?")
         assertThat(pillSource).contains(".focusRequester(focusRequester)")

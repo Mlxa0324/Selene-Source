@@ -124,17 +124,35 @@ fun TvApp() {
                 // 顶层页面切换后必须换一个请求器，避免请求到旧页面保留的隐藏卡片。
                 FocusRequester()
             }
+            // 顶栏焦点请求器提到壳层：内容区返回键可直接落到「当前 tab」。
+            val topDestinationFocusRequesters = rememberTopDestinationFocusRequesters()
+            var topNavHasFocus by remember { mutableStateOf(false) }
             var showCategoryFilter by remember { mutableStateOf(false) }
             val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
+
+            fun focusCurrentPrimaryTab(): Boolean {
+                val route = currentRoute ?: return false
+                if (!isPrimaryRoute) {
+                    return false
+                }
+                val requester = topDestinationFocusRequesters[route] ?: return false
+                topNavHasFocus = true
+                return runCatching { requester.requestFocus() }.getOrDefault(false)
+            }
+
             BackHandler(enabled = showCategoryFilter) {
                 // 筛选展示时返回键只收起面板，保留当前分类页和已加载的 Grid。
                 showCategoryFilter = false
+            }
+            // 主菜单页且焦点在下方列表：返回键回到左上角当前 tab，不退出应用。
+            BackHandler(enabled = isPrimaryRoute && !showCategoryFilter && !topNavHasFocus) {
+                focusCurrentPrimaryTab()
             }
             LaunchedEffect(currentRoute) {
                 // 切换顶层页面后重置筛选面板可见态。
                 showCategoryFilter = false
                 if (!isPrimaryRoute) {
-                    // 子页面（搜索/历史/收藏/设置/播放器）无顶部导航，直接落焦到内容区。
+                    // 子页面（搜索/设置/播放器等）无顶部主导航，直接落焦到内容区。
                     contentFocusRequester.requestFocus()
                 }
             }
@@ -142,13 +160,36 @@ fun TvApp() {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background),
+                    .background(MaterialTheme.colorScheme.background)
+                    .onPreviewKeyEvent { event ->
+                        // 模拟器 Esc 与返回键一致：内容区 → 当前主 tab。
+                        val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
+                        if (
+                            !isBackOrEsc ||
+                            !isPrimaryRoute ||
+                            showCategoryFilter ||
+                            topNavHasFocus
+                        ) {
+                            return@onPreviewKeyEvent false
+                        }
+                        if (event.type == KeyEventType.KeyDown) {
+                            return@onPreviewKeyEvent focusCurrentPrimaryTab()
+                        }
+                        // KeyUp 一并消费，避免再被系统处理。
+                        if (event.type == KeyEventType.KeyUp) {
+                            return@onPreviewKeyEvent true
+                        }
+                        false
+                    },
             ) {
                 if (isPrimaryRoute && !showCategoryFilter) {
                     // 分类筛选展开时隐藏完整首页导航，为筛选和海报 Grid 释放垂直空间。
                     TvTopNavigationBar(
                         currentRoute = currentRoute,
                         contentFocusRequester = contentFocusRequester,
+                        topDestinationFocusRequesters = topDestinationFocusRequesters,
+                        topNavHasFocus = topNavHasFocus,
+                        onTopNavHasFocusChange = { focused -> topNavHasFocus = focused },
                         onNavigate = { destination ->
                             if (destination.route != currentRoute) {
                                 // 点击顶部标签时只保留顶层单实例，避免重复入栈。
@@ -188,16 +229,21 @@ fun TvApp() {
  *
  * @param currentRoute 当前选中的路由。
  * @param contentFocusRequester 内容区入口焦点请求器。
+ * @param topDestinationFocusRequesters 顶层入口焦点请求器（壳层持有，便于内容区返回落焦）。
+ * @param topNavHasFocus 顶栏是否持有焦点（壳层与顶栏双向同步）。
+ * @param onTopNavHasFocusChange 顶栏焦点变化回调。
  * @param onNavigate 顶部入口点击后的跳转回调。
  */
 @Composable
 private fun TvTopNavigationBar(
     currentRoute: String?,
     contentFocusRequester: FocusRequester,
+    topDestinationFocusRequesters: Map<String, FocusRequester>,
+    topNavHasFocus: Boolean,
+    onTopNavHasFocusChange: (Boolean) -> Unit,
     onNavigate: (TvDestination) -> Unit,
     onFilterToggle: () -> Unit = {},
 ) {
-    val topDestinationFocusRequesters = rememberTopDestinationFocusRequesters()
     val selectedTopDestination = remember(currentRoute) {
         // 只有顶层入口需要承接初始焦点，详情页等非顶层页面不强行抢焦点。
         TvDestination.topLevelDestinations.firstOrNull { destination ->
@@ -206,8 +252,6 @@ private fun TvTopNavigationBar(
     }
     val selectedTopDestinationFocusRequester = selectedTopDestination
         ?.let { destination -> topDestinationFocusRequesters[destination.route] }
-    // 整顶栏（主菜单 + 右上角快捷）共用焦点态，避免跨组上下移动被当成“从内容区进入”而拉回选中主 tab。
-    var topNavHasFocus by remember { mutableStateOf(false) }
     var pendingInternalFocusRoute by remember { mutableStateOf<String?>(null) }
     // 主菜单上键进快捷区时记录来源 tab，快捷区下键原路返回。
     var lastActionSourceRoute by remember { mutableStateOf<String?>(null) }
@@ -219,7 +263,7 @@ private fun TvTopNavigationBar(
     fun moveFocusToRoute(route: String) {
         val requester = topDestinationFocusRequesters[route] ?: return
         pendingInternalFocusRoute = route
-        topNavHasFocus = true
+        onTopNavHasFocusChange(true)
         runCatching { requester.requestFocus() }
     }
 
@@ -227,7 +271,7 @@ private fun TvTopNavigationBar(
         if (selectedTopDestinationFocusRequester != null) {
             // 首屏真实焦点先落到当前入口，用户按一次下键即可进入内容卡片。
             selectedTopDestinationFocusRequester.requestFocus()
-            topNavHasFocus = true
+            onTopNavHasFocusChange(true)
         }
     }
 
@@ -242,10 +286,8 @@ private fun TvTopNavigationBar(
                 bottom = 10.dp,
             )
             .onFocusChanged { focusState ->
-                if (!focusState.hasFocus) {
-                    // 焦点彻底离开顶栏后，下一次从内容区上来才触发选中项重定向。
-                    topNavHasFocus = false
-                }
+                // 整顶栏（主菜单 + 右上角快捷）共用焦点态。
+                onTopNavHasFocusChange(focusState.hasFocus)
             },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -276,7 +318,7 @@ private fun TvTopNavigationBar(
                 topNavHasFocus = topNavHasFocus,
                 pendingInternalFocusRoute = pendingInternalFocusRoute,
                 onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
-                onTopNavGainedFocus = { topNavHasFocus = true },
+                onTopNavGainedFocus = { onTopNavHasFocusChange(true) },
                 onRequestInternalFocus = ::moveFocusToRoute,
                 onNavigate = onNavigate,
                 onMoveDownFromGroup = {
@@ -306,7 +348,7 @@ private fun TvTopNavigationBar(
             topNavHasFocus = topNavHasFocus,
             pendingInternalFocusRoute = pendingInternalFocusRoute,
             onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
-            onTopNavGainedFocus = { topNavHasFocus = true },
+            onTopNavGainedFocus = { onTopNavHasFocusChange(true) },
             onRequestInternalFocus = ::moveFocusToRoute,
             onNavigate = onNavigate,
             onFilterToggle = onFilterToggle,
