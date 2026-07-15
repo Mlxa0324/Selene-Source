@@ -1,10 +1,10 @@
 package org.moontechlab.selene.tv.feature.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -287,13 +287,9 @@ fun TvVideoLibraryRoute(
 
         AnimatedVisibility(
             visible = showFilter,
-            // 从页面顶部向下展开，不再像单独页面一样保留首页导航区。
-            enter = slideInVertically(
-                initialOffsetY = { fullHeight -> -fullHeight },
-            ) + fadeIn(),
-            exit = slideOutVertically(
-                targetOffsetY = { fullHeight -> -fullHeight },
-            ) + fadeOut(),
+            // 原地撑开高度：顶栏不被盖住，下方海报随筛选区总高度下移。
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
         ) {
             TvLibraryFilterPanel(
                 filters = state.availableFilters,
