@@ -102,9 +102,9 @@ class TvSearchRouteFocusContractTest {
         // 左右停靠独立，不得写死成对称 0 / 同一常量混用。
         assertThat(recommendRail).contains("contentStartPadding = RecommendRailStartPadding")
         assertThat(recommendRail).contains("contentEndPadding = RecommendRailEndPadding")
-        // layout 外扩抵消父级 content 水平 padding（禁止负 padding，会崩溃）。
-        assertThat(recommendRail).contains("horizontalBleed(RightPanelContentHorizontal)")
-        assertThat(source).contains("private fun Modifier.horizontalBleed")
+        // 仅左 bleed；end inset 用 embeddedShelfEndInset。
+        assertThat(recommendRail).contains("tvBleedContentStart(RightPanelContentHorizontal)")
+        assertThat(source).contains("embeddedShelfEndInset(RecommendRailStartPadding)")
         assertThat(recommendRail).doesNotContain("padding(horizontal = -")
         assertThat(recommendRail).doesNotContain("contentStartPadding = 0.dp")
     }

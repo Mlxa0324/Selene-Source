@@ -10,12 +10,23 @@ import org.junit.Test
  */
 class TvListLayoutMetricsTest {
     /**
-     * 横向列表左右都使用页面边距：左侧对齐标题，右侧末端收口不贴屏。
+     * 页面级横滑：左 = pageGutter；右 = start + 2×focusSafe（末端停靠大于左侧）。
      */
     @Test
-    fun railContentPadding_usesPagePaddingOnBothSides() {
+    fun railContentPadding_endIsStartPlusFocusSafe() {
         assertThat(TvListLayoutMetrics.RailStartPadding).isEqualTo(50.dp)
-        assertThat(TvListLayoutMetrics.RailEndPadding).isEqualTo(50.dp)
+        assertThat(TvListLayoutMetrics.FocusSafePadding).isEqualTo(10.dp)
+        assertThat(TvListLayoutMetrics.RailEndPadding)
+            .isEqualTo(50.dp + 10.dp * 2)
+    }
+
+    /**
+     * 面板内横滑末端 inset：2×start + focusSafe。
+     */
+    @Test
+    fun embeddedShelfEndInset_isTwiceStartPlusFocusSafe() {
+        assertThat(TvListLayoutMetrics.embeddedShelfEndInset(22.dp))
+            .isEqualTo(22.dp * 2 + 10.dp)
     }
 
     /**
@@ -27,7 +38,7 @@ class TvListLayoutMetricsTest {
     }
 
     /**
-     * 7 列密度应按视口均分：1920 宽、左右 46、间距 18 时卡片宽约 235.4dp。
+     * 7 列密度应按视口均分：1920 宽、左右 50、间距 18 时卡片宽可算。
      */
     @Test
     fun resolvePosterRailItemWidth_dividesViewportBySevenColumns() {
@@ -55,9 +66,7 @@ class TvListLayoutMetricsTest {
     }
 
     /**
-     * 横向海报带需要复刻 Flutter TV：同轨前 4 张不推动列表，第 5 张开始按卡片步长推进。
-     *
-     * 上下跨轨进入不得横向复位，只在同轨左右移动时才调用 animateScrollToItem。
+     * 横向海报带：中段 pin-leading；末项 ensureTrailingGapVisible；不 clip 获焦放大。
      */
     @Test
     fun railFocusScroll_usesFlutterHomeSectionScrollRule() {
@@ -65,16 +74,22 @@ class TvListLayoutMetricsTest {
             .readText()
         val railSource = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvPosterRail.kt")
             .readText()
+        val edgeSource = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvEdgeScroll.kt")
+            .readText()
 
         assertThat(metricsSource).contains("RailScrollStartIndex = 4")
         assertThat(metricsSource).contains("resolveRailFirstVisibleItemIndex")
-        assertThat(metricsSource).contains("focusedIndex - RailScrollStartIndex + 1")
+        assertThat(metricsSource).contains("embeddedShelfEndInset")
         assertThat(railSource).contains("onFocusChanged = { hasFocus ->")
         assertThat(railSource).contains("val isIntraRailHorizontalMove =")
         assertThat(railSource).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
         assertThat(railSource).contains("if (isIntraRailHorizontalMove) {")
         assertThat(railSource).contains("animateScrollToItem")
         assertThat(railSource).contains("resolveRailFirstVisibleItemIndex")
+        assertThat(railSource).contains("ensureTrailingGapVisible")
+        assertThat(railSource).contains("graphicsLayer { clip = false }")
+        assertThat(edgeSource).contains("ensureTrailingGapVisible")
+        assertThat(edgeSource).contains("tvBleedContentStart")
         assertThat(railSource).doesNotContain("snapshotFlow { listState.firstVisibleItemIndex }")
     }
 }

@@ -44,7 +44,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -53,12 +52,14 @@ import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
+import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
+import org.moontechlab.selene.tv.core.design.layout.tvBleedContentStart
 
 // ── 布局常量：左输入区更紧凑，右结果区更宽 ──
 private val LeftPanelWidth: Dp = 328.dp
@@ -78,17 +79,14 @@ private val RightPanelContentHorizontal: Dp = 22.dp
 /** 右面板内容区垂直内边距。 */
 private val RightPanelContentVertical: Dp = 20.dp
 /**
- * 影片推荐轨左侧 contentPadding。
- *
- * 静止态首卡与「影片推荐」标题左缘对齐；与 [RightPanelContentHorizontal] 解耦，可单独调。
+ * 影片推荐轨左侧停靠 inset（与标题左缘对齐）。
  */
 private val RecommendRailStartPadding: Dp = RightPanelContentHorizontal
 /**
- * 影片推荐轨右侧 contentPadding。
- *
- * 末端收口用，默认可大于左侧，保证末卡获焦描边/放大不贴面板右缘。
+ * 影片推荐轨右侧停靠 inset（边缘停靠安全距，end ≥ start + focus）。
  */
-private val RecommendRailEndPadding: Dp = 32.dp
+private val RecommendRailEndPadding: Dp =
+    TvListLayoutMetrics.embeddedShelfEndInset(RecommendRailStartPadding)
 private val PanelRadius: Dp = 22.dp
 private val ControlRadius: Dp = 14.dp
 
@@ -1182,12 +1180,10 @@ private fun RecommendRail(
         )
         return
     }
-    // 推荐区用横向轨道，避免嵌在 verticalScroll 中再次套 LazyVerticalGrid。
-    // 契约（对齐 TV 横向列表 skill / 详情页 LazyRow）：
-    // 1) 视口贴齐右面板左右缘（layout 外扩，禁止负 padding，会崩溃）
-    // 2) 左右停靠边距只写在 LazyRow contentPadding，且可独立设置
-    // 3) 滚动时卡片可从面板缘进出；静止时首/末卡仍有呼吸边距
-    // onReturnToLeftPanel/onBack 由外层词块或状态面板入口承接；海报轨首项承接 entryFocus。
+    // 推荐区横滑：边缘停靠 inset 模型（见 TvEdgeScroll / TvListLayoutMetrics）。
+    // - 仅左 bleed：中段可从左缘进出，右 end inset 留在内容区可滚到
+    // - end = embeddedShelfEndInset(start)：末端收住 + 焦点安全
+    // - 末项滚动由 TvPosterRail.ensureTrailingGapVisible 统一处理
     TvPosterRail(
         items = cards.map { video ->
             TvPosterItem(
@@ -1199,42 +1195,12 @@ private fun RecommendRail(
                 totalEpisodes = video.totalEpisodes,
             )
         },
-        // 用 layout 外扩抵消父级 content 水平 padding，贴齐面板圆角内缘。
-        modifier = Modifier.horizontalBleed(RightPanelContentHorizontal),
+        modifier = Modifier.tvBleedContentStart(RightPanelContentHorizontal),
         firstItemFocusRequester = entryFocusRequester,
         contentStartPadding = RecommendRailStartPadding,
         contentEndPadding = RecommendRailEndPadding,
         onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
     )
-}
-
-/**
- * 左右外扩 [bleed]，在父级已有对称水平 padding 时让子项视口贴齐容器缘。
- *
- * 不用负 [Modifier.padding]：Compose 要求 padding ≥ 0，负值会抛
- * `IllegalArgumentException: Padding must be non-negative`。
- *
- * @param bleed 单侧外扩量（通常等于父级 horizontal padding）。
- * @return 布局后左右各多占 [bleed] 的修饰器。
- */
-private fun Modifier.horizontalBleed(bleed: Dp): Modifier {
-    if (bleed <= 0.dp) {
-        return this
-    }
-    return layout { measurable, constraints ->
-        val bleedPx = bleed.roundToPx().coerceAtLeast(0)
-        val expandedMaxWidth = (constraints.maxWidth + bleedPx * 2).coerceAtLeast(0)
-        val placeable = measurable.measure(
-            constraints.copy(
-                minWidth = 0,
-                maxWidth = expandedMaxWidth,
-            ),
-        )
-        // 对外仍报告父级可用宽度，内容向左偏移 bleed，使左右对称外扩。
-        layout(constraints.maxWidth, placeable.height) {
-            placeable.placeRelative(-bleedPx, 0)
-        }
-    }
 }
 
 @Composable
