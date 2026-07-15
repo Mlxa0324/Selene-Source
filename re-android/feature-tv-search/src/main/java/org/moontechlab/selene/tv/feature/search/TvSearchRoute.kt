@@ -1404,7 +1404,8 @@ private fun SearchResultPanel(
                     modifier = Modifier.fillMaxSize(),
                     contentHorizontalPadding = 2.dp,
                     contentTopPadding = 14.dp,
-                    contentBottomPadding = 20.dp,
+                    // 底留白加大：末行封面+标题+焦点放大后仍能完整停在视口内。
+                    contentBottomPadding = 40.dp,
                     horizontalSpacing = 12.dp,
                     verticalSpacing = 32.dp,
                     fillCellWidth = true,

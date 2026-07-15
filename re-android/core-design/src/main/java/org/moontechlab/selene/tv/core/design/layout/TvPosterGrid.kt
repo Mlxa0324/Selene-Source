@@ -175,11 +175,20 @@ fun TvPosterGrid(
                             val lazyIndex = index + headerLazyOffset
                             // 首行 lazy 下标范围：[headerOffset, headerOffset + columns)
                             val firstRowEndExclusive = headerLazyOffset + safeColumns
+                            // 末行业务下标起点（半行末列也算末行）。
+                            val lastRowStartIndex = resolveLastRowStartIndex(
+                                itemCount = items.size,
+                                columns = safeColumns,
+                            )
+                            val lastRowStartLazy = lastRowStartIndex + headerLazyOffset
+                            val lastLazyIndex = items.lastIndex + headerLazyOffset
                             scrollScope.launch {
-                                // 中心带跟焦；首行强制钉到真正顶部（offset=0）。
+                                // 中心带跟焦；首行钉顶、末行钉底，中间才中线跟滚。
                                 gridState.scrollFocusedItemWithCenterBand(
                                     lazyIndex = lazyIndex,
                                     firstRowEndExclusive = firstRowEndExclusive,
+                                    lastRowStartLazy = lastRowStartLazy,
+                                    lastLazyIndex = lastLazyIndex,
                                 )
                             }
                         }
@@ -196,23 +205,47 @@ fun TvPosterGrid(
 }
 
 /**
+ * 业务列表末行首项 0-based 下标。
+ *
+ * @param itemCount 业务项数量。
+ * @param columns 列数。
+ * @return 末行第一个业务下标；空列表为 0。
+ */
+private fun resolveLastRowStartIndex(itemCount: Int, columns: Int): Int {
+    if (itemCount <= 0) return 0
+    val safeColumns = columns.coerceAtLeast(1)
+    val rem = itemCount % safeColumns
+    return if (rem == 0) {
+        (itemCount - safeColumns).coerceAtLeast(0)
+    } else {
+        itemCount - rem
+    }
+}
+
+/**
  * 纵向网格中心带跟焦。
  *
- * - **首行**：强制滚到真正列表顶（index=0 且 scrollOffset=0），从下行返回时不能停在半截。
- * - 非首行、中线以上且完整可见：不滚动。
- * - 项中心越过视口中线：按差值 scrollBy。
- * - 顶/底被裁：只滚裁切量；未布局时先滚近再微调。
+ * - **首行**：强制滚到真正列表顶（index=0 且 scrollOffset=0）。
+ * - **末行**：强制滚到真正列表底（canScrollForward=false），末行封面+标题完整露出。
+ * - 中间行：中线以上不滚；越过中线 scrollBy；顶/底被裁只滚裁切量。
  *
  * 禁止对每个获焦项 animateScrollToItem 无条件 pin 到 firstVisible 顶缘。
- * 禁止与卡片 bringIntoView 并用（网格侧已关），否则回顶会被再次拽偏。
+ * 禁止与卡片 bringIntoView 并用（网格侧已关），否则回顶/到底会被再次拽偏。
  */
 private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
     lazyIndex: Int,
     firstRowEndExclusive: Int,
+    lastRowStartLazy: Int,
+    lastLazyIndex: Int,
 ) {
-    // 首行：必须到真正顶部，而不是「项刚可见但仍有 scrollOffset」。
+    // 首行：必须到真正顶部。
     if (lazyIndex in 0 until firstRowEndExclusive) {
         scrollGridToAbsoluteTop()
+        return
+    }
+    // 末行：必须到真正底部，否则 contentPadding/放大后标题区永远露不全。
+    if (lastLazyIndex >= 0 && lazyIndex >= lastRowStartLazy) {
+        scrollGridToAbsoluteBottom(lastLazyIndex = lastLazyIndex)
         return
     }
     var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
@@ -278,5 +311,41 @@ private suspend fun LazyGridState.scrollGridToAbsoluteTop() {
     val residual = firstVisibleItemScrollOffset
     if (firstVisibleItemIndex == 0 && residual > 0) {
         scrollBy(-residual.toFloat())
+    }
+}
+
+/**
+ * 把纵向网格钉到真正底部（canScrollForward=false）。
+ *
+ * 先滚近末项，再按视口高度推进直到无法继续前进，保证 contentBottomPadding 与末行标题露出。
+ *
+ * @param lastLazyIndex 最后一项的 lazy 下标（含 header 偏移）。
+ */
+private suspend fun LazyGridState.scrollGridToAbsoluteBottom(lastLazyIndex: Int) {
+    if (lastLazyIndex < 0) {
+        return
+    }
+    if (!canScrollForward) {
+        return
+    }
+    // 先把末项带进布局，避免只能空滚。
+    val alreadyVisible = layoutInfo.visibleItemsInfo.any { info -> info.index == lastLazyIndex }
+    if (!alreadyVisible) {
+        animateScrollToItem(index = lastLazyIndex)
+    }
+    // 连续向前推到 max：中心带「刚好露出」往往停在半截，吃不掉 end padding。
+    var guard = 0
+    while (canScrollForward && guard < 12) {
+        val viewportSpan = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
+            .coerceAtLeast(1)
+            .toFloat()
+        animateScrollBy(viewportSpan)
+        guard++
+    }
+    // 仍有残余时瞬时夹到 max。
+    if (canScrollForward) {
+        scrollBy((layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
+            .coerceAtLeast(1)
+            .toFloat() * 4f)
     }
 }
