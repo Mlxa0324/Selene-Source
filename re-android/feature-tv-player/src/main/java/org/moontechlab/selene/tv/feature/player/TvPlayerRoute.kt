@@ -93,6 +93,9 @@ import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
+import org.moontechlab.selene.tv.core.design.focus.consumeDirectionalKeyWithEdgeShake
+import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
+import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
 import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistItem
 import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistRail
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
@@ -889,6 +892,7 @@ private fun TvPlayerEpisodeGroupChoice(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val renewMenuAutoHide = LocalPlayerMenuInteractionBumps.current
+    val edgeShake = rememberTvEdgeShakeState()
     // 获焦或选中都用主题色；下划线仅 selected。
     val textAccent = selected || isFocused
     val scale by animateFloatAsState(
@@ -901,6 +905,7 @@ private fun TvPlayerEpisodeGroupChoice(
             // 热区略放大；高度交给外层 LazyRow(48.dp)，避免再 heightIn 挤掉下划线。
             .widthIn(min = 56.dp)
             .fillMaxHeight()
+            .tvEdgeShake(edgeShake)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focusState ->
@@ -937,17 +942,20 @@ private fun TvPlayerEpisodeGroupChoice(
                     }
                     return@onPreviewKeyEvent true
                 }
-                val directionHandler = when (event.key) {
-                    Key.DirectionUp -> onArrowUp
-                    Key.DirectionDown -> onArrowDown
-                    Key.DirectionLeft -> onArrowLeft
-                    Key.DirectionRight -> onArrowRight
-                    else -> null
-                }
-                if (directionHandler != null) {
+                // 左右到边界抖动；上下有回调才移动，无回调不抖（交给外层）。
+                if (
+                    consumeDirectionalKeyWithEdgeShake(
+                        event = event,
+                        edgeShake = edgeShake,
+                        onArrowLeft = onArrowLeft,
+                        onArrowRight = onArrowRight,
+                        onArrowUp = onArrowUp,
+                        onArrowDown = onArrowDown,
+                        onBoundaryKey = renewMenuAutoHide,
+                    )
+                ) {
                     if (event.type == KeyEventType.KeyDown) {
                         renewMenuAutoHide()
-                        directionHandler.invoke()
                     }
                     return@onPreviewKeyEvent true
                 }
@@ -2101,6 +2109,7 @@ private fun TvPlayerMenuChip(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val renewMenuAutoHide = LocalPlayerMenuInteractionBumps.current
+    val edgeShake = rememberTvEdgeShakeState()
     val pressPolicy = remember(onLongClick) {
         TvRemotePressPolicy(hasLongPressHandler = onLongClick != null)
     }
@@ -2123,6 +2132,8 @@ private fun TvPlayerMenuChip(
         modifier = modifier
             .height(chipHeight)
             .widthIn(min = minWidth)
+            // 边界抖动在 scale 外层，避免放大后位移被缩放。
+            .tvEdgeShake(edgeShake)
             // 布局占位固定，按锚点向内侧视觉放大，配合列表 end/top padding 不裁切不抖动。
             .graphicsLayer {
                 scaleX = scale
@@ -2169,23 +2180,21 @@ private fun TvPlayerMenuChip(
                     }
                     return@onPreviewKeyEvent true
                 }
-                // 自定义方向键：KeyDown（含长按 repeat）移动焦点并消费，
-                // 禁止等 KeyUp 才动（长按只会松键走一步）；也禁止交给系统几何挪焦。
-                val directionHandler = when (event.key) {
-                    Key.DirectionUp -> onArrowUp
-                    Key.DirectionDown -> onArrowDown
-                    Key.DirectionLeft -> onArrowLeft
-                    Key.DirectionRight -> onArrowRight
-                    else -> null
-                }
-                if (directionHandler != null) {
+                // 有回调则步进；左右无回调=列表边界→抖动并锁死（如画面比例「高度」再右）。
+                if (
+                    consumeDirectionalKeyWithEdgeShake(
+                        event = event,
+                        edgeShake = edgeShake,
+                        onArrowLeft = onArrowLeft,
+                        onArrowRight = onArrowRight,
+                        onArrowUp = onArrowUp,
+                        onArrowDown = onArrowDown,
+                        onBoundaryKey = renewMenuAutoHide,
+                    )
+                ) {
                     if (event.type == KeyEventType.KeyDown) {
-                        // 上下左右（含 long-press repeat）一律续约 4s 自动关闭。
                         renewMenuAutoHide()
-                        // 首次按下 + 系统 repeat 都步进，实现长按左右连续跟焦。
-                        directionHandler.invoke()
                     }
-                    // KeyUp 只消费不动作，避免短按「按下一步 + 松手又一步」。
                     return@onPreviewKeyEvent true
                 }
                 false

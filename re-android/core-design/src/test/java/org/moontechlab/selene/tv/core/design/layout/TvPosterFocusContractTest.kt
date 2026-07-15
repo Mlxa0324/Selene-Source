@@ -44,7 +44,8 @@ class TvPosterFocusContractTest {
     }
 
     /**
-     * 横向海报带末项右键必须 Cancel，禁止跳出到页内其它控件（如搜索历史「清空」）。
+     * 横向海报带末项右键必须 Cancel，禁止跳出到页内其它控件（如搜索历史「清空」）；
+     * 首/末边界按键触发 edge shake 反馈。
      */
     @Test
     fun posterRail_cancels_right_focus_on_last_item() {
@@ -57,6 +58,9 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("!isLast -> itemFocusRequesters[index + 1]")
         assertThat(source).contains("hasTrailing -> FocusRequester.Default")
         assertThat(source).contains("itemFocusRequesters[index - 1]")
+        assertThat(source).contains("rememberTvEdgeShakeState")
+        assertThat(source).contains("tvEdgeShake(edgeShake)")
+        assertThat(source).contains("consumeBoundaryKey")
     }
 
     /**
@@ -125,8 +129,30 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("itemFocusRequesters[index - safeColumns]")
         // 半行末列 Down 夹到 lastIndex，而不是 index+columns 超界就 Cancel。
         assertThat(source).contains("resolveGridDownIndex(")
-        assertThat(source).contains("itemFocusRequesters[downIndex]")
+        assertThat(source).contains("itemFocusRequesters[target]")
         assertThat(source).contains("fun resolveGridDownIndex(")
+        // 左右末列 / 末行 Down 边界抖动。
+        assertThat(source).contains("rememberTvEdgeShakeState")
+        assertThat(source).contains("tvEdgeShake(edgeShake)")
+        assertThat(source).contains("isDownEdge")
+        assertThat(source).contains("consumeBoundaryKey")
+    }
+
+    /**
+     * 边界抖动实现必须存在且对齐 Flutter 冷却/振幅参数。
+     */
+    @Test
+    fun edge_shake_module_matches_flutter_timing_contract() {
+        val source = File("src/main/java/org/moontechlab/selene/tv/core/design/focus/TvEdgeShake.kt")
+            .readText()
+
+        assertThat(source).contains("class TvEdgeShakeState")
+        assertThat(source).contains("fun shake(")
+        assertThat(source).contains("fun consumeBoundaryKey(")
+        assertThat(source).contains("fun consumeDirectionalKeyWithEdgeShake(")
+        assertThat(source).contains("AnimationMs: Long = 320L")
+        assertThat(source).contains("CooldownMs: Long = 520L")
+        assertThat(source).contains("PeakAmplitudeDp = 8.dp")
     }
 
     /**

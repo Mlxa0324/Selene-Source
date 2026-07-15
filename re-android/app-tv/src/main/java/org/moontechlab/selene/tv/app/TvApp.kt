@@ -62,6 +62,8 @@ import org.moontechlab.selene.tv.core.design.layout.TvDesignPreset
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
 import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
+import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
+import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -453,11 +455,12 @@ private fun TvDestinationGroup(
                     }
                 },
                 onClick = { onNavigate(destination) },
-                onMoveLeft = {
-                    previousDestination?.route?.let(onRequestInternalFocus)
+                // 无邻居时回调为 null → 边界抖动；有邻居才移动。
+                onMoveLeft = previousDestination?.route?.let { route ->
+                    { onRequestInternalFocus(route) }
                 },
-                onMoveRight = {
-                    nextDestination?.route?.let(onRequestInternalFocus)
+                onMoveRight = nextDestination?.route?.let { route ->
+                    { onRequestInternalFocus(route) }
                 },
                 onMoveUp = onMoveUpFromItem?.let { moveUp ->
                     { moveUp(destination.route) }
@@ -496,8 +499,8 @@ private fun TvNavigationPill(
     useContentAsDownTarget: Boolean = true,
     onFocused: () -> Unit,
     onClick: () -> Unit,
-    onMoveLeft: () -> Unit,
-    onMoveRight: () -> Unit,
+    onMoveLeft: (() -> Unit)? = null,
+    onMoveRight: (() -> Unit)? = null,
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null,
     onFilterToggle: () -> Unit = {},
@@ -505,6 +508,7 @@ private fun TvNavigationPill(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val pressPolicy = remember { TvRemotePressPolicy(hasLongPressHandler = false) }
+    val edgeShake = rememberTvEdgeShakeState()
     val isTextUnderline = style == TvNavItemStyle.TextUnderline
     val pillShape = RoundedCornerShape(TvTokens.TopActionRadius)
     val pillBackground = when {
@@ -528,12 +532,17 @@ private fun TvNavigationPill(
     }
 
     val focusAndClickModifier = Modifier
+        .tvEdgeShake(edgeShake)
         .focusProperties {
             // 主菜单下键进内容；快捷区下键由 onMoveDown 显式回主菜单，禁用默认 down。
             down = if (useContentAsDownTarget) {
                 contentFocusRequester
             } else {
                 FocusRequester.Cancel
+            }
+            // 快捷区最上：上键 Cancel，配合抖动反馈。
+            if (onMoveUp == null) {
+                up = FocusRequester.Cancel
             }
         }
         .then(
@@ -546,19 +555,29 @@ private fun TvNavigationPill(
         )
         .onPreviewKeyEvent { event ->
             if (event.key == Key.DirectionLeft || event.key == Key.DirectionRight) {
-                if (event.type == KeyEventType.KeyDown) {
-                    // 顶部导航左右键使用显式相邻目标，避免默认几何搜索被重定向逻辑抵消。
-                    if (event.key == Key.DirectionLeft) {
-                        onMoveLeft()
-                    } else {
-                        onMoveRight()
+                val handler = if (event.key == Key.DirectionLeft) onMoveLeft else onMoveRight
+                if (handler != null) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        handler.invoke()
                     }
+                } else {
+                    // 组内首/末项：到底抖动，禁止逃出顶栏组。
+                    edgeShake.consumeBoundaryKey(
+                        event = event,
+                        left = event.key == Key.DirectionLeft,
+                        right = event.key == Key.DirectionRight,
+                    )
                 }
                 return@onPreviewKeyEvent true
             }
-            if (event.key == Key.DirectionUp && onMoveUp != null) {
-                if (event.type == KeyEventType.KeyDown) {
-                    onMoveUp()
+            if (event.key == Key.DirectionUp) {
+                if (onMoveUp != null) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        onMoveUp()
+                    }
+                } else {
+                    // 右上角搜索等：上键到底抖动。
+                    edgeShake.consumeBoundaryKey(event = event, up = true)
                 }
                 return@onPreviewKeyEvent true
             }

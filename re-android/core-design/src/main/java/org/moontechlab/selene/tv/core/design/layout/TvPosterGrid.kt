@@ -27,6 +27,8 @@ import kotlin.math.abs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
+import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
 
 /**
  * TV 纵向海报网格。
@@ -130,6 +132,17 @@ fun TvPosterGrid(
             }
             val column = index % safeColumns
             val lastIndex = items.lastIndex
+            // 每卡独立抖动态，仅当前获焦项在边界按键时反馈。
+            val edgeShake = rememberTvEdgeShakeState()
+            val downIndex = resolveGridDownIndex(
+                index = index,
+                itemCount = items.size,
+                columns = safeColumns,
+            )
+            val isLeftEdge = column == 0
+            val isRightEdge = column >= safeColumns - 1 || index >= lastIndex
+            // 末行再 Down：到底抖动；首行 Up 仍交给顶栏/筛选，不抖。
+            val isDownEdge = downIndex == null
             BoxWithConstraints(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.TopCenter,
@@ -143,6 +156,8 @@ fun TvPosterGrid(
                 TvPosterCard(
                     item = item,
                     cardWidth = resolvedCardWidth,
+                    // 边界抖动位移挂在整卡（含标题）上。
+                    modifier = Modifier.tvEdgeShake(edgeShake),
                     focusRequesters = cardFocusRequesters,
                     // 网格跟滚由 scrollFocusedItemWithCenterBand 统一负责，禁止 bringIntoView 抢滚动。
                     requestBringIntoViewOnFocus = false,
@@ -165,13 +180,17 @@ fun TvPosterGrid(
                             FocusRequester.Default
                         }
                         // 同列优先；下一行缺列时落到末项，避免末列 Down 无响应。
-                        down = resolveGridDownIndex(
-                            index = index,
-                            itemCount = items.size,
-                            columns = safeColumns,
-                        )?.let { downIndex ->
-                            itemFocusRequesters[downIndex]
+                        down = downIndex?.let { target ->
+                            itemFocusRequesters[target]
                         } ?: FocusRequester.Cancel
+                    },
+                    onPreviewKey = { event ->
+                        edgeShake.consumeBoundaryKey(
+                            event = event,
+                            left = isLeftEdge,
+                            right = isRightEdge,
+                            down = isDownEdge,
+                        )
                     },
                     onClick = onItemClick?.let { click -> { click(item) } },
                     onFocusChanged = { hasFocus ->

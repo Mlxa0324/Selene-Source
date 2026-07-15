@@ -115,7 +115,11 @@ import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvEpisode
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.TvEdgeShakeState
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
+import org.moontechlab.selene.tv.core.design.focus.consumeDirectionalKeyWithEdgeShake
+import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
+import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvCachedTitlePosterImage
 import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistItem
@@ -793,12 +797,14 @@ private fun NcatDetailTopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 样式与首页右上角快捷「搜索」对齐：胶囊 + 图标 + 自适应宽度。
+            val searchEdgeShake = rememberTvEdgeShakeState()
             NcatTopPill(
                 label = "搜索",
                 leadingGlyph = "⌕",
                 leadingGlyphSize = TvTokens.TopActionIconGlyph,
                 focusRequester = focusTargets.search,
                 modifier = Modifier
+                    .tvEdgeShake(searchEdgeShake)
                     .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
                     .focusProperties {
                         // 右列竖链：搜索 ↓ 进简介，不斜穿到左侧播放器。
@@ -806,6 +812,10 @@ private fun NcatDetailTopBar(
                         // 顶行最上：上键不再逃出详情内容区。
                         up = FocusRequester.Cancel
                         left = focusTargets.player
+                    }
+                    .onPreviewKeyEvent { event ->
+                        // 上键到底抖动（与 Cancel 配套）。
+                        searchEdgeShake.consumeBoundaryKey(event = event, up = true)
                     },
                 onClick = { onSearchClick?.invoke() },
             )
@@ -998,6 +1008,7 @@ private fun NcatPreviewPanel(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val edgeShake = rememberTvEdgeShakeState()
     // 初始化与缓冲阶段不挂影片画面，只铺纯色；真正开播后再显示 Surface。
     val showPlayerSurface = playerSurface != null &&
         previewPlaybackStarted &&
@@ -1006,6 +1017,7 @@ private fun NcatPreviewPanel(
         modifier = modifier
             // 高度由 Hero 按 16:9 统一下发，避免与右侧简介错高。
             .fillMaxSize()
+            .tvEdgeShake(edgeShake)
             // 主预览区大圆角，贴近截图卡片。
             .clip(RoundedCornerShape(18.dp))
             .border(
@@ -1024,6 +1036,9 @@ private fun NcatPreviewPanel(
             }
             .focusable(interactionSource = interactionSource)
             .onPreviewKeyEvent { event ->
+                if (edgeShake.consumeBoundaryKey(event = event, left = true)) {
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
                     onPlayPressed?.invoke()
@@ -1458,12 +1473,14 @@ private fun NcatInfoPanel(
                     )
                 },
             )
+            val favoriteEdgeShake = rememberTvEdgeShakeState()
             NcatActionTile(
                 // 收藏态只变心形颜色，文案固定“收藏”，贴近目标截图。
                 label = "收藏",
                 selected = state.isFavorite,
                 focusRequester = focusTargets.favorite,
                 modifier = Modifier
+                    .tvEdgeShake(favoriteEdgeShake)
                     .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
                     .focusProperties {
                         up = focusTargets.description
@@ -1471,6 +1488,8 @@ private fun NcatInfoPanel(
                         right = FocusRequester.Cancel
                         down = currentSourceFocusRequester ?: FocusRequester.Default
                     },
+                edgeShakeRight = true,
+                edgeShakeState = favoriteEdgeShake,
                 onPressed = { onFavoriteToggle?.invoke() },
                 iconContent = {
                     NcatFavoriteGlyph(
@@ -1589,6 +1608,9 @@ private fun NcatActionTile(
     modifier: Modifier = Modifier,
     icon: String? = null,
     iconContent: (@Composable () -> Unit)? = null,
+    edgeShakeState: TvEdgeShakeState? = null,
+    edgeShakeRight: Boolean = false,
+    edgeShakeLeft: Boolean = false,
     onPressed: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -1610,6 +1632,16 @@ private fun NcatActionTile(
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
+                if (
+                    edgeShakeState != null &&
+                    edgeShakeState.consumeBoundaryKey(
+                        event = event,
+                        left = edgeShakeLeft,
+                        right = edgeShakeRight,
+                    )
+                ) {
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                 if (event.key == Key.Enter || event.key == Key.DirectionCenter || event.key == Key.NumPadEnter || event.key == Key.Spacebar) {
                     onPressed(); true
@@ -1698,10 +1730,14 @@ private fun NcatSourceRail(
     ) {
         items(sourceOptions.size, key = { index -> sourceOptions[index].sourceId }) { index ->
             val option = sourceOptions[index]
+            val edgeShake = rememberTvEdgeShakeState()
+            val isFirst = index == 0
+            val isLast = index == sourceOptions.lastIndex
             NcatSourceCard(
                 option = option,
                 focusRequester = focusTargets.sources.getOrNull(index),
                 modifier = Modifier
+                    .tvEdgeShake(edgeShake)
                     .tvBringFocusedItemIntoView()
                     .focusProperties {
                         up = focusTargets.player
@@ -1719,6 +1755,13 @@ private fun NcatSourceRail(
                         } else {
                             FocusRequester.Cancel
                         }
+                    }
+                    .onPreviewKeyEvent { event ->
+                        edgeShake.consumeBoundaryKey(
+                            event = event,
+                            left = isFirst,
+                            right = isLast,
+                        )
                     }
                     .onFocusChanged { focusState ->
                         if (focusState.isFocused) {
@@ -1968,6 +2011,7 @@ private fun NcatEpisodeGroupChoice(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val edgeShake = rememberTvEdgeShakeState()
     // 获焦或选中都用主题色；下划线仅 selected。
     val textAccent = selected || isFocused
     val scale by animateFloatAsState(
@@ -1980,6 +2024,7 @@ private fun NcatEpisodeGroupChoice(
             // 热区略放大；高度交给外层 LazyRow(48.dp)，避免 heightIn 挤掉下划线。
             .widthIn(min = 56.dp)
             .fillMaxHeight()
+            .tvEdgeShake(edgeShake)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
@@ -1998,20 +2043,14 @@ private fun NcatEpisodeGroupChoice(
                     }
                     return@onPreviewKeyEvent true
                 }
-                val directionHandler = when (event.key) {
-                    Key.DirectionLeft -> onArrowLeft
-                    Key.DirectionRight -> onArrowRight
-                    Key.DirectionUp -> onArrowUp
-                    Key.DirectionDown -> onArrowDown
-                    else -> null
-                }
-                if (directionHandler != null) {
-                    if (event.type == KeyEventType.KeyDown) {
-                        directionHandler.invoke()
-                    }
-                    return@onPreviewKeyEvent true
-                }
-                false
+                consumeDirectionalKeyWithEdgeShake(
+                    event = event,
+                    edgeShake = edgeShake,
+                    onArrowLeft = onArrowLeft,
+                    onArrowRight = onArrowRight,
+                    onArrowUp = onArrowUp,
+                    onArrowDown = onArrowDown,
+                )
             }
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2059,10 +2098,12 @@ private fun NcatEpisodeChip(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val edgeShake = rememberTvEdgeShakeState()
     Box(
         modifier = modifier
             .widthIn(min = 56.dp)
             .height(48.dp)
+            .tvEdgeShake(edgeShake)
             .background(
                 color = when {
                     // 仅当前集用强调色；获焦未选中抬底，避免整行扫过都变红。
@@ -2096,21 +2137,15 @@ private fun NcatEpisodeChip(
                     }
                     return@onPreviewKeyEvent true
                 }
-                val directionHandler = when (event.key) {
-                    Key.DirectionLeft -> onArrowLeft
-                    Key.DirectionRight -> onArrowRight
-                    Key.DirectionUp -> onArrowUp
-                    Key.DirectionDown -> onArrowDown
-                    else -> null
-                }
-                if (directionHandler != null) {
-                    // 消费方向键：禁止系统焦点逃到线路/推荐等其它层。
-                    if (event.type == KeyEventType.KeyDown) {
-                        directionHandler.invoke()
-                    }
-                    return@onPreviewKeyEvent true
-                }
-                false
+                // 有回调则移动；左右无回调=首/末集边界抖动。
+                consumeDirectionalKeyWithEdgeShake(
+                    event = event,
+                    edgeShake = edgeShake,
+                    onArrowLeft = onArrowLeft,
+                    onArrowRight = onArrowRight,
+                    onArrowUp = onArrowUp,
+                    onArrowDown = onArrowDown,
+                )
             }
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
@@ -2205,6 +2240,9 @@ private fun NcatRecommendRail(
                             },
                         ) { index ->
                             val card = cards[index]
+                            val edgeShake = rememberTvEdgeShakeState()
+                            val isFirst = index == 0
+                            val isLast = index == cards.lastIndex
                             NcatRecommendCard(
                                 card = card,
                                 cardWidth = cardWidth,
@@ -2212,6 +2250,7 @@ private fun NcatRecommendRail(
                                 focusRequester = focusTargets.recommends.getOrNull(index),
                                 onPressed = { onRecommendClick?.invoke(card) },
                                 modifier = Modifier
+                                    .tvEdgeShake(edgeShake)
                                     .tvBringFocusedItemIntoView()
                                     .focusProperties {
                                         up = focusTargets.episodeGroups
@@ -2232,6 +2271,13 @@ private fun NcatRecommendRail(
                                         } else {
                                             FocusRequester.Cancel
                                         }
+                                    }
+                                    .onPreviewKeyEvent { event ->
+                                        edgeShake.consumeBoundaryKey(
+                                            event = event,
+                                            left = isFirst,
+                                            right = isLast,
+                                        )
                                     }
                                     .onFocusChanged { focusState ->
                                         if (focusState.isFocused) {

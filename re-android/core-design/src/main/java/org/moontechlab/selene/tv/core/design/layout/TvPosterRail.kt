@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.Dp
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
+import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
 
 /**
  * TV 横向海报带。
@@ -112,35 +114,39 @@ fun TvPosterRail(
             }
             val isFirst = index == 0
             val isLast = index == lastIndex
-            // 首项显式左出：挂在真实 focusable 上拦截左键，避免 Default 几何落点偏离分带。
-            val firstLeftPreviewKey = if (isFirst && onLeftFromFirst != null) {
-                { event: androidx.compose.ui.input.key.KeyEvent ->
-                    if (event.key != Key.DirectionLeft) {
-                        false
-                    } else {
-                        // KeyDown 回左栏；KeyUp 一并消费，避免松键再触发系统焦点搜索。
+            val edgeShake = rememberTvEdgeShakeState()
+            // 首项显式左出 或 首/末边界抖动：挂在真实 focusable 上拦截方向键。
+            val horizontalEdgePreviewKey: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { event ->
+                when {
+                    // 首项显式左出：回键盘等业务出口，不抖。
+                    isFirst && onLeftFromFirst != null && event.key == Key.DirectionLeft -> {
                         if (event.type == KeyEventType.KeyDown) {
                             onLeftFromFirst.invoke()
                         }
                         event.type == KeyEventType.KeyDown || event.type == KeyEventType.KeyUp
                     }
+                    // 首项再左：到底抖动（无业务出口时）。
+                    isFirst && onLeftFromFirst == null && event.key == Key.DirectionLeft -> {
+                        edgeShake.consumeBoundaryKey(event = event, left = true)
+                    }
+                    // 末项再右（无尾卡）：到底抖动。
+                    isLast && !hasTrailing && event.key == Key.DirectionRight -> {
+                        edgeShake.consumeBoundaryKey(event = event, right = true)
+                    }
+                    else -> false
                 }
-            } else {
-                null
             }
             TvPosterCard(
                 item = item,
+                modifier = Modifier.tvEdgeShake(edgeShake),
                 focusRequesters = cardFocusRequesters,
                 // 显式左右邻居：末项右键 Cancel，禁止几何搜索跳到「清空」等页内控件。
                 focusProperties = {
                     left = if (!isFirst) {
                         itemFocusRequesters[index - 1]
-                    } else if (onLeftFromFirst != null) {
-                        // 已由 onPreviewKey 接管，禁止再走 Default 二次跳焦。
-                        FocusRequester.Cancel
                     } else {
-                        // 首项左键交给系统（首页可回侧栏等）。
-                        FocusRequester.Default
+                        // 首项左：preview 接管（业务出口或抖动），禁止 Default 二次跳焦。
+                        FocusRequester.Cancel
                     }
                     right = when {
                         !isLast -> itemFocusRequesters[index + 1]
@@ -152,7 +158,7 @@ fun TvPosterRail(
                     up = FocusRequester.Default
                     down = FocusRequester.Default
                 },
-                onPreviewKey = firstLeftPreviewKey,
+                onPreviewKey = horizontalEdgePreviewKey,
                 onFocusChanged = { hasFocus ->
                     if (hasFocus) {
                         // 仅本轨会话内左右相邻切换才横向推进；上下跨轨就近落点保持横向位置。

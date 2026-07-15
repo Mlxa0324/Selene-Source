@@ -523,13 +523,26 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("boundsInWindow")
         assertThat(menuChipSource).contains("onArrowUp: (() -> Unit)? = null")
         assertThat(menuChipSource).contains("onArrowDown: (() -> Unit)? = null")
-        assertThat(menuChipSource).contains("Key.DirectionUp ->")
-        assertThat(menuChipSource).contains("Key.DirectionDown ->")
-        // 方向键在 KeyDown（含 repeat）步进，长按左右连续跟焦；KeyUp 只消费不二次移动。
+        // 方向键：有回调则步进；左右无回调边界抖动（consumeDirectionalKeyWithEdgeShake）。
+        assertThat(menuChipSource).contains("consumeDirectionalKeyWithEdgeShake(")
+        assertThat(menuChipSource).contains("rememberTvEdgeShakeState")
+        assertThat(menuChipSource).contains("tvEdgeShake(edgeShake)")
         assertThat(menuChipSource).contains("if (event.type == KeyEventType.KeyDown)")
-        assertThat(menuChipSource).contains("directionHandler.invoke()")
-        assertThat(menuChipSource).contains("长按左右连续跟焦")
-        assertThat(menuChipSource).doesNotContain("if (event.type == KeyEventType.KeyUp) {\n                        directionHandler.invoke()")
+    }
+
+    /**
+     * 二级菜单（画面比例等）末项右键不得逃出列表，须边界抖动。
+     */
+    @Test
+    fun route_secondary_menu_shakes_on_horizontal_edge() {
+        val source = readRouteSource()
+        val aspect = source.substringAfter("private fun TvPlayerAspectRatioMenu(")
+            .substringBefore("private fun TvPlayerSpeedMenu(")
+
+        assertThat(aspect).contains("onArrowRight = if (index < PLAYER_ASPECT_RATIO_OPTIONS.lastIndex)")
+        assertThat(aspect).contains("} else {\n                    null\n                }")
+        assertThat(source).contains("consumeDirectionalKeyWithEdgeShake(")
+        assertThat(source).contains("rememberTvEdgeShakeState")
     }
 
     /**
