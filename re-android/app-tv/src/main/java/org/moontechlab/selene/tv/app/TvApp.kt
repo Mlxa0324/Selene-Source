@@ -236,9 +236,10 @@ private fun TvTopNavigationBar(
             .fillMaxWidth()
             .padding(
                 start = TvTokens.PageHorizontalPadding,
-                top = 28.dp,
+                // 顶栏纵向收紧：给下方海报/网格多留一截可视高度。
+                top = 14.dp,
                 end = TvTokens.PageHorizontalPadding,
-                bottom = 24.dp,
+                bottom = 10.dp,
             )
             .onFocusChanged { focusState ->
                 if (!focusState.hasFocus) {
@@ -246,7 +247,7 @@ private fun TvTopNavigationBar(
                     topNavHasFocus = false
                 }
             },
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -255,7 +256,7 @@ private fun TvTopNavigationBar(
             Text(
                 text = "IvyTV",
                 style = MaterialTheme.typography.headlineMedium.copy(
-                    fontSize = 32.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.ExtraBold,
                 ),
                 color = Color.White,
@@ -570,26 +571,26 @@ private fun TvNavigationPill(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        // 比正文略大一号，整体加粗，选中再加重。
-                        fontSize = 19.sp,
+                        // 略收字号，降低顶栏行高占用。
+                        fontSize = 17.sp,
                         fontWeight = if (selected || isFocused) {
                             FontWeight.ExtraBold
                         } else {
                             FontWeight.Bold
                         },
-                        letterSpacing = 0.4.sp,
+                        letterSpacing = 0.3.sp,
                     ),
                     color = labelColor,
                     maxLines = 1,
                 )
-                // 字与线 1dp 贴合；线高 3dp 克制，圆角略收。
+                // 字与线 1dp 贴合；线高 2dp 更克制。
                 Spacer(modifier = Modifier.height(1.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(3.dp)
-                        .widthIn(min = 14.dp)
-                        .clip(RoundedCornerShape(1.5.dp))
+                        .height(2.dp)
+                        .widthIn(min = 12.dp)
+                        .clip(RoundedCornerShape(1.dp))
                         .background(underlineColor),
                 )
             }

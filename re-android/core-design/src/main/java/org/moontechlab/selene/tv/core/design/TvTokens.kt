@@ -101,16 +101,16 @@ object TvTokens {
     val PageHorizontalPadding = 50.dp
 
     /**
-     * TV 页面顶部留白。
+     * TV 页面顶部留白（页面自带标题时用；顶栏下方内容页宜更小）。
      */
-    val PageTopPadding = 24.dp
+    val PageTopPadding = 12.dp
 
     /**
      * TV 页面区块纵向间距。
      *
      * 首页多层横向海报带需要略大的纵向呼吸，避免标题贴着上一行封面。
      */
-    val SectionSpacing = 38.dp
+    val SectionSpacing = 28.dp
 
     /**
      * TV 页面卡片间距。
@@ -140,7 +140,7 @@ object TvTokens {
     /**
      * TV 顶部快捷入口高度。
      */
-    val TopActionHeight = 44.dp
+    val TopActionHeight = 38.dp
 
     /**
      * TV 顶部快捷入口圆角。

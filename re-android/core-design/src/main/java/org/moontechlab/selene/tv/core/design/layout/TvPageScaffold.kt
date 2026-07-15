@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -48,18 +49,20 @@ fun TvPageScaffold(
             if (!title.isNullOrBlank()) {
                 Column(
                     modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                        ),
                         color = TvTokens.TextPrimary,
                     )
                     if (!subtitle.isNullOrBlank()) {
                         // 副标题只补充页面语义，避免重新出现工程计划感。
                         Text(
                             text = subtitle,
-                            style = MaterialTheme.typography.bodyLarge,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

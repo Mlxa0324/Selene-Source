@@ -222,14 +222,18 @@ class TvAppFocusContractTest {
         // 选中/获焦文字用主题色 Accent。
         assertThat(pillSource).contains("isTextUnderline && (selected || isFocused) -> TvTokens.Accent")
         assertThat(pillSource).contains("Color.Transparent")
-        // 下划线宽度跟文案；贴字 1dp、线高 3dp；与 LOGO 左对齐。
+        // 下划线宽度跟文案；贴字 1dp、线高 2dp；与 LOGO 左对齐。
         assertThat(pillSource).contains("IntrinsicSize.Max")
         assertThat(pillSource).contains("Spacer(modifier = Modifier.height(1.dp))")
-        assertThat(pillSource).contains(".height(3.dp)")
-        // 主菜单选中字号仍 19sp；快捷入口图标走 TopActionIconGlyph。
-        assertThat(pillSource).contains("fontSize = 19.sp")
+        assertThat(pillSource).contains(".height(2.dp)")
+        // 主菜单字号收紧为 17sp；快捷入口图标走 TopActionIconGlyph。
+        assertThat(pillSource).contains("fontSize = 17.sp")
         assertThat(pillSource).contains("TvTokens.TopActionIconGlyph")
         assertThat(pillSource).contains("FontWeight.ExtraBold")
+        // 顶栏纵向收紧，给内容区多留高度。
+        assertThat(topNavSource).contains("top = 14.dp")
+        assertThat(topNavSource).contains("bottom = 10.dp")
+        assertThat(topNavSource).contains("verticalArrangement = Arrangement.spacedBy(8.dp)")
         // 左右间距接近原先胶囊视觉疏密度。
         assertThat(topNavSource).contains("horizontalSpacing = 28.dp")
     }

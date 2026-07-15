@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
@@ -605,22 +606,25 @@ private fun PosterGridHeader(
     title: String,
     subtitle: String,
 ) {
+    // 与 TvScrollablePageHeader 同密度：页头收紧，首屏多露出一行海报。
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.ExtraBold,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+            ),
             color = TvTokens.TextPrimary,
         )
         if (subtitle.isNotBlank()) {
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                 color = TvTokens.TextSecondary,
             )
         }
