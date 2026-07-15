@@ -33,18 +33,14 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import android.os.Build
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -215,25 +211,7 @@ fun TvApp() {
                             false
                         },
                 ) {
-                    // 筛选展开时底层模糊/略压暗；progress 跟 overlay 淡出同步。
-                    val filterDimProgress = categoryFilterOverlayState.revealProgress
-                    val blurUnderFilter = filterDimProgress > 0.02f
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(
-                                when {
-                                    blurUnderFilter && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                                        Modifier.blur(radius = 10.dp)
-                                    }
-                                    blurUnderFilter -> {
-                                        // API 31 以下无 RenderEffect 模糊，略降透明度衬托遮罩。
-                                        Modifier.alpha(0.88f)
-                                    }
-                                    else -> Modifier
-                                },
-                            ),
-                    ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
                         // 顶栏固定占位；筛选打开时禁止左/右 tab 获焦，直到返回关闭。
                         if (isPrimaryRoute) {
                             Box(
@@ -286,7 +264,7 @@ fun TvApp() {
                         )
                     }
 
-                    // 分类筛选独立图层：从屏幕顶滑入并盖住顶栏；关闭时淡出。
+                    // 分类筛选独立图层：纯色底 + 贴屏顶；关闭时淡出。
                     TvCategoryFilterOverlayLayer(
                         visible = showCategoryFilter,
                         topChromeHeightPx = topChromeHeightPx,

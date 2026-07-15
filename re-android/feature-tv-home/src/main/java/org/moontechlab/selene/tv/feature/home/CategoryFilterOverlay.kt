@@ -21,13 +21,13 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import org.moontechlab.selene.tv.core.design.TvTokens
 
 /**
  * 壳层分类筛选 overlay 状态：由分类页写入数据，由壳层绘制图层。
@@ -51,7 +51,7 @@ class CategoryFilterOverlayState {
     var revealedHeightPx by mutableIntStateOf(0)
 
     /**
-     * 0..1 展开进度，供壳层对底层做模糊/压暗，并与淡出同步。
+     * 0..1 展开进度，供淡入淡出与列表 inset 同步。
      */
     var revealProgress by mutableFloatStateOf(0f)
 }
@@ -140,12 +140,12 @@ fun TvCategoryFilterOverlayLayer(
             .fillMaxSize()
             .zIndex(12f),
     ) {
-        // 半透明遮罩：压暗底层并衬托面板「毛玻璃」感（与底层 blur 配合）。
+        // 全屏纯色遮罩：挡住底层海报，不使用模糊。
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = panelAlpha * 0.42f }
-                .background(Color.Black),
+                .graphicsLayer { alpha = panelAlpha }
+                .background(TvTokens.Background),
         )
         TvLibraryFilterPanel(
             filters = state.filters,
