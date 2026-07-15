@@ -1,5 +1,6 @@
 package org.moontechlab.selene.tv.core.design.layout
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyListState
@@ -15,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.Dp
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 
@@ -142,15 +144,9 @@ fun TvPosterRail(
                             onRailFocused?.invoke()
                         }
                         if (isIntraRailHorizontalMove) {
-                            val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
-                                focusedIndex = index,
-                                itemCount = items.size,
-                            )
-                            if (targetIndex != listState.firstVisibleItemIndex) {
-                                scrollScope.launch {
-                                    // 复刻 Flutter TV 首页：第 5 张获焦后按卡片步长推动横向列表。
-                                    listState.animateScrollToItem(targetIndex)
-                                }
+                            scrollScope.launch {
+                                // 中心带跟焦：左右越过中线才 scrollBy，禁止 pin 到 firstVisible 左缘。
+                                listState.scrollFocusedItemWithCenterBand(index)
                             }
                         }
                     }
@@ -162,6 +158,66 @@ fun TvPosterRail(
             item(key = "tv-poster-rail-trailing") {
                 // 尾部内容用于查看更多等操作卡片，沿用同一条横向轨道。
                 trailingContent()
+            }
+        }
+    }
+}
+
+/**
+ * 横向列表中心带跟焦（与纵向网格同策略，主轴为水平）。
+ *
+ * - 获焦项在中线左侧且完整可见：尽量不滚；首屏左半区保持静止，左缘不被拽走。
+ * - 向右越过中线 / 向左相对中线偏左且已有滚动：按差值 scrollBy 把项中心拉回中线。
+ * - 左/右被裁：只滚裁切量；未布局时先滚近再微调。
+ *
+ * 禁止对每个获焦项 animateScrollToItem 无 offset（会把项钉在 firstVisible 左缘）。
+ */
+private suspend fun LazyListState.scrollFocusedItemWithCenterBand(index: Int) {
+    var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == index }
+    if (target == null) {
+        // 尚未进入布局：先滚进可见范围，再交给中心带逻辑。
+        animateScrollToItem(index)
+        target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == index }
+            ?: return
+    }
+    val layoutInfo = layoutInfo
+    val viewportStart = layoutInfo.viewportStartOffset
+    val viewportEnd = layoutInfo.viewportEndOffset
+    val viewportSize = (viewportEnd - viewportStart).coerceAtLeast(1)
+    val centerLine = viewportStart + viewportSize / 2
+    // LazyListItemInfo：主轴 offset / size 为 Int。
+    val itemStart = target.offset
+    val itemSize = target.size
+    val itemEnd = itemStart + itemSize
+    val itemCenter = itemStart + itemSize / 2
+    val edgeSafePx = 8
+    when {
+        // 左缘被裁：刚好露出，不要 pin 成 firstVisible。
+        itemStart < viewportStart + edgeSafePx -> {
+            val delta = (itemStart - (viewportStart + edgeSafePx)).toFloat()
+            if (abs(delta) > 1f) {
+                animateScrollBy(delta)
+            }
+        }
+        // 右缘被裁：刚好露出。
+        itemEnd > viewportEnd - edgeSafePx -> {
+            val delta = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
+            if (delta > 1f) {
+                animateScrollBy(delta)
+            }
+        }
+        // 向右越过中线：跟滚，列表被焦点带走。
+        itemCenter > centerLine -> {
+            val delta = (itemCenter - centerLine).toFloat()
+            if (delta > 1f) {
+                animateScrollBy(delta)
+            }
+        }
+        // 向左相对中线偏左：回拉到中线（首屏 offset≈0 时负向 scrollBy 无效果，左缘不被动）。
+        itemCenter < centerLine -> {
+            val delta = (itemCenter - centerLine).toFloat()
+            if (delta < -1f) {
+                animateScrollBy(delta)
             }
         }
     }

@@ -55,26 +55,23 @@ class TvListLayoutMetricsTest {
     }
 
     /**
-     * 横向海报带需要复刻 Flutter TV：同轨前 4 张不推动列表，第 5 张开始按卡片步长推进。
-     *
-     * 上下跨轨进入不得横向复位，只在同轨左右移动时才调用 animateScrollToItem。
+     * 横向海报带：同轨左右才跟滚；中心带 scrollBy，禁止 pin firstVisible。
+     * 上下跨轨进入不得横向复位。
      */
     @Test
-    fun railFocusScroll_usesFlutterHomeSectionScrollRule() {
-        val metricsSource = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvListLayoutMetrics.kt")
-            .readText()
+    fun railFocusScroll_usesCenterBandFollowForIntraRailMoves() {
         val railSource = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvPosterRail.kt")
             .readText()
 
-        assertThat(metricsSource).contains("RailScrollStartIndex = 4")
-        assertThat(metricsSource).contains("resolveRailFirstVisibleItemIndex")
-        assertThat(metricsSource).contains("focusedIndex - RailScrollStartIndex + 1")
         assertThat(railSource).contains("onFocusChanged = { hasFocus ->")
         assertThat(railSource).contains("val isIntraRailHorizontalMove =")
         assertThat(railSource).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
         assertThat(railSource).contains("if (isIntraRailHorizontalMove) {")
-        assertThat(railSource).contains("animateScrollToItem")
-        assertThat(railSource).contains("resolveRailFirstVisibleItemIndex")
+        assertThat(railSource).contains("scrollFocusedItemWithCenterBand")
+        assertThat(railSource).contains("animateScrollBy")
+        assertThat(railSource).contains("itemCenter > centerLine")
+        assertThat(railSource).contains("itemCenter < centerLine")
+        assertThat(railSource).doesNotContain("resolveRailFirstVisibleItemIndex")
         assertThat(railSource).doesNotContain("snapshotFlow { listState.firstVisibleItemIndex }")
     }
 }

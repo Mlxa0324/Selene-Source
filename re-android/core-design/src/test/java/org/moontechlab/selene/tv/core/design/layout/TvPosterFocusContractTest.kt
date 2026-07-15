@@ -167,6 +167,7 @@ class TvPosterFocusContractTest {
 
     /**
      * 横向海报带只在同轨左右相邻移动时推动横向列表，上下跨轨就近落点不得改横向偏移。
+     * 跟滚用中心带 scrollBy，禁止 pin firstVisible 左缘。
      */
     @Test
     fun posterRail_only_scrolls_horizontally_for_intra_rail_focus_moves() {
@@ -178,8 +179,12 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("val isIntraRailHorizontalMove =")
         assertThat(source).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
         assertThat(source).contains("if (isIntraRailHorizontalMove) {")
-        assertThat(source).contains("resolveRailFirstVisibleItemIndex(")
-        assertThat(source).contains("listState.animateScrollToItem(targetIndex)")
+        assertThat(source).contains("scrollFocusedItemWithCenterBand")
+        assertThat(source).contains("animateScrollBy")
+        assertThat(source).contains("centerLine")
+        // 不得再按固定下标 pin firstVisible。
+        assertThat(source).doesNotContain("resolveRailFirstVisibleItemIndex(")
+        assertThat(source).doesNotContain("animateScrollToItem(targetIndex)")
     }
 
     /**
