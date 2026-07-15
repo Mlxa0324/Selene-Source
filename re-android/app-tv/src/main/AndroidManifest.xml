@@ -18,7 +18,7 @@
         android:allowBackup="true"
         android:banner="@drawable/tv_banner"
         android:icon="@drawable/tv_icon"
-        android:label="Selene TV"
+        android:label="IvyTV"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:usesCleartextTraffic="${seleneTvUsesCleartextTraffic}">
