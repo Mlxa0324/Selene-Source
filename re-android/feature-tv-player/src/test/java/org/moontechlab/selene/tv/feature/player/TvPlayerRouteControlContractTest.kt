@@ -738,7 +738,7 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("requestPlaylistSecondaryFocus")
         assertThat(source).contains("secondaryFocusTicket = playlistSecondaryFocusTicket")
         assertThat(playlistSource).contains("secondaryFocusTicket")
-        assertThat(playlistSource).contains("LaunchedEffect(secondaryFocusTicket)")
+        assertThat(playlistSource).contains("pinCurrentTicket = secondaryFocusTicket")
         assertThat(playlistSource).contains("onSecondaryFocusFailed")
         assertThat(source).contains("onSecondaryFocusFailed = requestSelectedPrimaryMenuFocus")
         // 一级播放列表上键必须走门票，不能 requestNearest 硬点屏外 requester。
@@ -753,72 +753,36 @@ class TvPlayerRouteControlContractTest {
     fun route_playlist_menu_puts_groups_below_episodes_with_detail_style() {
         val source = readRouteSource()
         val playlistSource = source.substringAfter("private fun TvPlayerPlaylistMenu(")
-            .substringBefore("/**\n * TV 全屏播放器播放线路二级菜单。")
+            .substringBefore("/**\n * 全屏播放列表分组选项。")
 
-        // 布局：先渲染全剧集连续 LazyRow，再渲染分组条。
-        val episodeRow = playlistSource.indexOf("movePlaylistEpisodeFocus")
-            .takeIf { index -> index >= 0 }
-            ?: playlistSource.indexOf("items(")
-        val groupChoice = playlistSource.indexOf("TvPlayerEpisodeGroupChoice(")
-        assertThat(episodeRow).isAtLeast(0)
-        assertThat(groupChoice).isAtLeast(0)
-        assertThat(episodeRow).isLessThan(groupChoice)
+        // 与详情共用 TvEpisodePlaylistRail：连续横轨 + SoftEdgeFollow + 分组条。
+        assertThat(playlistSource).contains("TvEpisodePlaylistRail(")
+        assertThat(playlistSource).contains("TvEpisodePlaylistItem(")
+        assertThat(playlistSource).contains("pinCurrentTicket = secondaryFocusTicket")
+        assertThat(playlistSource).contains("episodeChip = { scope ->")
+        assertThat(playlistSource).contains("groupChip = { scope ->")
+        assertThat(playlistSource).contains("TvPlayerMenuChip(")
+        assertThat(playlistSource).contains("TvPlayerEpisodeGroupChoice(")
+        assertThat(playlistSource.indexOf("episodeChip =")).isLessThan(
+            playlistSource.indexOf("groupChip ="),
+        )
 
-        // 分组无背景样式组件存在。
         assertThat(source).contains("private fun TvPlayerEpisodeGroupChoice(")
         assertThat(source).contains("获焦未确认：主题色文字，无下划线")
-        assertThat(source).contains("ensureGroupChipVisible")
-        assertThat(source).contains("ensureGroupChipVisibleNow")
-        assertThat(source).contains("moveGroupFocus")
-        assertThat(source).contains("scrollPlayerMenuChipIntoViewSuspend")
-        assertThat(playlistSource).contains("获焦只保证芯片可见；不改 selectedGroup")
-        assertThat(playlistSource).contains("确认：下划线落到该组")
-        // 分组左右：先滚后焦，禁止对屏外 requester 硬点。
-        assertThat(playlistSource).contains("moveGroupFocus(gi - 1)")
-        assertThat(playlistSource).contains("moveGroupFocus(gi + 1)")
-        assertThat(playlistSource).contains("先滚后焦")
-        // 确认：回车/中键/空格 + 鼠标 clickable；热区放大。
         val groupChoiceSource = source
             .substringAfter("private fun TvPlayerEpisodeGroupChoice(")
             .substringBefore("/**\n * TV 全屏播放器播放线路二级菜单。")
         assertThat(groupChoiceSource).contains("Key.Spacebar")
         assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
         assertThat(groupChoiceSource).contains("clickable(")
-        // 下划线 3dp、宽跟文字；外层 LazyRow 48dp，避免被裁切。
         assertThat(groupChoiceSource).contains("height(3.dp)")
         assertThat(groupChoiceSource).contains("IntrinsicSize.Max")
-        assertThat(groupChoiceSource).contains("Modifier.width(IntrinsicSize.Max)")
-        assertThat(groupChoiceSource).doesNotContain("fillMaxWidth(0.85f)")
-        assertThat(playlistSource).contains(".height(48.dp)")
-        assertThat(groupChoiceSource).contains("if (selected) TvTokens.Accent else Color.Transparent")
-        // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。
-        assertThat(source).contains("movePlaylistEpisodeFocus")
-        assertThat(source).contains("requestPlaylistEpisodeFocusWhenReady")
-        assertThat(source).contains("PlaylistFocusPinMode.SoftEdgeFollow")
-        assertThat(source).contains("PlaylistFocusPinMode.PinLeading")
-        assertThat(playlistSource).contains("LocalBringIntoViewSpec")
-        // 左右键不得再 KeepSlot 钉死原 X，否则会出现「向右焦点常驻左侧」的反转感。
-        assertThat(playlistSource).contains("pinFocusMode = PlaylistFocusPinMode.SoftEdgeFollow")
-        // 首/末集贴边与一级菜单水平边距对齐。
+
         assertThat(source).contains("PageHorizontalPadding")
+        assertThat(playlistSource).contains("onArrowDownToPrimary")
         assertThat(playlistSource).doesNotContain("pendingInGroupFocusIndex")
         assertThat(playlistSource).doesNotContain("isSettlingCrossGroupFocus")
-        assertThat(playlistSource).doesNotContain("keepVisualSlot = true")
-
-        // 二级/三级下键回一级当前选中项；下键进分组需能 requestFocus。
         assertThat(source).contains("onArrowDownToPrimary = requestSelectedPrimaryMenuFocus")
-        assertThat(playlistSource).contains("onArrowDownToPrimary")
-        assertThat(playlistSource).contains("requestCurrentGroupFocus")
-        assertThat(playlistSource).contains("requestCurrentEpisodeFocus")
-        assertThat(playlistSource).contains("groupListState.scrollToItem")
-        assertThat(playlistSource).contains("moveGroupFocus(safeGroup)")
-
-        // 集数/分组横滑 state；分组可见性走 suspend 瞬移+软边。
-        assertThat(playlistSource).contains("episodeListState")
-        assertThat(playlistSource).contains("groupListState")
-        assertThat(playlistSource).contains("scrollPlayerMenuChipIntoViewSuspend(")
-        assertThat(playlistSource).contains("state = episodeListState")
-        assertThat(playlistSource).contains("state = groupListState")
     }
 
     /**

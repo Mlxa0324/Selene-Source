@@ -112,11 +112,14 @@ import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.moontechlab.selene.tv.core.data.model.TvEpisode
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvCachedTitlePosterImage
+import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistItem
+import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistRail
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPosterTitleUrlCache
@@ -323,20 +326,6 @@ fun TvDetailRoute(
     ) {
         LazyListState()
     }
-    val episodeListState = rememberSaveable(
-        designMetrics.viewportWidth.toInt(),
-        designMetrics.viewportHeight.toInt(),
-        saver = LazyListState.Saver,
-    ) {
-        LazyListState()
-    }
-    val episodeGroupListState = rememberSaveable(
-        designMetrics.viewportWidth.toInt(),
-        designMetrics.viewportHeight.toInt(),
-        saver = LazyListState.Saver,
-    ) {
-        LazyListState()
-    }
     val recommendListState = rememberSaveable(
         designMetrics.viewportWidth.toInt(),
         designMetrics.viewportHeight.toInt(),
@@ -443,13 +432,12 @@ fun TvDetailRoute(
 
             NcatEpisodeGroupRail(
                 groups = episodeGroups,
-                selectedGroup = selectedGroup,
+                episodes = state.currentSource?.episodes.orEmpty(),
+                currentEpisodeId = state.currentEpisodeId,
                 focusTargets = focusTargets,
                 currentSourceFocusRequester = currentSourceFocusRequester,
                 currentEpisodeFocusRequester = currentEpisodeFocusRequester,
                 hasRecommends = layoutSections.showRecommends,
-                episodeListState = episodeListState,
-                episodeGroupListState = episodeGroupListState,
                 onEpisodeSelected = onEpisodeSelected,
                 onGroupSelected = onEpisodeGroupSelected,
             )
@@ -1862,51 +1850,40 @@ private fun NcatSourceCard(
 }
 
 /**
- * 截图式选集分组轨道。
+ * 截图式选集轨道。
  *
- * @param groups 选集分组。
- * @param selectedGroup 当前分组。
+ * 全剧集连续横轨 + 分组条，逻辑复用 [TvEpisodePlaylistRail]（与全屏播放器一致），
+ * 避免组边界左右键跳到线路/推荐等其它层。
+ *
+ * @param groups 选集分组（仅用于标题总数与空态）。
+ * @param episodes 当前线路全量剧集。
+ * @param currentEpisodeId 当前剧集 ID。
  * @param focusTargets 焦点请求器。
  * @param currentSourceFocusRequester 当前线路焦点。
  * @param currentEpisodeFocusRequester 当前选集焦点。
  * @param hasRecommends 是否有推荐。
- * @param episodeListState 选集列表状态。
- * @param episodeGroupListState 分组列表状态。
  * @param onEpisodeSelected 选集回调。
- * @param onGroupSelected 分组回调。
+ * @param onGroupSelected 分组确认回调（同步 ViewModel 下划线语义）。
  */
 @Composable
 private fun NcatEpisodeGroupRail(
     groups: List<TvDetailEpisodeGroupOption>,
-    selectedGroup: TvDetailEpisodeGroupOption?,
+    episodes: List<TvEpisode>,
+    currentEpisodeId: String,
     focusTargets: TvDetailFocusTargets,
     currentSourceFocusRequester: FocusRequester?,
     currentEpisodeFocusRequester: FocusRequester?,
     hasRecommends: Boolean,
-    episodeListState: LazyListState,
-    episodeGroupListState: LazyListState,
     onEpisodeSelected: ((String) -> Unit)?,
     onGroupSelected: ((Int) -> Unit)?,
 ) {
-    val scrollScope = rememberCoroutineScope()
-    // 选集行：上下切层时保留横向偏移，不复位。
-    var activeEpisodeFocusedIndex by remember {
-        mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
-    }
-    // 分组行：上下切层时同样 keep-offset。
-    var activeGroupFocusedIndex by remember {
-        mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex)
-    }
-    // 跨组后待聚焦的全局 episodeIndex（等分组切换重建后再 requestFocus）。
-    var pendingEpisodeFocusIndex by remember { mutableStateOf<Int?>(null) }
-    val totalCount = groups.sumOf { group -> group.episodes.size }
-    val showGroupChoices = shouldShowDetailEpisodeGroupChoices(groups.size)
+    val totalCount = episodes.size
     NcatSectionHeader(
         title = "选集",
         hint = if (totalCount == 0) "暂无选集" else "(共${totalCount}集全)",
         topPadding = 38.dp,
     )
-    if (totalCount == 0 || selectedGroup == null) {
+    if (totalCount == 0) {
         NcatInlineStatusCard(
             title = "暂无选集",
             message = "有可用线路后将在此展示剧集",
@@ -1915,284 +1892,68 @@ private fun NcatEpisodeGroupRail(
         return
     }
 
-    LaunchedEffect(selectedGroup.groupIndex, pendingEpisodeFocusIndex) {
-        val target = pendingEpisodeFocusIndex ?: return@LaunchedEffect
-        pendingEpisodeFocusIndex = null
-        activeEpisodeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
-        delay(16)
-        val inGroupIndex = selectedGroup.episodes.indexOfFirst { ep -> ep.episodeIndex == target }
-        focusTargets.episodes.getOrNull(target)?.let { requester ->
-            runCatching { requester.requestFocus() }
-        }
-        if (inGroupIndex >= 0) {
-            scrollDetailOptionIntoView(
-                listState = episodeListState,
-                focusedIndex = inGroupIndex,
-                itemCount = selectedGroup.episodes.size,
-                scrollScope = scrollScope,
+    val playlistItems = remember(episodes) {
+        episodes.mapIndexed { index, episode ->
+            TvEpisodePlaylistItem(
+                id = episode.id,
+                label = episode.title.ifBlank { "第${(index + 1).toString().padStart(2, '0')}集" },
             )
         }
     }
+    val downFromGroup = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
+        ?: focusTargets.backTop
 
-    /**
-     * 分组条左右移焦：屏外项先 scrollToItem 再 requestFocus；不改选中。
-     */
-    fun moveDetailGroupFocus(targetIndex: Int) {
-        if (!showGroupChoices || groups.isEmpty()) {
-            return
-        }
-        val target = targetIndex.coerceIn(0, groups.lastIndex)
-        scrollScope.launch {
-            var focused = false
-            for (attempt in 0 until 10) {
-                if (attempt > 0) {
-                    delay(16L)
-                }
-                val visible = episodeGroupListState.layoutInfo.visibleItemsInfo.any { info ->
-                    info.index == target
-                }
-                if (!visible) {
-                    runCatching { episodeGroupListState.scrollToItem(index = target) }
-                    withFrameNanos { }
-                }
-                val requester = focusTargets.episodeGroups.getOrNull(target) ?: continue
-                if (runCatching { requester.requestFocus() }.getOrDefault(false)) {
-                    focused = true
-                    break
-                }
-            }
-            if (focused) {
-                activeGroupFocusedIndex = target
-            }
-            // 软边对齐，保证芯片完整可见。
-            scrollDetailOptionIntoViewNow(
-                listState = episodeGroupListState,
-                focusedIndex = target,
-                itemCount = groups.size,
-            )
-        }
-    }
-
-    // 选中分组（下划线）必须时刻在分组条可视区内，避免当前在 641-660 却只显示 1-20。
-    LaunchedEffect(selectedGroup.groupIndex, showGroupChoices, groups.size) {
-        if (!showGroupChoices || groups.isEmpty()) {
-            return@LaunchedEffect
-        }
-        withFrameNanos { }
-        val target = selectedGroup.groupIndex.coerceIn(0, groups.lastIndex)
-        for (attempt in 0 until 6) {
-            if (attempt > 0) {
-                delay(16L)
-            }
-            val visible = episodeGroupListState.layoutInfo.visibleItemsInfo.any { info ->
-                info.index == target
-            }
-            if (!visible) {
-                // 远距离瞬移，避免从 1-20 动画滑到高分组过久。
-                runCatching { episodeGroupListState.scrollToItem(index = target) }
-                withFrameNanos { }
-            } else {
-                break
-            }
-        }
-        scrollDetailOptionIntoViewNow(
-            listState = episodeGroupListState,
-            focusedIndex = target,
-            itemCount = groups.size,
-        )
-    }
-
-    // 早版布局：选集在上、分组在下；长剧集时下方才出现分组条。
-    LazyRow(
-        state = episodeListState,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
-        modifier = Modifier
-            .height(54.dp)
-            .padding(top = 2.dp),
-    ) {
-        items(selectedGroup.episodes.size, key = { index -> selectedGroup.episodes[index].episodeId }) { index ->
-            val episode = selectedGroup.episodes[index]
-            val isFirst = index == 0
-            val isLast = index == selectedGroup.episodes.lastIndex
+    TvEpisodePlaylistRail(
+        episodes = playlistItems,
+        currentEpisodeId = currentEpisodeId,
+        contentStartPadding = NcatContentStartPadding,
+        contentEndPadding = NcatContentEndPadding,
+        episodeRowHeight = 54.dp,
+        groupRowHeight = 48.dp,
+        currentEpisodeFocusRequester = currentEpisodeFocusRequester,
+        onEpisodeSelected = { id -> onEpisodeSelected?.invoke(id) },
+        onArrowUpFromEpisode = {
+            currentSourceFocusRequester?.let { runCatching { it.requestFocus() } }
+        },
+        onArrowDownFromEpisodeNoGroups = {
+            runCatching { downFromGroup.requestFocus() }
+        },
+        onArrowDownFromGroup = {
+            runCatching { downFromGroup.requestFocus() }
+        },
+        onSelectedGroupChanged = { groupIndex ->
+            // 焦点随集移动时同步 ViewModel，保持分组下划线与当前浏览位置一致。
+            onGroupSelected?.invoke(groupIndex)
+        },
+        episodeChip = { scope ->
             NcatEpisodeChip(
-                label = episode.label,
-                selected = episode.selected,
-                focusRequester = focusTargets.episodes.getOrNull(episode.episodeIndex),
-                modifier = Modifier
-                    .tvBringFocusedItemIntoView()
-                    .focusProperties {
-                        up = currentSourceFocusRequester ?: FocusRequester.Default
-                        // 有分组时下键进分组；否则进推荐/底部。
-                        down = focusTargets.episodeGroups
-                            .getOrNull(selectedGroup.groupIndex)
-                            .takeIf { showGroupChoices }
-                            ?: focusTargets.recommends.firstOrNull()
-                            ?: focusTargets.backTop
-                        // 组内相邻用系统焦点；边界跨组由 onPreviewKeyEvent 处理。
-                        left = if (!isFirst) {
-                            val prev = selectedGroup.episodes[index - 1]
-                            focusTargets.episodes.getOrNull(prev.episodeIndex) ?: FocusRequester.Cancel
-                        } else {
-                            FocusRequester.Cancel
-                        }
-                        right = if (!isLast) {
-                            val next = selectedGroup.episodes[index + 1]
-                            focusTargets.episodes.getOrNull(next.episodeIndex) ?: FocusRequester.Cancel
-                        } else {
-                            FocusRequester.Cancel
-                        }
-                    }
-                    .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) {
-                            return@onPreviewKeyEvent false
-                        }
-                        when (event.key) {
-                            Key.DirectionLeft -> {
-                                if (!isFirst) {
-                                    false
-                                } else if (showGroupChoices && selectedGroup.groupIndex > 0) {
-                                    val prevGroup = groups[selectedGroup.groupIndex - 1]
-                                    val lastEp = prevGroup.episodes.lastOrNull()
-                                    if (lastEp != null) {
-                                        pendingEpisodeFocusIndex = lastEp.episodeIndex
-                                        onGroupSelected?.invoke(prevGroup.groupIndex)
-                                    }
-                                    true
-                                } else {
-                                    true
-                                }
-                            }
-                            Key.DirectionRight -> {
-                                if (!isLast) {
-                                    false
-                                } else if (showGroupChoices && selectedGroup.groupIndex < groups.lastIndex) {
-                                    val nextGroup = groups[selectedGroup.groupIndex + 1]
-                                    val firstEp = nextGroup.episodes.firstOrNull()
-                                    if (firstEp != null) {
-                                        pendingEpisodeFocusIndex = firstEp.episodeIndex
-                                        onGroupSelected?.invoke(nextGroup.groupIndex)
-                                    }
-                                    true
-                                } else {
-                                    true
-                                }
-                            }
-                            else -> false
-                        }
-                    }
-                    .onFocusChanged { focusState ->
-                        if (focusState.isFocused) {
-                            val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
-                                previousActiveIndex = activeEpisodeFocusedIndex,
-                                newlyFocusedIndex = index,
-                            )
-                            activeEpisodeFocusedIndex = index
-                            // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
-                            if (shouldScroll) {
-                                scrollDetailOptionIntoView(
-                                    listState = episodeListState,
-                                    focusedIndex = index,
-                                    itemCount = selectedGroup.episodes.size,
-                                    scrollScope = scrollScope,
-                                )
-                            }
-                        }
-                    },
-                onPressed = { onEpisodeSelected?.invoke(episode.episodeId) },
+                label = scope.label,
+                selected = scope.selected,
+                focusRequester = null,
+                modifier = scope.modifier,
+                onArrowLeft = scope.onArrowLeft,
+                onArrowRight = scope.onArrowRight,
+                onArrowUp = scope.onArrowUp,
+                onArrowDown = scope.onArrowDown,
+                onPressed = scope.onClick,
             )
-        }
-    }
-
-    if (showGroupChoices) {
-        LazyRow(
-            state = episodeGroupListState,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
-            modifier = Modifier
-                // 须容纳文字 + 下划线；40.dp 会裁掉下划线导致「选中也看不见」。
-                .height(48.dp)
-                .padding(top = 6.dp),
-        ) {
-            items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
-                val group = groups[index]
-                NcatEpisodeGroupChoice(
-                    label = group.label,
-                    selected = group.selected,
-                    focusRequester = focusTargets.episodeGroups.getOrNull(index),
-                    onArrowLeft = if (index > 0) {
-                        { moveDetailGroupFocus(index - 1) }
-                    } else {
-                        null
-                    },
-                    onArrowRight = if (index < groups.lastIndex) {
-                        { moveDetailGroupFocus(index + 1) }
-                    } else {
-                        null
-                    },
-                    modifier = Modifier
-                        .tvBringFocusedItemIntoView()
-                        .focusProperties {
-                            // 分组在选集下方：上键回选集，下键去推荐。
-                            // 左右由 moveDetailGroupFocus 先滚后焦，禁用系统直连屏外 requester。
-                            up = currentEpisodeFocusRequester
-                                ?: focusTargets.episodes.getOrNull(
-                                    group.episodes.firstOrNull()?.episodeIndex ?: 0,
-                                )
-                                ?: currentSourceFocusRequester
-                                ?: FocusRequester.Default
-                            down = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
-                                ?: focusTargets.backTop
-                            left = FocusRequester.Cancel
-                            right = FocusRequester.Cancel
-                        }
-                        .onFocusChanged { focusState ->
-                            if (focusState.isFocused) {
-                                activeGroupFocusedIndex = index
-                                // 获焦：仅主题色，不改选中、不切选集；保证芯片在可视区。
-                                scrollDetailOptionIntoView(
-                                    listState = episodeGroupListState,
-                                    focusedIndex = index,
-                                    itemCount = groups.size,
-                                    scrollScope = scrollScope,
-                                )
-                            }
-                        },
-                    // 确认：下划线 + 上方选集切到该组。
-                    onPressed = {
-                        onGroupSelected?.invoke(group.groupIndex)
-                        scrollDetailOptionIntoView(
-                            listState = episodeGroupListState,
-                            focusedIndex = index,
-                            itemCount = groups.size,
-                            scrollScope = scrollScope,
-                        )
-                        // 确认后把焦点落到该组首集，并滚到列表可见。
-                        val firstEpisode = group.episodes.firstOrNull()
-                        if (firstEpisode != null) {
-                            pendingEpisodeFocusIndex = firstEpisode.episodeIndex
-                        }
-                    },
-                )
-            }
-        }
-    }
+        },
+        groupChip = { scope ->
+            NcatEpisodeGroupChoice(
+                label = scope.label,
+                selected = scope.selected,
+                focusRequester = null,
+                onArrowLeft = scope.onArrowLeft,
+                onArrowRight = scope.onArrowRight,
+                onArrowUp = scope.onArrowUp,
+                onArrowDown = scope.onArrowDown,
+                modifier = scope.modifier,
+                onPressed = scope.onClick,
+            )
+        },
+    )
 }
 
-/**
- * 截图式选集分组选项。
- *
- * - 获焦未确认：主题色文字，无下划线
- * - 选中（确认/当前选集所在组）：主题色文字 + 底部下划线
- *
- * @param label 分组文案。
- * @param selected 是否当前选中分组（下划线）。
- * @param focusRequester 焦点请求器。
- * @param onArrowLeft 左键（先滚后焦，不改选中）。
- * @param onArrowRight 右键（先滚后焦，不改选中）。
- * @param modifier 外层修饰器。
- * @param onPressed 确认回调（改选中 + 切上方选集）。
- */
 @Composable
 private fun NcatEpisodeGroupChoice(
     label: String,
@@ -2200,6 +1961,8 @@ private fun NcatEpisodeGroupChoice(
     focusRequester: FocusRequester?,
     onArrowLeft: (() -> Unit)? = null,
     onArrowRight: (() -> Unit)? = null,
+    onArrowUp: (() -> Unit)? = null,
+    onArrowDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onPressed: () -> Unit,
 ) {
@@ -2238,6 +2001,8 @@ private fun NcatEpisodeGroupChoice(
                 val directionHandler = when (event.key) {
                     Key.DirectionLeft -> onArrowLeft
                     Key.DirectionRight -> onArrowRight
+                    Key.DirectionUp -> onArrowUp
+                    Key.DirectionDown -> onArrowDown
                     else -> null
                 }
                 if (directionHandler != null) {
@@ -2286,6 +2051,10 @@ private fun NcatEpisodeChip(
     selected: Boolean,
     focusRequester: FocusRequester?,
     modifier: Modifier = Modifier,
+    onArrowLeft: (() -> Unit)? = null,
+    onArrowRight: (() -> Unit)? = null,
+    onArrowUp: (() -> Unit)? = null,
+    onArrowDown: (() -> Unit)? = null,
     onPressed: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -2316,13 +2085,32 @@ private fun NcatEpisodeChip(
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-                if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
-                    onPressed()
-                    true
-                } else {
-                    false
+                if (
+                    event.key == Key.Enter ||
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Spacebar
+                ) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        onPressed()
+                    }
+                    return@onPreviewKeyEvent true
                 }
+                val directionHandler = when (event.key) {
+                    Key.DirectionLeft -> onArrowLeft
+                    Key.DirectionRight -> onArrowRight
+                    Key.DirectionUp -> onArrowUp
+                    Key.DirectionDown -> onArrowDown
+                    else -> null
+                }
+                if (directionHandler != null) {
+                    // 消费方向键：禁止系统焦点逃到线路/推荐等其它层。
+                    if (event.type == KeyEventType.KeyDown) {
+                        directionHandler.invoke()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                false
             }
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,

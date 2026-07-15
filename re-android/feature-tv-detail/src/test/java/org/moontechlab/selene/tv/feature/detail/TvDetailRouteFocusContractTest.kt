@@ -35,33 +35,23 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("formatSourceCardTitle")
         assertThat(source).contains(".blur(radius = 18.dp)")
         assertThat(source).contains("pinCurrentSource = false")
-        // 选集在上、分组在下：先渲染 episode LazyRow，再渲染分组条。
-        assertThat(source.indexOf("NcatEpisodeChip(")).isLessThan(source.lastIndexOf("NcatEpisodeGroupChoice("))
-        assertThat(source).contains("获焦：仅主题色，不改选中、不切选集")
-        assertThat(source).contains("确认：下划线 + 上方选集切到该组")
-        assertThat(source).contains("获焦未确认：主题色文字，无下划线")
-        // 分组左右：先滚后焦，系统 left/right 取消，避免屏外 requester 硬点失败。
-        assertThat(source).contains("moveDetailGroupFocus")
-        assertThat(source).contains("scrollDetailOptionIntoViewNow")
-        assertThat(source).contains("先 scrollToItem 再 requestFocus")
-        assertThat(source).contains("onArrowLeft = if (index > 0)")
-        assertThat(source).contains("onArrowRight = if (index < groups.lastIndex)")
-        assertThat(source).contains("left = FocusRequester.Cancel")
-        assertThat(source).contains("right = FocusRequester.Cancel")
-        // 确认键：回车/中键/空格（模拟器常用空格）+ 鼠标 ncatClickable。
+        // 选集轨与全屏共用 TvEpisodePlaylistRail：连续横轨 + SoftEdgeFollow，禁止组边界逃焦。
+        assertThat(source).contains("TvEpisodePlaylistRail(")
+        assertThat(source).contains("TvEpisodePlaylistItem(")
+        assertThat(source).contains("episodeChip = { scope ->")
+        assertThat(source).contains("groupChip = { scope ->")
+        assertThat(source).contains("NcatEpisodeChip(")
+        assertThat(source).contains("NcatEpisodeGroupChoice(")
+        assertThat(source).contains("禁止系统焦点逃到线路/推荐等其它层")
+        // 分组确认键：回车/中键/空格 + 鼠标 ncatClickable。
         val groupChoiceSource = source
             .substringAfter("private fun NcatEpisodeGroupChoice(")
             .substringBefore("private fun NcatEpisodeChip(")
         assertThat(groupChoiceSource).contains("Key.Spacebar")
         assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
         assertThat(groupChoiceSource).contains("ncatClickable(onPressed)")
-        // 下划线 3dp、宽跟文字；外层 LazyRow 48dp，避免被裁切。
-        assertThat(groupChoiceSource).contains("height(3.dp)")
         assertThat(groupChoiceSource).contains("IntrinsicSize.Max")
-        assertThat(groupChoiceSource).contains("Modifier.width(IntrinsicSize.Max)")
-        assertThat(groupChoiceSource).doesNotContain("fillMaxWidth(0.85f)")
-        assertThat(source).contains(".height(48.dp)")
-        assertThat(groupChoiceSource).contains("if (selected) TvTokens.Accent else Color.Transparent")
+        assertThat(groupChoiceSource).contains("height(3.dp)")
 
         assertThat(source).doesNotContain("网飞猫")
     }
@@ -277,24 +267,13 @@ class TvDetailRouteFocusContractTest {
 
         assertThat(source).contains("val designMetrics = LocalTvDesignMetrics.current")
         assertThat(source).contains("val sourceListState = rememberSaveable(")
-        assertThat(source).contains("val episodeListState = rememberSaveable(")
-        assertThat(source).contains("val episodeGroupListState = rememberSaveable(")
+        // 选集/分组横滑由 TvEpisodePlaylistRail 内部 LazyListState 管理。
+        assertThat(source).contains("TvEpisodePlaylistRail(")
         assertThat(source).contains("designMetrics.viewportWidth.toInt()")
         assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("saver = LazyListState.Saver")
         assertThat(source).contains("listState = sourceListState")
-        assertThat(source).contains("state = listState")
-        assertThat(source).contains("state = episodeListState")
-        assertThat(source).contains("state = episodeGroupListState")
-        assertThat(source).contains(".onFocusChanged { focusState ->")
         assertThat(source).contains("scrollDetailOptionIntoView(")
-        assertThat(source).contains("firstVisibleItemScrollOffset")
-        assertThat(source).contains("scrollOffset = 0")
-        assertThat(source).contains("listState.animateScrollToItem(")
-        // 首项到最左、末项 scrollBy 夹到 max，中间仅裁切时跟手。
-        assertThat(source).contains("focusedIndex == 0")
-        assertThat(source).contains("listState.canScrollForward")
-        assertThat(source).contains("listState.animateScrollBy(")
         // 纵向用 ScrollState + 窗口坐标跟滚；顶/底可钉靠真正 0 / max。
         assertThat(source).contains("scrollDetailFocusedItemVertically")
         assertThat(source).contains("DetailVerticalPin")
@@ -407,12 +386,11 @@ class TvDetailRouteFocusContractTest {
     @Test
     fun detail_layered_rows_keep_horizontal_offset_on_vertical_focus_switch() {
         val source = readRouteSource()
+        // 线路/推荐仍用分层 keep-offset；选集横滑由共享轨 SoftEdgeFollow 托管。
         assertThat(source).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
-        assertThat(source).contains("activeEpisodeFocusedIndex")
-        assertThat(source).contains("if (shouldScroll)")
+        assertThat(source).contains("TvEpisodePlaylistRail(")
         assertThat(source).contains("scrollDetailOptionIntoView(")
         assertThat(source).contains("recommendListState = rememberSaveable(")
-        // 上下跨层进入不得因 index<=1 / 末项 额外强制横向 pin。
         assertThat(source).doesNotContain("shouldScroll || index <= 1")
         assertThat(source).doesNotContain("前 2 项保持最左")
     }
