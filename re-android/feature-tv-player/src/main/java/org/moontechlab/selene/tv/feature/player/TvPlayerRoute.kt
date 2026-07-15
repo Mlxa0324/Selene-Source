@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
@@ -1267,7 +1268,9 @@ private fun TvPlayerEpisodeGroupChoice(
     )
     Column(
         modifier = Modifier
-            .widthIn(min = 52.dp)
+            // 加宽点击/获焦热区，避免模拟器鼠标点文字边缘无响应。
+            .widthIn(min = 56.dp)
+            .heightIn(min = 36.dp)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focusState ->
@@ -1279,17 +1282,27 @@ private fun TvPlayerEpisodeGroupChoice(
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    renewMenuAutoHide()
+                    onClick()
+                },
             )
             .onPreviewKeyEvent { event ->
-                // 与菜单 chip 一致：KeyDown（含 long-press repeat）续约 + 移动，KeyUp 只消费不动作。
+                // 回车 / 中键 / 小键盘回车 / 空格：模拟器常用空格当 OK。
+                // 确认在 KeyUp 触发，与一级菜单 chip 短按语义一致，并消费 KeyDown/KeyUp 防 clickable 叠两次。
                 if (
                     event.key == Key.DirectionCenter ||
                     event.key == Key.Enter ||
-                    event.key == Key.NumPadEnter
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Spacebar
                 ) {
-                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                    if (event.type == KeyEventType.KeyDown) {
                         renewMenuAutoHide()
+                    }
+                    if (
+                        event.type == KeyEventType.KeyUp &&
+                        event.nativeKeyEvent.repeatCount == 0
+                    ) {
                         onClick()
                     }
                     return@onPreviewKeyEvent true
@@ -1310,8 +1323,9 @@ private fun TvPlayerEpisodeGroupChoice(
                 }
                 false
             }
-            .padding(horizontal = 2.dp, vertical = 2.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         Text(
             text = label,

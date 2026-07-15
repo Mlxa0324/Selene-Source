@@ -48,6 +48,14 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("onArrowRight = if (index < groups.lastIndex)")
         assertThat(source).contains("left = FocusRequester.Cancel")
         assertThat(source).contains("right = FocusRequester.Cancel")
+        // 确认键：回车/中键/空格（模拟器常用空格）+ 鼠标 ncatClickable。
+        val groupChoiceSource = source
+            .substringAfter("private fun NcatEpisodeGroupChoice(")
+            .substringBefore("private fun NcatEpisodeChip(")
+        assertThat(groupChoiceSource).contains("Key.Spacebar")
+        assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
+        assertThat(groupChoiceSource).contains("ncatClickable(onPressed)")
+        assertThat(groupChoiceSource).contains("heightIn(min = 36.dp)")
 
         assertThat(source).doesNotContain("网飞猫")
     }

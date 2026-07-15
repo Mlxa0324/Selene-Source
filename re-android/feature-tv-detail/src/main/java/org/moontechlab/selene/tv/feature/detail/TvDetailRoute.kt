@@ -2213,19 +2213,23 @@ private fun NcatEpisodeGroupChoice(
     )
     Column(
         modifier = modifier
-            .widthIn(min = 52.dp)
+            // 加宽点击/获焦热区：纯文字 + 2dp 下划线过小，模拟器鼠标容易点空。
+            .widthIn(min = 56.dp)
+            .heightIn(min = 36.dp)
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
-                // 确认用 KeyDown，避免与 clickable 叠成两次。
+                // 与详情页其它焦点控件一致：回车 / 中键 / 小键盘回车 / 空格 在 KeyUp 确认。
+                // 模拟器常用空格当 OK；此前未处理 Spacebar 会导致「按了没反应」。
                 if (
                     event.key == Key.Enter ||
                     event.key == Key.DirectionCenter ||
-                    event.key == Key.NumPadEnter
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Spacebar
                 ) {
-                    if (event.type == KeyEventType.KeyDown) {
+                    if (event.type == KeyEventType.KeyUp) {
                         onPressed()
                     }
                     return@onPreviewKeyEvent true
@@ -2243,8 +2247,9 @@ private fun NcatEpisodeGroupChoice(
                 }
                 false
             }
-            .padding(horizontal = 2.dp, vertical = 2.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
         Text(
             text = label,

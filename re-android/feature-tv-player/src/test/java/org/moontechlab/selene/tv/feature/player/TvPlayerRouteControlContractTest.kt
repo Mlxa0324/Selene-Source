@@ -769,6 +769,14 @@ class TvPlayerRouteControlContractTest {
         assertThat(playlistSource).contains("moveGroupFocus(gi - 1)")
         assertThat(playlistSource).contains("moveGroupFocus(gi + 1)")
         assertThat(playlistSource).contains("先滚后焦")
+        // 确认：回车/中键/空格 + 鼠标 clickable；热区放大。
+        val groupChoiceSource = source
+            .substringAfter("private fun TvPlayerEpisodeGroupChoice(")
+            .substringBefore("/**\n * TV 全屏播放器播放线路二级菜单。")
+        assertThat(groupChoiceSource).contains("Key.Spacebar")
+        assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
+        assertThat(groupChoiceSource).contains("clickable(")
+        assertThat(groupChoiceSource).contains("heightIn(min = 36.dp)")
         // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。
         assertThat(source).contains("movePlaylistEpisodeFocus")
         assertThat(source).contains("requestPlaylistEpisodeFocusWhenReady")
