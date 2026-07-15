@@ -57,6 +57,10 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("!isLast -> itemFocusRequesters[index + 1]")
         assertThat(source).contains("hasTrailing -> FocusRequester.Default")
         assertThat(source).contains("itemFocusRequesters[index - 1]")
+        // 末项额外补滚 end padding，避免右缘「有 padding 却露不出来」。
+        assertThat(source).contains("animateScrollBy")
+        assertThat(source).contains("desiredGap")
+        assertThat(source).contains("graphicsLayer { clip = false }")
     }
 
     /**

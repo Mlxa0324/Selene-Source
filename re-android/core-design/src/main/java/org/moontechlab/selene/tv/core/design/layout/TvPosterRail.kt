@@ -12,8 +12,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
@@ -76,15 +79,24 @@ fun TvPosterRail(
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     val lastIndex = items.lastIndex
     val hasTrailing = trailingContent != null
+    val density = LocalDensity.current
+    val endPaddingPx = with(density) { contentEndPadding.roundToPx() }
+    // 获焦 scale 1.06 时单侧约溢出 3%，末端需额外留白，避免白描边贴右缘。
+    val endFocusOverflowPx = with(density) {
+        (TvTokens.PosterWidth * 0.04f).roundToPx()
+    }
 
     LazyRow(
-        modifier = modifier.posterFocusGroup(
-            firstCardFocusRequester = firstCardFocusRequester,
-            onVerticalEnter = {
-                // 上下进轨前清会话下标，确保就近落点不会触发横向 animateScroll。
-                activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
-            },
-        ),
+        modifier = modifier
+            // 获焦放大不得被 LazyRow 默认裁切，否则末项右侧像缺 padding。
+            .graphicsLayer { clip = false }
+            .posterFocusGroup(
+                firstCardFocusRequester = firstCardFocusRequester,
+                onVerticalEnter = {
+                    // 上下进轨前清会话下标，确保就近落点不会触发横向 animateScroll。
+                    activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+                },
+            ),
         state = listState,
         contentPadding = PaddingValues(
             start = contentStartPadding,
@@ -142,14 +154,28 @@ fun TvPosterRail(
                             onRailFocused?.invoke()
                         }
                         if (isIntraRailHorizontalMove) {
-                            val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
-                                focusedIndex = index,
-                                itemCount = items.size,
-                            )
-                            if (targetIndex != listState.firstVisibleItemIndex) {
-                                scrollScope.launch {
+                            scrollScope.launch {
+                                val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
+                                    focusedIndex = index,
+                                    itemCount = items.size,
+                                )
+                                if (targetIndex != listState.firstVisibleItemIndex) {
                                     // 复刻 Flutter TV 首页：第 5 张获焦后按卡片步长推动横向列表。
                                     listState.animateScrollToItem(targetIndex)
+                                }
+                                // 末项：pin 到 leading 往往滚不到 max，end contentPadding 留在屏外；
+                                // 补滚一段，让右缘露出 end padding + 获焦溢出，形成 skill 要求的「末端收住」。
+                                if (isLast && !hasTrailing) {
+                                    val info = listState.layoutInfo
+                                    val lastItem = info.visibleItemsInfo.lastOrNull { itemInfo ->
+                                        itemInfo.index == lastIndex
+                                    } ?: return@launch
+                                    val endGap = info.viewportEndOffset - (lastItem.offset + lastItem.size)
+                                    val desiredGap = endPaddingPx + endFocusOverflowPx
+                                    val delta = desiredGap - endGap
+                                    if (delta > 0) {
+                                        listState.animateScrollBy(delta.toFloat())
+                                    }
                                 }
                             }
                         }
