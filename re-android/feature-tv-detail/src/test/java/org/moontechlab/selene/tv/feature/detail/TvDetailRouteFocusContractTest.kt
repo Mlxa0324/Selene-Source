@@ -54,6 +54,11 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains(".background(detailBackgroundColor)")
         assertThat(source).contains("NcatDetailBackdrop(")
         assertThat(source).contains("backgroundColor = detailBackgroundColor")
+        // 背景封面：入口粘住 + 超时/失败才用数据源兜底，且无 crossfade 切换。
+        assertThat(source).contains("NcatStickyBackdropPoster(")
+        assertThat(source).contains("fallbackPosterUrl = state.backdropFallbackPosterUrl")
+        assertThat(source).contains("crossfade(false)")
+        assertThat(source).contains("BACKDROP_POSTER_LOAD_TIMEOUT_MS")
     }
 
     /**

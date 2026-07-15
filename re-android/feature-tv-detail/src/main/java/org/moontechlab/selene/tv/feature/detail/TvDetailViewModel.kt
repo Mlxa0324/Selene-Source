@@ -178,6 +178,7 @@ fun interface TvDetailRecommendDiagnosticSink {
  * @property previewIsLoading 预览播放器加载态。
  * @property previewNetworkSpeed 预览播放器网速。
  * @property previewPlaybackStarted 预览播放器是否已经有请求。
+ * @property backdropFallbackPosterUrl 入口封面之外的数据源封面，仅作背景加载超时/失败兜底。
  */
 data class TvDetailUiState(
     val detail: TvVideoDetail? = null,
@@ -208,6 +209,7 @@ data class TvDetailUiState(
     val previewIsLoading: Boolean = false,
     val previewNetworkSpeed: Long = 0L,
     val previewPlaybackStarted: Boolean = false,
+    val backdropFallbackPosterUrl: String = "",
 ) {
     /** 当前播放线路。 */
     val currentSource: TvVideoSource?
@@ -410,6 +412,8 @@ class TvDetailViewModel(
             isInitialLoading = true,
             isLoadingMoreSources = true,
             isMoreSourcesLoading = true,
+            // 入口封面优先；数据源封面只进 fallback，避免背景图中途切换。
+            backdropFallbackPosterUrl = "",
         )
 
         coroutineScope {
@@ -1545,6 +1549,7 @@ class TvDetailViewModel(
      * 合并详情元数据（简介/年份/封面/豆瓣 ID）。
      *
      * 仅回填当前仍为空的字段，避免增量搜索把已有精确详情覆盖成空。
+     * 封面：已有入口/首张图不覆盖；数据源后到的不同封面写入 backdropFallbackPosterUrl。
      *
      * @param incoming 接口或搜索返回的详情元数据。
      */
@@ -1554,11 +1559,22 @@ class TvDetailViewModel(
         }
         val state = mutableState.value
         val current = state.detail ?: currentEntry.toBaseDetail(emptyList()) ?: return
+        val currentPoster = current.posterUrl.trim()
+        val incomingPoster = incoming.posterUrl.trim()
+        // 首张非空封面粘住：入口图优先，之后只补空白，不因数据源换图。
+        val mergedPoster = currentPoster.ifBlank { incomingPoster }
+        // 数据源封面与展示封面不同时，留给背景超时/失败兜底，不立刻切换。
+        val nextFallback = when {
+            incomingPoster.isBlank() -> state.backdropFallbackPosterUrl
+            mergedPoster.isBlank() -> state.backdropFallbackPosterUrl
+            incomingPoster == mergedPoster -> state.backdropFallbackPosterUrl
+            else -> incomingPoster
+        }
         val merged = current.copy(
             // 简介：接口/搜索有 desc 时覆盖入口占位空串。
             description = current.description.ifBlank { incoming.description },
             title = current.title.ifBlank { incoming.title },
-            posterUrl = current.posterUrl.ifBlank { incoming.posterUrl },
+            posterUrl = mergedPoster,
             year = current.year.ifBlank { incoming.year },
             typeName = current.typeName.ifBlank { incoming.typeName },
             // 分类以更完整一侧为准，避免后到空列表覆盖已解析标签。
@@ -1575,8 +1591,11 @@ class TvDetailViewModel(
             // 线路列表仍由 mergeSources 统一处理，这里只合并资料字段。
             sources = current.sources.ifEmpty { incoming.sources },
         )
-        if (merged != current) {
-            mutableState.value = state.copy(detail = merged)
+        if (merged != current || nextFallback != state.backdropFallbackPosterUrl) {
+            mutableState.value = state.copy(
+                detail = merged,
+                backdropFallbackPosterUrl = nextFallback,
+            )
         }
     }
 

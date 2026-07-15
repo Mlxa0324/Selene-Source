@@ -88,6 +88,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -101,6 +102,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.request.ImageRequest
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
@@ -114,6 +118,7 @@ import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvCachedTitlePosterImage
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
+import org.moontechlab.selene.tv.core.design.layout.TvPosterTitleUrlCache
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 
 /**
@@ -366,6 +371,7 @@ fun TvDetailRoute(
         NcatDetailBackdrop(
             title = detail?.title.orEmpty(),
             posterUrl = detail?.posterUrl.orEmpty(),
+            fallbackPosterUrl = state.backdropFallbackPosterUrl,
             backgroundColor = detailBackgroundColor,
         )
 
@@ -570,14 +576,20 @@ private fun rememberDetailFocusTargets(
  *
  * 以主图/海报铺满整页，滚动内容层叠在上方，背景本身不随滚动移动。
  *
+ * 封面策略：
+ * - 入口/首张 [posterUrl] 粘住展示，数据源后到的图不立刻替换（避免切换动画）。
+ * - 首张在超时内未成功，或加载失败，再尝试 [fallbackPosterUrl]。
+ *
  * @param title 影片名，用于封面失败时同名 URL 回退。
- * @param posterUrl 海报地址。
+ * @param posterUrl 入口或已锁定的主封面。
+ * @param fallbackPosterUrl 数据源封面兜底。
  * @param backgroundColor 设置页选择的海报缺失兜底背景色。
  */
 @Composable
 private fun NcatDetailBackdrop(
     title: String,
     posterUrl: String,
+    fallbackPosterUrl: String = "",
     backgroundColor: Color,
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -587,17 +599,13 @@ private fun NcatDetailBackdrop(
                 .fillMaxSize()
                 .background(backgroundColor),
         )
-        TvCachedTitlePosterImage(
+        NcatStickyBackdropPoster(
             title = title,
-            posterUrl = posterUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            // 以顶部为起点，再向下偏移总高度的 1/10。
-            // BiasAlignment 垂直：-1 顶、0 中、1 底；-1 + 0.2 = -0.8。
-            alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.8f),
-            // 轻微模糊，避免海报像素放大后的马赛克感。
+            preferredPosterUrl = posterUrl,
+            fallbackPosterUrl = fallbackPosterUrl,
             modifier = Modifier
                 .fillMaxSize()
+                // 轻微模糊，避免海报像素放大后的马赛克感。
                 .blur(radius = 18.dp),
         )
         // 自上而下压暗，保证标题和线路文字可读。
@@ -631,6 +639,120 @@ private fun NcatDetailBackdrop(
         )
     }
 }
+
+/**
+ * 详情背景粘性封面：入口/首张 URL 不因数据源后到而切换；超时或失败再兜底。
+ *
+ * @param title 片名（同名缓存键）。
+ * @param preferredPosterUrl 入口或已锁定主封面。
+ * @param fallbackPosterUrl 数据源封面兜底。
+ * @param modifier 外层修饰。
+ * @param loadTimeoutMs 主图未成功时切换兜底的超时毫秒。
+ */
+@Composable
+private fun NcatStickyBackdropPoster(
+    title: String,
+    preferredPosterUrl: String,
+    fallbackPosterUrl: String,
+    modifier: Modifier = Modifier,
+    loadTimeoutMs: Long = BACKDROP_POSTER_LOAD_TIMEOUT_MS,
+) {
+    val context = LocalContext.current
+    val preferred = preferredPosterUrl.trim()
+    val fallback = fallbackPosterUrl.trim()
+    // 仅按片名粘住本页会话，不因 preferred 后到二次 remount 造成切换闪动。
+    var activeUrl by remember(title) {
+        mutableStateOf(
+            preferred.ifBlank {
+                TvPosterTitleUrlCache.resolvePrimaryUrl(title = title, posterUrl = "")
+                    .orEmpty()
+            },
+        )
+    }
+    var loadSucceeded by remember(title) { mutableStateOf(false) }
+    var timeoutFallbackTried by remember(title) { mutableStateOf(false) }
+    var errorFallbackTried by remember(title) { mutableStateOf(false) }
+
+    // 主 URL 从空补到非空（入口稍后带上封面）时只补一次，已有成功图不改。
+    LaunchedEffect(preferred, title) {
+        if (loadSucceeded) {
+            return@LaunchedEffect
+        }
+        if (activeUrl.isBlank() && preferred.isNotBlank()) {
+            activeUrl = preferred
+        }
+    }
+
+    // 指定时间内主图未成功 → 尝试数据源兜底（仅一次）。
+    LaunchedEffect(activeUrl, fallback, loadTimeoutMs, title) {
+        if (loadSucceeded || timeoutFallbackTried || fallback.isBlank()) {
+            return@LaunchedEffect
+        }
+        if (activeUrl.isBlank()) {
+            timeoutFallbackTried = true
+            activeUrl = fallback
+            return@LaunchedEffect
+        }
+        if (activeUrl == fallback) {
+            return@LaunchedEffect
+        }
+        delay(loadTimeoutMs)
+        if (!loadSucceeded && !timeoutFallbackTried) {
+            timeoutFallbackTried = true
+            activeUrl = fallback
+        }
+    }
+
+    val requestUrl = activeUrl.takeIf { url -> url.isNotBlank() }
+    if (requestUrl == null) {
+        return
+    }
+    val imageRequest = remember(requestUrl, title) {
+        ImageRequest.Builder(context)
+            .data(requestUrl)
+            // 关闭 crossfade，避免主图/兜底切换时的显式动画。
+            .crossfade(false)
+            .build()
+    }
+    AsyncImage(
+        model = imageRequest,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        // 以顶部为起点，再向下偏移总高度的 1/10。
+        alignment = BiasAlignment(horizontalBias = 0f, verticalBias = -0.8f),
+        modifier = modifier,
+        onState = { state ->
+            when (state) {
+                is AsyncImagePainter.State.Success -> {
+                    loadSucceeded = true
+                    TvPosterTitleUrlCache.putSuccess(title = title, posterUrl = requestUrl)
+                }
+                is AsyncImagePainter.State.Error -> {
+                    if (loadSucceeded) {
+                        return@AsyncImage
+                    }
+                    // 失败：优先数据源兜底，再同名会话缓存。
+                    if (!errorFallbackTried && fallback.isNotBlank() && fallback != requestUrl) {
+                        errorFallbackTried = true
+                        activeUrl = fallback
+                        return@AsyncImage
+                    }
+                    val cached = TvPosterTitleUrlCache.resolveFallbackUrl(
+                        title = title,
+                        failedUrl = requestUrl,
+                    )
+                    if (cached != null && cached != requestUrl && cached != activeUrl) {
+                        activeUrl = cached
+                    }
+                }
+                else -> Unit
+            }
+        },
+    )
+}
+
+/** 详情背景主封面加载超时后尝试数据源兜底。 */
+private const val BACKDROP_POSTER_LOAD_TIMEOUT_MS = 2_500L
 
 @Composable
 private fun NcatDetailTopBar(
