@@ -102,13 +102,11 @@ class TvSearchRouteFocusContractTest {
         // 左右停靠独立，不得写死成对称 0 / 同一常量混用。
         assertThat(recommendRail).contains("contentStartPadding = RecommendRailStartPadding")
         assertThat(recommendRail).contains("contentEndPadding = RecommendRailEndPadding")
-        // 仅左侧 layout 外扩；右侧 end padding 留在内容区，末端可真正露出。
-        assertThat(recommendRail).contains("horizontalBleedStart(RightPanelContentHorizontal)")
-        assertThat(source).contains("private fun Modifier.horizontalBleedStart")
+        // layout 外扩抵消父级 content 水平 padding（禁止负 padding，会崩溃）。
+        assertThat(recommendRail).contains("horizontalBleed(RightPanelContentHorizontal)")
+        assertThat(source).contains("private fun Modifier.horizontalBleed")
         assertThat(recommendRail).doesNotContain("padding(horizontal = -")
         assertThat(recommendRail).doesNotContain("contentStartPadding = 0.dp")
-        // 末端 end padding 大于 start，覆盖获焦溢出。
-        assertThat(source).contains("RecommendRailStartPadding * 2 + TvListLayoutMetrics.FocusSafePadding")
     }
 
     /**

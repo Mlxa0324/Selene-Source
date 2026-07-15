@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
-import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
@@ -87,11 +86,9 @@ private val RecommendRailStartPadding: Dp = RightPanelContentHorizontal
 /**
  * 影片推荐轨右侧 contentPadding。
  *
- * 末端收口：skill 要求 right ≥ left，并覆盖获焦 scale(1.06) 溢出与描边，
- * 否则滚到最后一项时白框贴死面板右缘，像「有 padding 却没露出来」。
+ * 末端收口用，默认可大于左侧，保证末卡获焦描边/放大不贴面板右缘。
  */
-private val RecommendRailEndPadding: Dp =
-    RecommendRailStartPadding * 2 + TvListLayoutMetrics.FocusSafePadding
+private val RecommendRailEndPadding: Dp = 32.dp
 private val PanelRadius: Dp = 22.dp
 private val ControlRadius: Dp = 14.dp
 
@@ -1186,10 +1183,11 @@ private fun RecommendRail(
         return
     }
     // 推荐区用横向轨道，避免嵌在 verticalScroll 中再次套 LazyVerticalGrid。
-    // 契约（对齐 TV 横向列表 skill）：
-    // 1) 仅左侧 layout 外扩：中段可从左缘进出，右端 end padding 留在内容区内可滚到
-    // 2) 双端 bleed 会把 end padding 挤到父级 padding 区外被圆角裁掉，末项像「右侧 padding 没了」
-    // 3) end padding 足够大，末卡获焦描边/放大不贴面板右缘
+    // 契约（对齐 TV 横向列表 skill / 详情页 LazyRow）：
+    // 1) 视口贴齐右面板左右缘（layout 外扩，禁止负 padding，会崩溃）
+    // 2) 左右停靠边距只写在 LazyRow contentPadding，且可独立设置
+    // 3) 滚动时卡片可从面板缘进出；静止时首/末卡仍有呼吸边距
+    // onReturnToLeftPanel/onBack 由外层词块或状态面板入口承接；海报轨首项承接 entryFocus。
     TvPosterRail(
         items = cards.map { video ->
             TvPosterItem(
@@ -1201,8 +1199,8 @@ private fun RecommendRail(
                 totalEpisodes = video.totalEpisodes,
             )
         },
-        // 只外扩左侧，抵消父级 content 水平 padding；右侧留在内容区以露出 end padding。
-        modifier = Modifier.horizontalBleedStart(RightPanelContentHorizontal),
+        // 用 layout 外扩抵消父级 content 水平 padding，贴齐面板圆角内缘。
+        modifier = Modifier.horizontalBleed(RightPanelContentHorizontal),
         firstItemFocusRequester = entryFocusRequester,
         contentStartPadding = RecommendRailStartPadding,
         contentEndPadding = RecommendRailEndPadding,
@@ -1211,28 +1209,28 @@ private fun RecommendRail(
 }
 
 /**
- * 仅向左外扩 [bleed]，用于父级已有对称水平 padding 的横滑轨。
+ * 左右外扩 [bleed]，在父级已有对称水平 padding 时让子项视口贴齐容器缘。
  *
- * - 左：可滑入父级 padding 区，静止时 contentStartPadding 仍与标题对齐
- * - 右：不外扩，end contentPadding 留在内容宽度内，滚到末端时能真正露出来
+ * 不用负 [Modifier.padding]：Compose 要求 padding ≥ 0，负值会抛
+ * `IllegalArgumentException: Padding must be non-negative`。
  *
- * 禁止负 [Modifier.padding]（Compose 要求 ≥ 0）。
- *
- * @param bleed 左侧外扩量（通常等于父级 horizontal padding）。
+ * @param bleed 单侧外扩量（通常等于父级 horizontal padding）。
+ * @return 布局后左右各多占 [bleed] 的修饰器。
  */
-private fun Modifier.horizontalBleedStart(bleed: Dp): Modifier {
+private fun Modifier.horizontalBleed(bleed: Dp): Modifier {
     if (bleed <= 0.dp) {
         return this
     }
     return layout { measurable, constraints ->
         val bleedPx = bleed.roundToPx().coerceAtLeast(0)
-        val expandedMaxWidth = (constraints.maxWidth + bleedPx).coerceAtLeast(0)
+        val expandedMaxWidth = (constraints.maxWidth + bleedPx * 2).coerceAtLeast(0)
         val placeable = measurable.measure(
             constraints.copy(
                 minWidth = 0,
                 maxWidth = expandedMaxWidth,
             ),
         )
+        // 对外仍报告父级可用宽度，内容向左偏移 bleed，使左右对称外扩。
         layout(constraints.maxWidth, placeable.height) {
             placeable.placeRelative(-bleedPx, 0)
         }
