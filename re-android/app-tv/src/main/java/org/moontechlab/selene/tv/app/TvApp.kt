@@ -33,14 +33,18 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.os.Build
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -211,8 +215,26 @@ fun TvApp() {
                             false
                         },
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // 顶栏固定：筛选展开时不隐藏，与 overlay 共存。
+                    // 筛选展开时底层模糊/略压暗；progress 跟 overlay 淡出同步。
+                    val filterDimProgress = categoryFilterOverlayState.revealProgress
+                    val blurUnderFilter = filterDimProgress > 0.02f
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                when {
+                                    blurUnderFilter && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                                        Modifier.blur(radius = 10.dp)
+                                    }
+                                    blurUnderFilter -> {
+                                        // API 31 以下无 RenderEffect 模糊，略降透明度衬托遮罩。
+                                        Modifier.alpha(0.88f)
+                                    }
+                                    else -> Modifier
+                                },
+                            ),
+                    ) {
+                        // 顶栏固定占位；筛选打开时禁止左/右 tab 获焦，直到返回关闭。
                         if (isPrimaryRoute) {
                             Box(
                                 modifier = Modifier
@@ -228,6 +250,8 @@ fun TvApp() {
                                     contentFocusRequester = contentFocusRequester,
                                     topDestinationFocusRequesters = topDestinationFocusRequesters,
                                     topNavHasFocus = topNavHasFocus,
+                                    // 筛选打开期间左右顶栏均不可获焦。
+                                    focusEnabled = !showCategoryFilter,
                                     onTopNavHasFocusChange = { focused -> topNavHasFocus = focused },
                                     onNavigate = { destination ->
                                         if (destination.route != currentRoute) {
@@ -262,7 +286,7 @@ fun TvApp() {
                         )
                     }
 
-                    // 分类筛选独立图层：从屏幕顶边滑入，落点为顶栏下沿。
+                    // 分类筛选独立图层：从屏幕顶滑入并盖住顶栏；关闭时淡出。
                     TvCategoryFilterOverlayLayer(
                         visible = showCategoryFilter,
                         topChromeHeightPx = topChromeHeightPx,
@@ -290,6 +314,7 @@ private fun TvTopNavigationBar(
     contentFocusRequester: FocusRequester,
     topDestinationFocusRequesters: Map<String, FocusRequester>,
     topNavHasFocus: Boolean,
+    focusEnabled: Boolean = true,
     onTopNavHasFocusChange: (Boolean) -> Unit,
     onNavigate: (TvDestination) -> Unit,
     onFilterToggle: () -> Unit = {},
@@ -366,6 +391,7 @@ private fun TvTopNavigationBar(
                 navigateOnFocus = false,
                 itemStyle = TvNavItemStyle.Pill,
                 topNavHasFocus = topNavHasFocus,
+                focusEnabled = focusEnabled,
                 pendingInternalFocusRoute = pendingInternalFocusRoute,
                 onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
                 onTopNavGainedFocus = { onTopNavHasFocusChange(true) },
@@ -402,6 +428,7 @@ private fun TvTopNavigationBar(
             navigateOnFocus = true,
             itemStyle = TvNavItemStyle.TextUnderline,
             topNavHasFocus = topNavHasFocus,
+            focusEnabled = focusEnabled,
             pendingInternalFocusRoute = pendingInternalFocusRoute,
             onPendingInternalFocusConsumed = { pendingInternalFocusRoute = null },
             onTopNavGainedFocus = { onTopNavHasFocusChange(true) },
@@ -463,6 +490,7 @@ private fun TvDestinationGroup(
     navigateOnFocus: Boolean,
     itemStyle: TvNavItemStyle = TvNavItemStyle.Pill,
     topNavHasFocus: Boolean,
+    focusEnabled: Boolean = true,
     pendingInternalFocusRoute: String?,
     onPendingInternalFocusConsumed: () -> Unit,
     onTopNavGainedFocus: () -> Unit,
@@ -492,6 +520,7 @@ private fun TvDestinationGroup(
                 supportsCategoryFilter = destination.supportsCategoryFilter(),
                 contentFocusRequester = contentFocusRequester,
                 focusRequester = topDestinationFocusRequesters[destination.route],
+                focusEnabled = focusEnabled,
                 // 快捷区自管下键回主菜单，不再直达内容区。
                 useContentAsDownTarget = onMoveDownFromGroup == null,
                 onFocused = {
@@ -557,6 +586,7 @@ private fun TvNavigationPill(
     supportsCategoryFilter: Boolean = false,
     contentFocusRequester: FocusRequester,
     focusRequester: FocusRequester?,
+    focusEnabled: Boolean = true,
     useContentAsDownTarget: Boolean = true,
     onFocused: () -> Unit,
     onClick: () -> Unit,
@@ -595,6 +625,8 @@ private fun TvNavigationPill(
     val focusAndClickModifier = Modifier
         .tvEdgeShake(edgeShake)
         .focusProperties {
+            // 分类筛选打开时整顶栏不可获焦（左主菜单 + 右快捷）。
+            canFocus = focusEnabled
             // 主菜单下键进内容；快捷区下键由 onMoveDown 显式回主菜单，禁用默认 down。
             down = if (useContentAsDownTarget) {
                 contentFocusRequester
@@ -615,6 +647,9 @@ private fun TvNavigationPill(
             },
         )
         .onPreviewKeyEvent { event ->
+            if (!focusEnabled) {
+                return@onPreviewKeyEvent false
+            }
             if (event.key == Key.DirectionLeft || event.key == Key.DirectionRight) {
                 val handler = if (event.key == Key.DirectionLeft) onMoveLeft else onMoveRight
                 if (handler != null) {
@@ -678,7 +713,7 @@ private fun TvNavigationPill(
                 onTap = { onClick() },
             )
         }
-        .focusable(interactionSource = interactionSource)
+        .focusable(enabled = focusEnabled, interactionSource = interactionSource)
 
     if (isTextUnderline) {
         // 主菜单：无背景；未选中正文色；选中 Accent 字 + 紧贴下划线。

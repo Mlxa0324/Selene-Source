@@ -3,12 +3,16 @@ package org.moontechlab.selene.tv.feature.home
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +21,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -44,6 +49,11 @@ class CategoryFilterOverlayState {
      * 由 overlay 写入，分类页只读。
      */
     var revealedHeightPx by mutableIntStateOf(0)
+
+    /**
+     * 0..1 展开进度，供壳层对底层做模糊/压暗，并与淡出同步。
+     */
+    var revealProgress by mutableFloatStateOf(0f)
 }
 
 /** 壳层提供、分类页消费的 overlay 状态。 */
@@ -69,10 +79,11 @@ fun TvCategoryFilterOverlayLayer(
 ) {
     var panelHeightPx by remember { mutableIntStateOf(0) }
     val heightReady = panelHeightPx > 0
+    // 关闭时拉长淡出，配合底层去模糊，避免顶栏焦点瞬间可抢。
     val progress by animateFloatAsState(
         targetValue = if (visible && heightReady && state.filters.isNotEmpty()) 1f else 0f,
         animationSpec = tween(
-            durationMillis = if (visible) 320 else 260,
+            durationMillis = if (visible) 320 else 280,
             easing = FastOutSlowInEasing,
         ),
         label = "categoryFilterOverlayProgress",
@@ -95,14 +106,9 @@ fun TvCategoryFilterOverlayLayer(
         0f
     }
 
-    LaunchedEffect(revealedHeightPx) {
-        state.revealedHeightPx = revealedHeightPx
-    }
-    LaunchedEffect(visible) {
-        if (!visible) {
-            // 关闭后清空 inset，避免残留顶开。
-            state.revealedHeightPx = 0
-        }
+    SideEffect {
+        state.revealProgress = progress
+        state.revealedHeightPx = if (visible || progress > 0.001f) revealedHeightPx else 0
     }
 
     val entryFocus = state.entryFocusRequester
@@ -127,12 +133,20 @@ fun TvCategoryFilterOverlayLayer(
     val density = LocalDensity.current
     // 至少盖住整段顶栏，避免内容偏矮时露出 Logo/tab。
     val minCoverHeight = with(density) { chromePx.toDp() }
+    val panelAlpha = if (heightReady) progress.coerceIn(0f, 1f) else 0f
 
     Box(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .zIndex(12f),
     ) {
+        // 半透明遮罩：压暗底层并衬托面板「毛玻璃」感（与底层 blur 配合）。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = panelAlpha * 0.42f }
+                .background(Color.Black),
+        )
         TvLibraryFilterPanel(
             filters = state.filters,
             contentFocusRequester = entryFocus.takeIf { visible },
@@ -148,7 +162,7 @@ fun TvCategoryFilterOverlayLayer(
                 }
                 .graphicsLayer {
                     translationY = translationYPx
-                    alpha = if (heightReady) progress.coerceIn(0f, 1f) else 0f
+                    alpha = panelAlpha
                 },
         )
     }

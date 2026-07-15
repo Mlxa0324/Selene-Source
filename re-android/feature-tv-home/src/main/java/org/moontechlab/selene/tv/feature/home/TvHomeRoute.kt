@@ -376,7 +376,8 @@ internal fun TvLibraryFilterPanel(
             .fillMaxWidth()
             // 紧凑深色筛选层与下方海报区分开，同时不占用额外标题高度。
             .background(
-                color = TvTokens.Surface.copy(alpha = 0.94f),
+                // 略透明，叠在底层模糊+遮罩上形成轻毛玻璃。
+                color = TvTokens.Surface.copy(alpha = 0.82f),
                 shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
             )
             .padding(
