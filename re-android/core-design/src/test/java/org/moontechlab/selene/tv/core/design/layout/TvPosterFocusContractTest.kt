@@ -148,7 +148,9 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("requestBringIntoViewOnFocus = false")
         assertThat(source).contains("canScrollForward")
         // 末行用瞬时 scrollBy 抽干到底，避免 animate 被取消导致标题露不出。
-        assertThat(source).contains("scrollBy(viewportSpan)")
+        assertThat(source).contains("scrollBy(viewportSpan")
+        assertThat(source).contains("bottomEdgeSafePx")
+        assertThat(source).contains("gridFocusScrollJob")
         // 不得再对每个获焦项无条件 pin firstVisible。
         assertThat(source).doesNotContain("if (lazyIndex != gridState.firstVisibleItemIndex)")
     }

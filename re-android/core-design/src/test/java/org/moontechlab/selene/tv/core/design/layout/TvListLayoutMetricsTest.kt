@@ -51,7 +51,8 @@ class TvListLayoutMetricsTest {
     @Test
     fun gridContentPadding_usesPageHorizontalPaddingInsidePageScaffold() {
         assertThat(TvListLayoutMetrics.GridHorizontalPadding).isEqualTo(50.dp)
-        assertThat(TvListLayoutMetrics.GridBottomPadding).isEqualTo(32.dp)
+        // 底边距须容纳标题+副标题，避免近底行标题被裁。
+        assertThat(TvListLayoutMetrics.GridBottomPadding).isEqualTo(64.dp)
     }
 
     /**

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.Dp
 import kotlin.math.abs
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 
@@ -83,6 +85,7 @@ fun TvPosterGrid(
         }
     }
     val scrollScope = rememberCoroutineScope()
+    var gridFocusScrollJob by remember { mutableStateOf<Job?>(null) }
     var lastFocusedItemIndex by rememberSaveable(
         designMetrics.viewportWidth.toInt(),
         designMetrics.viewportHeight.toInt(),
@@ -182,7 +185,10 @@ fun TvPosterGrid(
                             )
                             val lastRowStartLazy = lastRowStartIndex + headerLazyOffset
                             val lastLazyIndex = items.lastIndex + headerLazyOffset
-                            scrollScope.launch {
+                            // 取消上一次跟滚，避免连按方向键时动画互相打断导致底行标题露不出。
+                            val previousJob = gridFocusScrollJob
+                            gridFocusScrollJob = scrollScope.launch {
+                                previousJob?.cancel()
                                 // 中心带跟焦；首行钉顶、末行钉底，中间才中线跟滚。
                                 gridState.scrollFocusedItemWithCenterBand(
                                     lazyIndex = lazyIndex,
@@ -263,24 +269,25 @@ private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
     val viewportEnd = layoutInfo.viewportEndOffset
     val viewportSize = (viewportEnd - viewportStart).coerceAtLeast(1)
     val centerLine = viewportStart + viewportSize / 2
-    // LazyGridItemInfo：主轴用 offset.y / size.height。
+    // LazyGridItemInfo：主轴用 offset.y / size.height（含封面+标题列）。
     val itemStart = target.offset.y
     val itemHeight = target.size.height
     val itemEnd = itemStart + itemHeight
     val itemCenter = itemStart + itemHeight / 2
-    // 略大于焦点描边/放大溢出，避免「刚露一点仍被裁」。
-    val edgeSafePx = 12
+    // 顶边：描边/放大溢出；底边：标题+副标题更易被裁，预留更大。
+    val topEdgeSafePx = 12
+    val bottomEdgeSafePx = 28
     when {
         // 顶部被裁：刚好露出，不要 pin 成 firstVisible。
-        itemStart < viewportStart + edgeSafePx -> {
-            val delta = (itemStart - (viewportStart + edgeSafePx)).toFloat()
+        itemStart < viewportStart + topEdgeSafePx -> {
+            val delta = (itemStart - (viewportStart + topEdgeSafePx)).toFloat()
             if (abs(delta) > 1f) {
                 animateScrollBy(delta)
             }
         }
-        // 底部被裁：刚好露出。
-        itemEnd > viewportEnd - edgeSafePx -> {
-            val delta = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
+        // 底部被裁（含标题区）：整卡底边滚到视口内。
+        itemEnd > viewportEnd - bottomEdgeSafePx -> {
+            val delta = (itemEnd - (viewportEnd - bottomEdgeSafePx)).toFloat()
             if (delta > 1f) {
                 animateScrollBy(delta)
             }
@@ -341,10 +348,10 @@ private suspend fun LazyGridState.scrollGridToAbsoluteBottom(
     if (layoutInfo.visibleItemsInfo.none { info -> info.index == lastLazyIndex }) {
         scrollToItem(index = lastLazyIndex)
     }
-    // 2) 几何：优先当前获焦项，否则末项；底边顶到视口底内侧。
-    // 标题在 item 布局高度内；edge 再留一点给焦点描边（scale 不占布局）。
-    val bottomSafePx = 20
-    repeat(4) {
+    // 2) 几何：优先当前获焦项，否则末项；底边（含标题）顶到视口底内侧。
+    // 标题两行 + 间距约 40–50dp，safe 取足；scale 描边不占布局另留一点。
+    val bottomSafePx = 36
+    repeat(6) {
         val targetInfo = layoutInfo.visibleItemsInfo.firstOrNull { info ->
             info.index == focusedLazyIndex
         } ?: layoutInfo.visibleItemsInfo.firstOrNull { info ->
@@ -360,13 +367,28 @@ private suspend fun LazyGridState.scrollGridToAbsoluteBottom(
             return@repeat
         }
     }
-    // 3) 抽干剩余 scroll extent（contentBottomPadding 等）。
+    // 3) 抽干剩余 scroll extent（contentBottomPadding 等），确保末行标题真正进屏。
     var guard = 0
-    while (canScrollForward && guard < 24) {
+    while (canScrollForward && guard < 32) {
         val viewportSpan = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
             .coerceAtLeast(32)
             .toFloat()
-        scrollBy(viewportSpan)
+        scrollBy(viewportSpan * 0.35f)
         guard++
+    }
+    // 4) 再校正一次获焦项底边，避免 step3 把项顶得过高后又因 residual 裁标题。
+    val finalInfo = layoutInfo.visibleItemsInfo.firstOrNull { info ->
+        info.index == focusedLazyIndex
+    } ?: layoutInfo.visibleItemsInfo.firstOrNull { info ->
+        info.index == lastLazyIndex
+    }
+    if (finalInfo != null) {
+        val overflow = (
+            finalInfo.offset.y + finalInfo.size.height -
+                (layoutInfo.viewportEndOffset - bottomSafePx)
+            ).toFloat()
+        if (overflow > 1f) {
+            scrollBy(overflow)
+        }
     }
 }

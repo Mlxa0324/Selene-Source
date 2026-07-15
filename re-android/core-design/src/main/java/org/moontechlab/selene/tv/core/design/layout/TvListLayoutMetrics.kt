@@ -48,8 +48,11 @@ object TvListLayoutMetrics {
 
     /**
      * 纵向网格底部安全留白。
+     *
+     * 须覆盖海报标题+副标题两行文案高度，否则末行/近底行获焦时标题被视口裁掉
+     *（分类/历史/收藏等 Grid 页；首页横轨不受影响）。
      */
-    val GridBottomPadding = TvTokens.PageBottomPadding
+    val GridBottomPadding = 64.dp
 
     /**
      * 按可视列数计算横向海报卡片宽度。
