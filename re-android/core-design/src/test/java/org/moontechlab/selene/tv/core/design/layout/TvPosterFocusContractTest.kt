@@ -127,6 +127,21 @@ class TvPosterFocusContractTest {
     }
 
     /**
+     * 纵向网格获焦跟滚必须走中心带 + scrollBy，禁止每个获焦项 pin 到 firstVisible 顶缘。
+     */
+    @Test
+    fun posterGrid_uses_center_band_follow_scroll_instead_of_pin_to_top() {
+        val source = readLayoutSource("TvPosterGrid.kt")
+
+        assertThat(source).contains("scrollFocusedItemWithCenterBand")
+        assertThat(source).contains("animateScrollBy")
+        assertThat(source).contains("centerLine")
+        assertThat(source).contains("itemCenter > centerLine")
+        // 不得再对每个获焦项无条件 pin firstVisible。
+        assertThat(source).doesNotContain("if (lazyIndex != gridState.firstVisibleItemIndex)")
+    }
+
+    /**
      * 海报焦点分组只负责分组进入规则，不创建可获焦的容器中转节点。
      */
     @Test

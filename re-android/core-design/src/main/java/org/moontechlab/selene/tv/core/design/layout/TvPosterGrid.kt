@@ -1,5 +1,6 @@
 package org.moontechlab.selene.tv.core.design.layout
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.Dp
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 
@@ -165,11 +167,9 @@ fun TvPosterGrid(
                             // 记录真实业务焦点，避免首卡被 LazyGrid 回收后顶部下探没有目标。
                             lastFocusedItemIndex = index
                             val lazyIndex = index + headerLazyOffset
-                            if (lazyIndex != gridState.firstVisibleItemIndex) {
-                                scrollScope.launch {
-                                    // 网格按行滚动，保持当前行在重新入场时稳定可见。
-                                    gridState.animateScrollToItem(lazyIndex)
-                                }
+                            scrollScope.launch {
+                                // 中心带跟焦：中线以上不滚，避免获焦即 pin 顶把列表拽走、顶部被藏。
+                                gridState.scrollFocusedItemWithCenterBand(lazyIndex)
                             }
                         }
                         // 焦点进入预取阈值时后台请求下一页，避免用户触底后停在加载态。
@@ -181,5 +181,59 @@ fun TvPosterGrid(
                 )
             }
         }
+    }
+}
+
+/**
+ * 纵向网格中心带跟焦。
+ *
+ * - 获焦项仍在视口上半区且完整可见：不滚动，顶部行/标题保持原位。
+ * - 项中心越过视口中线：按差值 scrollBy，列表被焦点「带走」而不是钉到顶。
+ * - 顶/底被裁：只滚裁切量；未布局时先滚近再按中心带微调。
+ *
+ * 禁止对每个获焦项 animateScrollToItem 无 offset（会把项钉在 firstVisible 顶缘）。
+ */
+private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(lazyIndex: Int) {
+    var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
+    if (target == null) {
+        // 尚未进入布局：先滚进可见范围，再交给中心带逻辑，避免一直停在屏外。
+        animateScrollToItem(lazyIndex)
+        target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
+            ?: return
+    }
+    val layoutInfo = layoutInfo
+    val viewportStart = layoutInfo.viewportStartOffset
+    val viewportEnd = layoutInfo.viewportEndOffset
+    val viewportSize = (viewportEnd - viewportStart).coerceAtLeast(1)
+    val centerLine = viewportStart + viewportSize / 2
+    // LazyGridItemInfo：主轴用 offset.y / size.height。
+    val itemStart = target.offset.y
+    val itemHeight = target.size.height
+    val itemEnd = itemStart + itemHeight
+    val itemCenter = itemStart + itemHeight / 2
+    val edgeSafePx = 8
+    when {
+        // 顶部被裁：刚好露出，不要 pin 成 firstVisible。
+        itemStart < viewportStart + edgeSafePx -> {
+            val delta = (itemStart - (viewportStart + edgeSafePx)).toFloat()
+            if (abs(delta) > 1f) {
+                animateScrollBy(delta)
+            }
+        }
+        // 底部被裁：刚好露出。
+        itemEnd > viewportEnd - edgeSafePx -> {
+            val delta = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
+            if (delta > 1f) {
+                animateScrollBy(delta)
+            }
+        }
+        // 越过中线：把项中心拉回中线，实现「到中心区域才开始跟滚」。
+        itemCenter > centerLine -> {
+            val delta = (itemCenter - centerLine).toFloat()
+            if (delta > 1f) {
+                animateScrollBy(delta)
+            }
+        }
+        // 中线以上且完整可见：保持静止，顶部不被拽走。
     }
 }
