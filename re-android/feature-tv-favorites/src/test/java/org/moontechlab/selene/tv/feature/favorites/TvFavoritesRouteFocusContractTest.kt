@@ -16,9 +16,16 @@ class TvFavoritesRouteFocusContractTest {
         val source = readRouteSource()
 
         assertThat(source).contains("contentFocusRequester: FocusRequester? = null")
-        assertThat(source).contains("TvPosterGridSkeleton(contentFocusRequester = contentFocusRequester)")
-        assertThat(source).contains("contentFocusRequester = contentFocusRequester")
-        assertThat(source).contains("firstItemFocusRequester = contentFocusRequester")
+        assertThat(source).contains("TvPosterGridSkeleton(contentFocusRequester = resolvedContentFocus)")
+        assertThat(source).contains("contentFocusRequester = resolvedContentFocus")
+        assertThat(source).contains("firstItemFocusRequester = resolvedContentFocus")
+        // 紧凑页头随网格滚动 + 删除全部 + 公共确认框。
+        assertThat(source).contains("TvScrollablePageHeader")
+        assertThat(source).contains("headerContent")
+        assertThat(source).contains("删除全部")
+        assertThat(source).contains("TvConfirmDialog")
+        assertThat(source).contains("onClearAll")
+        assertThat(source).contains("title = null")
     }
 
     /**

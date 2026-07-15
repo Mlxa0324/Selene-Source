@@ -299,6 +299,7 @@ fun TvNavGraph(
                         launchSingleTop = true
                     }
                 },
+                onClearAll = { historyViewModel.clear() },
             )
         }
         composable(TvDestination.Favorites.route) {
@@ -321,6 +322,7 @@ fun TvNavGraph(
                         launchSingleTop = true
                     }
                 },
+                onClearAll = { favoritesViewModel.clear() },
             )
         }
         composable(TvDestination.Settings.route) {
