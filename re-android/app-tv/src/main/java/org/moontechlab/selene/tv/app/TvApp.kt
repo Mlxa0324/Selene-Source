@@ -143,42 +143,86 @@ fun TvApp() {
             val categoryFilterOverlayState = remember { CategoryFilterOverlayState() }
             val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
 
+            // 筛选从 tab 打开后顶栏 canFocus=false，关闭时需等重组再落焦当前 tab。
+            var pendingRestoreTopTabFocus by remember { mutableStateOf(false) }
+            // 切入电影/剧集/动漫/综艺时短暂提示确认键可呼出筛选。
+            var showCategoryFilterHint by remember { mutableStateOf(false) }
+
             fun focusCurrentPrimaryTab(): Boolean {
                 val route = currentRoute ?: return false
                 if (!isPrimaryRoute) {
                     return false
                 }
                 val requester = topDestinationFocusRequesters[route] ?: return false
-                topNavHasFocus = true
-                return runCatching { requester.requestFocus() }.getOrDefault(false)
+                // 仅成功获焦后再标记顶栏持焦，避免失败时误判导致返回被吞或切到首页。
+                val ok = runCatching { requester.requestFocus() }.getOrDefault(false)
+                if (ok) {
+                    topNavHasFocus = true
+                }
+                return ok
             }
 
             /**
-             * 主菜单页内容区返回：关闭筛选（若有）并落焦当前 tab。
-             * 不 pop 导航栈，避免从剧集/电影等分类页被弹回首页。
-             * 顶栏始终固定，筛选只在其下方展开。
+             * 主菜单页返回：
+             * 1) 筛选打开 → 关闭并落焦**当前**分类 tab（不 pop 回首页）
+             * 2) 焦点在内容区 → 落焦当前 tab
+             * 顶栏已持焦且无筛选时不拦截（留给系统/上层）。
              */
             fun handlePrimaryContentBack(): Boolean {
-                if (!isPrimaryRoute || topNavHasFocus) {
+                if (!isPrimaryRoute) {
                     return false
                 }
                 if (showCategoryFilter) {
                     showCategoryFilter = false
+                    // 顶栏 canFocus 要等下一帧恢复，延后 requestFocus。
+                    pendingRestoreTopTabFocus = true
+                    return true
+                }
+                if (topNavHasFocus) {
+                    return false
                 }
                 return focusCurrentPrimaryTab()
             }
 
-            // 主菜单页焦点在内容区时消费返回：回当前 tab，不退出到首页。
-            BackHandler(enabled = isPrimaryRoute && !topNavHasFocus) {
+            // 筛选打开时也要消费返回（焦点从 tab 打开后 topNavHasFocus 可能仍为 true）。
+            BackHandler(enabled = isPrimaryRoute && (showCategoryFilter || !topNavHasFocus)) {
                 handlePrimaryContentBack()
             }
             LaunchedEffect(currentRoute) {
                 // 切换顶层页面后重置筛选面板可见态。
                 showCategoryFilter = false
+                pendingRestoreTopTabFocus = false
                 if (!isPrimaryRoute) {
                     // 子页面（搜索/设置/播放器等）无顶部主导航，直接落焦到内容区。
                     contentFocusRequester.requestFocus()
                 }
+            }
+            // 进入支持筛选的分类 tab：短暂提示「确认键可打开分类筛选」。
+            LaunchedEffect(currentRoute) {
+                val supportsFilter = TvDestination.primaryMenuDestinations.any { destination ->
+                    destination.route == currentRoute && destination.supportsCategoryFilter()
+                }
+                if (!supportsFilter) {
+                    showCategoryFilterHint = false
+                    return@LaunchedEffect
+                }
+                showCategoryFilterHint = true
+                delay(2_800)
+                showCategoryFilterHint = false
+            }
+            // 筛选关闭后顶栏恢复可焦，再落到当前 tab（电影/剧集/动漫/综艺等）。
+            LaunchedEffect(showCategoryFilter, pendingRestoreTopTabFocus, currentRoute) {
+                if (showCategoryFilter || !pendingRestoreTopTabFocus) {
+                    return@LaunchedEffect
+                }
+                for (attempt in 0 until 16) {
+                    delay(32)
+                    if (focusCurrentPrimaryTab()) {
+                        pendingRestoreTopTabFocus = false
+                        return@LaunchedEffect
+                    }
+                }
+                pendingRestoreTopTabFocus = false
             }
             LaunchedEffect(isPrimaryRoute) {
                 if (!isPrimaryRoute) {
@@ -196,9 +240,13 @@ fun TvApp() {
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
                         .onPreviewKeyEvent { event ->
-                            // 模拟器 Esc 与返回键一致：内容区 → 当前主 tab（筛选一并收起）。
+                            // 模拟器 Esc 与返回键一致：关筛选 / 内容区 → 当前主 tab。
                             val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
-                            if (!isBackOrEsc || !isPrimaryRoute || topNavHasFocus) {
+                            if (!isBackOrEsc || !isPrimaryRoute) {
+                                return@onPreviewKeyEvent false
+                            }
+                            // 筛选打开时一律拦截；否则仅内容区拦截（顶栏持焦时不抢）。
+                            if (topNavHasFocus && !showCategoryFilter) {
                                 return@onPreviewKeyEvent false
                             }
                             if (event.type == KeyEventType.KeyDown) {
@@ -244,7 +292,12 @@ fun TvApp() {
                                         }
                                     },
                                     onFilterToggle = {
-                                        // 仅切换当前分类页的内联筛选状态，不创建或跳转新路由。
+                                        // 从当前 tab 打开筛选：焦点会进面板，顶栏标记需清掉，
+                                        // 否则返回键会被当成「已在顶栏」而漏拦、pop 回首页。
+                                        if (!showCategoryFilter) {
+                                            topNavHasFocus = false
+                                            showCategoryFilterHint = false
+                                        }
                                         showCategoryFilter = !showCategoryFilter
                                     },
                                 )
@@ -270,6 +323,15 @@ fun TvApp() {
                         topChromeHeightPx = topChromeHeightPx,
                         state = categoryFilterOverlayState,
                     )
+
+                    // 切入支持筛选的分类 tab 时，底部轻提示确认键用法。
+                    if (showCategoryFilterHint && !showCategoryFilter) {
+                        TvCategoryFilterHintBar(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 48.dp),
+                        )
+                    }
                 }
             }
         }
@@ -835,4 +897,34 @@ private fun TvDestination.supportsCategoryFilter(): Boolean {
         this is TvDestination.Tv ||
         this is TvDestination.Anime ||
         this is TvDestination.Show
+}
+
+/**
+ * 分类 tab 轻提示：告知用户确认键可呼出筛选。
+ *
+ * 切入电影 / 剧集 / 动漫 / 综艺时短暂展示，不抢焦点。
+ */
+@Composable
+private fun TvCategoryFilterHintBar(
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(TvTokens.Surface.copy(alpha = 0.92f))
+            .border(
+                width = 1.dp,
+                color = TvTokens.TextSecondary.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(20.dp),
+            )
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "按确认键可打开分类筛选",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TvTokens.TextPrimary,
+            maxLines = 1,
+        )
+    }
 }

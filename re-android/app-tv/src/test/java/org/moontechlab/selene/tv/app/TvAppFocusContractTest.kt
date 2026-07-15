@@ -128,7 +128,8 @@ class TvAppFocusContractTest {
         assertThat(source).contains("rememberTopDestinationFocusRequesters()")
         assertThat(source).contains("focusCurrentPrimaryTab")
         assertThat(source).contains("handlePrimaryContentBack")
-        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && !topNavHasFocus)")
+        // 筛选打开时也要拦返回（从 tab 打开后 topNavHasFocus 可能仍为 true）。
+        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && (showCategoryFilter || !topNavHasFocus))")
         assertThat(source).contains("Key.Escape")
         // 筛选展开时仍显示顶栏，避免显隐抖动、返回可稳定落到当前 tab。
         assertThat(source).contains("if (isPrimaryRoute) {")
@@ -266,9 +267,15 @@ class TvAppFocusContractTest {
         assertThat(source).contains("handlePrimaryContentBack")
         assertThat(source).contains("if (showCategoryFilter) {")
         assertThat(source).contains("showCategoryFilter = false")
+        assertThat(source).contains("pendingRestoreTopTabFocus")
         assertThat(source).contains("focusCurrentPrimaryTab()")
+        // 筛选打开时即使 topNavHasFocus 仍为 true 也要拦返回。
+        assertThat(source).contains("showCategoryFilter || !topNavHasFocus")
         assertThat(source).contains("if (isPrimaryRoute) {")
         assertThat(source).doesNotContain("if (isPrimaryRoute && !showCategoryFilter) {")
         assertThat(source).doesNotContain("BackHandler(enabled = showCategoryFilter)")
+        // 切入分类 tab 时提示确认键可呼出筛选。
+        assertThat(source).contains("按确认键可打开分类筛选")
+        assertThat(source).contains("TvCategoryFilterHintBar")
     }
 }
