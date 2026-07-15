@@ -831,10 +831,20 @@ private fun SearchDefaultPanel(
         return
     }
 
-    // 右栏各区块入口：不环形，历史↓热词↓推荐，可顺序离开；左右跨栏按分带就近。
+    // 右栏各区块：区内同列上下；跨区也按同列就近，不跳到对方首项。
     val hasHistory = state.searchHistory.isNotEmpty()
     val hasHot = state.hotQueries.isNotEmpty()
     val hasRecommend = state.recommendCards.isNotEmpty()
+    val wordColumns = WordTileColumns
+    // 历史/热词 requester 提到面板级，跨区上下才能点名「紧挨着」的同列项。
+    val historyFocusRequesters = rememberWordTileFocusRequesters(
+        itemCount = state.searchHistory.size,
+        entryFocusRequester = historyEntryFocus,
+    )
+    val hotFocusRequesters = rememberWordTileFocusRequesters(
+        itemCount = state.hotQueries.size,
+        entryFocusRequester = hotEntryFocus,
+    )
 
     SectionTitle(
         title = "搜索历史",
@@ -859,14 +869,22 @@ private fun SearchDefaultPanel(
     } else {
         WordTileGrid(
             words = state.searchHistory,
-            entryFocusRequester = historyEntryFocus,
+            itemFocusRequesters = historyFocusRequesters,
             onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.History) },
             // 历史词直接搜索，对齐 Flutter onWordPressed -> _performSearch。
             onWordClick = onSearchHistoryClick,
             onBack = onBack,
-            onArrowDownFromBottom = {
+            onArrowDownFromBottom = { col ->
                 when {
-                    hasHot -> runCatching { hotEntryFocus.requestFocus() }
+                    hasHot -> {
+                        // 同列落到热词首行，紧挨着下移。
+                        val target = resolveWordTileTopRowIndex(
+                            itemCount = state.hotQueries.size,
+                            columns = wordColumns,
+                            column = col,
+                        )
+                        runCatching { hotFocusRequesters[target].requestFocus() }
+                    }
                     hasRecommend -> runCatching { recommendEntryFocus.requestFocus() }
                 }
             },
@@ -879,15 +897,20 @@ private fun SearchDefaultPanel(
         Spacer(modifier = Modifier.height(12.dp))
         WordTileGrid(
             words = state.hotQueries,
-            entryFocusRequester = hotEntryFocus,
+            itemFocusRequesters = hotFocusRequesters,
             onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Hot) },
             // 热词只回填，不直接搜索。
             onWordClick = onHotQueryClick,
             onBack = onBack,
-            onArrowUpFromTop = {
+            onArrowUpFromTop = { col ->
                 if (hasHistory) {
-                    // 回到历史区入口（首项）。
-                    runCatching { historyEntryFocus.requestFocus() }
+                    // 同列落到历史上区底行，紧挨着上移，禁止跳历史首项。
+                    val target = resolveWordTileBottomRowIndex(
+                        itemCount = state.searchHistory.size,
+                        columns = wordColumns,
+                        column = col,
+                    )
+                    runCatching { historyFocusRequesters[target].requestFocus() }
                 }
             },
             onArrowDownFromBottom = {
@@ -963,9 +986,13 @@ private fun SearchSuggestionPanel(
 
         else -> {
             val hasRecommend = state.recommendCards.isNotEmpty()
+            val suggestionFocusRequesters = rememberWordTileFocusRequesters(
+                itemCount = state.suggestions.size,
+                entryFocusRequester = entryFocusRequester,
+            )
             WordTileGrid(
                 words = state.suggestions,
-                entryFocusRequester = entryFocusRequester,
+                itemFocusRequesters = suggestionFocusRequesters,
                 onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.History) },
                 // 联想词确认后直接搜索，并保留返回上下文。
                 onWordClick = onSuggestionClick,
@@ -1082,39 +1109,30 @@ private fun SectionTitle(
  * 词块网格：历史 / 热词 / 联想共用。
  *
  * 右侧内容区**不环形**：底行下键交给 [onArrowDownFromBottom] 离开本区，
- * 顶行上键交给 [onArrowUpFromTop]；环形导航仅用于左侧键盘。
+ * 顶行上键交给 [onArrowUpFromTop]；跨区携带列号以便同列就近落点。
  *
  * @param words 词列表。
- * @param entryFocusRequester 首项入口焦点。
+ * @param itemFocusRequesters 与 [words] 等长的焦点请求器；首项应即入口 requester 本体。
  * @param onReturnToLeftPanel 左键回键盘。
  * @param onWordClick 词确认。
  * @param onBack 返回。
- * @param onArrowDownFromBottom 底行下键（离开本网格）。
- * @param onArrowUpFromTop 顶行上键（离开本网格）。
+ * @param onArrowDownFromBottom 底行下键（离开本网格，参数为当前列）。
+ * @param onArrowUpFromTop 顶行上键（离开本网格，参数为当前列）。
  */
 @Composable
 private fun WordTileGrid(
     words: List<String>,
-    entryFocusRequester: FocusRequester?,
+    itemFocusRequesters: List<FocusRequester>,
     onReturnToLeftPanel: () -> Unit,
     onWordClick: (String) -> Unit,
     onBack: () -> Unit,
-    onArrowDownFromBottom: (() -> Unit)? = null,
-    onArrowUpFromTop: (() -> Unit)? = null,
+    onArrowDownFromBottom: ((column: Int) -> Unit)? = null,
+    onArrowUpFromTop: ((column: Int) -> Unit)? = null,
 ) {
-    val columns = 3
+    val columns = WordTileColumns
     val rows = (words.size + columns - 1) / columns
-    // 每项只挂一个 FocusRequester。首项必须直接使用 entryFocusRequester 本体，
-    // 不能双挂两个 FocusRequester：Compose 上同一节点叠两个 requester 时，
-    // 入口 requestFocus / 区内移回 index0 会有一方失效，表现为「僵尸先生」死活上不去。
-    val focusRequesters = remember(words.size, entryFocusRequester) {
-        List(words.size) { index ->
-            if (index == 0 && entryFocusRequester != null) {
-                entryFocusRequester
-            } else {
-                FocusRequester()
-            }
-        }
+    require(itemFocusRequesters.size >= words.size) {
+        "itemFocusRequesters size must cover words"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1132,7 +1150,7 @@ private fun WordTileGrid(
                             label = "wordTileBg",
                         )
                         val lastIndex = words.lastIndex
-                        val itemFocus = focusRequesters[index]
+                        val itemFocus = itemFocusRequesters[index]
 
                         Box(
                             modifier = Modifier
@@ -1154,33 +1172,34 @@ private fun WordTileGrid(
                                             if (col == 0) {
                                                 onReturnToLeftPanel()
                                             } else {
-                                                focusRequesters.getOrNull(index - 1)
+                                                itemFocusRequesters.getOrNull(index - 1)
                                                     ?.let { runCatching { it.requestFocus() } }
                                             }
                                         },
                                         onRight = {
                                             if (index < lastIndex) {
-                                                focusRequesters.getOrNull(index + 1)
+                                                itemFocusRequesters.getOrNull(index + 1)
                                                     ?.let { runCatching { it.requestFocus() } }
                                             }
                                         },
                                         onUp = {
                                             val up = index - columns
                                             if (up >= 0) {
-                                                focusRequesters.getOrNull(up)
+                                                itemFocusRequesters.getOrNull(up)
                                                     ?.let { runCatching { it.requestFocus() } }
                                             } else {
-                                                onArrowUpFromTop?.invoke()
+                                                // 顶行上键：把列号交给外层，落到上区同列底项。
+                                                onArrowUpFromTop?.invoke(col)
                                             }
                                         },
                                         onDown = {
                                             val down = index + columns
                                             if (down <= lastIndex) {
-                                                focusRequesters.getOrNull(down)
+                                                itemFocusRequesters.getOrNull(down)
                                                     ?.let { runCatching { it.requestFocus() } }
                                             } else {
-                                                // 底行下键：离开本区到下一区块，不循环回顶部。
-                                                onArrowDownFromBottom?.invoke()
+                                                // 底行下键：把列号交给外层，落到下区同列首项。
+                                                onArrowDownFromBottom?.invoke(col)
                                             }
                                         },
                                         onBack = onBack,
@@ -1486,6 +1505,65 @@ private fun TvVideoCard.searchResultSubtitle(): String {
             add(sourcePart)
         }
     }.joinToString(" · ").ifBlank { "结果" }
+}
+
+// ── 词块网格列数与跨区同列落点 ──
+
+/** 历史 / 热词 / 联想词块统一 3 列。 */
+private const val WordTileColumns = 3
+
+/**
+ * 构建词块焦点请求器：首项必须使用入口 requester 本体（单挂）。
+ */
+@Composable
+private fun rememberWordTileFocusRequesters(
+    itemCount: Int,
+    entryFocusRequester: FocusRequester?,
+): List<FocusRequester> {
+    return remember(itemCount, entryFocusRequester) {
+        List(itemCount.coerceAtLeast(0)) { index ->
+            if (index == 0 && entryFocusRequester != null) {
+                entryFocusRequester
+            } else {
+                FocusRequester()
+            }
+        }
+    }
+}
+
+/**
+ * 跨区下移：目标词表首行与 [column] 同列的下标（列超出时落到该行末项）。
+ */
+private fun resolveWordTileTopRowIndex(
+    itemCount: Int,
+    columns: Int,
+    column: Int,
+): Int {
+    if (itemCount <= 0) return 0
+    val safeColumns = columns.coerceAtLeast(1)
+    val col = column.coerceIn(0, safeColumns - 1)
+    val firstRowLast = (safeColumns - 1).coerceAtMost(itemCount - 1)
+    return col.coerceAtMost(firstRowLast)
+}
+
+/**
+ * 跨区上移：目标词表底行与 [column] 同列的下标（该列无底行项时落到底行末项）。
+ */
+private fun resolveWordTileBottomRowIndex(
+    itemCount: Int,
+    columns: Int,
+    column: Int,
+): Int {
+    if (itemCount <= 0) return 0
+    val safeColumns = columns.coerceAtLeast(1)
+    val col = column.coerceIn(0, safeColumns - 1)
+    val lastRowStart = ((itemCount - 1) / safeColumns) * safeColumns
+    val candidate = lastRowStart + col
+    return if (candidate < itemCount) {
+        candidate
+    } else {
+        itemCount - 1
+    }
 }
 
 // ── 左右栏焦点分带：按垂直位置就近互跳 ──

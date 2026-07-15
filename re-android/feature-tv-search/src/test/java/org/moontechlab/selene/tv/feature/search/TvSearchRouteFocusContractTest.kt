@@ -84,7 +84,7 @@ class TvSearchRouteFocusContractTest {
 
     /**
      * 右侧词块不环形：底行下键用 onArrowDownFromBottom 离开本区，禁止循环回顶部。
-     * 首项必须直接使用 entryFocusRequester 本体（单挂），禁止叠两个 FocusRequester。
+     * 跨区上下按同列就近，禁止写死跳到对方首项。
      */
     @Test
     fun right_panel_word_tiles_do_not_wrap_vertically() {
@@ -95,13 +95,14 @@ class TvSearchRouteFocusContractTest {
 
         assertThat(wordGrid).contains("onArrowDownFromBottom")
         assertThat(wordGrid).contains("onArrowUpFromTop")
-        assertThat(wordGrid).contains("底行下键：离开本区到下一区块，不循环回顶部")
+        assertThat(wordGrid).contains("底行下键：把列号交给外层，落到下区同列首项")
         assertThat(wordGrid).doesNotContain("底行下键：回到首行同列（环形）")
-        // 首项 = entry 本体，单挂；区内左右移回 index0 与左栏入口共用同一 requester。
-        assertThat(wordGrid).contains("index == 0 && entryFocusRequester != null")
-        assertThat(wordGrid).contains("entryFocusRequester")
+        // 首项 = 列表 requester[0] 即入口本体（rememberWordTileFocusRequesters 单挂）。
+        assertThat(source).contains("rememberWordTileFocusRequesters")
+        assertThat(source).contains("resolveWordTileBottomRowIndex")
+        assertThat(source).contains("resolveWordTileTopRowIndex")
+        assertThat(source).doesNotContain("// 回到历史区入口（首项）。")
         assertThat(wordGrid).contains(".focusRequester(itemFocus)")
-        assertThat(wordGrid).doesNotContain("首项额外挂 entryFocusRequester")
         assertThat(source).contains("hotEntryFocus")
         assertThat(source).contains("recommendEntryFocus")
         // 无回调的方向键不得吞键，避免标题「清空」锁死焦点。
