@@ -43,21 +43,15 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
-     * 分类筛选从内容区顶边向下展开（expandFrom=Top），不盖顶栏；海报随高度下移。
-     * 禁止默认 expandFrom=Bottom（会往上撑进顶栏）。
+     * 分类筛选从页面顶部下滑展开，隐藏重复网格标题以优先展示影视海报。
      */
     @Test
-    fun category_filter_expands_in_place_and_prioritizes_grid_space() {
+    fun category_filter_slides_from_top_and_prioritizes_grid_space() {
         val source = readLibraryRouteSource()
 
-        assertThat(source).contains("expandVertically(")
-        assertThat(source).contains("expandFrom = Alignment.Top")
-        assertThat(source).contains("shrinkTowards = Alignment.Top")
-        assertThat(source).contains("shrinkVertically(")
-        assertThat(source).doesNotContain("slideInVertically(")
-        assertThat(source).doesNotContain("slideOutVertically(")
-        // 禁止无参 expandVertically()：默认从 Bottom 往上撑。
-        assertThat(source).doesNotContain("expandVertically()")
+        assertThat(source).contains("slideInVertically(")
+        assertThat(source).contains("initialOffsetY = { fullHeight -> -fullHeight }")
+        assertThat(source).contains("slideOutVertically(")
         assertThat(source).contains("headerContent = if (showFilter) null else")
         assertThat(source).contains("firstItemFocusRequester = if (showFilter) null else contentFocusRequester")
     }

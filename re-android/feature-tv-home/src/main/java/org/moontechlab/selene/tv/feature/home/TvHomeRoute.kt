@@ -1,12 +1,10 @@
 package org.moontechlab.selene.tv.feature.home
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.ui.Alignment
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -289,16 +287,13 @@ fun TvVideoLibraryRoute(
 
         AnimatedVisibility(
             visible = showFilter,
-            // 必须 expandFrom = Top：默认 Bottom 会从下往上撑，动画时顶进顶栏像「盖住首页/电影」。
-            // 从内容区顶边向下展开 = 顶部弹出观感；占位增高后海报整体下移。
-            enter = expandVertically(
-                expandFrom = Alignment.Top,
-                animationSpec = tween(durationMillis = 220),
-            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
-            exit = shrinkVertically(
-                shrinkTowards = Alignment.Top,
-                animationSpec = tween(durationMillis = 200),
-            ) + fadeOut(animationSpec = tween(durationMillis = 160)),
+            // 从页面顶部向下滑入展开（恢复改动前行为）。
+            enter = slideInVertically(
+                initialOffsetY = { fullHeight -> -fullHeight },
+            ) + fadeIn(),
+            exit = slideOutVertically(
+                targetOffsetY = { fullHeight -> -fullHeight },
+            ) + fadeOut(),
         ) {
             TvLibraryFilterPanel(
                 filters = state.availableFilters,
