@@ -500,8 +500,11 @@ class TvPlayerRouteControlContractTest {
         assertThat(menuChipSource).contains("onArrowDown: (() -> Unit)? = null")
         assertThat(menuChipSource).contains("Key.DirectionUp ->")
         assertThat(menuChipSource).contains("Key.DirectionDown ->")
-        // 自定义方向键必须在 KeyDown 也消费，避免系统先挪焦点再被 KeyUp 抢回首项。
-        assertThat(menuChipSource).contains("自定义方向键：KeyDown 也要消费")
+        // 方向键在 KeyDown（含 repeat）步进，长按左右连续跟焦；KeyUp 只消费不二次移动。
+        assertThat(menuChipSource).contains("if (event.type == KeyEventType.KeyDown)")
+        assertThat(menuChipSource).contains("directionHandler.invoke()")
+        assertThat(menuChipSource).contains("长按左右连续跟焦")
+        assertThat(menuChipSource).doesNotContain("if (event.type == KeyEventType.KeyUp) {\n                        directionHandler.invoke()")
     }
 
     /**

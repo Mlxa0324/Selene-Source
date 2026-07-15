@@ -2250,8 +2250,8 @@ private fun TvPlayerMenuChip(
                     }
                     return@onPreviewKeyEvent true
                 }
-                // 自定义方向键：KeyDown 也要消费，否则系统会先把焦点挪到“就近项”，
-                // KeyUp 再 requestFocus 到首项，表现为“闪一下第二个再跳回第一个”。
+                // 自定义方向键：KeyDown（含长按 repeat）移动焦点并消费，
+                // 禁止等 KeyUp 才动（长按只会松键走一步）；也禁止交给系统几何挪焦。
                 val directionHandler = when (event.key) {
                     Key.DirectionUp -> onArrowUp
                     Key.DirectionDown -> onArrowDown
@@ -2260,9 +2260,11 @@ private fun TvPlayerMenuChip(
                     else -> null
                 }
                 if (directionHandler != null) {
-                    if (event.type == KeyEventType.KeyUp) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        // 首次按下 + 系统 repeat 都步进，实现长按左右连续跟焦。
                         directionHandler.invoke()
                     }
+                    // KeyUp 只消费不动作，避免短按「按下一步 + 松手又一步」。
                     return@onPreviewKeyEvent true
                 }
                 false
