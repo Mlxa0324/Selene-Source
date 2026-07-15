@@ -376,8 +376,8 @@ fun TvDetailRoute(
                 // 只模糊下方详情内容，浮层作为同级上层继续保持清晰。
                 .ncatDescriptionBackdropEffect(showDescriptionOverlay)
                 .verticalScroll(detailScrollState)
-                // 底部加长，相关推荐 + 底栏可贴底完整露出。
-                .padding(bottom = 140.dp),
+                // 底栏安全留白：够焦点描边即可，避免滚到底时大块空白。
+                .padding(bottom = 48.dp),
         ) {
             NcatDetailTopBar(
                 focusTargets = focusTargets,
@@ -2462,7 +2462,7 @@ private fun NcatBottomActions(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 24.dp, bottom = 12.dp),
+            .padding(top = 20.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(36.dp)) {
