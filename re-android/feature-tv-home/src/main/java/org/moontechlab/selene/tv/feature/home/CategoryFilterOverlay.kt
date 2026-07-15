@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -122,6 +124,10 @@ fun TvCategoryFilterOverlayLayer(
         return
     }
 
+    val density = LocalDensity.current
+    // 至少盖住整段顶栏，避免内容偏矮时露出 Logo/tab。
+    val minCoverHeight = with(density) { chromePx.toDp() }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -134,6 +140,7 @@ fun TvCategoryFilterOverlayLayer(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
+                .heightIn(min = minCoverHeight)
                 .onSizeChanged { size ->
                     if (size.height > 0 && size.height != panelHeightPx) {
                         panelHeightPx = size.height
