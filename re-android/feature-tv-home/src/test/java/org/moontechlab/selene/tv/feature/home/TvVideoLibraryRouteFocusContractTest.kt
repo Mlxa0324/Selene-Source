@@ -102,7 +102,8 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
-     * 筛选展开后，从影视 Grid 返回筛选区时必须按向上几何就近移动，不能回跳最后焦点项。
+     * 筛选展开后，从影视 Grid 按返回/Esc 须直接进入筛选栏（末行已选），
+     * 禁止 moveFocus(Up) 回到上一行海报。
      */
     @Test
     fun category_filter_back_from_grid_moves_focus_up_to_nearest_filter_before_dismissal() {
@@ -114,12 +115,14 @@ class TvVideoLibraryRouteFocusContractTest {
             .substringAfter("private fun TvLibraryFilterRow(")
             .substringBefore("private fun TvLibraryFilterChip(")
 
-        assertThat(source).contains("LocalFocusManager.current")
-        assertThat(source).contains("FocusDirection.Up")
-        assertThat(source).contains("focusManager.moveFocus(FocusDirection.Up)")
-        assertThat(source).doesNotContain("filterFocusRequester?.requestFocus()")
-        assertThat(filterPanelSource).doesNotContain("lastFocusedFilterKey")
-        assertThat(filterRowSource).doesNotContain("restoreFocusRequester")
+        assertThat(source).contains("filterReturnFocusRequester")
+        assertThat(source).contains("requestFocusBackToFilter")
+        assertThat(source).contains("Key.Escape")
+        assertThat(source).contains("禁止 moveFocus(Up)")
+        assertThat(source).doesNotContain("focusManager.moveFocus(FocusDirection.Up)")
+        assertThat(source).doesNotContain("LocalFocusManager.current")
+        assertThat(filterPanelSource).contains("returnFocusRequester")
+        assertThat(filterRowSource).contains("returnFocusRequester.takeIf { isSelected }")
     }
 
     /**
