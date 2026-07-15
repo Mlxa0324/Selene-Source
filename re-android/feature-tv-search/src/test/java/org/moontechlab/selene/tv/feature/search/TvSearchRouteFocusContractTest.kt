@@ -22,6 +22,7 @@ class TvSearchRouteFocusContractTest {
         assertThat(source).contains("private fun SearchResultPanel(")
         assertThat(source).contains("firstItemFocusRequester = entryFocusRequester")
         assertThat(source).contains("TvSearchStatePanel(")
+        assertThat(source).contains("SearchResultLoadingCard(")
         assertThat(source).contains("focusRequester = entryFocusRequester")
         assertThat(source).contains("onConsumeBack")
         assertThat(source).contains("影片推荐")

@@ -1,8 +1,12 @@
 package org.moontechlab.selene.tv.feature.detail
 
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -122,14 +126,17 @@ private val NcatInfoPanelSurface = Color(0xCC1A1D27)
  */
 private val NcatPreviewStageBase = Color(0xFF171B26)
 
-/** TV 详情页截图版卡片底色。 */
-private val NcatSurface = Color(0xFF454852)
+/** TV 详情页截图版卡片底色（略压暗，减少脏灰块感）。 */
+private val NcatSurface = Color(0xFF2F3440)
+
+/** 详情芯片获焦未选中时的抬升底色。 */
+private val NcatSurfaceFocused = Color(0xFF3C4352)
 
 /** TV 详情页截图版弱文字色。 */
 private val NcatMutedText = Color(0xFF9A9AA3)
 
 /** TV 详情页截图版圆角。 */
-private val NcatRadius = 8.dp
+private val NcatRadius = 10.dp
 
 /**
  * 详情页左侧对齐竖线。
@@ -256,11 +263,18 @@ fun TvDetailRoute(
         ?.firstOrNull { episode -> episode.selected }
         ?.episodeIndex
         ?.let { index -> focusTargets.episodes.getOrNull(index) }
-    val layoutSections = remember(detail?.sources, state.currentSource?.episodes, state.recommendCards) {
+    val layoutSections = remember(
+        detail?.sources,
+        state.currentSource?.episodes,
+        state.recommendCards,
+        state.recommendLoadState,
+    ) {
         buildDetailLayoutSections(
             sources = detail?.sources.orEmpty(),
             episodes = state.currentSource?.episodes.orEmpty(),
             recommends = state.recommendCards,
+            // 加载中也占位展示，避免卡片到位后整段「一下子蹦出来」。
+            recommendLoadState = state.recommendLoadState,
         )
     }
     val designMetrics = LocalTvDesignMetrics.current
@@ -389,6 +403,7 @@ fun TvDetailRoute(
             if (layoutSections.showRecommends) {
                 NcatRecommendRail(
                     cards = state.recommendCards,
+                    loadState = state.recommendLoadState,
                     focusTargets = focusTargets,
                     listState = recommendListState,
                     hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
@@ -1572,24 +1587,27 @@ private fun NcatSourceCard(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    // 仅“已选线路”用红色底；获焦未选中只加白描边，避免整行都变红。
+    // 仅“已选线路”用红色底；获焦未选中抬底 + 白描边，避免未选中也整块变红。
     val selected = option.selected
-    val activeBackground = selected || isFocused
     Box(
         modifier = modifier
-            .width(163.dp)
-            .height(69.dp)
+            .width(168.dp)
+            .height(70.dp)
             .background(
                 color = when {
                     selected -> TvTokens.Accent
-                    isFocused -> NcatSurface.copy(alpha = 0.98f)
+                    isFocused -> NcatSurfaceFocused
                     else -> NcatSurface
                 },
                 shape = RoundedCornerShape(NcatRadius),
             )
             .border(
-                width = if (isFocused) 2.dp else 0.dp,
-                color = if (isFocused) Color.White else Color.Transparent,
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) {
+                    Color.White
+                } else {
+                    Color.White.copy(alpha = 0.06f)
+                },
                 shape = RoundedCornerShape(NcatRadius),
             )
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -1610,16 +1628,15 @@ private fun NcatSourceCard(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 0.dp, top = 0.dp)
                     .background(
-                        color = if (selected) Color.White.copy(alpha = 0.22f) else Color(0xFF5B2B7A),
-                        shape = RoundedCornerShape(topStart = NcatRadius, bottomEnd = 6.dp),
+                        color = if (selected) Color.White.copy(alpha = 0.22f) else Color(0xFF4A3560),
+                        shape = RoundedCornerShape(topStart = NcatRadius, bottomEnd = 8.dp),
                     )
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .padding(horizontal = 7.dp, vertical = 3.dp),
             ) {
                 Text(
                     text = "多集",
-                    color = Color.White,
+                    color = Color.White.copy(alpha = 0.92f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                 )
@@ -1628,14 +1645,14 @@ private fun NcatSourceCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 14.dp, start = 8.dp, end = 8.dp),
+                .padding(top = 14.dp, start = 10.dp, end = 10.dp, bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 // 后台名称若已带胶片符号，这里不再重复追加。
                 text = formatSourceCardTitle(option.label, option.trailingText),
-                color = if (activeBackground) Color.White else Color.White.copy(alpha = 0.78f),
+                color = Color.White.copy(alpha = if (selected || isFocused) 1f else 0.82f),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -1643,9 +1660,13 @@ private fun NcatSourceCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                // 选中：当前线路 · 推荐；未选中：高清。
+                // 选中：当前线路；未选中：资源质量提示。
                 text = if (option.selected) "当前线路 · 推荐" else "高清",
-                color = if (selected) Color.White.copy(alpha = 0.92f) else Color.White.copy(alpha = 0.50f),
+                color = if (selected) {
+                    Color.White.copy(alpha = 0.90f)
+                } else {
+                    Color.White.copy(alpha = 0.48f)
+                },
                 fontSize = 12.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1984,15 +2005,26 @@ private fun NcatEpisodeChip(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val active = selected || isFocused
     Box(
         modifier = modifier
             .widthIn(min = 56.dp)
             .height(48.dp)
-            .background(if (active) TvTokens.Accent else NcatSurface, RoundedCornerShape(NcatRadius))
+            .background(
+                color = when {
+                    // 仅当前集用强调色；获焦未选中抬底，避免整行扫过都变红。
+                    selected -> TvTokens.Accent
+                    isFocused -> NcatSurfaceFocused
+                    else -> NcatSurface
+                },
+                shape = RoundedCornerShape(NcatRadius),
+            )
             .border(
-                width = if (isFocused) 2.dp else 0.dp,
-                color = if (isFocused) Color.White else Color.Transparent,
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) {
+                    Color.White
+                } else {
+                    Color.White.copy(alpha = 0.06f)
+                },
                 shape = RoundedCornerShape(NcatRadius),
             )
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
@@ -2012,7 +2044,7 @@ private fun NcatEpisodeChip(
     ) {
         Text(
             text = label,
-            color = Color.White,
+            color = Color.White.copy(alpha = if (selected || isFocused) 1f else 0.84f),
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
         )
@@ -2022,7 +2054,10 @@ private fun NcatEpisodeChip(
 /**
  * 截图式推荐轨道。
  *
+ * 加载中先占位骨架，数据到达后淡入上滑，避免整段突然插入跳动。
+ *
  * @param cards 推荐卡片。
+ * @param loadState 推荐加载状态。
  * @param focusTargets 焦点请求器。
  * @param listState 横向列表状态。
  * @param hasEpisodeGroupChoices 是否展示选集分组切换条。
@@ -2031,6 +2066,7 @@ private fun NcatEpisodeChip(
 @Composable
 private fun NcatRecommendRail(
     cards: List<TvVideoCard>,
+    loadState: TvDetailRecommendLoadState,
     focusTargets: TvDetailFocusTargets,
     listState: LazyListState,
     hasEpisodeGroupChoices: Boolean,
@@ -2043,9 +2079,16 @@ private fun NcatRecommendRail(
     val recommendStartPadding = NcatContentStartPadding
     val recommendEndPadding = NcatContentEndPadding
     val recommendSpacing = TvTokens.CardSpacing
+    val sectionHint = when {
+        cards.isNotEmpty() -> "${cards.size} 部"
+        loadState == TvDetailRecommendLoadState.Failed -> "暂时不可用"
+        loadState == TvDetailRecommendLoadState.Loading ||
+            loadState == TvDetailRecommendLoadState.Scheduled -> "加载中…"
+        else -> null
+    }
     NcatSectionHeader(
         title = "相关推荐",
-        hint = null,
+        hint = sectionHint,
         topPadding = 23.dp,
     )
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -2060,61 +2103,153 @@ private fun NcatRecommendRail(
         val coverHeight = TvListLayoutMetrics.resolvePosterCoverHeight(cardWidth)
         // 封面 + 标题行 + 间距，获焦放大后仍有轻微纵向余量。
         val railHeight = coverHeight + 36.dp
-        LazyRow(
-            state = listState,
-            horizontalArrangement = Arrangement.spacedBy(recommendSpacing),
-            contentPadding = PaddingValues(
-                start = recommendStartPadding,
-                end = recommendEndPadding,
-            ),
-            modifier = Modifier.height(railHeight),
-        ) {
-            items(cards.size, key = { index -> cards[index].source + "::" + cards[index].id + "::" + index }) { index ->
-                val card = cards[index]
-                NcatRecommendCard(
-                    card = card,
+        when {
+            cards.isNotEmpty() -> {
+                // 首次有数据：淡入 + 轻微上滑，替代整段突然蹦出。
+                val appearState = remember {
+                    MutableTransitionState(false).apply { targetState = true }
+                }
+                AnimatedVisibility(
+                    visibleState = appearState,
+                    enter = fadeIn(animationSpec = tween(320)) + slideInVertically(
+                        animationSpec = tween(340),
+                        initialOffsetY = { distance -> distance / 10 },
+                    ),
+                ) {
+                    LazyRow(
+                        state = listState,
+                        horizontalArrangement = Arrangement.spacedBy(recommendSpacing),
+                        contentPadding = PaddingValues(
+                            start = recommendStartPadding,
+                            end = recommendEndPadding,
+                        ),
+                        modifier = Modifier.height(railHeight),
+                    ) {
+                        items(
+                            cards.size,
+                            key = { index ->
+                                cards[index].source + "::" + cards[index].id + "::" + index
+                            },
+                        ) { index ->
+                            val card = cards[index]
+                            NcatRecommendCard(
+                                card = card,
+                                cardWidth = cardWidth,
+                                coverHeight = coverHeight,
+                                focusRequester = focusTargets.recommends.getOrNull(index),
+                                onPressed = { onRecommendClick?.invoke(card) },
+                                modifier = Modifier
+                                    .tvBringFocusedItemIntoView()
+                                    .focusProperties {
+                                        up = focusTargets.episodeGroups
+                                            .firstOrNull()
+                                            .takeIf { hasEpisodeGroupChoices }
+                                            ?: focusTargets.episodes.firstOrNull()
+                                            ?: FocusRequester.Default
+                                        down = focusTargets.backTop
+                                        left = if (index > 0) {
+                                            focusTargets.recommends.getOrNull(index - 1)
+                                                ?: FocusRequester.Cancel
+                                        } else {
+                                            FocusRequester.Cancel
+                                        }
+                                        right = if (index < cards.lastIndex) {
+                                            focusTargets.recommends.getOrNull(index + 1)
+                                                ?: FocusRequester.Cancel
+                                        } else {
+                                            FocusRequester.Cancel
+                                        }
+                                    }
+                                    .onFocusChanged { focusState ->
+                                        if (focusState.isFocused) {
+                                            val shouldScroll =
+                                                TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
+                                                    previousActiveIndex = activeFocusedIndex,
+                                                    newlyFocusedIndex = index,
+                                                )
+                                            activeFocusedIndex = index
+                                            // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
+                                            if (shouldScroll) {
+                                                scrollDetailOptionIntoView(
+                                                    listState = listState,
+                                                    focusedIndex = index,
+                                                    itemCount = cards.size,
+                                                    scrollScope = scrollScope,
+                                                )
+                                            }
+                                        }
+                                    },
+                            )
+                        }
+                    }
+                }
+            }
+
+            loadState == TvDetailRecommendLoadState.Failed -> {
+                Text(
+                    text = "相关推荐加载失败，稍后再试",
+                    color = NcatMutedText,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(
+                        start = recommendStartPadding,
+                        end = recommendEndPadding,
+                        bottom = 8.dp,
+                    ),
+                )
+            }
+
+            else -> {
+                // 调度/加载中：骨架占位，高度与正式轨一致，避免底部突然顶开。
+                NcatRecommendSkeletonRail(
                     cardWidth = cardWidth,
                     coverHeight = coverHeight,
-                    focusRequester = focusTargets.recommends.getOrNull(index),
-                    onPressed = { onRecommendClick?.invoke(card) },
+                    railHeight = railHeight,
+                    spacing = recommendSpacing,
+                    startPadding = recommendStartPadding,
+                    endPadding = recommendEndPadding,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 相关推荐骨架轨：与正式卡片同宽高，弱对比色块。
+ */
+@Composable
+private fun NcatRecommendSkeletonRail(
+    cardWidth: Dp,
+    coverHeight: Dp,
+    railHeight: Dp,
+    spacing: Dp,
+    startPadding: Dp,
+    endPadding: Dp,
+) {
+    val placeholderCount = TvListLayoutMetrics.PosterColumns
+    Row(
+        modifier = Modifier
+            .height(railHeight)
+            .padding(start = startPadding, end = endPadding),
+        horizontalArrangement = Arrangement.spacedBy(spacing),
+    ) {
+        repeat(placeholderCount) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(11.dp),
+                modifier = Modifier.width(cardWidth),
+            ) {
+                Box(
                     modifier = Modifier
-                        .tvBringFocusedItemIntoView()
-                        .focusProperties {
-                            up = focusTargets.episodeGroups
-                                .firstOrNull()
-                                .takeIf { hasEpisodeGroupChoices }
-                                ?: focusTargets.episodes.firstOrNull()
-                                ?: FocusRequester.Default
-                            down = focusTargets.backTop
-                            left = if (index > 0) {
-                                focusTargets.recommends.getOrNull(index - 1) ?: FocusRequester.Cancel
-                            } else {
-                                FocusRequester.Cancel
-                            }
-                            right = if (index < cards.lastIndex) {
-                                focusTargets.recommends.getOrNull(index + 1) ?: FocusRequester.Cancel
-                            } else {
-                                FocusRequester.Cancel
-                            }
-                        }
-                        .onFocusChanged { focusState ->
-                            if (focusState.isFocused) {
-                                val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
-                                    previousActiveIndex = activeFocusedIndex,
-                                    newlyFocusedIndex = index,
-                                )
-                                activeFocusedIndex = index
-                                // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
-                                if (shouldScroll) {
-                                    scrollDetailOptionIntoView(
-                                        listState = listState,
-                                        focusedIndex = index,
-                                        itemCount = cards.size,
-                                        scrollScope = scrollScope,
-                                    )
-                                }
-                            }
-                        },
+                        .width(cardWidth)
+                        .height(coverHeight)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(NcatSurface.copy(alpha = 0.85f)),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.72f)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(NcatSurface.copy(alpha = 0.65f)),
                 )
             }
         }

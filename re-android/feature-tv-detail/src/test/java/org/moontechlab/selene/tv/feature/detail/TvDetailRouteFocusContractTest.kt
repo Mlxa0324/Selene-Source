@@ -234,6 +234,13 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("NcatContentEndPadding")
         assertThat(source).doesNotContain("width(113.dp)")
         assertThat(source).doesNotContain("height(160.dp)")
+        // 加载态占位 + 入场动画，禁止只等数据到位后整段突然插入。
+        assertThat(source).contains("recommendLoadState = state.recommendLoadState")
+        assertThat(source).contains("loadState = state.recommendLoadState")
+        assertThat(source).contains("NcatRecommendSkeletonRail(")
+        assertThat(source).contains("AnimatedVisibility(")
+        assertThat(source).contains("fadeIn(")
+        assertThat(source).contains("slideInVertically(")
     }
 
     /**

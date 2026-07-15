@@ -1358,10 +1358,11 @@ private fun SearchResultPanel(
         Spacer(modifier = Modifier.height(14.dp))
 
         when {
-            state.isSearchResultLoading && state.resultCards.isEmpty() -> TvSearchStatePanel(
-                kind = TvStatePanelKind.Loading,
-                title = "正在搜索 ${state.query}",
-                message = progressText ?: "正在聚合各资源站结果…",
+            state.isSearchResultLoading && state.resultCards.isEmpty() -> SearchResultLoadingCard(
+                query = state.query,
+                progressText = progressText,
+                completed = state.searchCompletedResourceCount,
+                total = state.searchTotalResourceCount,
                 focusRequester = entryFocusRequester,
                 onReturnToLeftPanel = onReturnToLeftPanel,
                 onBack = onBack,
@@ -1452,6 +1453,102 @@ private fun SearchHintCard(
  * @param onReturnToLeftPanel 回键盘。
  * @param onBack 返回。
  */
+/**
+ * 搜索结果加载态：与搜索页色板统一，轻进度条 + 副文案，避免通用状态卡「小方块贴左」发闷。
+ *
+ * @param query 当前关键词。
+ * @param progressText 进度副文案。
+ * @param completed 已完成资源站数。
+ * @param total 资源站总数。
+ * @param focusRequester 右栏入口焦点。
+ * @param onReturnToLeftPanel 左键回键盘。
+ * @param onBack 返回。
+ */
+@Composable
+private fun SearchResultLoadingCard(
+    query: String,
+    progressText: String?,
+    completed: Int,
+    total: Int,
+    focusRequester: FocusRequester,
+    onReturnToLeftPanel: () -> Unit,
+    onBack: () -> Unit,
+) {
+    val progress = if (total > 0) {
+        (completed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    val displayQuery = query.trim().ifBlank { "…" }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .onPreviewKeyEvent(
+                KeyPreviewHandler(
+                    onLeft = onReturnToLeftPanel,
+                    onBack = onBack,
+                ),
+            )
+            .focusable()
+            .background(
+                color = SearchPalette.ControlIdle.copy(alpha = 0.72f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.06f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(22.dp),
+                color = SearchPalette.AccentBar,
+                strokeWidth = 2.5.dp,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                androidx.compose.material3.Text(
+                    text = "正在搜索「$displayQuery」",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                androidx.compose.material3.Text(
+                    text = progressText ?: "正在聚合各资源站结果…",
+                    color = SearchPalette.Hint,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        // 轻进度条：有总数时跟真实进度，否则细轨道呼吸感静态底。
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color.White.copy(alpha = 0.08f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(if (total > 0) progress.coerceAtLeast(0.04f) else 0.22f)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(SearchPalette.AccentBar.copy(alpha = 0.85f)),
+            )
+        }
+    }
+}
+
 @Composable
 private fun TvSearchStatePanel(
     kind: TvStatePanelKind,
@@ -1472,7 +1569,37 @@ private fun TvSearchStatePanel(
             )
             .focusable(),
     ) {
-        TvStatePanel(kind = kind, title = title, message = message)
+        // 空/错态也跟搜索页色板，避免通用 TvStatePanel 冷绿边在深色右栏突兀。
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = SearchPalette.ControlIdle.copy(alpha = 0.72f),
+                    shape = RoundedCornerShape(16.dp),
+                )
+                .border(
+                    width = 1.dp,
+                    color = when (kind) {
+                        TvStatePanelKind.Error -> Color(0xFFB84A4A).copy(alpha = 0.55f)
+                        else -> Color.White.copy(alpha = 0.06f)
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                )
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.material3.Text(
+                text = title,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            androidx.compose.material3.Text(
+                text = message,
+                color = SearchPalette.Hint,
+                fontSize = 13.sp,
+            )
+        }
     }
 }
 
