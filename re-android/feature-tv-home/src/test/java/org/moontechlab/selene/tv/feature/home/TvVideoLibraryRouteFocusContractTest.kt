@@ -102,27 +102,20 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
-     * 筛选展开后，从影视 Grid 按返回/Esc 须直接进入筛选栏（末行已选），
-     * 禁止 moveFocus(Up) 回到上一行海报。
+     * 筛选展开后 Grid 不再拦截返回键；由 TvApp 壳层统一回当前主 tab。
      */
     @Test
-    fun category_filter_back_from_grid_moves_focus_up_to_nearest_filter_before_dismissal() {
+    fun category_filter_back_from_grid_defers_to_app_shell_for_current_tab() {
         val source = readRouteSource()
-        val filterPanelSource = source
-            .substringAfter("private fun TvLibraryFilterPanel(")
-            .substringBefore("private fun TvLibraryFilterRow(")
-        val filterRowSource = source
-            .substringAfter("private fun TvLibraryFilterRow(")
-            .substringBefore("private fun TvLibraryFilterChip(")
+        val libraryRoute = source
+            .substringAfter("fun TvVideoLibraryRoute(")
+            .substringBefore("private fun TvLibraryFilterPanel(")
 
-        assertThat(source).contains("filterReturnFocusRequester")
-        assertThat(source).contains("requestFocusBackToFilter")
-        assertThat(source).contains("Key.Escape")
-        assertThat(source).contains("禁止 moveFocus(Up)")
-        assertThat(source).doesNotContain("focusManager.moveFocus(FocusDirection.Up)")
-        assertThat(source).doesNotContain("LocalFocusManager.current")
-        assertThat(filterPanelSource).contains("returnFocusRequester")
-        assertThat(filterRowSource).contains("returnFocusRequester.takeIf { isSelected }")
+        assertThat(libraryRoute).contains("返回/Esc 由 TvApp 壳层统一")
+        assertThat(libraryRoute).doesNotContain("Key.Escape")
+        assertThat(libraryRoute).doesNotContain("requestFocusBackToFilter")
+        assertThat(libraryRoute).doesNotContain("focusManager.moveFocus")
+        assertThat(source).doesNotContain("filterReturnFocusRequester")
     }
 
     /**

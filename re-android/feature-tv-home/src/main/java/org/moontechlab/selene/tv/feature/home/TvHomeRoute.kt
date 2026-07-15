@@ -258,26 +258,11 @@ fun TvVideoLibraryRoute(
     onFilterOptionSelected: ((String, String) -> Unit)? = null,
     onApproachingEnd: (() -> Unit)? = null,
 ) {
-    // 网格返回筛选：落末行已选 chip（距列表最近）；打开面板仍落首行入口。
-    val filterReturnFocusRequester = remember { FocusRequester() }
-    var consumeGridBackKeyUp by remember { mutableStateOf(false) }
     LaunchedEffect(showFilter, contentFocusRequester) {
         if (showFilter) {
             // 面板完成组合后再请求焦点，确保确认键打开时直接落到首个筛选项。
             contentFocusRequester?.requestFocus()
         }
-    }
-
-    fun requestFocusBackToFilter(): Boolean {
-        // 禁止 moveFocus(Up)：会先回到上一行海报（“上一个轨迹”），而不是筛选栏。
-        val returned = runCatching { filterReturnFocusRequester.requestFocus() }
-            .getOrDefault(false)
-        if (returned) {
-            return true
-        }
-        return contentFocusRequester?.let { requester ->
-            runCatching { requester.requestFocus() }.getOrDefault(false)
-        } ?: false
     }
 
     TvPageScaffold(
@@ -313,7 +298,6 @@ fun TvVideoLibraryRoute(
             TvLibraryFilterPanel(
                 filters = state.availableFilters,
                 contentFocusRequester = contentFocusRequester,
-                returnFocusRequester = filterReturnFocusRequester,
                 onOptionSelected = onFilterOptionSelected,
             )
         }
@@ -330,23 +314,7 @@ fun TvVideoLibraryRoute(
             TvPosterGrid(
                 columns = TvListLayoutMetrics.PosterColumns,
                 items = state.videos.map { video -> video.toPosterItem(state.title) },
-                modifier = Modifier.onPreviewKeyEvent { event ->
-                    // 筛选展开且焦点在海报列表：返回/Esc 直接进筛选栏合适项，不沿网格上移。
-                    val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
-                    if (!showFilter || !isBackOrEsc) {
-                        return@onPreviewKeyEvent false
-                    }
-                    if (event.type == KeyEventType.KeyDown) {
-                        consumeGridBackKeyUp = requestFocusBackToFilter()
-                        return@onPreviewKeyEvent consumeGridBackKeyUp
-                    }
-                    if (event.type == KeyEventType.KeyUp) {
-                        val shouldConsume = consumeGridBackKeyUp
-                        consumeGridBackKeyUp = false
-                        return@onPreviewKeyEvent shouldConsume
-                    }
-                    false
-                },
+                // 返回/Esc 由 TvApp 壳层统一：收起筛选 + 落焦当前主 tab，不在此拦截。
                 // 展开筛选时内容入口交给首个筛选项，避免焦点落到下方 Grid。
                 firstItemFocusRequester = if (showFilter) null else contentFocusRequester,
                 onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
@@ -372,14 +340,12 @@ fun TvVideoLibraryRoute(
  *
  * @param filters 筛选行列表。
  * @param contentFocusRequester 筛选打开时接收入口焦点的首项请求器。
- * @param returnFocusRequester 海报列表返回键落点（末行已选 chip，距列表最近）。
  * @param onOptionSelected 筛选确认回调。
  */
 @Composable
 private fun TvLibraryFilterPanel(
     filters: List<TvLibraryFilter>,
     contentFocusRequester: FocusRequester? = null,
-    returnFocusRequester: FocusRequester? = null,
     onOptionSelected: ((String, String) -> Unit)?,
 ) {
     // 仅展示四项高频条件，排序优先，给下方海报 Grid 保留更多首屏空间。
@@ -422,10 +388,6 @@ private fun TvLibraryFilterPanel(
             TvLibraryFilterRow(
                 filter = filter,
                 entryFocusRequester = contentFocusRequester.takeIf { filterIndex == 0 },
-                // 末行已选 chip：从海报列表返回时落点，比首行更「合适」。
-                returnFocusRequester = returnFocusRequester.takeIf {
-                    filterIndex == visibleFilters.lastIndex
-                },
                 onOptionSelected = onOptionSelected,
             )
         }
@@ -437,14 +399,12 @@ private fun TvLibraryFilterPanel(
  *
  * @param filter 筛选行数据。
  * @param entryFocusRequester 筛选面板入口焦点请求器，仅绑定首行首项。
- * @param returnFocusRequester 从海报列表返回时绑定到本行已选 chip。
  * @param onOptionSelected 筛选确认回调。
  */
 @Composable
 private fun TvLibraryFilterRow(
     filter: TvLibraryFilter,
     entryFocusRequester: FocusRequester? = null,
-    returnFocusRequester: FocusRequester? = null,
     onOptionSelected: ((String, String) -> Unit)?,
 ) {
     val designMetrics = LocalTvDesignMetrics.current
@@ -473,14 +433,11 @@ private fun TvLibraryFilterRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             itemsIndexed(filter.options, key = { _, option -> option.key }) { optionIndex, option ->
-                val isSelected = option.key == filter.selectedOption.key
                 TvLibraryFilterChip(
                     option = option,
-                    selected = isSelected,
+                    selected = option.key == filter.selectedOption.key,
                     focusRequesters = listOfNotNull(
                         entryFocusRequester.takeIf { optionIndex == 0 },
-                        // 返回落点：优先已选项；若已选项不在首项则单独挂 requester。
-                        returnFocusRequester.takeIf { isSelected },
                     ),
                     onSelected = {
                         onOptionSelected?.invoke(filter.key, option.key)

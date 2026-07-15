@@ -118,8 +118,12 @@ class TvAppFocusContractTest {
         // 请求器由壳层持有，便于内容区返回键 focusCurrentPrimaryTab。
         assertThat(source).contains("rememberTopDestinationFocusRequesters()")
         assertThat(source).contains("focusCurrentPrimaryTab")
-        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && !showCategoryFilter && !topNavHasFocus)")
+        assertThat(source).contains("handlePrimaryContentBack")
+        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && !topNavHasFocus)")
         assertThat(source).contains("Key.Escape")
+        // 筛选展开时仍显示顶栏，避免显隐抖动、返回可稳定落到当前 tab。
+        assertThat(source).contains("if (isPrimaryRoute) {")
+        assertThat(source).doesNotContain("if (isPrimaryRoute && !showCategoryFilter) {")
         assertThat(topNavigationSource).contains("LaunchedEffect(selectedTopDestination?.route)")
         assertThat(topNavigationSource).contains("selectedTopDestinationFocusRequester.requestFocus()")
         assertThat(topNavigationSource).contains("topDestinationFocusRequesters: Map<String, FocusRequester>")
@@ -244,14 +248,18 @@ class TvAppFocusContractTest {
     }
 
     /**
-     * 分类筛选打开时必须隐藏整套首页导航，并让返回键只关闭筛选而不离开当前分类页。
+     * 分类筛选打开时仍保留顶栏；返回统一收起筛选并落焦当前 tab，不 pop 回首页。
      */
     @Test
-    fun category_filter_hides_home_navigation_and_back_closes_only_filter() {
+    fun category_filter_keeps_top_nav_and_back_focuses_current_tab() {
         val source = readAppSource()
 
-        assertThat(source).contains("BackHandler(enabled = showCategoryFilter)")
-        assertThat(source).contains("if (isPrimaryRoute && !showCategoryFilter)")
+        assertThat(source).contains("handlePrimaryContentBack")
+        assertThat(source).contains("if (showCategoryFilter) {")
         assertThat(source).contains("showCategoryFilter = false")
+        assertThat(source).contains("focusCurrentPrimaryTab()")
+        assertThat(source).contains("if (isPrimaryRoute) {")
+        assertThat(source).doesNotContain("if (isPrimaryRoute && !showCategoryFilter) {")
+        assertThat(source).doesNotContain("BackHandler(enabled = showCategoryFilter)")
     }
 }

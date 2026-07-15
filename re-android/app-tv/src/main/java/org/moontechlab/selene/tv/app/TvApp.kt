@@ -140,13 +140,23 @@ fun TvApp() {
                 return runCatching { requester.requestFocus() }.getOrDefault(false)
             }
 
-            BackHandler(enabled = showCategoryFilter) {
-                // 筛选展示时返回键只收起面板，保留当前分类页和已加载的 Grid。
-                showCategoryFilter = false
+            /**
+             * 主菜单页内容区返回：关闭筛选（若有）并落焦当前 tab。
+             * 不 pop 导航栈，避免从剧集/电影等分类页被弹回首页。
+             */
+            fun handlePrimaryContentBack(): Boolean {
+                if (!isPrimaryRoute || topNavHasFocus) {
+                    return false
+                }
+                if (showCategoryFilter) {
+                    showCategoryFilter = false
+                }
+                return focusCurrentPrimaryTab()
             }
-            // 主菜单页且焦点在下方列表：返回键回到左上角当前 tab，不退出应用。
-            BackHandler(enabled = isPrimaryRoute && !showCategoryFilter && !topNavHasFocus) {
-                focusCurrentPrimaryTab()
+
+            // 主菜单页焦点在内容区时消费返回：回当前 tab，不退出到首页。
+            BackHandler(enabled = isPrimaryRoute && !topNavHasFocus) {
+                handlePrimaryContentBack()
             }
             LaunchedEffect(currentRoute) {
                 // 切换顶层页面后重置筛选面板可见态。
@@ -162,28 +172,23 @@ fun TvApp() {
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
                     .onPreviewKeyEvent { event ->
-                        // 模拟器 Esc 与返回键一致：内容区 → 当前主 tab。
+                        // 模拟器 Esc 与返回键一致：内容区 → 当前主 tab（筛选一并收起）。
                         val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
-                        if (
-                            !isBackOrEsc ||
-                            !isPrimaryRoute ||
-                            showCategoryFilter ||
-                            topNavHasFocus
-                        ) {
+                        if (!isBackOrEsc || !isPrimaryRoute || topNavHasFocus) {
                             return@onPreviewKeyEvent false
                         }
                         if (event.type == KeyEventType.KeyDown) {
-                            return@onPreviewKeyEvent focusCurrentPrimaryTab()
+                            return@onPreviewKeyEvent handlePrimaryContentBack()
                         }
-                        // KeyUp 一并消费，避免再被系统处理。
+                        // KeyUp 一并消费，避免再被系统 pop 回首页。
                         if (event.type == KeyEventType.KeyUp) {
                             return@onPreviewKeyEvent true
                         }
                         false
                     },
             ) {
-                if (isPrimaryRoute && !showCategoryFilter) {
-                    // 分类筛选展开时隐藏完整首页导航，为筛选和海报 Grid 释放垂直空间。
+                if (isPrimaryRoute) {
+                    // 筛选展开时仍保留顶栏：返回落焦当前 tab 不丢 requester，也避免显隐整栏抖动。
                     TvTopNavigationBar(
                         currentRoute = currentRoute,
                         contentFocusRequester = contentFocusRequester,
