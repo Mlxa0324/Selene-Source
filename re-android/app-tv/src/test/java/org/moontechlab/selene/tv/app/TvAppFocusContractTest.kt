@@ -73,16 +73,18 @@ class TvAppFocusContractTest {
 
         assertThat(topNavSource).contains("var pendingInternalFocusRoute by remember")
         assertThat(groupSource).contains("destinations.forEachIndexed")
-        assertThat(groupSource).contains("previousDestination?.route?.let(onRequestInternalFocus)")
-        assertThat(groupSource).contains("nextDestination?.route?.let(onRequestInternalFocus)")
-        assertThat(pillSource).contains("onMoveLeft: () -> Unit")
-        assertThat(pillSource).contains("onMoveRight: () -> Unit")
+        assertThat(groupSource).contains("previousDestination?.route?.let")
+        assertThat(groupSource).contains("nextDestination?.route?.let")
+        assertThat(groupSource).contains("onRequestInternalFocus(route)")
+        assertThat(pillSource).contains("onMoveLeft: (() -> Unit)? = null")
+        assertThat(pillSource).contains("onMoveRight: (() -> Unit)? = null")
         assertThat(pillSource).contains("Key.DirectionLeft")
         assertThat(pillSource).contains("Key.DirectionRight")
     }
 
     /**
      * 主菜单上键必须进入右上角快捷首项；快捷区下键回到主菜单来源项。
+     * 收藏夹↔搜索须可左右互跳（末项右 / 首项左跨组）。
      * 跨组移动依赖顶栏级 topNavHasFocus，禁止被“外部进入重定向”拉回选中主 tab。
      */
     @Test
@@ -102,6 +104,13 @@ class TvAppFocusContractTest {
         assertThat(groupSource).contains("onMoveDown = onMoveDownFromGroup")
         assertThat(pillSource).contains("Key.DirectionUp")
         assertThat(pillSource).contains("onMoveUp != null")
+        // 收藏夹右 → 搜索；搜索左 → 收藏夹。
+        assertThat(topNavSource).contains("onExitRightFromLast")
+        assertThat(topNavSource).contains("onExitLeftFromFirst")
+        assertThat(groupSource).contains("onExitLeftFromFirst")
+        assertThat(groupSource).contains("onExitRightFromLast")
+        assertThat(groupSource).contains("?: onExitLeftFromFirst")
+        assertThat(topNavSource).contains("primaryMenuDestinations.last().route")
     }
 
     /**

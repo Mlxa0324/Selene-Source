@@ -313,7 +313,7 @@ private fun TvTopNavigationBar(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 右上角快捷区：胶囊样式；下键回到主菜单来源项。
+            // 右上角快捷区：胶囊样式；下键回到主菜单来源项；首项左键回主菜单末项（收藏夹↔搜索）。
             TvDestinationGroup(
                 destinations = TvDestination.quickAccessDestinations,
                 currentRoute = currentRoute,
@@ -334,6 +334,12 @@ private fun TvTopNavigationBar(
                         ?: currentRoute?.takeIf { route -> route in primaryRoutes }
                         ?: TvDestination.primaryMenuDestinations.first().route
                     moveFocusToRoute(sourceRoute)
+                },
+                // 搜索再左 → 收藏夹（主菜单末项），形成左右互跳。
+                onExitLeftFromFirst = {
+                    val lastPrimaryRoute = TvDestination.primaryMenuDestinations.last().route
+                    lastActionSourceRoute = lastPrimaryRoute
+                    moveFocusToRoute(lastPrimaryRoute)
                 },
             )
 
@@ -360,6 +366,12 @@ private fun TvTopNavigationBar(
             onNavigate = onNavigate,
             onFilterToggle = onFilterToggle,
             onMoveUpFromItem = { sourceRoute ->
+                lastActionSourceRoute = sourceRoute
+                val targetRoute = firstQuickAccessRoute ?: return@TvDestinationGroup
+                moveFocusToRoute(targetRoute)
+            },
+            // 收藏夹再右 → 搜索（快捷首项），与上键跨组并列。
+            onExitRightFromLast = { sourceRoute ->
                 lastActionSourceRoute = sourceRoute
                 val targetRoute = firstQuickAccessRoute ?: return@TvDestinationGroup
                 moveFocusToRoute(targetRoute)
@@ -395,6 +407,8 @@ private enum class TvNavItemStyle {
  * @param onNavigate 顶部标签点击后的跳转回调。
  * @param onMoveUpFromItem 组内某项上键（主菜单 → 右上角快捷）。
  * @param onMoveDownFromGroup 组内下键（快捷区 → 主菜单来源项）。
+ * @param onExitLeftFromFirst 组内首项再左（快捷搜索 → 主菜单末项收藏夹）。
+ * @param onExitRightFromLast 组内末项再右（主菜单收藏夹 → 快捷搜索）。
  */
 @Composable
 private fun TvDestinationGroup(
@@ -414,6 +428,8 @@ private fun TvDestinationGroup(
     onFilterToggle: () -> Unit = {},
     onMoveUpFromItem: ((sourceRoute: String) -> Unit)? = null,
     onMoveDownFromGroup: (() -> Unit)? = null,
+    onExitLeftFromFirst: (() -> Unit)? = null,
+    onExitRightFromLast: ((sourceRoute: String) -> Unit)? = null,
 ) {
     val activePillFocusRequester = currentRoute?.let { topDestinationFocusRequesters[it] }
 
@@ -455,12 +471,14 @@ private fun TvDestinationGroup(
                     }
                 },
                 onClick = { onNavigate(destination) },
-                // 无邻居时回调为 null → 边界抖动；有邻居才移动。
+                // 组内有邻居则移动；首/末可走跨组出口（收藏夹↔搜索），否则边界抖动。
                 onMoveLeft = previousDestination?.route?.let { route ->
                     { onRequestInternalFocus(route) }
-                },
+                } ?: onExitLeftFromFirst,
                 onMoveRight = nextDestination?.route?.let { route ->
                     { onRequestInternalFocus(route) }
+                } ?: onExitRightFromLast?.let { exit ->
+                    { exit(destination.route) }
                 },
                 onMoveUp = onMoveUpFromItem?.let { moveUp ->
                     { moveUp(destination.route) }
