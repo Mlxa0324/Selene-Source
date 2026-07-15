@@ -776,7 +776,10 @@ class TvPlayerRouteControlContractTest {
         assertThat(groupChoiceSource).contains("Key.Spacebar")
         assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
         assertThat(groupChoiceSource).contains("clickable(")
-        assertThat(groupChoiceSource).contains("heightIn(min = 36.dp)")
+        // 下划线 3dp 且外层 LazyRow 48dp，避免被裁切。
+        assertThat(groupChoiceSource).contains("height(3.dp)")
+        assertThat(playlistSource).contains(".height(48.dp)")
+        assertThat(groupChoiceSource).contains("if (selected) TvTokens.Accent else Color.Transparent")
         // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。
         assertThat(source).contains("movePlaylistEpisodeFocus")
         assertThat(source).contains("requestPlaylistEpisodeFocusWhenReady")

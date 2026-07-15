@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -2110,7 +2109,8 @@ private fun NcatEpisodeGroupRail(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
             modifier = Modifier
-                .height(40.dp)
+                // 须容纳文字 + 下划线；40.dp 会裁掉下划线导致「选中也看不见」。
+                .height(48.dp)
                 .padding(top = 6.dp),
         ) {
             items(groups.size, key = { index -> groups[index].groupIndex }) { index ->
@@ -2213,9 +2213,9 @@ private fun NcatEpisodeGroupChoice(
     )
     Column(
         modifier = modifier
-            // 加宽点击/获焦热区：纯文字 + 2dp 下划线过小，模拟器鼠标容易点空。
+            // 热区略放大；高度交给外层 LazyRow(48.dp)，避免 heightIn 挤掉下划线。
             .widthIn(min = 56.dp)
-            .heightIn(min = 36.dp)
+            .fillMaxHeight()
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .focusable(interactionSource = interactionSource)
@@ -2247,7 +2247,7 @@ private fun NcatEpisodeGroupChoice(
                 }
                 false
             }
-            .padding(horizontal = 6.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -2256,16 +2256,18 @@ private fun NcatEpisodeGroupChoice(
             color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
             fontSize = 15.sp,
             fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。
+        Spacer(modifier = Modifier.height(3.dp))
+        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。占位高度固定，避免选中时布局跳动。
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(2.dp)
+                .widthIn(min = 28.dp)
+                .fillMaxWidth(0.85f)
+                .height(3.dp)
                 .background(
                     if (selected) TvTokens.Accent else Color.Transparent,
-                    RoundedCornerShape(1.dp),
+                    RoundedCornerShape(1.5.dp),
                 ),
         )
     }

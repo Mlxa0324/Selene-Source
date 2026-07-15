@@ -55,7 +55,10 @@ class TvDetailRouteFocusContractTest {
         assertThat(groupChoiceSource).contains("Key.Spacebar")
         assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
         assertThat(groupChoiceSource).contains("ncatClickable(onPressed)")
-        assertThat(groupChoiceSource).contains("heightIn(min = 36.dp)")
+        // 下划线 3dp 且外层 LazyRow 48dp，避免被裁切。
+        assertThat(groupChoiceSource).contains("height(3.dp)")
+        assertThat(source).contains(".height(48.dp)")
+        assertThat(groupChoiceSource).contains("if (selected) TvTokens.Accent else Color.Transparent")
 
         assertThat(source).doesNotContain("网飞猫")
     }

@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
@@ -1167,7 +1166,8 @@ private fun TvPlayerPlaylistMenu(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(40.dp)
+                    // 须容纳：文字 + 间距 + 下划线 + 内边距；40.dp 会裁掉下划线。
+                    .height(48.dp)
                     .focusProperties {
                         onEnter = {
                             val isVerticalEnter =
@@ -1268,9 +1268,9 @@ private fun TvPlayerEpisodeGroupChoice(
     )
     Column(
         modifier = Modifier
-            // 加宽点击/获焦热区，避免模拟器鼠标点文字边缘无响应。
+            // 热区略放大；高度交给外层 LazyRow(48.dp)，避免再 heightIn 挤掉下划线。
             .widthIn(min = 56.dp)
-            .heightIn(min = 36.dp)
+            .fillMaxHeight()
             .scale(scale)
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focusState ->
@@ -1323,7 +1323,7 @@ private fun TvPlayerEpisodeGroupChoice(
                 }
                 false
             }
-            .padding(horizontal = 6.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -1332,16 +1332,18 @@ private fun TvPlayerEpisodeGroupChoice(
             color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
             fontSize = 15.sp,
             fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。
+        Spacer(modifier = Modifier.height(3.dp))
+        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。占位高度固定，避免选中时布局跳动。
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(2.dp)
+                .widthIn(min = 28.dp)
+                .fillMaxWidth(0.85f)
+                .height(3.dp)
                 .background(
                     if (selected) TvTokens.Accent else Color.Transparent,
-                    RoundedCornerShape(1.dp),
+                    RoundedCornerShape(1.5.dp),
                 ),
         )
     }
