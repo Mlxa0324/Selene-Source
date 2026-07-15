@@ -8,7 +8,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -37,22 +38,22 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -65,8 +66,17 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -74,10 +84,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
@@ -86,11 +97,13 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -99,18 +112,34 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvCachedTitlePosterImage
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.Stroke
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
+
+/**
+ * 详情页纵向焦点跟滚宿主：嵌套 LazyRow 时 bringIntoView 常失效，改用窗口坐标 + ScrollState。
+ */
+private data class DetailVerticalScrollHost(
+    val scrollState: ScrollState,
+    val scope: CoroutineScope,
+    val viewportBounds: () -> Rect?,
+)
+
+private val LocalDetailVerticalScroll = compositionLocalOf<DetailVerticalScrollHost?> { null }
+
+/**
+ * 详情纵向钉靠策略。
+ */
+private enum class DetailVerticalPin {
+    /** 仅保证获焦项完整可见（上下安全边）。 */
+    Visible,
+
+    /** 顶部区（搜索/播放器/简介/全屏）：钉到 scroll=0。 */
+    Top,
+
+    /** 底部操作：钉到 scroll=max。 */
+    Bottom,
+}
 
 /** TV 详情页截图版背景色。 */
 private val NcatBackground = Color(0xFF11131C)
@@ -213,7 +242,6 @@ private fun Modifier.ncatDescriptionBackdropEffect(showOverlay: Boolean): Modifi
  * @param onRecommendClick 相关推荐点击回调。
  * @param playerSurface 预览播放器内容。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvDetailRoute(
     state: TvDetailUiState = TvDetailUiState(),
@@ -312,13 +340,27 @@ fun TvDetailRoute(
     val detailScrollScope = rememberCoroutineScope()
     // 简介全屏浮层开关：摘要获焦确认后展示完整文案。
     var showDescriptionOverlay by rememberSaveable { mutableStateOf(false) }
-    // 「返回顶部」专用：记录切换线路分区在滚动内容中的 Y，焦点移动不再强制顶/底锚。
+    // 「返回顶部」专用：记录切换线路分区在滚动内容中的 Y。
     var sourceSectionYPx by remember { mutableIntStateOf(0) }
+    // 视口窗口坐标：焦点跟滚用 boundsInWindow 对比，不依赖嵌套 LazyRow 的 bringIntoView。
+    var detailViewportCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val detailScrollHost = remember(detailScrollState, detailScrollScope) {
+        DetailVerticalScrollHost(
+            scrollState = detailScrollState,
+            scope = detailScrollScope,
+            viewportBounds = {
+                detailViewportCoords?.takeIf { coords -> coords.isAttached }?.boundsInWindow()
+            },
+        )
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(detailBackgroundColor),
+            .background(detailBackgroundColor)
+            .onGloballyPositioned { coordinates ->
+                detailViewportCoords = coordinates
+            },
     ) {
         // 主海报固定铺满页面，不随详情内容滚动。
         NcatDetailBackdrop(
@@ -327,14 +369,15 @@ fun TvDetailRoute(
             backgroundColor = detailBackgroundColor,
         )
 
+        CompositionLocalProvider(LocalDetailVerticalScroll provides detailScrollHost) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 // 只模糊下方详情内容，浮层作为同级上层继续保持清晰。
                 .ncatDescriptionBackdropEffect(showDescriptionOverlay)
                 .verticalScroll(detailScrollState)
-                // 底部加长，相关推荐整卡可贴底。
-                .padding(bottom = 120.dp),
+                // 底部加长，相关推荐 + 底栏可贴底完整露出。
+                .padding(bottom = 140.dp),
         ) {
             NcatDetailTopBar(
                 focusTargets = focusTargets,
@@ -430,6 +473,7 @@ fun TvDetailRoute(
                 )
             }
         }
+        } // CompositionLocalProvider
 
         if (showDescriptionOverlay) {
             NcatDescriptionOverlay(
@@ -644,7 +688,7 @@ private fun NcatDetailTopBar(
                 leadingGlyphSize = TvTokens.TopActionIconGlyph,
                 focusRequester = focusTargets.search,
                 modifier = Modifier
-                    .tvBringFocusedItemIntoView()
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
                     .focusProperties {
                         // 右列竖链：搜索 ↓ 进简介，不斜穿到左侧播放器。
                         down = focusTargets.description
@@ -859,7 +903,7 @@ private fun NcatPreviewPanel(
                 shape = RoundedCornerShape(18.dp),
             )
             .focusRequester(focusTargets.player)
-            .tvBringFocusedItemIntoView()
+            .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
             .focusProperties {
                 // 左列：上到搜索；右到全屏（与全屏左回播放器对开）；下到线路。
                 up = focusTargets.search
@@ -1223,6 +1267,7 @@ private fun NcatInfoPanel(
                     shape = RoundedCornerShape(12.dp),
                 )
                 .focusRequester(focusTargets.description)
+                .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
                 .focusProperties {
                     // 右列中枢：上搜索、下全屏、左播放器。
                     up = focusTargets.search
@@ -1286,7 +1331,7 @@ private fun NcatInfoPanel(
                 selected = false,
                 focusRequester = focusTargets.fullscreen,
                 modifier = Modifier
-                    .tvBringFocusedItemIntoView()
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
                     .focusProperties {
                         // 右列底：上简介、左播放器、右收藏、下线路。
                         up = focusTargets.description
@@ -1308,7 +1353,7 @@ private fun NcatInfoPanel(
                 selected = state.isFavorite,
                 focusRequester = focusTargets.favorite,
                 modifier = Modifier
-                    .tvBringFocusedItemIntoView()
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
                     .focusProperties {
                         up = focusTargets.description
                         left = focusTargets.fullscreen
@@ -2426,7 +2471,7 @@ private fun NcatBottomActions(
                 leadingIcon = { NcatBottomActionGlyph(kind = NcatBottomActionIcon.BackToTop) },
                 focusRequester = focusTargets.backTop,
                 modifier = Modifier
-                    .tvBringFocusedItemIntoView()
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Bottom)
                     .focusProperties {
                         up = focusTargets.recommends.firstOrNull()
                             ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
@@ -2443,7 +2488,7 @@ private fun NcatBottomActions(
                 leadingIcon = { NcatBottomActionGlyph(kind = NcatBottomActionIcon.RandomBrowse) },
                 focusRequester = focusTargets.random,
                 modifier = Modifier
-                    .tvBringFocusedItemIntoView()
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Bottom)
                     .focusProperties {
                         up = focusTargets.recommends.firstOrNull()
                             ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
@@ -3024,22 +3069,95 @@ private fun scrollDetailOptionIntoView(
 }
 
 /**
- * 获焦时把控件滚入纵向可视区（详情页 verticalScroll 用）。
+ * 获焦时驱动详情页外层 verticalScroll 跟滚。
+ *
+ * 嵌套横向 LazyRow 时系统 bringIntoView 经常只处理横轴或失效；
+ * 这里用窗口坐标相对视口计算 delta，直接 animateScrollTo。
+ *
+ * @param pin 顶/底钉靠或仅保证可见。
  */
-@OptIn(ExperimentalFoundationApi::class)
-private fun Modifier.tvBringFocusedItemIntoView(): Modifier = composed {
-    val bringIntoViewRequester = remember { BringIntoViewRequester() }
-    val scope = rememberCoroutineScope()
+private fun Modifier.tvBringFocusedItemIntoView(
+    pin: DetailVerticalPin = DetailVerticalPin.Visible,
+): Modifier = composed {
+    val host = LocalDetailVerticalScroll.current
+    var itemCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     this
-        .bringIntoViewRequester(bringIntoViewRequester)
+        .onGloballyPositioned { coordinates ->
+            itemCoords = coordinates
+        }
         .onFocusChanged { focusState ->
-            // 仅 isFocused：避免父容器 hasFocus 与子项各滚一次导致上下抖。
-            if (focusState.isFocused) {
-                scope.launch {
-                    bringIntoViewRequester.bringIntoView()
-                }
+            // 仅 isFocused：避免父 hasFocus 与子项重复触发。
+            if (!focusState.isFocused) {
+                return@onFocusChanged
+            }
+            val scrollHost = host ?: return@onFocusChanged
+            val coords = itemCoords?.takeIf { item -> item.isAttached } ?: return@onFocusChanged
+            val viewport = scrollHost.viewportBounds() ?: return@onFocusChanged
+            val itemBounds = coords.boundsInWindow()
+            scrollHost.scope.launch {
+                scrollDetailFocusedItemVertically(
+                    scrollState = scrollHost.scrollState,
+                    itemBounds = itemBounds,
+                    viewportBounds = viewport,
+                    pin = pin,
+                )
             }
         }
+}
+
+/**
+ * 根据获焦项与视口的窗口坐标，调整详情纵向 ScrollState。
+ *
+ * @param scrollState 外层 verticalScroll 状态。
+ * @param itemBounds 获焦项窗口矩形。
+ * @param viewportBounds 详情视口窗口矩形。
+ * @param pin 钉靠策略。
+ * @param edgePaddingPx 上下安全边（像素）。
+ */
+private suspend fun scrollDetailFocusedItemVertically(
+    scrollState: ScrollState,
+    itemBounds: Rect,
+    viewportBounds: Rect,
+    pin: DetailVerticalPin,
+    edgePaddingPx: Float = 28f,
+) {
+    when (pin) {
+        DetailVerticalPin.Top -> {
+            // 顶部区：真正到顶，避免 Hero 半截停在视口。
+            if (scrollState.value > 0) {
+                scrollState.animateScrollTo(0)
+            }
+        }
+        DetailVerticalPin.Bottom -> {
+            // 底栏：真正到底，完整露出返回顶部/随便看看。
+            val max = scrollState.maxValue
+            if (max > 0 && scrollState.value < max) {
+                scrollState.animateScrollTo(max)
+            }
+            // 再夹一次 residual。
+            if (scrollState.value < scrollState.maxValue) {
+                scrollState.scrollTo(scrollState.maxValue)
+            }
+        }
+        DetailVerticalPin.Visible -> {
+            val topOverflow = (viewportBounds.top + edgePaddingPx) - itemBounds.top
+            val bottomOverflow = itemBounds.bottom - (viewportBounds.bottom - edgePaddingPx)
+            val delta = when {
+                topOverflow > 1f -> -topOverflow
+                bottomOverflow > 1f -> bottomOverflow
+                else -> 0f
+            }
+            if (abs(delta) <= 1f) {
+                return
+            }
+            val target = (scrollState.value + delta)
+                .toInt()
+                .coerceIn(0, scrollState.maxValue.coerceAtLeast(0))
+            if (target != scrollState.value) {
+                scrollState.animateScrollTo(target)
+            }
+        }
+    }
 }
 
 /**

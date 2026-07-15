@@ -266,7 +266,12 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("focusedIndex == 0")
         assertThat(source).contains("listState.canScrollForward")
         assertThat(source).contains("listState.animateScrollBy(")
-        // 纵向只靠 bringIntoView，禁止焦点时再强制顶/底锚 animateScroll（会抖）。
+        // 纵向用 ScrollState + 窗口坐标跟滚；顶/底可钉靠真正 0 / max。
+        assertThat(source).contains("scrollDetailFocusedItemVertically")
+        assertThat(source).contains("DetailVerticalPin")
+        assertThat(source).contains("LocalDetailVerticalScroll")
+        assertThat(source).contains("DetailVerticalPin.Top")
+        assertThat(source).contains("DetailVerticalPin.Bottom")
         assertThat(source).doesNotContain("scrollDetailToSourceTop")
         assertThat(source).doesNotContain("scrollDetailToRecommendBottom")
         assertThat(source).doesNotContain("onRailItemFocused")
