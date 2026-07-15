@@ -40,6 +40,14 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("获焦：仅主题色，不改选中、不切选集")
         assertThat(source).contains("确认：下划线 + 上方选集切到该组")
         assertThat(source).contains("获焦未确认：主题色文字，无下划线")
+        // 分组左右：先滚后焦，系统 left/right 取消，避免屏外 requester 硬点失败。
+        assertThat(source).contains("moveDetailGroupFocus")
+        assertThat(source).contains("scrollDetailOptionIntoViewNow")
+        assertThat(source).contains("先 scrollToItem 再 requestFocus")
+        assertThat(source).contains("onArrowLeft = if (index > 0)")
+        assertThat(source).contains("onArrowRight = if (index < groups.lastIndex)")
+        assertThat(source).contains("left = FocusRequester.Cancel")
+        assertThat(source).contains("right = FocusRequester.Cancel")
 
         assertThat(source).doesNotContain("网飞猫")
     }

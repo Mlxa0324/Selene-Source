@@ -853,38 +853,81 @@ private fun TvPlayerPlaylistMenu(
 
     /**
      * 把分组条滚到 [groupIndex] 完整可见（与一级菜单左右边距对齐）。
+     *
+     * 屏外项先 [LazyListState.scrollToItem] 再软边调整；多帧重试，避免 LazyRow 未测量时空滚。
      */
-    fun ensureGroupChipVisible(groupIndex: Int) {
+    suspend fun ensureGroupChipVisibleNow(groupIndex: Int) {
         if (!showGroupChoices || groupCount <= 0) {
             return
         }
         val target = groupIndex.coerceIn(0, groupCount - 1)
-        scrollPlayerMenuChipIntoView(
+        for (attempt in 0 until 6) {
+            if (attempt > 0) {
+                delay(16L)
+            }
+            val visible = groupListState.layoutInfo.visibleItemsInfo.any { info ->
+                info.index == target
+            }
+            if (!visible) {
+                runCatching { groupListState.scrollToItem(index = target) }
+                withFrameNanos { }
+            } else {
+                break
+            }
+        }
+        scrollPlayerMenuChipIntoViewSuspend(
             listState = groupListState,
             index = target,
             itemCount = groupCount,
-            scrollScope = playlistScrollScope,
             leadingInsetPx = playlistLeadingInsetPx,
             trailingInsetPx = playlistTrailingInsetPx,
         )
     }
 
+    fun ensureGroupChipVisible(groupIndex: Int) {
+        playlistScrollScope.launch {
+            ensureGroupChipVisibleNow(groupIndex)
+        }
+    }
+
+    /**
+     * 分组条左右移焦：必须先滚入再 requestFocus，禁止对屏外 requester 硬点。
+     * 只移焦点，不改 [selectedGroup]（无下划线、不跳选集）。
+     */
+    fun moveGroupFocus(targetIndex: Int) {
+        if (!showGroupChoices || groupCount <= 0) {
+            return
+        }
+        val target = targetIndex.coerceIn(0, groupCount - 1)
+        playlistScrollScope.launch {
+            var focused = false
+            for (attempt in 0 until 10) {
+                if (attempt > 0) {
+                    delay(16L)
+                }
+                val visible = groupListState.layoutInfo.visibleItemsInfo.any { info ->
+                    info.index == target
+                }
+                if (!visible) {
+                    runCatching { groupListState.scrollToItem(index = target) }
+                    withFrameNanos { }
+                }
+                val requester = groupFocusRequesters.getOrNull(target) ?: continue
+                if (runCatching { requester.requestFocus() }.getOrDefault(false)) {
+                    focused = true
+                    break
+                }
+            }
+            if (focused) {
+                activeGroupFocusedIndex = target
+            }
+            ensureGroupChipVisibleNow(target)
+        }
+    }
+
     val requestCurrentGroupFocus: () -> Unit = {
         // 当前分组可能在 LazyRow 屏外，需先滚入再 requestFocus，否则下键无法进入分组条。
-        val target = safeGroup
-        playlistScrollScope.launch {
-            val visible = groupListState.layoutInfo.visibleItemsInfo.any { info ->
-                info.index == target
-            }
-            if (!visible) {
-                runCatching { groupListState.scrollToItem(target) }
-                withFrameNanos { }
-            }
-            groupFocusRequesters.getOrNull(target)?.let { requester ->
-                runCatching { requester.requestFocus() }
-            }
-            ensureGroupChipVisible(target)
-        }
+        moveGroupFocus(safeGroup)
     }
 
     // 选集浏览 / 确认分组后：下划线所在分组必须时刻在可视区内（避免只显示 1-20 而当前在 641-660）。
@@ -892,7 +935,9 @@ private fun TvPlayerPlaylistMenu(
         if (!showGroupChoices || groupCount <= 0) {
             return@LaunchedEffect
         }
-        ensureGroupChipVisible(safeGroup)
+        // 等一帧让分组 LazyRow 完成首轮 measure，再滚到当前组。
+        withFrameNanos { }
+        ensureGroupChipVisibleNow(safeGroup)
     }
 
     /**
@@ -1147,23 +1192,15 @@ private fun TvPlayerPlaylistMenu(
                         onArrowDown = onArrowDownToPrimary,
                         onArrowLeft = if (gi > 0) {
                             {
-                                // 左右只移焦点，不改选中（无下划线、不跳选集）。
-                                val target = gi - 1
-                                groupFocusRequesters.getOrNull(target)?.let { requester ->
-                                    runCatching { requester.requestFocus() }
-                                }
-                                ensureGroupChipVisible(target)
+                                // 左右只移焦点：先滚后焦；不改选中（无下划线、不跳选集）。
+                                moveGroupFocus(gi - 1)
                             }
                         } else {
                             null
                         },
                         onArrowRight = if (gi < groupCount - 1) {
                             {
-                                val target = gi + 1
-                                groupFocusRequesters.getOrNull(target)?.let { requester ->
-                                    runCatching { requester.requestFocus() }
-                                }
-                                ensureGroupChipVisible(target)
+                                moveGroupFocus(gi + 1)
                             }
                         } else {
                             null
@@ -2910,10 +2947,65 @@ private fun resolvePlaylistMenuLabel(playbackRequest: PlaybackRequest?): String 
 
 
 /**
- * 全屏二级/三级菜单横向列表：平滑跟手滚入可视区。
+ * 全屏二级/三级菜单横向列表：滚入可视区（suspend，可 await）。
  *
- * 只按裁切量 scrollBy，禁止 animateScrollToItem 把项钉到视口左缘
- * （那会在倒数第二→末项时像整页切换）。
+ * 屏外优先 scrollToItem 瞬移，再按裁切量 scrollBy 软边对齐。
+ * 禁止仅依赖 animateScrollToItem 从远端滑过来（高集数分组会卡很久）。
+ *
+ * @param listState 横向列表状态。
+ * @param index 获焦下标。
+ * @param itemCount 列表总数。
+ * @param leadingInsetPx 左侧安全边。
+ * @param trailingInsetPx 右侧安全边。
+ */
+private suspend fun scrollPlayerMenuChipIntoViewSuspend(
+    listState: LazyListState,
+    index: Int,
+    itemCount: Int,
+    leadingInsetPx: Int = 0,
+    trailingInsetPx: Int = 0,
+) {
+    if (itemCount <= 0 || index !in 0 until itemCount) {
+        return
+    }
+    var target = listState.layoutInfo.visibleItemsInfo
+        .firstOrNull { info -> info.index == index }
+    if (target == null) {
+        runCatching { listState.scrollToItem(index = index) }
+        withFrameNanos { }
+        target = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { info -> info.index == index }
+        if (target == null) {
+            runCatching { listState.animateScrollToItem(index = index) }
+            target = listState.layoutInfo.visibleItemsInfo
+                .firstOrNull { info -> info.index == index }
+                ?: return
+        }
+    }
+    val layoutInfo = listState.layoutInfo
+    val effectiveLeading = layoutInfo.beforeContentPadding.takeIf { pad -> pad > 0 }
+        ?: leadingInsetPx
+    val effectiveTrailing = layoutInfo.afterContentPadding.takeIf { pad -> pad > 0 }
+        ?: trailingInsetPx
+    val leftDelta = (target.offset - (layoutInfo.viewportStartOffset + effectiveLeading)).toFloat()
+    val rightDelta =
+        (target.offset + target.size - (layoutInfo.viewportEndOffset - effectiveTrailing)).toFloat()
+    when {
+        index == 0 || leftDelta < 0f -> {
+            if (abs(leftDelta) > 0.5f) {
+                listState.animateScrollBy(leftDelta)
+            }
+        }
+        index >= itemCount - 1 || rightDelta > 0f -> {
+            if (abs(rightDelta) > 0.5f) {
+                listState.animateScrollBy(rightDelta)
+            }
+        }
+    }
+}
+
+/**
+ * 全屏二级/三级菜单横向列表：平滑跟手滚入可视区。
  *
  * @param listState 横向列表状态。
  * @param index 获焦下标。
@@ -2928,38 +3020,14 @@ private fun scrollPlayerMenuChipIntoView(
     leadingInsetPx: Int = 0,
     trailingInsetPx: Int = 0,
 ) {
-    if (itemCount <= 0 || index !in 0 until itemCount) {
-        return
-    }
     scrollScope.launch {
-        var target = listState.layoutInfo.visibleItemsInfo
-            .firstOrNull { info -> info.index == index }
-        if (target == null) {
-            listState.animateScrollToItem(index = index)
-            target = listState.layoutInfo.visibleItemsInfo
-                .firstOrNull { info -> info.index == index }
-                ?: return@launch
-        }
-        val layoutInfo = listState.layoutInfo
-        val effectiveLeading = layoutInfo.beforeContentPadding.takeIf { pad -> pad > 0 }
-            ?: leadingInsetPx
-        val effectiveTrailing = layoutInfo.afterContentPadding.takeIf { pad -> pad > 0 }
-            ?: trailingInsetPx
-        val leftDelta = (target.offset - (layoutInfo.viewportStartOffset + effectiveLeading)).toFloat()
-        val rightDelta =
-            (target.offset + target.size - (layoutInfo.viewportEndOffset - effectiveTrailing)).toFloat()
-        when {
-            index == 0 || leftDelta < 0f -> {
-                if (abs(leftDelta) > 0.5f) {
-                    listState.animateScrollBy(leftDelta)
-                }
-            }
-            index >= itemCount - 1 || rightDelta > 0f -> {
-                if (abs(rightDelta) > 0.5f) {
-                    listState.animateScrollBy(rightDelta)
-                }
-            }
-        }
+        scrollPlayerMenuChipIntoViewSuspend(
+            listState = listState,
+            index = index,
+            itemCount = itemCount,
+            leadingInsetPx = leadingInsetPx,
+            trailingInsetPx = trailingInsetPx,
+        )
     }
 }
 

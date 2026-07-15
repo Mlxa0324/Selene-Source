@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -1933,16 +1934,71 @@ private fun NcatEpisodeGroupRail(
         }
     }
 
+    /**
+     * 分组条左右移焦：屏外项先 scrollToItem 再 requestFocus；不改选中。
+     */
+    fun moveDetailGroupFocus(targetIndex: Int) {
+        if (!showGroupChoices || groups.isEmpty()) {
+            return
+        }
+        val target = targetIndex.coerceIn(0, groups.lastIndex)
+        scrollScope.launch {
+            var focused = false
+            for (attempt in 0 until 10) {
+                if (attempt > 0) {
+                    delay(16L)
+                }
+                val visible = episodeGroupListState.layoutInfo.visibleItemsInfo.any { info ->
+                    info.index == target
+                }
+                if (!visible) {
+                    runCatching { episodeGroupListState.scrollToItem(index = target) }
+                    withFrameNanos { }
+                }
+                val requester = focusTargets.episodeGroups.getOrNull(target) ?: continue
+                if (runCatching { requester.requestFocus() }.getOrDefault(false)) {
+                    focused = true
+                    break
+                }
+            }
+            if (focused) {
+                activeGroupFocusedIndex = target
+            }
+            // 软边对齐，保证芯片完整可见。
+            scrollDetailOptionIntoViewNow(
+                listState = episodeGroupListState,
+                focusedIndex = target,
+                itemCount = groups.size,
+            )
+        }
+    }
+
     // 选中分组（下划线）必须时刻在分组条可视区内，避免当前在 641-660 却只显示 1-20。
     LaunchedEffect(selectedGroup.groupIndex, showGroupChoices, groups.size) {
         if (!showGroupChoices || groups.isEmpty()) {
             return@LaunchedEffect
         }
-        scrollDetailOptionIntoView(
+        withFrameNanos { }
+        val target = selectedGroup.groupIndex.coerceIn(0, groups.lastIndex)
+        for (attempt in 0 until 6) {
+            if (attempt > 0) {
+                delay(16L)
+            }
+            val visible = episodeGroupListState.layoutInfo.visibleItemsInfo.any { info ->
+                info.index == target
+            }
+            if (!visible) {
+                // 远距离瞬移，避免从 1-20 动画滑到高分组过久。
+                runCatching { episodeGroupListState.scrollToItem(index = target) }
+                withFrameNanos { }
+            } else {
+                break
+            }
+        }
+        scrollDetailOptionIntoViewNow(
             listState = episodeGroupListState,
-            focusedIndex = selectedGroup.groupIndex.coerceIn(0, groups.lastIndex),
+            focusedIndex = target,
             itemCount = groups.size,
-            scrollScope = scrollScope,
         )
     }
 
@@ -2063,10 +2119,21 @@ private fun NcatEpisodeGroupRail(
                     label = group.label,
                     selected = group.selected,
                     focusRequester = focusTargets.episodeGroups.getOrNull(index),
+                    onArrowLeft = if (index > 0) {
+                        { moveDetailGroupFocus(index - 1) }
+                    } else {
+                        null
+                    },
+                    onArrowRight = if (index < groups.lastIndex) {
+                        { moveDetailGroupFocus(index + 1) }
+                    } else {
+                        null
+                    },
                     modifier = Modifier
                         .tvBringFocusedItemIntoView()
                         .focusProperties {
                             // 分组在选集下方：上键回选集，下键去推荐。
+                            // 左右由 moveDetailGroupFocus 先滚后焦，禁用系统直连屏外 requester。
                             up = currentEpisodeFocusRequester
                                 ?: focusTargets.episodes.getOrNull(
                                     group.episodes.firstOrNull()?.episodeIndex ?: 0,
@@ -2075,16 +2142,8 @@ private fun NcatEpisodeGroupRail(
                                 ?: FocusRequester.Default
                             down = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
                                 ?: focusTargets.backTop
-                            left = if (index > 0) {
-                                focusTargets.episodeGroups.getOrNull(index - 1) ?: FocusRequester.Cancel
-                            } else {
-                                FocusRequester.Cancel
-                            }
-                            right = if (index < groups.lastIndex) {
-                                focusTargets.episodeGroups.getOrNull(index + 1) ?: FocusRequester.Cancel
-                            } else {
-                                FocusRequester.Cancel
-                            }
+                            left = FocusRequester.Cancel
+                            right = FocusRequester.Cancel
                         }
                         .onFocusChanged { focusState ->
                             if (focusState.isFocused) {
@@ -2128,6 +2187,8 @@ private fun NcatEpisodeGroupRail(
  * @param label 分组文案。
  * @param selected 是否当前选中分组（下划线）。
  * @param focusRequester 焦点请求器。
+ * @param onArrowLeft 左键（先滚后焦，不改选中）。
+ * @param onArrowRight 右键（先滚后焦，不改选中）。
  * @param modifier 外层修饰器。
  * @param onPressed 确认回调（改选中 + 切上方选集）。
  */
@@ -2136,6 +2197,8 @@ private fun NcatEpisodeGroupChoice(
     label: String,
     selected: Boolean,
     focusRequester: FocusRequester?,
+    onArrowLeft: (() -> Unit)? = null,
+    onArrowRight: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     onPressed: () -> Unit,
 ) {
@@ -2164,6 +2227,17 @@ private fun NcatEpisodeGroupChoice(
                 ) {
                     if (event.type == KeyEventType.KeyDown) {
                         onPressed()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                val directionHandler = when (event.key) {
+                    Key.DirectionLeft -> onArrowLeft
+                    Key.DirectionRight -> onArrowRight
+                    else -> null
+                }
+                if (directionHandler != null) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        directionHandler.invoke()
                     }
                     return@onPreviewKeyEvent true
                 }
@@ -3139,6 +3213,81 @@ private fun NcatFullscreenGlyph(modifier: Modifier = Modifier, color: Color = Co
  * - 首项：滚到 offset=0（真正最左）
  * - 末项：滚到 maxScrollExtent（真正最右，末卡完整露出）
  * - 中间：仅当左右被裁切时滚入视口
+ *
+ * 屏外项优先 [LazyListState.scrollToItem] 瞬移，避免高下标 animate 过久。
+ */
+private suspend fun scrollDetailOptionIntoViewNow(
+    listState: LazyListState,
+    focusedIndex: Int,
+    itemCount: Int,
+) {
+    if (itemCount <= 0 || focusedIndex !in 0 until itemCount) {
+        return
+    }
+    val lastIndex = itemCount - 1
+    when {
+        focusedIndex == 0 -> {
+            // 首项：真正到最左。
+            if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                listState.scrollToItem(index = 0, scrollOffset = 0)
+            }
+        }
+        focusedIndex >= lastIndex -> {
+            // 末项：先滚到末项可见，再大幅 scrollBy 夹到 max，真正到最右。
+            val alreadyVisible = listState.layoutInfo.visibleItemsInfo.any { item ->
+                item.index == lastIndex
+            }
+            if (!alreadyVisible) {
+                runCatching { listState.scrollToItem(index = lastIndex) }
+                withFrameNanos { }
+            } else {
+                runCatching { listState.animateScrollToItem(index = lastIndex) }
+            }
+            if (listState.canScrollForward) {
+                val info = listState.layoutInfo
+                val last = info.visibleItemsInfo.firstOrNull { item -> item.index == lastIndex }
+                val overflow = if (last != null) {
+                    (last.offset + last.size - info.viewportEndOffset).toFloat().coerceAtLeast(0f)
+                } else {
+                    0f
+                }
+                // overflow 对齐末项右缘；再推一截以吃掉 endPadding，夹到真正 max。
+                val push = (overflow + info.viewportEndOffset.toFloat()).coerceAtLeast(1f)
+                listState.animateScrollBy(push)
+            }
+        }
+        else -> {
+            val layoutInfo = listState.layoutInfo
+            val visible = layoutInfo.visibleItemsInfo
+            val target = visible.firstOrNull { info -> info.index == focusedIndex }
+            if (target == null) {
+                runCatching { listState.scrollToItem(index = focusedIndex) }
+                withFrameNanos { }
+                return
+            }
+            val viewportStart = layoutInfo.viewportStartOffset
+            val viewportEnd = layoutInfo.viewportEndOffset
+            val itemStart = target.offset
+            val itemEnd = target.offset + target.size
+            val edgeSafePx = 8
+            when {
+                itemStart < viewportStart + edgeSafePx -> {
+                    listState.animateScrollToItem(index = focusedIndex)
+                }
+                itemEnd > viewportEnd - edgeSafePx -> {
+                    // 右缘裁切：用 scrollBy 刚好露出，避免 animateScrollToItem 把项钉到最左造成跳动。
+                    val overflow = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
+                    if (overflow > 1f) {
+                        listState.animateScrollBy(overflow)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 详情页横向选项滚入可视区（异步包装）。
  */
 private fun scrollDetailOptionIntoView(
     listState: LazyListState,
@@ -3146,61 +3295,12 @@ private fun scrollDetailOptionIntoView(
     itemCount: Int,
     scrollScope: CoroutineScope,
 ) {
-    if (itemCount <= 0 || focusedIndex !in 0 until itemCount) {
-        return
-    }
     scrollScope.launch {
-        val lastIndex = itemCount - 1
-        when {
-            focusedIndex == 0 -> {
-                // 首项：真正到最左。
-                if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
-                    listState.animateScrollToItem(index = 0, scrollOffset = 0)
-                }
-            }
-            focusedIndex >= lastIndex -> {
-                // 末项：先滚到末项可见，再大幅 scrollBy 夹到 max，真正到最右。
-                listState.animateScrollToItem(index = lastIndex)
-                if (listState.canScrollForward) {
-                    val info = listState.layoutInfo
-                    val last = info.visibleItemsInfo.firstOrNull { item -> item.index == lastIndex }
-                    val overflow = if (last != null) {
-                        (last.offset + last.size - info.viewportEndOffset).toFloat().coerceAtLeast(0f)
-                    } else {
-                        0f
-                    }
-                    // overflow 对齐末项右缘；再推一截以吃掉 endPadding，夹到真正 max。
-                    val push = (overflow + info.viewportEndOffset.toFloat()).coerceAtLeast(1f)
-                    listState.animateScrollBy(push)
-                }
-            }
-            else -> {
-                val layoutInfo = listState.layoutInfo
-                val visible = layoutInfo.visibleItemsInfo
-                val target = visible.firstOrNull { info -> info.index == focusedIndex }
-                if (target == null) {
-                    listState.animateScrollToItem(index = focusedIndex)
-                    return@launch
-                }
-                val viewportStart = layoutInfo.viewportStartOffset
-                val viewportEnd = layoutInfo.viewportEndOffset
-                val itemStart = target.offset
-                val itemEnd = target.offset + target.size
-                val edgeSafePx = 8
-                when {
-                    itemStart < viewportStart + edgeSafePx -> {
-                        listState.animateScrollToItem(index = focusedIndex)
-                    }
-                    itemEnd > viewportEnd - edgeSafePx -> {
-                        // 右缘裁切：用 scrollBy 刚好露出，避免 animateScrollToItem 把项钉到最左造成跳动。
-                        val overflow = (itemEnd - (viewportEnd - edgeSafePx)).toFloat()
-                        if (overflow > 1f) {
-                            listState.animateScrollBy(overflow)
-                        }
-                    }
-                }
-            }
-        }
+        scrollDetailOptionIntoViewNow(
+            listState = listState,
+            focusedIndex = focusedIndex,
+            itemCount = itemCount,
+        )
     }
 }
 

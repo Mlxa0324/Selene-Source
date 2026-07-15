@@ -564,10 +564,11 @@ class TvPlayerRouteControlContractTest {
     @Test
     fun route_secondary_menu_scroll_handles_first_and_last() {
         val source = readRouteSource()
-        val scrollSource = source.substringAfter("private fun scrollPlayerMenuChipIntoView(")
-            .substringBefore("private const val PLAYER_MENU_AUTO_HIDE_MS")
+        val scrollSource = source.substringAfter("private suspend fun scrollPlayerMenuChipIntoViewSuspend(")
+            .substringBefore("private fun scrollPlayerMenuChipIntoView(")
 
         assertThat(scrollSource).contains("animateScrollBy(")
+        assertThat(scrollSource).contains("scrollToItem(index = index)")
         assertThat(scrollSource).contains("leftDelta")
         assertThat(scrollSource).contains("rightDelta")
         assertThat(source).contains("PageHorizontalPadding")
@@ -759,8 +760,15 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("private fun TvPlayerEpisodeGroupChoice(")
         assertThat(source).contains("获焦未确认：主题色文字，无下划线")
         assertThat(source).contains("ensureGroupChipVisible")
+        assertThat(source).contains("ensureGroupChipVisibleNow")
+        assertThat(source).contains("moveGroupFocus")
+        assertThat(source).contains("scrollPlayerMenuChipIntoViewSuspend")
         assertThat(playlistSource).contains("获焦只保证芯片可见；不改 selectedGroup")
         assertThat(playlistSource).contains("确认：下划线落到该组")
+        // 分组左右：先滚后焦，禁止对屏外 requester 硬点。
+        assertThat(playlistSource).contains("moveGroupFocus(gi - 1)")
+        assertThat(playlistSource).contains("moveGroupFocus(gi + 1)")
+        assertThat(playlistSource).contains("先滚后焦")
         // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。
         assertThat(source).contains("movePlaylistEpisodeFocus")
         assertThat(source).contains("requestPlaylistEpisodeFocusWhenReady")
@@ -781,11 +789,12 @@ class TvPlayerRouteControlContractTest {
         assertThat(playlistSource).contains("requestCurrentGroupFocus")
         assertThat(playlistSource).contains("requestCurrentEpisodeFocus")
         assertThat(playlistSource).contains("groupListState.scrollToItem")
+        assertThat(playlistSource).contains("moveGroupFocus(safeGroup)")
 
-        // 集数/分组横滑 state。
+        // 集数/分组横滑 state；分组可见性走 suspend 瞬移+软边。
         assertThat(playlistSource).contains("episodeListState")
         assertThat(playlistSource).contains("groupListState")
-        assertThat(playlistSource).contains("scrollPlayerMenuChipIntoView(")
+        assertThat(playlistSource).contains("scrollPlayerMenuChipIntoViewSuspend(")
         assertThat(playlistSource).contains("state = episodeListState")
         assertThat(playlistSource).contains("state = groupListState")
     }
