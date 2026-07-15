@@ -110,7 +110,6 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
-import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 
 /** TV 详情页截图版背景色。 */
@@ -170,8 +169,11 @@ private val NcatDescriptionBoxHeight = 88.dp
 /** 简介正文右侧预留给“简介”操作列的宽度，避免末行与按钮重叠。 */
 private val NcatDescriptionBadgeReserve = 112.dp
 
-/** 详情播放线路与选集空态卡片共用的固定宽度，避免文案长度影响视觉对齐。 */
-private val NcatEmptyStatePanelWidth = 320.dp
+/** 线路/选集内联状态卡高度，与线路卡视觉同高，避免大块灰板突兀。 */
+private val NcatInlineStatusCardHeight = 70.dp
+
+/** 线路/选集内联状态卡最小宽度。 */
+private val NcatInlineStatusCardMinWidth = 240.dp
 
 /** 影片简介浮层打开时，详情内容层使用的背景模糊半径。 */
 private val NcatDescriptionBackdropBlurRadius = 12.dp
@@ -1523,17 +1525,20 @@ private fun NcatSourceRail(
         topPadding = 32.dp,
     )
     if (sourceOptions.isEmpty()) {
-        val message = when {
-            emptyPlaybackCompleted -> "搜索已完成，未找到可播放信息。"
-            isSearching -> "正在搜索可播放线路。"
-            else -> "当前详情未返回可播放来源。"
+        val title = when {
+            emptyPlaybackCompleted -> "未找到可播放线路"
+            isSearching -> "正在搜索线路"
+            else -> "暂无播放线路"
         }
-        NcatStateBlock(
-            kind = TvStatePanelKind.Empty,
-            title = if (emptyPlaybackCompleted) "未找到可播放信息" else "暂无播放线路",
+        val message = when {
+            emptyPlaybackCompleted -> "已搜完可用源，可稍后再试或换关键词"
+            isSearching -> "正在聚合可播放来源…"
+            else -> "当前详情暂无可用播放源"
+        }
+        NcatInlineStatusCard(
+            title = title,
             message = message,
-            focusRequester = null,
-            width = NcatEmptyStatePanelWidth,
+            loading = isSearching && !emptyPlaybackCompleted,
         )
         return
     }
@@ -1742,12 +1747,10 @@ private fun NcatEpisodeGroupRail(
         topPadding = 38.dp,
     )
     if (totalCount == 0 || selectedGroup == null) {
-        NcatStateBlock(
-            kind = TvStatePanelKind.Empty,
+        NcatInlineStatusCard(
             title = "暂无选集",
-            message = "当前线路没有可播放剧集。",
-            focusRequester = null,
-            width = NcatEmptyStatePanelWidth,
+            message = "有可用线路后将在此展示剧集",
+            loading = false,
         )
         return
     }
@@ -2561,13 +2564,72 @@ private fun NcatSectionHeader(
 }
 
 /**
- * 状态面板包裹。
+ * 线路/选集内联状态卡：与详情深色色板一致，高度贴近线路卡，可选加载转圈。
  *
- * @param kind 状态类型。
+ * @param title 主文案。
+ * @param message 次要说明。
+ * @param loading 是否展示加载指示。
+ */
+@Composable
+private fun NcatInlineStatusCard(
+    title: String,
+    message: String,
+    loading: Boolean,
+) {
+    val shape = RoundedCornerShape(NcatRadius)
+    Row(
+        modifier = Modifier
+            .padding(start = NcatContentStartPadding, end = NcatContentEndPadding)
+            .height(NcatInlineStatusCardHeight)
+            .widthIn(min = NcatInlineStatusCardMinWidth)
+            .background(NcatSurface, shape)
+            .border(1.dp, Color.White.copy(alpha = 0.06f), shape)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = TvTokens.Accent,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            // 静默空态：细红点作轻提示，避免大块状态板。
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(TvTokens.Accent.copy(alpha = 0.75f)),
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = title,
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = message,
+                color = NcatMutedText,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * 页面级错误/空详情状态：沿用详情深色板，不再套通用 TvStatePanel 冷灰块。
+ *
+ * @param kind 状态类型（影响边框色）。
  * @param title 状态标题。
  * @param message 状态说明。
  * @param focusRequester 焦点请求器。
- * @param width 状态卡片固定宽度；为空时按内容自然撑开。
  */
 @Composable
 private fun NcatStateBlock(
@@ -2575,19 +2637,42 @@ private fun NcatStateBlock(
     title: String,
     message: String,
     focusRequester: FocusRequester?,
-    width: Dp? = null,
 ) {
-    // 线路和选集空态传入统一宽度，其它详情状态保留自然宽度。
-    val statePanelModifier = Modifier
+    val shape = RoundedCornerShape(14.dp)
+    val borderColor = when (kind) {
+        TvStatePanelKind.Error -> Color(0xFFB84A4A).copy(alpha = 0.55f)
+        TvStatePanelKind.Loading -> TvTokens.Accent.copy(alpha = 0.35f)
+        TvStatePanelKind.Empty -> Color.White.copy(alpha = 0.06f)
+    }
+    val panelModifier = Modifier
         .padding(start = NcatContentStartPadding, end = NcatContentEndPadding)
-        .then(if (width != null) Modifier.width(width) else Modifier)
-    TvStatePanel(
-        kind = kind,
-        title = title,
-        message = message,
-        modifier = statePanelModifier,
-        contentFocusRequester = focusRequester,
-    )
+        .fillMaxWidth()
+        .background(NcatSurface.copy(alpha = 0.95f), shape)
+        .border(1.dp, borderColor, shape)
+        .padding(horizontal = 20.dp, vertical = 18.dp)
+        .then(
+            if (focusRequester != null) {
+                Modifier.focusRequester(focusRequester).focusable()
+            } else {
+                Modifier
+            },
+        )
+    Column(
+        modifier = panelModifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = message,
+            color = NcatMutedText,
+            fontSize = 13.sp,
+        )
+    }
 }
 
 /**

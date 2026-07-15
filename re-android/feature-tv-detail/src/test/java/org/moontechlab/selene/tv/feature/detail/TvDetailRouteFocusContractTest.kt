@@ -159,9 +159,12 @@ class TvDetailRouteFocusContractTest {
             .substringAfter("private fun NcatEpisodeGroupRail(")
             .substringBefore("private fun NcatEpisodeChip(")
 
-        assertThat(source).contains("NcatEmptyStatePanelWidth")
-        assertThat(sourceRail).contains("width = NcatEmptyStatePanelWidth")
-        assertThat(episodeRail).contains("width = NcatEmptyStatePanelWidth")
+        // 线路/选集空态用内联状态卡，高度贴近线路卡，禁止通用大块 TvStatePanel。
+        assertThat(source).contains("NcatInlineStatusCard(")
+        assertThat(source).contains("NcatInlineStatusCardHeight")
+        assertThat(sourceRail).contains("NcatInlineStatusCard(")
+        assertThat(episodeRail).contains("NcatInlineStatusCard(")
+        assertThat(source).doesNotContain("NcatEmptyStatePanelWidth")
     }
 
     /**
