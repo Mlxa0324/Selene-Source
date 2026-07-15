@@ -142,7 +142,8 @@ class TvVideoLibraryRouteFocusContractTest {
         val source = readLibraryRouteSource()
 
         assertThat(source).contains("title = \"${'$'}{state.title}加载失败\"")
-        assertThat(source).contains("title = \"${'$'}{state.title}暂无内容\"")
+        assertThat(source).contains("\"${'$'}{state.title}暂无内容\"")
+        assertThat(source).contains("没有符合条件的内容")
         assertThat(source).contains("contentFocusRequester = contentFocusRequester")
     }
 

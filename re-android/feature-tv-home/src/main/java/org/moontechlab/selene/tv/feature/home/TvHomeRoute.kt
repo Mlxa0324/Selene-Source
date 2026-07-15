@@ -303,12 +303,21 @@ fun TvVideoLibraryRoute(
         }
 
         if (state.videos.isEmpty()) {
+            // 筛选空态 / 真·空库：居中轻量文案，避免左上角厚重灰卡。
             TvStatePanel(
                 kind = TvStatePanelKind.Empty,
-                title = "${state.title}暂无内容",
-                message = "当前筛选条件下没有可展示的视频。",
-                contentFocusRequester = contentFocusRequester,
-                modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
+                title = if (showFilter) {
+                    "没有符合条件的内容"
+                } else {
+                    "${state.title}暂无内容"
+                },
+                message = if (showFilter) {
+                    "试试调整上方分类、类型或年代等筛选条件"
+                } else {
+                    "稍后再来看看，或切换其它分类浏览"
+                },
+                contentFocusRequester = if (showFilter) null else contentFocusRequester,
+                modifier = Modifier.fillMaxSize(),
             )
         } else {
             TvPosterGrid(
