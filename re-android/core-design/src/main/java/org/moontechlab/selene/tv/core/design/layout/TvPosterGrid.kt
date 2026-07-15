@@ -243,9 +243,12 @@ private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
         scrollGridToAbsoluteTop()
         return
     }
-    // 末行：必须到真正底部，否则 contentPadding/放大后标题区永远露不全。
+    // 末行：必须到真正底部，否则末行标题/副标题停在视口外。
     if (lastLazyIndex >= 0 && lazyIndex >= lastRowStartLazy) {
-        scrollGridToAbsoluteBottom(lastLazyIndex = lastLazyIndex)
+        scrollGridToAbsoluteBottom(
+            lastLazyIndex = lastLazyIndex,
+            focusedLazyIndex = lazyIndex,
+        )
         return
     }
     var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
@@ -315,37 +318,55 @@ private suspend fun LazyGridState.scrollGridToAbsoluteTop() {
 }
 
 /**
- * 把纵向网格钉到真正底部（canScrollForward=false）。
+ * 把纵向网格钉到真正底部。
  *
- * 先滚近末项，再按视口高度推进直到无法继续前进，保证 contentBottomPadding 与末行标题露出。
+ * 策略（比「animate 到末项 + 有限次 animateScrollBy」更稳）：
+ * 1. 末项未布局时先 scrollToItem 带进视口；
+ * 2. 按末项/当前项几何把 item 底边滚到 viewportEnd 内侧（保证标题在布局高度内）；
+ * 3. 再用瞬时 scrollBy 抽干 canScrollForward，吃掉 contentBottomPadding。
+ *
+ * 不用 animateScrollToItem(last) 钉在视口顶再慢慢推——动画易被下一次获焦取消，表现为到底失败。
  *
  * @param lastLazyIndex 最后一项的 lazy 下标（含 header 偏移）。
+ * @param focusedLazyIndex 当前获焦 lazy 下标，优先保证该项底边露出。
  */
-private suspend fun LazyGridState.scrollGridToAbsoluteBottom(lastLazyIndex: Int) {
+private suspend fun LazyGridState.scrollGridToAbsoluteBottom(
+    lastLazyIndex: Int,
+    focusedLazyIndex: Int = lastLazyIndex,
+) {
     if (lastLazyIndex < 0) {
         return
     }
-    if (!canScrollForward) {
-        return
+    // 1) 末项进布局（瞬时，避免动画被取消）。
+    if (layoutInfo.visibleItemsInfo.none { info -> info.index == lastLazyIndex }) {
+        scrollToItem(index = lastLazyIndex)
     }
-    // 先把末项带进布局，避免只能空滚。
-    val alreadyVisible = layoutInfo.visibleItemsInfo.any { info -> info.index == lastLazyIndex }
-    if (!alreadyVisible) {
-        animateScrollToItem(index = lastLazyIndex)
+    // 2) 几何：优先当前获焦项，否则末项；底边顶到视口底内侧。
+    // 标题在 item 布局高度内；edge 再留一点给焦点描边（scale 不占布局）。
+    val bottomSafePx = 20
+    repeat(4) {
+        val targetInfo = layoutInfo.visibleItemsInfo.firstOrNull { info ->
+            info.index == focusedLazyIndex
+        } ?: layoutInfo.visibleItemsInfo.firstOrNull { info ->
+            info.index == lastLazyIndex
+        } ?: layoutInfo.visibleItemsInfo.maxByOrNull { info -> info.index }
+            ?: return
+        val viewportEnd = layoutInfo.viewportEndOffset
+        val itemEnd = targetInfo.offset.y + targetInfo.size.height
+        val overflow = (itemEnd - (viewportEnd - bottomSafePx)).toFloat()
+        if (overflow > 1f) {
+            scrollBy(overflow)
+        } else {
+            return@repeat
+        }
     }
-    // 连续向前推到 max：中心带「刚好露出」往往停在半截，吃不掉 end padding。
+    // 3) 抽干剩余 scroll extent（contentBottomPadding 等）。
     var guard = 0
-    while (canScrollForward && guard < 12) {
+    while (canScrollForward && guard < 24) {
         val viewportSpan = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
-            .coerceAtLeast(1)
+            .coerceAtLeast(32)
             .toFloat()
-        animateScrollBy(viewportSpan)
+        scrollBy(viewportSpan)
         guard++
-    }
-    // 仍有残余时瞬时夹到 max。
-    if (canScrollForward) {
-        scrollBy((layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset)
-            .coerceAtLeast(1)
-            .toFloat() * 4f)
     }
 }
