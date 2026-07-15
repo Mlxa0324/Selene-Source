@@ -134,9 +134,6 @@ class TvPosterFocusContractTest {
         val source = readLayoutSource("TvPosterGrid.kt")
 
         assertThat(source).contains("scrollFocusedItemWithCenterBand")
-        assertThat(source).contains("animateScrollBy")
-        assertThat(source).contains("centerLine")
-        assertThat(source).contains("itemCenter > centerLine")
         assertThat(source).contains("firstRowEndExclusive")
         assertThat(source).contains("lastRowStartLazy")
         assertThat(source).contains("contentTopPadding")
@@ -147,10 +144,11 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("scrollToItem(index = 0, scrollOffset = 0)")
         assertThat(source).contains("requestBringIntoViewOnFocus = false")
         assertThat(source).contains("canScrollForward")
-        // 末行用瞬时 scrollBy 抽干到底，避免 animate 被取消导致标题露不出。
+        // 整卡（含标题）进视口：多轮底边校正 + 标题块高度。
         assertThat(source).contains("scrollBy(viewportSpan")
         assertThat(source).contains("bottomEdgeSafePx")
         assertThat(source).contains("gridFocusScrollJob")
+        assertThat(source).contains("只露出封面、标题仍在视口外")
         // 不得再对每个获焦项无条件 pin firstVisible。
         assertThat(source).doesNotContain("if (lazyIndex != gridState.firstVisibleItemIndex)")
     }

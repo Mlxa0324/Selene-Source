@@ -52,7 +52,14 @@ object TvListLayoutMetrics {
      * 须覆盖海报标题+副标题两行文案高度，否则末行/近底行获焦时标题被视口裁掉
      *（分类/历史/收藏等 Grid 页；首页横轨不受影响）。
      */
-    val GridBottomPadding = 64.dp
+    val GridBottomPadding = 72.dp
+
+    /**
+     * 海报封面下方标题区最小高度（标题+副标题+间距）。
+     *
+     * 网格项测量必须计入该高度，跟滚才能把「整卡」滚进视口，而不是只露出封面。
+     */
+    val PosterTitleBlockHeight = 56.dp
 
     /**
      * 按可视列数计算横向海报卡片宽度。

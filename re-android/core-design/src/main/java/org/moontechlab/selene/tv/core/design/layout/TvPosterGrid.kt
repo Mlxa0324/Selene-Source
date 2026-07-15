@@ -229,14 +229,13 @@ private fun resolveLastRowStartIndex(itemCount: Int, columns: Int): Int {
 }
 
 /**
- * 纵向网格中心带跟焦。
+ * 纵向网格跟焦：优先保证「封面+标题」整卡在视口内。
  *
- * - **首行**：强制滚到真正列表顶（index=0 且 scrollOffset=0）。
- * - **末行**：强制滚到真正列表底（canScrollForward=false），末行封面+标题完整露出。
- * - 中间行：中线以上不滚；越过中线 scrollBy；顶/底被裁只滚裁切量。
+ * - **首行**：钉到真正列表顶。
+ * - **末行**：钉到真正列表底。
+ * - **中间行**：多轮瞬时 scrollBy 校正顶/底裁切；底边安全区加大，避免只露封面不见标题。
  *
- * 禁止对每个获焦项 animateScrollToItem 无条件 pin 到 firstVisible 顶缘。
- * 禁止与卡片 bringIntoView 并用（网格侧已关），否则回顶/到底会被再次拽偏。
+ * 禁止与卡片 bringIntoView 并用（网格侧已关）。
  */
 private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
     lazyIndex: Int,
@@ -257,49 +256,40 @@ private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
         )
         return
     }
-    var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
-    if (target == null) {
-        // 尚未进入布局：先滚进可见范围，再交给中心带逻辑，避免一直停在屏外。
-        animateScrollToItem(lazyIndex)
-        target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
-            ?: return
+    if (layoutInfo.visibleItemsInfo.none { info -> info.index == lazyIndex }) {
+        // 尚未进入布局：瞬时滚进可见范围（避免 animate 被下次获焦取消）。
+        scrollToItem(lazyIndex)
     }
-    val layoutInfo = layoutInfo
-    val viewportStart = layoutInfo.viewportStartOffset
-    val viewportEnd = layoutInfo.viewportEndOffset
-    val viewportSize = (viewportEnd - viewportStart).coerceAtLeast(1)
-    val centerLine = viewportStart + viewportSize / 2
-    // LazyGridItemInfo：主轴用 offset.y / size.height（含封面+标题列）。
-    val itemStart = target.offset.y
-    val itemHeight = target.size.height
-    val itemEnd = itemStart + itemHeight
-    val itemCenter = itemStart + itemHeight / 2
-    // 顶边：描边/放大溢出；底边：标题+副标题更易被裁，预留更大。
+    // 顶边：描边；底边：标题块必须完整进屏（宁可多滚一点）。
     val topEdgeSafePx = 12
-    val bottomEdgeSafePx = 28
-    when {
-        // 顶部被裁：刚好露出，不要 pin 成 firstVisible。
-        itemStart < viewportStart + topEdgeSafePx -> {
-            val delta = (itemStart - (viewportStart + topEdgeSafePx)).toFloat()
-            if (abs(delta) > 1f) {
-                animateScrollBy(delta)
+    val bottomEdgeSafePx = 48
+    // 多轮校正：先底后顶，解决「只露出封面、标题仍在视口外」。
+    repeat(8) {
+        val target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
+            ?: return
+        val viewportStart = layoutInfo.viewportStartOffset
+        val viewportEnd = layoutInfo.viewportEndOffset
+        val itemStart = target.offset.y
+        val itemEnd = itemStart + target.size.height
+        when {
+            itemEnd > viewportEnd - bottomEdgeSafePx -> {
+                val delta = (itemEnd - (viewportEnd - bottomEdgeSafePx)).toFloat()
+                if (delta > 1f) {
+                    scrollBy(delta)
+                } else {
+                    return
+                }
             }
-        }
-        // 底部被裁（含标题区）：整卡底边滚到视口内。
-        itemEnd > viewportEnd - bottomEdgeSafePx -> {
-            val delta = (itemEnd - (viewportEnd - bottomEdgeSafePx)).toFloat()
-            if (delta > 1f) {
-                animateScrollBy(delta)
+            itemStart < viewportStart + topEdgeSafePx -> {
+                val delta = (itemStart - (viewportStart + topEdgeSafePx)).toFloat()
+                if (abs(delta) > 1f) {
+                    scrollBy(delta)
+                } else {
+                    return
+                }
             }
+            else -> return
         }
-        // 越过中线：把项中心拉回中线，实现「到中心区域才开始跟滚」。
-        itemCenter > centerLine -> {
-            val delta = (itemCenter - centerLine).toFloat()
-            if (delta > 1f) {
-                animateScrollBy(delta)
-            }
-        }
-        // 中线以上且完整可见：保持静止，顶部不被拽走。
     }
 }
 

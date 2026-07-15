@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +33,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -91,17 +94,26 @@ fun TvPosterCard(
     // 用整卡 requester 在获焦时把封面+文案一并滚入可见区。
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
     val bringIntoViewScope = rememberCoroutineScope()
+    // 标题区固定最小高度：LazyGrid 测量整卡高度含标题，跟滚才能把字滚进视口。
+    val titleBlockHeight = TvListLayoutMetrics.PosterTitleBlockHeight
 
     Column(
         modifier = modifier
             .width(cardWidth)
+            .heightIn(min = coverHeight + titleBlockHeight)
             .bringIntoViewRequester(bringIntoViewRequester),
     ) {
         TvFocusableCard(
             modifier = Modifier
                 .width(cardWidth)
                 .height(coverHeight)
-                .scale(scale)
+                // 从顶部放大，减少封面放大盖住下方标题。
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0.5f, 0f)
+                    clip = false
+                }
                 .onFocusChanged { focusState ->
                     // 卡片高亮直接跟随真实焦点，避免焦点进入后视觉仍停在顶部导航。
                     hasCardFocus = focusState.hasFocus
