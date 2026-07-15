@@ -124,7 +124,7 @@ fun TvFavoritesRoute(
         TvConfirmDialog(
             title = "清空收藏夹",
             message = "确定要清空全部收藏吗？此操作不可恢复。",
-            confirmLabel = "清空",
+            confirmLabel = "确认",
             cancelLabel = "取消",
             confirmIsDanger = true,
             onConfirm = {

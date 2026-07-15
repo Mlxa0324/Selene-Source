@@ -128,8 +128,11 @@ class TvAppFocusContractTest {
         assertThat(source).contains("rememberTopDestinationFocusRequesters()")
         assertThat(source).contains("focusCurrentPrimaryTab")
         assertThat(source).contains("handlePrimaryContentBack")
-        // 筛选打开时也要拦返回（从 tab 打开后 topNavHasFocus 可能仍为 true）。
-        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && (showCategoryFilter || !topNavHasFocus))")
+        // 主菜单统一拦返回；退出确认展示时交给 Dialog 处理。
+        assertThat(source).contains("BackHandler(enabled = isPrimaryRoute && !showExitConfirm)")
+        assertThat(source).contains("showExitConfirm")
+        assertThat(source).contains("TvConfirmDialog")
+        assertThat(source).contains("确定退出 IvyTV？")
         assertThat(source).contains("Key.Escape")
         // 筛选展开时仍显示顶栏，避免显隐抖动、返回可稳定落到当前 tab。
         assertThat(source).contains("if (isPrimaryRoute) {")
@@ -269,8 +272,9 @@ class TvAppFocusContractTest {
         assertThat(source).contains("showCategoryFilter = false")
         assertThat(source).contains("pendingRestoreTopTabFocus")
         assertThat(source).contains("focusCurrentPrimaryTab()")
-        // 筛选打开时即使 topNavHasFocus 仍为 true 也要拦返回。
-        assertThat(source).contains("showCategoryFilter || !topNavHasFocus")
+        // 顶栏持焦时弹出退出确认，而不是直接 finish。
+        assertThat(source).contains("showExitConfirm = true")
+        assertThat(source).contains("hostActivity?.finish()")
         assertThat(source).contains("if (isPrimaryRoute) {")
         assertThat(source).doesNotContain("if (isPrimaryRoute && !showCategoryFilter) {")
         assertThat(source).doesNotContain("BackHandler(enabled = showCategoryFilter)")

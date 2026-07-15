@@ -1,4 +1,5 @@
 package org.moontechlab.selene.tv.app
+import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
@@ -60,6 +61,7 @@ import org.moontechlab.selene.tv.app.navigation.TvDestination
 import org.moontechlab.selene.tv.app.navigation.TvNavGraph
 import org.moontechlab.selene.tv.core.design.SeleneTvTheme
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.dialog.TvConfirmDialog
 import org.moontechlab.selene.tv.core.design.layout.LocalTvTopChromeHeightPx
 import org.moontechlab.selene.tv.core.design.layout.TvDesignCanvas
 import org.moontechlab.selene.tv.core.design.layout.TvDesignPreset
@@ -147,6 +149,9 @@ fun TvApp() {
             var pendingRestoreTopTabFocus by remember { mutableStateOf(false) }
             // 切入电影/剧集/动漫/综艺时短暂提示确认键可呼出筛选。
             var showCategoryFilterHint by remember { mutableStateOf(false) }
+            // 主菜单顶栏持焦再按返回：公共确认框，默认焦点在取消。
+            var showExitConfirm by remember { mutableStateOf(false) }
+            val hostActivity = context as? Activity
 
             fun focusCurrentPrimaryTab(): Boolean {
                 val route = currentRoute ?: return false
@@ -166,10 +171,10 @@ fun TvApp() {
              * 主菜单页返回：
              * 1) 筛选打开 → 关闭并落焦**当前**分类 tab（不 pop 回首页）
              * 2) 焦点在内容区 → 落焦当前 tab
-             * 顶栏已持焦且无筛选时不拦截（留给系统/上层）。
+             * 3) 顶栏已持焦 → 弹出退出确认（公共 [TvConfirmDialog]）
              */
             fun handlePrimaryContentBack(): Boolean {
-                if (!isPrimaryRoute) {
+                if (!isPrimaryRoute || showExitConfirm) {
                     return false
                 }
                 if (showCategoryFilter) {
@@ -179,13 +184,15 @@ fun TvApp() {
                     return true
                 }
                 if (topNavHasFocus) {
-                    return false
+                    showExitConfirm = true
+                    return true
                 }
                 return focusCurrentPrimaryTab()
             }
 
-            // 筛选打开时也要消费返回（焦点从 tab 打开后 topNavHasFocus 可能仍为 true）。
-            BackHandler(enabled = isPrimaryRoute && (showCategoryFilter || !topNavHasFocus)) {
+            // 主菜单页统一拦截返回：内容回 tab / 顶栏弹退出确认 / 关筛选。
+            // 退出确认展示期间交给 Dialog 自身处理返回（关闭弹窗）。
+            BackHandler(enabled = isPrimaryRoute && !showExitConfirm) {
                 handlePrimaryContentBack()
             }
             LaunchedEffect(currentRoute) {
@@ -240,13 +247,9 @@ fun TvApp() {
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
                         .onPreviewKeyEvent { event ->
-                            // 模拟器 Esc 与返回键一致：关筛选 / 内容区 → 当前主 tab。
+                            // 模拟器 Esc 与返回键一致：关筛选 / 内容回 tab / 顶栏退出确认。
                             val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
-                            if (!isBackOrEsc || !isPrimaryRoute) {
-                                return@onPreviewKeyEvent false
-                            }
-                            // 筛选打开时一律拦截；否则仅内容区拦截（顶栏持焦时不抢）。
-                            if (topNavHasFocus && !showCategoryFilter) {
+                            if (!isBackOrEsc || !isPrimaryRoute || showExitConfirm) {
                                 return@onPreviewKeyEvent false
                             }
                             if (event.type == KeyEventType.KeyDown) {
@@ -330,6 +333,21 @@ fun TvApp() {
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(bottom = 48.dp),
+                        )
+                    }
+
+                    // 退出应用：公共确认框，默认焦点在「取消」。
+                    if (showExitConfirm) {
+                        TvConfirmDialog(
+                            title = "确定退出 IvyTV？",
+                            message = "退出后将返回系统桌面",
+                            confirmLabel = "确认",
+                            cancelLabel = "取消",
+                            onConfirm = {
+                                showExitConfirm = false
+                                hostActivity?.finish()
+                            },
+                            onDismiss = { showExitConfirm = false },
                         )
                     }
                 }

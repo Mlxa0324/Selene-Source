@@ -39,17 +39,21 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Text
+import kotlinx.coroutines.delay
 import org.moontechlab.selene.tv.core.design.TvTokens
 
 /**
  * TV 公共确认弹窗（对齐 Flutter [TvConfirmDialog]）。
  *
- * 用于删除全部、退出等需二次确认的场景；返回键 / Esc 视为取消。
+ * 用于「删除全部 / 退出应用」等需二次确认的场景：
+ * - 底部左「取消」、右「确认」
+ * - **默认焦点在取消**，降低误触确认风险
+ * - 返回键 / Esc 视为取消
  *
  * @param title 弹窗标题。
  * @param message 弹窗说明。
- * @param confirmLabel 右侧确认按钮文案。
- * @param cancelLabel 左侧取消按钮文案。
+ * @param confirmLabel 右侧确认按钮文案，默认「确认」。
+ * @param cancelLabel 左侧取消按钮文案，默认「取消」。
  * @param onConfirm 确认回调。
  * @param onDismiss 取消、返回或点遮罩关闭回调。
  * @param confirmIsDanger 确认是否用危险色强调（删除/清空类）。
@@ -58,7 +62,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 fun TvConfirmDialog(
     title: String,
     message: String,
-    confirmLabel: String,
+    confirmLabel: String = "确认",
     cancelLabel: String = "取消",
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
@@ -66,9 +70,15 @@ fun TvConfirmDialog(
 ) {
     val cancelFocusRequester = remember { FocusRequester() }
     val confirmFocusRequester = remember { FocusRequester() }
-    // 默认焦点落在取消，避免误触确认。
+    // 默认焦点落在取消；Dialog 挂载后可能晚一帧才可焦，短重试保证落点。
     LaunchedEffect(Unit) {
-        runCatching { cancelFocusRequester.requestFocus() }
+        for (attempt in 0 until 16) {
+            delay(16)
+            val ok = runCatching { cancelFocusRequester.requestFocus() }.getOrDefault(false)
+            if (ok) {
+                return@LaunchedEffect
+            }
+        }
     }
 
     Dialog(

@@ -128,7 +128,7 @@ fun TvHistoryRoute(
         TvConfirmDialog(
             title = "清空播放历史",
             message = "确定要清空全部播放记录吗？此操作不可恢复。",
-            confirmLabel = "清空",
+            confirmLabel = "确认",
             cancelLabel = "取消",
             confirmIsDanger = true,
             onConfirm = {

@@ -22,9 +22,11 @@ class TvConfirmDialogContractTest {
         assertThat(source).contains("Key.Back")
         assertThat(source).contains("Key.Escape")
         assertThat(source).contains("cancelLabel: String = \"取消\"")
+        assertThat(source).contains("confirmLabel: String = \"确认\"")
         assertThat(source).contains("confirmIsDanger")
-        // 默认焦点在取消，降低误触清空风险。
+        // 默认焦点在取消，降低误触确认风险。
         assertThat(source).contains("cancelFocusRequester.requestFocus()")
+        assertThat(source).contains("默认焦点落在取消")
     }
 
     @Test
