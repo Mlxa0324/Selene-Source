@@ -50,10 +50,10 @@ val LocalCategoryFilterOverlayState = compositionLocalOf<CategoryFilterOverlaySt
 /**
  * 全屏坐标系下的分类筛选图层。
  *
- * - 起点：贴近屏幕顶边（略上方约 12% 面板高）
- * - 落点：顶栏下沿（translationY = topChromeHeightPx）
- * - 顶栏与 Logo 仍在底层占位，不参与收起
- * - 动画仅用 graphicsLayer，列表用 [CategoryFilterOverlayState.revealedHeightPx] inset
+ * - 起点：略高于屏幕顶边（约 20% 面板高），从上往下滑入
+ * - 落点：translationY = 0，整块贴屏顶，**完全盖住** Logo + 主菜单 tab
+ * - 底层顶栏仍占位（不卸组合），只是被 overlay 盖住
+ * - 列表 inset = max(0, 面板高 - 顶栏高) × progress（只顶开伸进内容区的部分）
  *
  * @param visible 是否展开筛选。
  * @param topChromeHeightPx 固定顶栏实测高度。
@@ -76,12 +76,14 @@ fun TvCategoryFilterOverlayLayer(
         label = "categoryFilterOverlayProgress",
     )
     val composePanel = (visible || progress > 0.001f) && state.filters.isNotEmpty()
-    // 列表 inset：只顶海报区，不动顶栏。
-    val revealedHeightPx = (panelHeightPx * progress).roundToInt()
-    // 落点：顶栏下沿。起点贴近屏幕顶（略上方 12% 面板高），行程≈顶栏高，不再整板从屏外飞入。
-    val restY = topChromeHeightPx.coerceAtLeast(0).toFloat()
+    val chromePx = topChromeHeightPx.coerceAtLeast(0)
+    // 贴屏顶后，只有「超出顶栏、伸进内容区」的那一段需要顶开海报。
+    val hangIntoContentPx = (panelHeightPx - chromePx).coerceAtLeast(0)
+    val revealedHeightPx = (hangIntoContentPx * progress).roundToInt()
+    // 落点贴屏顶（完全遮挡 Logo/tab）；起点略上方，短距下滑。
+    val restY = 0f
     val startY = if (heightReady) {
-        -panelHeightPx * 0.12f
+        -panelHeightPx * 0.2f
     } else {
         0f
     }
