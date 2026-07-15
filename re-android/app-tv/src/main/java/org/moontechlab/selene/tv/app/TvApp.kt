@@ -236,8 +236,8 @@ private fun TvTopNavigationBar(
             .fillMaxWidth()
             .padding(
                 start = TvTokens.PageHorizontalPadding,
-                // 顶栏纵向收紧：给下方海报/网格多留一截可视高度。
-                top = 14.dp,
+                // 顶栏略留上边距，避免 Logo/搜索贴屏幕上沿；仍比旧版 28dp 紧凑。
+                top = 22.dp,
                 end = TvTokens.PageHorizontalPadding,
                 bottom = 10.dp,
             )

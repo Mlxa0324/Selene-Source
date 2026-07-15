@@ -231,7 +231,7 @@ class TvAppFocusContractTest {
         assertThat(pillSource).contains("TvTokens.TopActionIconGlyph")
         assertThat(pillSource).contains("FontWeight.ExtraBold")
         // 顶栏纵向收紧，给内容区多留高度。
-        assertThat(topNavSource).contains("top = 14.dp")
+        assertThat(topNavSource).contains("top = 22.dp")
         assertThat(topNavSource).contains("bottom = 10.dp")
         assertThat(topNavSource).contains("verticalArrangement = Arrangement.spacedBy(8.dp)")
         // 左右间距接近原先胶囊视觉疏密度。
