@@ -76,8 +76,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -376,8 +378,8 @@ fun TvDetailRoute(
                 // 只模糊下方详情内容，浮层作为同级上层继续保持清晰。
                 .ncatDescriptionBackdropEffect(showDescriptionOverlay)
                 .verticalScroll(detailScrollState)
-                // 底栏安全留白：够焦点描边即可，避免滚到底时大块空白。
-                .padding(bottom = 48.dp),
+                // 底栏安全留白：相关推荐标题 + 获焦放大 + 底栏胶囊须完整进屏。
+                .padding(bottom = 72.dp),
         ) {
             NcatDetailTopBar(
                 focusTargets = focusTargets,
@@ -2209,8 +2211,9 @@ private fun NcatRecommendRail(
             columns = TvListLayoutMetrics.PosterColumns,
         )
         val coverHeight = TvListLayoutMetrics.resolvePosterCoverHeight(cardWidth)
-        // 封面 + 标题行 + 间距，获焦放大后仍有轻微纵向余量。
-        val railHeight = coverHeight + 36.dp
+        // 封面 + 标题行 + 间距 + 获焦放大溢出：标题必须落在 LazyRow 高度内，避免被轨高裁切。
+        val recommendTitleBlockHeight = 48.dp
+        val railHeight = coverHeight + recommendTitleBlockHeight
         when {
             cards.isNotEmpty() -> {
                 // 首次有数据：淡入 + 轻微上滑，替代整段突然蹦出。
@@ -2401,41 +2404,49 @@ private fun NcatRecommendCard(
         animationSpec = tween(140),
         label = "ncatRecommendScale",
     )
+    val coverShape = RoundedCornerShape(7.dp)
+    // 整卡可焦（封面+标题）：纵向跟滚用整卡 bounds，避免只保证封面进屏、标题被底边裁掉。
     Column(
         modifier = modifier
             .width(cardWidth)
-            .scale(scale),
+            // 从顶部放大，标题随封面向下扩展，LazyRow 已预留 title block 高度。
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0.5f, 0f)
+                clip = false
+            }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusable(interactionSource = interactionSource)
+            .then(if (onPressed != null) Modifier.ncatClickable(onPressed) else Modifier)
+            .onPreviewKeyEvent { event ->
+                if (onPressed == null || event.type != KeyEventType.KeyUp) {
+                    return@onPreviewKeyEvent false
+                }
+                if (
+                    event.key == Key.Enter ||
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Spacebar
+                ) {
+                    onPressed()
+                    true
+                } else {
+                    false
+                }
+            },
         verticalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Box(
             modifier = Modifier
                 .width(cardWidth)
                 .height(coverHeight)
-                .clip(RoundedCornerShape(7.dp))
+                .clip(coverShape)
                 .border(
                     width = if (isFocused) 2.dp else 0.dp,
                     color = if (isFocused) Color.White else Color.Transparent,
-                    shape = RoundedCornerShape(7.dp),
-                )
-                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                .focusable(interactionSource = interactionSource)
-                .then(if (onPressed != null) Modifier.ncatClickable(onPressed) else Modifier)
-                .onPreviewKeyEvent { event ->
-                    if (onPressed == null || event.type != KeyEventType.KeyUp) {
-                        return@onPreviewKeyEvent false
-                    }
-                    if (
-                        event.key == Key.Enter ||
-                        event.key == Key.DirectionCenter ||
-                        event.key == Key.NumPadEnter ||
-                        event.key == Key.Spacebar
-                    ) {
-                        onPressed()
-                        true
-                    } else {
-                        false
-                    }
-                },
+                    shape = coverShape,
+                ),
         ) {
             if (card.posterUrl.isNotBlank() || card.title.isNotBlank()) {
                 TvCachedTitlePosterImage(
@@ -2473,9 +2484,9 @@ private fun NcatRecommendCard(
         }
         Text(
             text = card.title,
-            color = Color.White,
+            color = if (isFocused) Color.White else Color.White.copy(alpha = 0.92f),
             fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = if (isFocused) FontWeight.SemiBold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -3204,6 +3215,10 @@ private suspend fun scrollDetailFocusedItemVertically(
     viewportBounds: Rect,
     pin: DetailVerticalPin,
     edgePaddingPx: Float = 28f,
+    /**
+     * 底边额外安全区（px）：相关推荐标题 + 获焦放大，默认比顶边更宽。
+     */
+    bottomEdgePaddingPx: Float = 56f,
 ) {
     when (pin) {
         DetailVerticalPin.Top -> {
@@ -3225,7 +3240,9 @@ private suspend fun scrollDetailFocusedItemVertically(
         }
         DetailVerticalPin.Visible -> {
             val topOverflow = (viewportBounds.top + edgePaddingPx) - itemBounds.top
-            val bottomOverflow = itemBounds.bottom - (viewportBounds.bottom - edgePaddingPx)
+            // 底边留更宽安全区，确保封面下标题不被屏幕底/安全区裁切。
+            val bottomOverflow =
+                itemBounds.bottom - (viewportBounds.bottom - bottomEdgePaddingPx)
             val delta = when {
                 topOverflow > 1f -> -topOverflow
                 bottomOverflow > 1f -> bottomOverflow

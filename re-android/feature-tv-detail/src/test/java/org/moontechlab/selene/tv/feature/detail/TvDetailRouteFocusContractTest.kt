@@ -42,7 +42,8 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("groupChip = { scope ->")
         assertThat(source).contains("NcatEpisodeChip(")
         assertThat(source).contains("NcatEpisodeGroupChoice(")
-        assertThat(source).contains("禁止系统焦点逃到线路/推荐等其它层")
+        // 选集左右边界：有回调则移动，无回调则 edge shake，禁止逃焦。
+        assertThat(source).contains("consumeDirectionalKeyWithEdgeShake(")
         // 分组确认键：回车/中键/空格 + 鼠标 ncatClickable。
         val groupChoiceSource = source
             .substringAfter("private fun NcatEpisodeGroupChoice(")
@@ -287,6 +288,7 @@ class TvDetailRouteFocusContractTest {
 
     /**
      * 相关推荐横滑必须预留右侧放大 gutter，且首/末卡按边锚点向内扩展。
+     * 整卡（含标题）可焦 + 轨高含标题块，获焦纵向跟滚须露出标题。
      */
     @Test
     fun recommend_rail_uses_edge_scale_origin_and_end_gutter() {
@@ -308,6 +310,12 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("AnimatedVisibility(")
         assertThat(source).contains("fadeIn(")
         assertThat(source).contains("slideInVertically(")
+        // 标题进视口：轨高含 title block；整卡 focusable；底边跟滚安全区加宽。
+        assertThat(source).contains("recommendTitleBlockHeight")
+        assertThat(source).contains("railHeight = coverHeight + recommendTitleBlockHeight")
+        assertThat(source).contains("整卡可焦（封面+标题）")
+        assertThat(source).contains("bottomEdgePaddingPx")
+        assertThat(source).contains("padding(bottom = 72.dp)")
     }
 
     /**
