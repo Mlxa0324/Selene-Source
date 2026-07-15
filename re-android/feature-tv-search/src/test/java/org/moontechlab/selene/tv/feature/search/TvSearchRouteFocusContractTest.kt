@@ -40,6 +40,28 @@ class TvSearchRouteFocusContractTest {
     }
 
     /**
+     * 左右栏焦点必须按垂直分带就近：键盘上/中/下对应历史/热词/推荐，回程落到对应键行。
+     */
+    @Test
+    fun left_right_focus_transfers_by_vertical_band() {
+        val source = readRouteSource()
+
+        assertThat(source).contains("enum class SearchRightFocusBand")
+        assertThat(source).contains("keyboardRowToRightBand")
+        assertThat(source).contains("resolveKeyboardRowForRightBand")
+        assertThat(source).contains("resolveRightPanelEntriesForKeyboardRow")
+        assertThat(source).contains("focusRightPanelFromKeyboardRow")
+        assertThat(source).contains("rightHistoryEntryFocus")
+        assertThat(source).contains("rightHotEntryFocus")
+        assertThat(source).contains("rightRecommendEntryFocus")
+        assertThat(source).contains("SearchRightFocusBand.History")
+        assertThat(source).contains("SearchRightFocusBand.Hot")
+        assertThat(source).contains("SearchRightFocusBand.Recommend")
+        // 推荐首项左出回推荐分带，不得只靠 Default 几何乱跳。
+        assertThat(source).contains("onLeftFromFirst = onReturnToLeftPanel")
+    }
+
+    /**
      * 左下角三按钮必须可左右切换；结果网格 5 列铺满格宽。
      */
     @Test

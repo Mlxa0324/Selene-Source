@@ -32,6 +32,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +53,7 @@ import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
  * @param onFocusChanged 卡片焦点变化回调。
  * @param onClick 卡片点击回调。
  * @param focusProperties 可选方向键焦点图（网格同列就近移动）。
+ * @param onPreviewKey 可选按键预览（挂在真实 focusable 上）。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -66,6 +68,7 @@ fun TvPosterCard(
      */
     cardWidth: Dp = TvTokens.PosterWidth,
     focusProperties: (FocusProperties.() -> Unit)? = null,
+    onPreviewKey: ((KeyEvent) -> Boolean)? = null,
 ) {
     var hasCardFocus by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -111,6 +114,7 @@ fun TvPosterCard(
             enabled = onClick != null,
             onPressed = onClick,
             focusProperties = focusProperties,
+            onPreviewKey = onPreviewKey,
         ) {
             TvPosterCover(
                 item = item,

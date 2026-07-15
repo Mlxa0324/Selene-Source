@@ -185,6 +185,8 @@ class TvPosterFocusContractTest {
         // 不得再按固定下标 pin firstVisible。
         assertThat(source).doesNotContain("resolveRailFirstVisibleItemIndex(")
         assertThat(source).doesNotContain("animateScrollToItem(targetIndex)")
+        // 首项可显式左出（搜索页分带回键盘）。
+        assertThat(source).contains("onLeftFromFirst")
     }
 
     /**

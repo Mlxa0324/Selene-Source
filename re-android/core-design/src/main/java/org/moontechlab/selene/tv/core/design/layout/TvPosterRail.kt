@@ -15,6 +15,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
 import kotlin.math.abs
 import kotlinx.coroutines.launch
@@ -38,6 +42,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param onItemClick 卡片点击回调。
  * @param contentStartPadding 列表左 contentPadding（首卡静止左停靠，与右侧可不同）。
  * @param contentEndPadding 列表右 contentPadding（末卡末端收口，与左侧可不同）。
+ * @param onLeftFromFirst 首项再按左时的显式出口（如搜索页回键盘分带）；null 时首项左键走系统几何搜索。
  * @param trailingContent 列表尾部附加内容。
  */
 @Composable
@@ -49,6 +54,7 @@ fun TvPosterRail(
     onItemClick: ((TvPosterItem) -> Unit)? = null,
     contentStartPadding: Dp = TvListLayoutMetrics.RailStartPadding,
     contentEndPadding: Dp = TvListLayoutMetrics.RailEndPadding,
+    onLeftFromFirst: (() -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val designMetrics = LocalTvDesignMetrics.current
@@ -106,6 +112,22 @@ fun TvPosterRail(
             }
             val isFirst = index == 0
             val isLast = index == lastIndex
+            // 首项显式左出：挂在真实 focusable 上拦截左键，避免 Default 几何落点偏离分带。
+            val firstLeftPreviewKey = if (isFirst && onLeftFromFirst != null) {
+                { event: androidx.compose.ui.input.key.KeyEvent ->
+                    if (event.key != Key.DirectionLeft) {
+                        false
+                    } else {
+                        // KeyDown 回左栏；KeyUp 一并消费，避免松键再触发系统焦点搜索。
+                        if (event.type == KeyEventType.KeyDown) {
+                            onLeftFromFirst.invoke()
+                        }
+                        event.type == KeyEventType.KeyDown || event.type == KeyEventType.KeyUp
+                    }
+                }
+            } else {
+                null
+            }
             TvPosterCard(
                 item = item,
                 focusRequesters = cardFocusRequesters,
@@ -113,8 +135,11 @@ fun TvPosterRail(
                 focusProperties = {
                     left = if (!isFirst) {
                         itemFocusRequesters[index - 1]
+                    } else if (onLeftFromFirst != null) {
+                        // 已由 onPreviewKey 接管，禁止再走 Default 二次跳焦。
+                        FocusRequester.Cancel
                     } else {
-                        // 首项左键交给系统（搜索页可回键盘；首页可回侧栏）。
+                        // 首项左键交给系统（首页可回侧栏等）。
                         FocusRequester.Default
                     }
                     right = when {
@@ -127,6 +152,7 @@ fun TvPosterRail(
                     up = FocusRequester.Default
                     down = FocusRequester.Default
                 },
+                onPreviewKey = firstLeftPreviewKey,
                 onFocusChanged = { hasFocus ->
                     if (hasFocus) {
                         // 仅本轨会话内左右相邻切换才横向推进；上下跨轨就近落点保持横向位置。

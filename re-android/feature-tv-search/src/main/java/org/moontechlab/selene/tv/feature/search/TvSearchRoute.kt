@@ -170,13 +170,47 @@ fun TvSearchRoute(
     val clearButtonFocus = remember { FocusRequester() }
     val searchButtonFocus = remember { FocusRequester() }
     val deleteButtonFocus = remember { FocusRequester() }
-    val rightPanelEntryFocus = remember { FocusRequester() }
+    // 右栏按垂直位置分入口：历史/联想/结果、热词、推荐，左右切换按分带就近落点。
+    val rightHistoryEntryFocus = remember { FocusRequester() }
+    val rightHotEntryFocus = remember { FocusRequester() }
+    val rightRecommendEntryFocus = remember { FocusRequester() }
     var lastKeyboardRow by remember { mutableStateOf(0) }
     var lastKeyboardCol by remember { mutableStateOf(0) }
 
     // 首焦点落在键盘 A。
     LaunchedEffect(Unit) {
         keyFocusRequesters[0][0].requestFocus()
+    }
+
+    /**
+     * 从键盘右缘进入右栏：按键所在行映射到历史 / 热词 / 推荐分带，缺失时向下一带回落。
+     */
+    fun focusRightPanelFromKeyboardRow(row: Int) {
+        val targets = resolveRightPanelEntriesForKeyboardRow(
+            row = row,
+            state = state,
+            historyEntry = rightHistoryEntryFocus,
+            hotEntry = rightHotEntryFocus,
+            recommendEntry = rightRecommendEntryFocus,
+        )
+        for (requester in targets) {
+            val gained = runCatching { requester.requestFocus() }.getOrDefault(false)
+            if (gained) {
+                return
+            }
+        }
+    }
+
+    /**
+     * 从右栏左缘回键盘：按当前分带落到对应键行，列保持离开键盘前的位置。
+     */
+    fun returnToLeftPanel(band: SearchRightFocusBand) {
+        val row = resolveKeyboardRowForRightBand(
+            band = band,
+            lastKeyboardRow = lastKeyboardRow,
+        )
+        val col = lastKeyboardCol.coerceIn(0, KeyboardColumns - 1)
+        runCatching { keyFocusRequesters[row][col].requestFocus() }
     }
 
     Box(
@@ -254,8 +288,8 @@ fun TvSearchRoute(
                     onArrowRightFromEdge = { row, col ->
                         lastKeyboardRow = row
                         lastKeyboardCol = col
-                        // 入口即历史/热词首项同一 FocusRequester，失败时不抛崩。
-                        runCatching { rightPanelEntryFocus.requestFocus() }
+                        // 按键行高度进入右栏对应分带（上→历史、中→热词、下→推荐）。
+                        focusRightPanelFromKeyboardRow(row)
                     },
                     // 底行下键：落到操作行对应按钮（列映射），形成与操作行的环形贯通。
                     onArrowDownFromBottom = { col ->
@@ -306,7 +340,8 @@ fun TvSearchRoute(
                         keyFocusRequesters[0][col.coerceIn(0, KeyboardColumns - 1)].requestFocus()
                     },
                     onArrowRightFromDelete = {
-                        runCatching { rightPanelEntryFocus.requestFocus() }
+                        // 底栏右移：优先进推荐分带（与键盘底行同高），再回落其它区。
+                        focusRightPanelFromKeyboardRow(KeyboardRows - 1)
                     },
                 )
             }
@@ -328,10 +363,10 @@ fun TvSearchRoute(
             ) {
                 RightPanel(
                     state = state,
-                    entryFocusRequester = rightPanelEntryFocus,
-                    onReturnToLeftPanel = {
-                        keyFocusRequesters[lastKeyboardRow][lastKeyboardCol].requestFocus()
-                    },
+                    historyEntryFocus = rightHistoryEntryFocus,
+                    hotEntryFocus = rightHotEntryFocus,
+                    recommendEntryFocus = rightRecommendEntryFocus,
+                    onReturnToLeftPanel = ::returnToLeftPanel,
                     onHotQueryClick = onHotQueryClick,
                     onSearchHistoryClick = onSearchHistoryClick,
                     onSuggestionClick = onSuggestionClick,
@@ -674,8 +709,10 @@ private fun RowScope.SearchActionButton(
  * 右侧内容区状态分发。
  *
  * @param state 搜索 UI 状态。
- * @param entryFocusRequester 右面板入口焦点。
- * @param onReturnToLeftPanel 左方向键回键盘。
+ * @param historyEntryFocus 历史上区 / 联想 / 结果入口。
+ * @param hotEntryFocus 热词中区入口。
+ * @param recommendEntryFocus 推荐下区入口。
+ * @param onReturnToLeftPanel 左方向键按分带回键盘。
  * @param onHotQueryClick 热词点击。
  * @param onSearchHistoryClick 历史点击。
  * @param onSuggestionClick 联想点击。
@@ -687,8 +724,10 @@ private fun RowScope.SearchActionButton(
 @Composable
 private fun RightPanel(
     state: TvSearchUiState,
-    entryFocusRequester: FocusRequester,
-    onReturnToLeftPanel: () -> Unit,
+    historyEntryFocus: FocusRequester,
+    hotEntryFocus: FocusRequester,
+    recommendEntryFocus: FocusRequester,
+    onReturnToLeftPanel: (SearchRightFocusBand) -> Unit,
     onHotQueryClick: (String) -> Unit,
     onSearchHistoryClick: (String) -> Unit,
     onSuggestionClick: (String) -> Unit,
@@ -702,8 +741,8 @@ private fun RightPanel(
         // 结果区自带 LazyVerticalGrid，不能再套 verticalScroll。
         state.showResultsPanel -> SearchResultPanel(
             state = state,
-            entryFocusRequester = entryFocusRequester,
-            onReturnToLeftPanel = onReturnToLeftPanel,
+            entryFocusRequester = historyEntryFocus,
+            onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Generic) },
             onVideoClick = onVideoClick,
             onBack = onBack,
             modifier = modifier,
@@ -713,7 +752,8 @@ private fun RightPanel(
         state.showSuggestionPanel -> Column(modifier = modifier.verticalScroll(rememberScrollState())) {
             SearchSuggestionPanel(
                 state = state,
-                entryFocusRequester = entryFocusRequester,
+                entryFocusRequester = historyEntryFocus,
+                recommendEntryFocus = recommendEntryFocus,
                 onReturnToLeftPanel = onReturnToLeftPanel,
                 onSuggestionClick = onSuggestionClick,
                 onVideoClick = onVideoClick,
@@ -725,7 +765,9 @@ private fun RightPanel(
         else -> Column(modifier = modifier.verticalScroll(rememberScrollState())) {
             SearchDefaultPanel(
                 state = state,
-                entryFocusRequester = entryFocusRequester,
+                historyEntryFocus = historyEntryFocus,
+                hotEntryFocus = hotEntryFocus,
+                recommendEntryFocus = recommendEntryFocus,
                 onReturnToLeftPanel = onReturnToLeftPanel,
                 onHotQueryClick = onHotQueryClick,
                 onSearchHistoryClick = onSearchHistoryClick,
@@ -743,8 +785,10 @@ private fun RightPanel(
  * 搜索首页默认内容。
  *
  * @param state 搜索 UI 状态。
- * @param entryFocusRequester 右面板入口焦点。
- * @param onReturnToLeftPanel 回键盘。
+ * @param historyEntryFocus 历史上区入口。
+ * @param hotEntryFocus 热词中区入口。
+ * @param recommendEntryFocus 推荐下区入口。
+ * @param onReturnToLeftPanel 按分带回键盘。
  * @param onHotQueryClick 热词点击（只回填）。
  * @param onSearchHistoryClick 历史点击（直接搜索）。
  * @param onClearHistory 清空历史。
@@ -754,8 +798,10 @@ private fun RightPanel(
 @Composable
 private fun SearchDefaultPanel(
     state: TvSearchUiState,
-    entryFocusRequester: FocusRequester,
-    onReturnToLeftPanel: () -> Unit,
+    historyEntryFocus: FocusRequester,
+    hotEntryFocus: FocusRequester,
+    recommendEntryFocus: FocusRequester,
+    onReturnToLeftPanel: (SearchRightFocusBand) -> Unit,
     onHotQueryClick: (String) -> Unit,
     onSearchHistoryClick: (String) -> Unit,
     onClearHistory: () -> Unit,
@@ -767,8 +813,8 @@ private fun SearchDefaultPanel(
             kind = TvStatePanelKind.Loading,
             title = "加载搜索页",
             message = "正在读取历史和推荐…",
-            focusRequester = entryFocusRequester,
-            onReturnToLeftPanel = onReturnToLeftPanel,
+            focusRequester = historyEntryFocus,
+            onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Generic) },
             onBack = onBack,
         )
         return
@@ -778,16 +824,14 @@ private fun SearchDefaultPanel(
             kind = TvStatePanelKind.Error,
             title = "搜索页加载失败",
             message = state.bootstrapErrorMessage.orEmpty(),
-            focusRequester = entryFocusRequester,
-            onReturnToLeftPanel = onReturnToLeftPanel,
+            focusRequester = historyEntryFocus,
+            onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Generic) },
             onBack = onBack,
         )
         return
     }
 
-    // 右栏各区块入口：不环形，历史↓热词↓推荐，可顺序离开。
-    val hotEntryFocus = remember { FocusRequester() }
-    val recommendEntryFocus = remember { FocusRequester() }
+    // 右栏各区块入口：不环形，历史↓热词↓推荐，可顺序离开；左右跨栏按分带就近。
     val hasHistory = state.searchHistory.isNotEmpty()
     val hasHot = state.hotQueries.isNotEmpty()
     val hasRecommend = state.recommendCards.isNotEmpty()
@@ -799,12 +843,12 @@ private fun SearchDefaultPanel(
         onTrailingAction = onClearHistory,
         // 标题旁「清空」可获焦；下/左落到历史首词，避免焦点悬空或锁死。
         onTrailingArrowDown = {
-            runCatching { entryFocusRequester.requestFocus() }
+            runCatching { historyEntryFocus.requestFocus() }
         },
         onTrailingArrowLeft = {
-            runCatching { entryFocusRequester.requestFocus() }
+            runCatching { historyEntryFocus.requestFocus() }
         },
-        onTrailingReturnToLeft = onReturnToLeftPanel,
+        onTrailingReturnToLeft = { onReturnToLeftPanel(SearchRightFocusBand.History) },
     )
     Spacer(modifier = Modifier.height(12.dp))
     if (!hasHistory) {
@@ -815,8 +859,8 @@ private fun SearchDefaultPanel(
     } else {
         WordTileGrid(
             words = state.searchHistory,
-            entryFocusRequester = entryFocusRequester,
-            onReturnToLeftPanel = onReturnToLeftPanel,
+            entryFocusRequester = historyEntryFocus,
+            onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.History) },
             // 历史词直接搜索，对齐 Flutter onWordPressed -> _performSearch。
             onWordClick = onSearchHistoryClick,
             onBack = onBack,
@@ -835,15 +879,15 @@ private fun SearchDefaultPanel(
         Spacer(modifier = Modifier.height(12.dp))
         WordTileGrid(
             words = state.hotQueries,
-            entryFocusRequester = if (!hasHistory) entryFocusRequester else hotEntryFocus,
-            onReturnToLeftPanel = onReturnToLeftPanel,
+            entryFocusRequester = hotEntryFocus,
+            onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Hot) },
             // 热词只回填，不直接搜索。
             onWordClick = onHotQueryClick,
             onBack = onBack,
             onArrowUpFromTop = {
                 if (hasHistory) {
                     // 回到历史区入口（首项）。
-                    runCatching { entryFocusRequester.requestFocus() }
+                    runCatching { historyEntryFocus.requestFocus() }
                 }
             },
             onArrowDownFromBottom = {
@@ -859,12 +903,8 @@ private fun SearchDefaultPanel(
     Spacer(modifier = Modifier.height(12.dp))
     RecommendRail(
         cards = state.recommendCards,
-        entryFocusRequester = when {
-            !hasHistory && !hasHot -> entryFocusRequester
-            hasRecommend -> recommendEntryFocus
-            else -> null
-        },
-        onReturnToLeftPanel = onReturnToLeftPanel,
+        entryFocusRequester = if (hasRecommend) recommendEntryFocus else null,
+        onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Recommend) },
         onVideoClick = onVideoClick,
         onBack = onBack,
     )
@@ -876,8 +916,9 @@ private fun SearchDefaultPanel(
  * 输入过程中的联想结果面板。
  *
  * @param state 搜索 UI 状态。
- * @param entryFocusRequester 右面板入口焦点。
- * @param onReturnToLeftPanel 回键盘。
+ * @param entryFocusRequester 联想词上区入口。
+ * @param recommendEntryFocus 推荐下区入口。
+ * @param onReturnToLeftPanel 按分带回键盘。
  * @param onSuggestionClick 联想词确认搜索。
  * @param onVideoClick 推荐卡片点击。
  * @param onBack 返回。
@@ -886,7 +927,8 @@ private fun SearchDefaultPanel(
 private fun SearchSuggestionPanel(
     state: TvSearchUiState,
     entryFocusRequester: FocusRequester,
-    onReturnToLeftPanel: () -> Unit,
+    recommendEntryFocus: FocusRequester,
+    onReturnToLeftPanel: (SearchRightFocusBand) -> Unit,
     onSuggestionClick: (String) -> Unit,
     onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
@@ -903,7 +945,7 @@ private fun SearchSuggestionPanel(
                 title = "联想中...",
                 message = "正在根据首字母匹配影片名称。",
                 focusRequester = entryFocusRequester,
-                onReturnToLeftPanel = onReturnToLeftPanel,
+                onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.History) },
                 onBack = onBack,
             )
         }
@@ -914,18 +956,17 @@ private fun SearchSuggestionPanel(
                 title = "暂无联想结果",
                 message = "可继续输入，或直接点击搜索按钮。",
                 focusRequester = entryFocusRequester,
-                onReturnToLeftPanel = onReturnToLeftPanel,
+                onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.History) },
                 onBack = onBack,
             )
         }
 
         else -> {
-            val recommendEntryFocus = remember { FocusRequester() }
             val hasRecommend = state.recommendCards.isNotEmpty()
             WordTileGrid(
                 words = state.suggestions,
                 entryFocusRequester = entryFocusRequester,
-                onReturnToLeftPanel = onReturnToLeftPanel,
+                onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.History) },
                 // 联想词确认后直接搜索，并保留返回上下文。
                 onWordClick = onSuggestionClick,
                 onBack = onBack,
@@ -942,7 +983,7 @@ private fun SearchSuggestionPanel(
                 RecommendRail(
                     cards = state.recommendCards,
                     entryFocusRequester = recommendEntryFocus,
-                    onReturnToLeftPanel = onReturnToLeftPanel,
+                    onReturnToLeftPanel = { onReturnToLeftPanel(SearchRightFocusBand.Recommend) },
                     onVideoClick = onVideoClick,
                     onBack = onBack,
                 )
@@ -1187,7 +1228,7 @@ private fun RecommendRail(
     // 1) 视口贴齐右面板左右缘（layout 外扩，禁止负 padding，会崩溃）
     // 2) 左右停靠边距只写在 LazyRow contentPadding，且可独立设置
     // 3) 滚动时卡片可从面板缘进出；静止时首/末卡仍有呼吸边距
-    // onReturnToLeftPanel/onBack 由外层词块或状态面板入口承接；海报轨首项承接 entryFocus。
+    // 4) 首项左键按推荐分带回键盘，与键盘底行同高落点
     TvPosterRail(
         items = cards.map { video ->
             TvPosterItem(
@@ -1204,6 +1245,7 @@ private fun RecommendRail(
         firstItemFocusRequester = entryFocusRequester,
         contentStartPadding = RecommendRailStartPadding,
         contentEndPadding = RecommendRailEndPadding,
+        onLeftFromFirst = onReturnToLeftPanel,
         onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
     )
 }
@@ -1444,6 +1486,109 @@ private fun TvVideoCard.searchResultSubtitle(): String {
             add(sourcePart)
         }
     }.joinToString(" · ").ifBlank { "结果" }
+}
+
+// ── 左右栏焦点分带：按垂直位置就近互跳 ──
+
+/**
+ * 右栏垂直分带，与左侧键盘行大致对齐。
+ *
+ * - [History]：搜索历史 / 联想结果（上）
+ * - [Hot]：搜索热词（中）
+ * - [Recommend]：影片推荐（下）
+ * - [Generic]：加载/错误/结果等单入口态
+ */
+private enum class SearchRightFocusBand {
+    History,
+    Hot,
+    Recommend,
+    Generic,
+}
+
+/**
+ * 键盘行 → 优先进入的右栏分带。
+ *
+ * 6 行键盘：0–1 上（历史）、2–3 中（热词）、4–5 下（推荐）。
+ */
+private fun keyboardRowToRightBand(row: Int): SearchRightFocusBand {
+    return when {
+        row <= 1 -> SearchRightFocusBand.History
+        row <= 3 -> SearchRightFocusBand.Hot
+        else -> SearchRightFocusBand.Recommend
+    }
+}
+
+/**
+ * 从右栏分带回到键盘时的目标行。
+ *
+ * 若离开前的键行仍在该分带对应行带内，保持原行；否则落到该带首行。
+ */
+private fun resolveKeyboardRowForRightBand(
+    band: SearchRightFocusBand,
+    lastKeyboardRow: Int,
+): Int {
+    val bandRows = when (band) {
+        SearchRightFocusBand.History -> 0..1
+        SearchRightFocusBand.Hot -> 2..3
+        SearchRightFocusBand.Recommend -> 4..(KeyboardRows - 1)
+        SearchRightFocusBand.Generic -> 0..(KeyboardRows - 1)
+    }
+    return if (lastKeyboardRow in bandRows) {
+        lastKeyboardRow
+    } else {
+        bandRows.first
+    }
+}
+
+/**
+ * 按键盘行解析右栏入口 FocusRequester 候选列表（优先分带 → 回落其它可用区）。
+ *
+ * 结果/联想单入口态始终优先进 [historyEntry]（挂在词块/结果首项上）。
+ */
+private fun resolveRightPanelEntriesForKeyboardRow(
+    row: Int,
+    state: TvSearchUiState,
+    historyEntry: FocusRequester,
+    hotEntry: FocusRequester,
+    recommendEntry: FocusRequester,
+): List<FocusRequester> {
+    // 结果 / 联想：只有一个主入口，所有键行都进 historyEntry。
+    if (state.showResultsPanel || state.showSuggestionPanel) {
+        return listOf(historyEntry)
+    }
+    val hasHistory = state.searchHistory.isNotEmpty()
+    val hasHot = state.hotQueries.isNotEmpty()
+    val hasRecommend = state.recommendCards.isNotEmpty()
+    // 启动中/失败：状态面板挂在 historyEntry。
+    if (state.isBootstrapping || !state.bootstrapErrorMessage.isNullOrBlank()) {
+        return listOf(historyEntry)
+    }
+    val band = keyboardRowToRightBand(row)
+    val ordered = when (band) {
+        SearchRightFocusBand.History -> listOf(
+            hasHistory to historyEntry,
+            hasHot to hotEntry,
+            hasRecommend to recommendEntry,
+        )
+        SearchRightFocusBand.Hot -> listOf(
+            hasHot to hotEntry,
+            hasHistory to historyEntry,
+            hasRecommend to recommendEntry,
+        )
+        SearchRightFocusBand.Recommend -> listOf(
+            hasRecommend to recommendEntry,
+            hasHot to hotEntry,
+            hasHistory to historyEntry,
+        )
+        SearchRightFocusBand.Generic -> listOf(
+            hasHistory to historyEntry,
+            hasHot to hotEntry,
+            hasRecommend to recommendEntry,
+        )
+    }
+    return ordered.mapNotNull { (available, requester) ->
+        if (available) requester else null
+    }
 }
 
 // ── 通用按键处理：只消费手动处理的键，Back/其他键全程放行 ──

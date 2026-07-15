@@ -32,6 +32,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param onPressed 确认键短按或鼠标点击回调。
  * @param onLongPressed 确认键长按回调。
  * @param focusProperties 可选方向键焦点图（网格同列就近等），挂在真实 focusable 上。
+ * @param onPreviewKey 可选按键预览（先于确认键逻辑）；返回 true 表示已消费。
  * @param content 卡片内容。
  */
 @Composable
@@ -42,6 +43,7 @@ fun TvFocusableCard(
     onPressed: (() -> Unit)? = null,
     onLongPressed: (() -> Unit)? = null,
     focusProperties: (FocusProperties.() -> Unit)? = null,
+    onPreviewKey: ((androidx.compose.ui.input.key.KeyEvent) -> Boolean)? = null,
     content: @Composable () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -64,6 +66,10 @@ fun TvFocusableCard(
                 shape = shape,
             )
             .onPreviewKeyEvent { event ->
+                // 业务侧可先消费方向键（如首项左出回键盘），再落到确认键逻辑。
+                if (onPreviewKey?.invoke(event) == true) {
+                    return@onPreviewKeyEvent true
+                }
                 // 空格 / Enter / 方向中心键统一作为确认，适配平板外接键盘。
                 if (!enabled || !event.key.isTvConfirmKey()) {
                     return@onPreviewKeyEvent false
