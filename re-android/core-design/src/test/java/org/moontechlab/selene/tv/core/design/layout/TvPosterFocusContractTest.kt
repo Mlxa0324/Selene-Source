@@ -139,8 +139,10 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("itemCenter > centerLine")
         assertThat(source).contains("firstRowEndExclusive")
         assertThat(source).contains("contentTopPadding")
-        // 首行回顶，不得残留 scrollOffset 把封面顶裁掉。
-        assertThat(source).contains("animateScrollToItem(0)")
+        // 首行钉到真正顶部（index=0 且 offset=0），并关闭卡片 bringIntoView 抢滚。
+        assertThat(source).contains("scrollGridToAbsoluteTop")
+        assertThat(source).contains("scrollToItem(index = 0, scrollOffset = 0)")
+        assertThat(source).contains("requestBringIntoViewOnFocus = false")
         // 不得再对每个获焦项无条件 pin firstVisible。
         assertThat(source).doesNotContain("if (lazyIndex != gridState.firstVisibleItemIndex)")
     }

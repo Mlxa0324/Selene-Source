@@ -1,6 +1,7 @@
 package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -140,6 +141,8 @@ fun TvPosterGrid(
                     item = item,
                     cardWidth = resolvedCardWidth,
                     focusRequesters = cardFocusRequesters,
+                    // 网格跟滚由 scrollFocusedItemWithCenterBand 统一负责，禁止 bringIntoView 抢滚动。
+                    requestBringIntoViewOnFocus = false,
                     // 显式行列邻居：上/下同列，左/右同行；禁止退化到「上一行最后一个」。
                     focusProperties = {
                         left = if (column > 0) {
@@ -173,7 +176,7 @@ fun TvPosterGrid(
                             // 首行 lazy 下标范围：[headerOffset, headerOffset + columns)
                             val firstRowEndExclusive = headerLazyOffset + safeColumns
                             scrollScope.launch {
-                                // 中心带跟焦；首行强制回顶，避免顶部被藏/被裁。
+                                // 中心带跟焦；首行强制钉到真正顶部（offset=0）。
                                 gridState.scrollFocusedItemWithCenterBand(
                                     lazyIndex = lazyIndex,
                                     firstRowEndExclusive = firstRowEndExclusive,
@@ -195,22 +198,21 @@ fun TvPosterGrid(
 /**
  * 纵向网格中心带跟焦。
  *
- * - **首行**：列表滚回顶部（index=0, offset=0），封面顶缘与 contentTopPadding 完整可见。
+ * - **首行**：强制滚到真正列表顶（index=0 且 scrollOffset=0），从下行返回时不能停在半截。
  * - 非首行、中线以上且完整可见：不滚动。
  * - 项中心越过视口中线：按差值 scrollBy。
  * - 顶/底被裁：只滚裁切量；未布局时先滚近再微调。
  *
  * 禁止对每个获焦项 animateScrollToItem 无条件 pin 到 firstVisible 顶缘。
+ * 禁止与卡片 bringIntoView 并用（网格侧已关），否则回顶会被再次拽偏。
  */
 private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
     lazyIndex: Int,
     firstRowEndExclusive: Int,
 ) {
-    // 首行左右移动/从下行返回：必须顶对齐，否则标题下封面顶被裁或整行被顶出视口。
+    // 首行：必须到真正顶部，而不是「项刚可见但仍有 scrollOffset」。
     if (lazyIndex in 0 until firstRowEndExclusive) {
-        if (firstVisibleItemIndex != 0 || firstVisibleItemScrollOffset != 0) {
-            animateScrollToItem(0)
-        }
+        scrollGridToAbsoluteTop()
         return
     }
     var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
@@ -255,5 +257,26 @@ private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
             }
         }
         // 中线以上且完整可见：保持静止，顶部不被拽走。
+    }
+}
+
+/**
+ * 把纵向网格钉到真正顶部（firstVisible=0 且 scrollOffset=0）。
+ *
+ * 仅 animateScrollToItem(0) 在部分机型/动画中断后可能仍留 residual offset，
+ * 故动画后再 scrollToItem 一次兜底。
+ */
+private suspend fun LazyGridState.scrollGridToAbsoluteTop() {
+    if (firstVisibleItemIndex == 0 && firstVisibleItemScrollOffset == 0) {
+        return
+    }
+    animateScrollToItem(index = 0, scrollOffset = 0)
+    if (firstVisibleItemIndex != 0 || firstVisibleItemScrollOffset != 0) {
+        scrollToItem(index = 0, scrollOffset = 0)
+    }
+    // 极端情况下 layout 仍带一点像素 residual，再用 scrollBy 吃掉。
+    val residual = firstVisibleItemScrollOffset
+    if (firstVisibleItemIndex == 0 && residual > 0) {
+        scrollBy(-residual.toFloat())
     }
 }

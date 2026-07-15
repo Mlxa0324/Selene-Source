@@ -54,6 +54,8 @@ import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
  * @param onClick 卡片点击回调。
  * @param focusProperties 可选方向键焦点图（网格同列就近移动）。
  * @param onPreviewKey 可选按键预览（挂在真实 focusable 上）。
+ * @param requestBringIntoViewOnFocus 获焦时是否 bringIntoView；纵向网格应关闭，
+ * 由 LazyGrid 中心带/回顶逻辑统一跟滚，避免与 scrollToItem(0) 竞态导致「回不到最顶」。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -69,6 +71,7 @@ fun TvPosterCard(
     cardWidth: Dp = TvTokens.PosterWidth,
     focusProperties: (FocusProperties.() -> Unit)? = null,
     onPreviewKey: ((KeyEvent) -> Boolean)? = null,
+    requestBringIntoViewOnFocus: Boolean = true,
 ) {
     var hasCardFocus by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
@@ -102,8 +105,9 @@ fun TvPosterCard(
                 .onFocusChanged { focusState ->
                     // 卡片高亮直接跟随真实焦点，避免焦点进入后视觉仍停在顶部导航。
                     hasCardFocus = focusState.hasFocus
-                    if (focusState.hasFocus) {
+                    if (focusState.hasFocus && requestBringIntoViewOnFocus) {
                         // 焦点进封面后，再把整卡（含标题副标题）请求滚入视口。
+                        // 纵向网格请关此开关，改由 LazyGrid 跟滚，否则会和回顶抢滚动。
                         bringIntoViewScope.launch {
                             bringIntoViewRequester.bringIntoView()
                         }
