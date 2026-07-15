@@ -14,31 +14,28 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
-import org.moontechlab.selene.tv.core.design.layout.TvEdgeScroll.ensureTrailingGapVisible
 
 /**
  * TV 横向海报带。
  *
- * ## 边缘停靠
- * - [contentStartPadding] / [contentEndPadding] 为停靠 inset（可左右独立，end 宜 ≥ start）
- * - 中段 pin-to-leading；**末项**额外 [ensureTrailingGapVisible]，露出 end inset + focus 溢出
- * - LazyRow 不裁切获焦放大，避免右缘像缺 padding
+ * 横向边距应写在 [contentStartPadding] / [contentEndPadding]（可左右独立），
+ * 不要用父级大边距夹死视口：父级若已有水平 padding，调用方应用 layout 外扩
+ * （不可用负 padding，Compose 会抛 Padding must be non-negative），
+ * 静止时仍靠 contentPadding 形成视觉边距，滚动时卡片可从边缘进出。
  *
- * ## 父级 padding
- * 面板内轨请用 [tvBleedContentStart] 只外扩左侧，勿双端 bleed（会把 end inset 裁掉）。
+ * 左右焦点使用显式邻居：末项右键 [FocusRequester.Cancel]，禁止跳出到页内其它控件
+ * （例如搜索页历史标题旁的「清空」）。
  *
  * @param items 影视卡片列表。
  * @param modifier 外层修饰器。
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给最近业务海报。
  * @param onRailFocused 横向分区获焦回调，用于驱动外层页面纵向滚动。
  * @param onItemClick 卡片点击回调。
- * @param contentStartPadding 列表左 contentPadding（首卡静止左停靠）。
- * @param contentEndPadding 列表右 contentPadding（末卡末端收口）。
+ * @param contentStartPadding 列表左 contentPadding（首卡静止左停靠，与右侧可不同）。
+ * @param contentEndPadding 列表右 contentPadding（末卡末端收口，与左侧可不同）。
  * @param trailingContent 列表尾部附加内容。
  */
 @Composable
@@ -79,24 +76,15 @@ fun TvPosterRail(
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     val lastIndex = items.lastIndex
     val hasTrailing = trailingContent != null
-    val density = LocalDensity.current
-    val endPaddingPx = with(density) { contentEndPadding.roundToPx() }
-    val endFocusOverflowPx = with(density) {
-        (TvTokens.PosterWidth * TvListLayoutMetrics.FocusScaleOverflowFraction).roundToPx()
-    }
-    val desiredEndGapPx = endPaddingPx + endFocusOverflowPx
 
     LazyRow(
-        modifier = modifier
-            // 获焦放大不得被默认裁切，否则末项右缘像缺停靠 inset。
-            .graphicsLayer { clip = false }
-            .posterFocusGroup(
-                firstCardFocusRequester = firstCardFocusRequester,
-                onVerticalEnter = {
-                    // 上下进轨前清会话下标，确保就近落点不会触发横向 animateScroll。
-                    activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
-                },
-            ),
+        modifier = modifier.posterFocusGroup(
+            firstCardFocusRequester = firstCardFocusRequester,
+            onVerticalEnter = {
+                // 上下进轨前清会话下标，确保就近落点不会触发横向 animateScroll。
+                activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+            },
+        ),
         state = listState,
         contentPadding = PaddingValues(
             start = contentStartPadding,
@@ -154,21 +142,14 @@ fun TvPosterRail(
                             onRailFocused?.invoke()
                         }
                         if (isIntraRailHorizontalMove) {
-                            scrollScope.launch {
-                                val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
-                                    focusedIndex = index,
-                                    itemCount = items.size,
-                                )
-                                if (targetIndex != listState.firstVisibleItemIndex) {
-                                    // 中段：pin-to-leading（首页节奏）。
+                            val targetIndex = TvListLayoutMetrics.resolveRailFirstVisibleItemIndex(
+                                focusedIndex = index,
+                                itemCount = items.size,
+                            )
+                            if (targetIndex != listState.firstVisibleItemIndex) {
+                                scrollScope.launch {
+                                    // 复刻 Flutter TV 首页：第 5 张获焦后按卡片步长推动横向列表。
                                     listState.animateScrollToItem(targetIndex)
-                                }
-                                // 末项：补滚露出 end inset + focus 溢出（边缘停靠安全距）。
-                                if (isLast && !hasTrailing) {
-                                    listState.ensureTrailingGapVisible(
-                                        itemIndex = lastIndex,
-                                        desiredEndGapPx = desiredEndGapPx,
-                                    )
                                 }
                             }
                         }

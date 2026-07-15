@@ -24,44 +24,22 @@ object TvListLayoutMetrics {
     const val RailScrollStartIndex = 4
 
     /**
-     * 焦点安全距（描边 + 获焦 scale 单侧溢出余量）。
-     *
-     * 与「页面 gutter / 列表 contentPadding」分离：只服务焦点态完整可见。
+     * 海报获焦放大后的边界安全留白。
      */
     val FocusSafePadding = 10.dp
 
     /**
-     * 横向列表左侧停靠 inset（首卡静止时与标题/页边对齐）。
+     * 横向列表左侧首张卡片距屏幕左边缘的缩进，滚动后可贴边。
      */
     val RailStartPadding = TvTokens.PageHorizontalPadding
 
     /**
-     * 页面级横滑右侧停靠 inset（边缘停靠安全距）。
+     * 横向列表右侧收口留白。
      *
-     * 中段仍可从右缘探头；仅滚到末端时露出。
-     * end = start + 2×focusSafe：保证获焦放大后不裁，又不过分空。
+     * 与左侧页面边距一致：默认浏览时内容仍可从右缘进出，
+     * 滚到最右侧时末卡不会贴死屏幕边框。
      */
-    val RailEndPadding = RailStartPadding + FocusSafePadding * 2
-
-    /**
-     * 面板内横滑（搜索推荐等）右侧停靠 inset。
-     *
-     * 父级已有 content 水平 padding 时，子轨 start 通常等于该 padding；
-     * end 取 2×start + focusSafe，末端收口强于左侧。
-     *
-     * @param startInset 该轨 contentPadding.start。
-     * @return contentPadding.end。
-     */
-    fun embeddedShelfEndInset(startInset: Dp): Dp {
-        return startInset * 2 + FocusSafePadding
-    }
-
-    /**
-     * 获焦 scale 约 1.06 时，按海报宽估算的单侧溢出（px 计算时用）。
-     *
-     * 与 [FocusSafePadding] 叠加使用，避免只靠 dp 常数在大卡上不够。
-     */
-    val FocusScaleOverflowFraction = 0.04f
+    val RailEndPadding = TvTokens.PageHorizontalPadding
 
     /**
      * 纵向网格左右安全留白。
