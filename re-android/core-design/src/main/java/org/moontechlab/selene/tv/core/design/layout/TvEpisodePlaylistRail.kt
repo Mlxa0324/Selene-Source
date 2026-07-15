@@ -343,6 +343,50 @@ fun TvEpisodePlaylistRail(
         ensureGroupChipVisibleNow(safeGroup)
     }
 
+    /**
+     * 当前集变化 / 列表首帧：把选中集滚入可视区（不抢焦点）。
+     * 详情页无 pinCurrentTicket，必须靠此保证第 600+ 集不会停在 1–20。
+     */
+    LaunchedEffect(currentAbsoluteIndex, episodes.size, currentEpisodeId) {
+        if (episodes.isEmpty()) {
+            return@LaunchedEffect
+        }
+        val target = currentAbsoluteIndex.coerceIn(0, episodes.lastIndex)
+        // 等 LazyRow 完成首轮 measure，避免空 layoutInfo 时 scroll 无效。
+        withFrameNanos { }
+        for (attempt in 0 until 8) {
+            if (attempt > 0) {
+                delay(16L)
+            }
+            val visible = episodeListState.layoutInfo.visibleItemsInfo.any { info ->
+                info.index == target
+            }
+            if (!visible) {
+                runCatching { episodeListState.scrollToItem(index = target) }
+                withFrameNanos { }
+            } else {
+                break
+            }
+        }
+        // 钉到左侧安全区，与全屏打开播放列表观感一致。
+        moveHorizontalChipFocus(
+            listState = episodeListState,
+            fromIndex = target,
+            toIndex = target,
+            pinFocusMode = TvEpisodePlaylistPinMode.PinLeading,
+            leadingInsetPx = leadingInsetPx,
+            trailingInsetPx = trailingInsetPx,
+            requestFocus = {
+                // 仅滚动：不 requestFocus，避免详情首屏抢走预览播放器焦点。
+                true
+            },
+        )
+        selectedGroup = target / safeGroupSize
+        if (showGroupChoices) {
+            ensureGroupChipVisibleNow(selectedGroup)
+        }
+    }
+
     LaunchedEffect(pinCurrentTicket) {
         if (pinCurrentTicket <= 0 || episodes.isEmpty()) {
             return@LaunchedEffect

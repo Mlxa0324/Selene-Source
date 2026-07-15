@@ -28,5 +28,9 @@ class TvEpisodePlaylistRailContractTest {
         assertThat(source).contains("moveGroupFocus(gi - 1)")
         assertThat(source).contains("moveGroupFocus(gi + 1)")
         assertThat(source).contains("TV_EPISODE_PLAYLIST_GROUP_SIZE")
+        // 详情页无 pin 门票时，仍须把当前集滚入可视区（不抢焦点）。
+        assertThat(source).contains("LaunchedEffect(currentAbsoluteIndex, episodes.size, currentEpisodeId)")
+        assertThat(source).contains("仅滚动：不 requestFocus")
+        assertThat(source).contains("scrollToItem(index = target)")
     }
 }
