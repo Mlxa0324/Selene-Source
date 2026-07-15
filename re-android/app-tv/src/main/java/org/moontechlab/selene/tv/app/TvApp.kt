@@ -68,6 +68,9 @@ import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
 import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
 import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
 import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
+import org.moontechlab.selene.tv.feature.home.CategoryFilterOverlayState
+import org.moontechlab.selene.tv.feature.home.LocalCategoryFilterOverlayState
+import org.moontechlab.selene.tv.feature.home.TvCategoryFilterOverlayLayer
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
@@ -134,8 +137,10 @@ fun TvApp() {
             val topDestinationFocusRequesters = rememberTopDestinationFocusRequesters()
             var topNavHasFocus by remember { mutableStateOf(false) }
             var showCategoryFilter by remember { mutableStateOf(false) }
-            // 顶栏实测高度，供分类筛选短距下滑参考。
+            // 顶栏实测高度：overlay 落点 = 顶栏下沿。
             var topChromeHeightPx by remember { mutableIntStateOf(0) }
+            // 分类筛选全屏图层状态：分类页写入 filters，壳层绘制 overlay。
+            val categoryFilterOverlayState = remember { CategoryFilterOverlayState() }
             val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
 
             fun focusCurrentPrimaryTab(): Boolean {
@@ -183,8 +188,10 @@ fun TvApp() {
 
             CompositionLocalProvider(
                 LocalTvTopChromeHeightPx provides topChromeHeightPx,
+                LocalCategoryFilterOverlayState provides categoryFilterOverlayState,
             ) {
-                Column(
+                // 底层：顶栏 + 内容；顶层：分类筛选 overlay（从屏顶滑到顶栏下）。
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
@@ -204,53 +211,62 @@ fun TvApp() {
                             false
                         },
                 ) {
-                    // 顶栏固定：筛选展开时不隐藏。
-                    if (isPrimaryRoute) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .onSizeChanged { size ->
-                                    if (size.height > 0 && size.height != topChromeHeightPx) {
-                                        topChromeHeightPx = size.height
-                                    }
-                                },
-                        ) {
-                            TvTopNavigationBar(
-                                currentRoute = currentRoute,
-                                contentFocusRequester = contentFocusRequester,
-                                topDestinationFocusRequesters = topDestinationFocusRequesters,
-                                topNavHasFocus = topNavHasFocus,
-                                onTopNavHasFocusChange = { focused -> topNavHasFocus = focused },
-                                onNavigate = { destination ->
-                                    if (destination.route != currentRoute) {
-                                        // 点击顶部标签时只保留顶层单实例，避免重复入栈。
-                                        navController.navigate(destination.route) {
-                                            popUpTo(navController.graph.startDestinationId) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // 顶栏固定：筛选展开时不隐藏，与 overlay 共存。
+                        if (isPrimaryRoute) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onSizeChanged { size ->
+                                        if (size.height > 0 && size.height != topChromeHeightPx) {
+                                            topChromeHeightPx = size.height
                                         }
-                                    }
-                                },
-                                onFilterToggle = {
-                                    // 仅切换当前分类页的内联筛选状态，不创建或跳转新路由。
-                                    showCategoryFilter = !showCategoryFilter
-                                },
-                            )
+                                    },
+                            ) {
+                                TvTopNavigationBar(
+                                    currentRoute = currentRoute,
+                                    contentFocusRequester = contentFocusRequester,
+                                    topDestinationFocusRequesters = topDestinationFocusRequesters,
+                                    topNavHasFocus = topNavHasFocus,
+                                    onTopNavHasFocusChange = { focused -> topNavHasFocus = focused },
+                                    onNavigate = { destination ->
+                                        if (destination.route != currentRoute) {
+                                            // 点击顶部标签时只保留顶层单实例，避免重复入栈。
+                                            navController.navigate(destination.route) {
+                                                popUpTo(navController.graph.startDestinationId) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
+                                        }
+                                    },
+                                    onFilterToggle = {
+                                        // 仅切换当前分类页的内联筛选状态，不创建或跳转新路由。
+                                        showCategoryFilter = !showCategoryFilter
+                                    },
+                                )
+                            }
                         }
+
+                        TvNavGraph(
+                            navController = navController,
+                            appContainer = appContainer,
+                            contentFocusRequester = contentFocusRequester,
+                            showCategoryFilter = showCategoryFilter,
+                            onServerConfigSaved = {
+                                serverConfigVersion++
+                            },
+                            // 顶栏下方剩余高度。
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
                     }
 
-                    TvNavGraph(
-                        navController = navController,
-                        appContainer = appContainer,
-                        contentFocusRequester = contentFocusRequester,
-                        showCategoryFilter = showCategoryFilter,
-                        onServerConfigSaved = {
-                            serverConfigVersion++
-                        },
-                        // 顶栏下方剩余高度。
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    // 分类筛选独立图层：从屏幕顶边滑入，落点为顶栏下沿。
+                    TvCategoryFilterOverlayLayer(
+                        visible = showCategoryFilter,
+                        topChromeHeightPx = topChromeHeightPx,
+                        state = categoryFilterOverlayState,
                     )
                 }
             }

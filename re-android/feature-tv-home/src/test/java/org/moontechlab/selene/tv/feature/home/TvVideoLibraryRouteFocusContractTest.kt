@@ -43,21 +43,26 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
-     * 分类筛选从顶栏下短距下滑，按实测高度顶开列表。
+     * 分类筛选走壳层 overlay：分类页只同步数据并用 revealedHeight inset 顶开列表。
      */
     @Test
     fun category_filter_slides_from_top_and_prioritizes_grid_space() {
         val source = readLibraryRouteSource()
+        val overlaySource = File(
+            "src/main/java/org/moontechlab/selene/tv/feature/home/CategoryFilterOverlay.kt",
+        ).readText()
 
-        assertThat(source).contains("animateFloatAsState(")
-        assertThat(source).contains("LocalTvTopChromeHeightPx")
-        assertThat(source).contains("filterPanelHeightPx")
-        assertThat(source).contains("slideTravelPx")
-        assertThat(source).contains("pushDownHeightPx")
+        assertThat(source).contains("LocalCategoryFilterOverlayState")
+        assertThat(source).contains("revealedHeightPx")
+        assertThat(source).contains("contentTopInsetPx")
         assertThat(source).contains(".weight(1f)")
-        assertThat(source).contains("topChromeHeightPx > 0 -> topChromeHeightPx")
         assertThat(source).doesNotContain("slideInVertically(")
         assertThat(source).contains("firstItemFocusRequester = if (showFilter) null else contentFocusRequester")
+        // overlay 层：整屏坐标从 -H 落到顶栏下沿。
+        assertThat(overlaySource).contains("TvCategoryFilterOverlayLayer")
+        assertThat(overlaySource).contains("graphicsLayer")
+        assertThat(overlaySource).contains("topChromeHeightPx")
+        assertThat(overlaySource).contains("translationY")
     }
 
     /**

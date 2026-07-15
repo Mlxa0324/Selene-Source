@@ -1,8 +1,5 @@
 package org.moontechlab.selene.tv.feature.home
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -30,13 +27,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -46,22 +42,16 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
-import org.moontechlab.selene.tv.core.design.layout.LocalTvTopChromeHeightPx
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
 import org.moontechlab.selene.tv.core.design.layout.TvPageSection
 import org.moontechlab.selene.tv.core.design.layout.TvHomeSkeleton
@@ -267,28 +257,25 @@ fun TvVideoLibraryRoute(
     onApproachingEnd: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
-    val topChromeHeightPx = LocalTvTopChromeHeightPx.current
-    var filterPanelHeightPx by remember { mutableIntStateOf(0) }
-    val filterHeightReady = filterPanelHeightPx > 0
-    // 顶栏固定；筛选从内容区顶边（紧贴顶栏下）短距下滑，按实测高度顶开列表。
-    val filterRevealProgress by animateFloatAsState(
-        targetValue = if (showFilter && filterHeightReady) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (showFilter) 320 else 260,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "categoryFilterReveal",
-    )
-
-    // 等筛选 chip 挂上 focusRequester 再落焦；失败不抛到主线程（避免杀进程）。
-    LaunchedEffect(showFilter, contentFocusRequester, filterHeightReady) {
-        if (!showFilter || contentFocusRequester == null) return@LaunchedEffect
-        for (attempt in 0 until 20) {
-            delay(32)
-            val ok = runCatching { contentFocusRequester.requestFocus() }.getOrDefault(false)
-            if (ok) return@LaunchedEffect
+    val overlayState = LocalCategoryFilterOverlayState.current
+    // 把本页筛选数据挂到壳层 overlay；卸页时清空，避免脏数据。
+    LaunchedEffect(state.availableFilters, onFilterOptionSelected, contentFocusRequester, showFilter) {
+        val host = overlayState ?: return@LaunchedEffect
+        host.filters = state.availableFilters
+        host.onOptionSelected = onFilterOptionSelected
+        host.entryFocusRequester = contentFocusRequester
+    }
+    DisposableEffect(overlayState) {
+        onDispose {
+            val host = overlayState ?: return@onDispose
+            host.filters = emptyList()
+            host.onOptionSelected = null
+            host.entryFocusRequester = null
+            host.revealedHeightPx = 0
         }
     }
+    // 列表顶开 inset 由壳层 overlay 按 progress 写入（关闭动画过程中仍跟随）。
+    val contentTopInsetPx = overlayState?.revealedHeightPx ?: 0
 
     TvPageScaffold(
         modifier = Modifier.fillMaxSize(),
@@ -310,91 +297,55 @@ fun TvVideoLibraryRoute(
             return@TvPageScaffold
         }
 
-        val composeFilterPanel = showFilter || filterRevealProgress > 0.001f
-        val pushDownHeightPx = (filterPanelHeightPx * filterRevealProgress).roundToInt()
-        // 短距：只滑过约顶栏高度（屏幕顶→顶栏下沿），不叠整块面板高度。
-        val slideTravelPx = when {
-            topChromeHeightPx > 0 -> topChromeHeightPx
-            filterPanelHeightPx > 0 -> (filterPanelHeightPx * 0.33f).roundToInt()
-            else -> 0
-        }
-        val slideOffsetPx = ((filterRevealProgress - 1f) * slideTravelPx).roundToInt()
-
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (pushDownHeightPx > 0) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(with(density) { pushDownHeightPx.toDp() }),
-                    )
-                }
-
-                if (state.videos.isEmpty()) {
-                    TvStatePanel(
-                        kind = TvStatePanelKind.Empty,
-                        title = if (showFilter) {
-                            "没有符合条件的内容"
-                        } else {
-                            "${state.title}暂无内容"
-                        },
-                        message = if (showFilter) {
-                            "试试调整上方分类、类型或年代等筛选条件"
-                        } else {
-                            "稍后再来看看，或切换其它分类浏览"
-                        },
-                        contentFocusRequester = if (showFilter) null else contentFocusRequester,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    )
-                } else {
-                    TvPosterGrid(
-                        columns = TvListLayoutMetrics.PosterColumns,
-                        items = state.videos.map { video -> video.toPosterItem(state.title) },
-                        // 返回/Esc 由 TvApp 壳层统一：收起筛选 + 落焦当前主 tab，不在此拦截。
-                        // 展开筛选时内容入口交给首个筛选项，避免焦点落到下方 Grid。
-                        firstItemFocusRequester = if (showFilter) null else contentFocusRequester,
-                        onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
-                        prefetchRows = CATEGORY_PAGE_PREFETCH_ROWS,
-                        onApproachingEnd = onApproachingEnd,
-                        headerContent = if (showFilter) null else {
-                            {
-                                PosterGridHeader(
-                                    title = state.title,
-                                    subtitle = categorySubtitle(state.categoryKey),
-                                )
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                    )
-                }
+        // 底层只放列表；筛选在壳层全屏 overlay 绘制（从屏顶滑到顶栏下）。
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (contentTopInsetPx > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(with(density) { contentTopInsetPx.toDp() }),
+                )
             }
 
-            if (composeFilterPanel) {
-                TvLibraryFilterPanel(
-                    filters = state.availableFilters,
-                    contentFocusRequester = contentFocusRequester.takeIf { showFilter },
-                    onOptionSelected = onFilterOptionSelected,
+            if (state.videos.isEmpty()) {
+                TvStatePanel(
+                    kind = TvStatePanelKind.Empty,
+                    title = if (showFilter) {
+                        "没有符合条件的内容"
+                    } else {
+                        "${state.title}暂无内容"
+                    },
+                    message = if (showFilter) {
+                        "试试调整上方分类、类型或年代等筛选条件"
+                    } else {
+                        "稍后再来看看，或切换其它分类浏览"
+                    },
+                    contentFocusRequester = if (showFilter) null else contentFocusRequester,
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .fillMaxWidth()
-                        .zIndex(8f)
-                        .onSizeChanged { size ->
-                            if (size.height > 0 && size.height != filterPanelHeightPx) {
-                                filterPanelHeightPx = size.height
-                            }
+                        .weight(1f)
+                        .fillMaxWidth(),
+                )
+            } else {
+                TvPosterGrid(
+                    columns = TvListLayoutMetrics.PosterColumns,
+                    items = state.videos.map { video -> video.toPosterItem(state.title) },
+                    // 返回/Esc 由 TvApp 壳层统一：收起筛选 + 落焦当前主 tab，不在此拦截。
+                    // 展开筛选时内容入口交给首个筛选项，避免焦点落到下方 Grid。
+                    firstItemFocusRequester = if (showFilter) null else contentFocusRequester,
+                    onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
+                    prefetchRows = CATEGORY_PAGE_PREFETCH_ROWS,
+                    onApproachingEnd = onApproachingEnd,
+                    headerContent = if (showFilter) null else {
+                        {
+                            PosterGridHeader(
+                                title = state.title,
+                                subtitle = categorySubtitle(state.categoryKey),
+                            )
                         }
-                        .graphicsLayer {
-                            translationY = if (filterHeightReady) slideOffsetPx.toFloat() else 0f
-                            alpha = if (filterHeightReady) {
-                                filterRevealProgress.coerceIn(0f, 1f)
-                            } else {
-                                0f
-                            }
-                        },
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                 )
             }
         }
@@ -402,7 +353,7 @@ fun TvVideoLibraryRoute(
 }
 
 /**
- * TV 视频库筛选面板。
+ * TV 视频库筛选面板（供壳层 overlay 与分类页共用）。
  *
  * @param filters 筛选行列表。
  * @param contentFocusRequester 筛选打开时接收入口焦点的首项请求器。
@@ -410,7 +361,7 @@ fun TvVideoLibraryRoute(
  * @param modifier 外层修饰（测高 / 下滑动画挂在这里）。
  */
 @Composable
-private fun TvLibraryFilterPanel(
+internal fun TvLibraryFilterPanel(
     filters: List<TvLibraryFilter>,
     contentFocusRequester: FocusRequester? = null,
     onOptionSelected: ((String, String) -> Unit)?,
