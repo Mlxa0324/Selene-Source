@@ -13,10 +13,12 @@ import org.moontechlab.selene.tv.core.network.model.TvSearchResultResponse
  *
  * @property api TV 服务端接口。
  * @property searchStreamClient TV 流式搜索客户端。
+ * @property searchSourcesCache 标题补源 SSE/批量搜索结果缓存（默认进程共享，TTL 2h 对齐手机端）。
  */
 class TvDetailRepository(
     private val api: SeleneTvApi,
     private val searchStreamClient: SeleneTvSearchStreamClient? = null,
+    private val searchSourcesCache: TvSearchSourcesCache = TvSearchSourcesCache.shared,
 ) {
     /**
      * 判断入口身份是否可以直接请求详情接口。
@@ -173,6 +175,14 @@ class TvDetailRepository(
     ): List<TvVideoSource> {
         val query = searchTitle.trim().ifBlank { title.trim() }
         if (query.isBlank()) return emptyList()
+        // 对齐 Flutter ApiService.fetchSourcesData：先查 2h 搜索缓存，命中则不打 SSE。
+        searchSourcesCache.get(query)?.let { cached ->
+            // 缓存命中时一次性回调，便于 UI 立刻 merge；Flutter 仅 return 全量，语义等价。
+            if (cached.isNotEmpty()) {
+                onIncremental?.invoke(cached)
+            }
+            return cached
+        }
         val streamClient = searchStreamClient
         if (streamClient != null && onIncremental != null) {
             val streamedSources = linkedMapOf<String, TvVideoSource>()
@@ -203,15 +213,20 @@ class TvDetailRepository(
                 }
             }
             if (streamedResult.isSuccess || streamedSources.isNotEmpty()) {
-                return streamedSources.values.toList()
+                val sources = streamedSources.values.toList()
+                // 对齐 Flutter 流结束后 saveSearchCache(query, results)。
+                searchSourcesCache.put(query, sources)
+                return sources
             }
             // SSE 全失败且无增量结果时，落到下面的批量搜索兜底。
             streamedResult.exceptionOrNull()
         }
-        return api.search(query)
+        val batchSources = api.search(query)
             .results.orEmpty()
             .filter { result -> result.matchesTitleAndYear(title = title.ifBlank { query }, year = year) }
             .toDistinctPlayableSources()
+        searchSourcesCache.put(query, batchSources)
+        return batchSources
     }
 
     /**

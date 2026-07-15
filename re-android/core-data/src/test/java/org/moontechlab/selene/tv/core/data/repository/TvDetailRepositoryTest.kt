@@ -23,6 +23,7 @@ class TvDetailRepositoryTest {
     fun loadDetail_maps_remote_detail_to_playable_model() = runTest {
         val calls = mutableListOf<Pair<String, String>>()
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun getDetail(
                     source: String,
@@ -83,6 +84,7 @@ class TvDetailRepositoryTest {
     @Test
     fun loadDetail_maps_categories_and_filters_unknown_year() = runTest {
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun getDetail(
                     source: String,
@@ -123,6 +125,7 @@ class TvDetailRepositoryTest {
     @Test
     fun loadDetail_filters_blank_episode_urls_from_remote_detail() = runTest {
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun getDetail(
                     source: String,
@@ -155,6 +158,7 @@ class TvDetailRepositoryTest {
     fun loadDetail_returns_null_when_identity_missing() = runTest {
         var detailCalls = 0
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun getDetail(
                     source: String,
@@ -180,6 +184,7 @@ class TvDetailRepositoryTest {
         val detailCalls = mutableListOf<Pair<String, String>>()
         val queries = mutableListOf<String>()
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun getDetail(
                     source: String,
@@ -236,6 +241,7 @@ class TvDetailRepositoryTest {
     fun loadDetailBySearchTitle_supports_unplayable_entry_identity_without_detail_call() = runTest {
         var detailCalls = 0
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun getDetail(
                     source: String,
@@ -283,6 +289,7 @@ class TvDetailRepositoryTest {
     fun loadMoreSources_maps_search_results_to_distinct_sources() = runTest {
         val queries = mutableListOf<String>()
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun search(query: String): TvSearchResponse {
                     queries += query
@@ -344,6 +351,7 @@ class TvDetailRepositoryTest {
         val incrementalBatches = mutableListOf<List<String>>()
         val repository = TvDetailRepository(
             api = FakeSeleneTvApi(),
+            searchSourcesCache = TvSearchSourcesCache(),
             searchStreamClient = object : SeleneTvSearchStreamClient {
                 override suspend fun search(
                     query: String,
@@ -430,12 +438,74 @@ class TvDetailRepositoryTest {
     }
 
     /**
+     * 同一 query 在 2h 内再次补源应命中缓存，不再请求 SSE（对齐 Flutter fetchSourcesData）。
+     */
+    @Test
+    fun loadMoreSourcesByEntry_uses_search_cache_within_two_hours() = runTest {
+        var searchCalls = 0
+        val cache = TvSearchSourcesCache()
+        val streamClient = object : SeleneTvSearchStreamClient {
+            override suspend fun search(
+                query: String,
+                onEvent: (TvSearchStreamEvent) -> Unit,
+            ) {
+                searchCalls += 1
+                onEvent(
+                    TvSearchSourceResultEvent(
+                        source = "source-a",
+                        sourceName = "线路 A",
+                        results = listOf(
+                            TvSearchResultResponse(
+                                id = "video-1",
+                                title = "缓存影片",
+                                episodes = listOf("https://cdn-a.test/1.m3u8"),
+                                source = "source-a",
+                                sourceName = "线路 A",
+                                year = "2026",
+                            ),
+                        ),
+                        timestamp = 1L,
+                    ),
+                )
+                onEvent(TvSearchCompleteEvent(totalResults = 1, completedSources = 1, timestamp = 2L))
+            }
+        }
+        val repository = TvDetailRepository(
+            searchSourcesCache = cache,
+            api = FakeSeleneTvApi(),
+            searchStreamClient = streamClient,
+        )
+
+        val first = repository.loadMoreSourcesByEntry(
+            title = "缓存影片",
+            searchTitle = "缓存影片",
+            year = "2026",
+            onIncremental = {},
+        )
+        val secondBatches = mutableListOf<List<String>>()
+        val second = repository.loadMoreSourcesByEntry(
+            title = "缓存影片",
+            searchTitle = "缓存影片",
+            year = "2026",
+            onIncremental = { batch ->
+                secondBatches += batch.map { source -> source.id }
+            },
+        )
+
+        assertThat(searchCalls).isEqualTo(1)
+        assertThat(first.map { it.id }).containsExactly("source-a::video-1")
+        assertThat(second.map { it.id }).containsExactly("source-a::video-1")
+        assertThat(secondBatches).containsExactly(listOf("source-a::video-1"))
+    }
+
+    /**
      * SSE 建链失败且未收到任何结果时，标题补源必须回退批量搜索，避免整条链路直接报废。
      */
     @Test
     fun loadMoreSourcesByEntry_falls_back_to_batch_search_when_sse_fails_before_results() = runTest {
         val queries = mutableListOf<String>()
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun search(query: String): TvSearchResponse {
                     queries += query
@@ -481,6 +551,7 @@ class TvDetailRepositoryTest {
     fun resolveDoubanId_prefers_detail_douban_id_without_search() = runTest {
         var searchCalls = 0
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun search(query: String): TvSearchResponse {
                     searchCalls += 1
@@ -516,6 +587,7 @@ class TvDetailRepositoryTest {
     fun resolveDoubanId_uses_most_common_search_result_douban_id() = runTest {
         val queries = mutableListOf<String>()
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun search(query: String): TvSearchResponse {
                     queries += query
@@ -570,6 +642,7 @@ class TvDetailRepositoryTest {
     @Test
     fun loadDetailBySearchTitle_filters_title_and_keeps_source_with_more_episodes() = runTest {
         val repository = TvDetailRepository(
+            searchSourcesCache = TvSearchSourcesCache(),
             api = object : FakeSeleneTvApi() {
                 override suspend fun search(query: String): TvSearchResponse {
                     return TvSearchResponse(
