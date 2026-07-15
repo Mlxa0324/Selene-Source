@@ -397,12 +397,13 @@ class TvPlayerRouteControlContractTest {
         // 有下一集时底部提示必须告知「本集结束后自动下一集」。
         assertThat(source).contains("本集结束后自动下一集")
         assertThat(source).contains("hasNextEpisode = state.hasNextEpisode()")
-        // 自动下一集动作提示 + 加载层自定义文案。
+        // 自动下一集：右下角轻提示 + 加载层短文案。
         assertThat(source).contains("tv-player-auto-next-notice")
-        assertThat(source).contains("TvActionNotice")
+        assertThat(source).contains("Alignment.BottomEnd")
         assertThat(source).contains("switchLoadingMessage")
-        assertThat(source).contains("自动播放下一集...")
+        assertThat(source).contains("下一集...")
         assertThat(source).contains("title = state.switchLoadingMessage ?: \"加载中\"")
+        assertThat(source).doesNotContain("TvActionNotice")
         assertThat(bottomHintSource).doesNotContain(".clickable(")
         assertThat(bottomHintSource).doesNotContain(".focusable(")
     }

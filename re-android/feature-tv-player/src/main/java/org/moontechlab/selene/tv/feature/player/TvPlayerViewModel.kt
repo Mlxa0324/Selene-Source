@@ -913,18 +913,15 @@ class TvPlayerViewModel(
             val displayIndex = (nextEpisodeIndex + 1).coerceAtLeast(1)
             "第${displayIndex.toString().padStart(2, '0')}集"
         }
-        val notice = when (reason) {
-            AutoNextReason.SkipOutro -> "已跳过片尾，自动播放下一集 · $label"
-            AutoNextReason.Completed -> "本集结束，自动播放下一集 · $label"
-        }
+        // 右下角轻提示：只保留「下一集 + 集名」，不带长句。
         mutableState.value = mutableState.value.copy(
-            actionNoticeText = notice,
+            actionNoticeText = "下一集 $label",
             isMenuVisible = false,
             isSeekOverlayVisible = false,
         )
         selectEpisode(
             episodeId = nextEpisode.id,
-            switchLoadingMessage = "自动播放下一集...",
+            switchLoadingMessage = "下一集...",
         )
     }
 

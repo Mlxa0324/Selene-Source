@@ -1050,9 +1050,8 @@ class TvPlayerViewModelTest {
         assertThat(engine.loadedRequest?.episodeId).isEqualTo("ep-2")
         assertThat(engine.loadedRequest?.url).isEqualTo("https://cdn.test/2.m3u8")
         assertThat(viewModel.state.value.playbackRequest?.episodeId).isEqualTo("ep-2")
-        assertThat(viewModel.state.value.actionNoticeText).contains("本集结束，自动播放下一集")
-        assertThat(viewModel.state.value.actionNoticeText).contains("第02集")
-        assertThat(viewModel.state.value.switchLoadingMessage).isEqualTo("自动播放下一集...")
+        assertThat(viewModel.state.value.actionNoticeText).isEqualTo("下一集 第02集")
+        assertThat(viewModel.state.value.switchLoadingMessage).isEqualTo("下一集...")
         assertThat(viewModel.state.value.hasNextEpisode()).isFalse()
         observeJob.cancel()
     }
@@ -1137,7 +1136,7 @@ class TvPlayerViewModelTest {
 
         assertThat(engine.loadCalls).isEqualTo(1)
         assertThat(engine.loadedRequest?.episodeId).isEqualTo("ep-2")
-        assertThat(viewModel.state.value.actionNoticeText).contains("已跳过片尾，自动播放下一集")
+        assertThat(viewModel.state.value.actionNoticeText).isEqualTo("下一集 第02集")
         observeJob.cancel()
     }
 

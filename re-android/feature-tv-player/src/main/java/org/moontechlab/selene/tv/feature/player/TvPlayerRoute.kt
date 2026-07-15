@@ -90,7 +90,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
-import org.moontechlab.selene.tv.core.design.layout.TvActionNotice
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressPolicy
@@ -440,18 +439,25 @@ fun TvPlayerRoute(
             )
         }
 
-        // 自动下一集等动作提示：贴底部进度条上方，2 秒后自动收起。
+        // 自动下一集：右下角白字轻提示，无背景，约 2 秒后收起。
         val actionNotice = state.actionNoticeText
         if (actionNotice != null && !state.isMenuVisible) {
-            TvActionNotice(
+            LaunchedEffect(actionNotice) {
+                delay(2_000L)
+                viewModel.dismissActionNotice()
+            }
+            Text(
                 text = actionNotice,
-                visible = true,
-                onDismiss = viewModel::dismissActionNotice,
-                durationMs = 2_800L,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = if (shouldShowPlaybackChrome) 96.dp else 36.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(
+                        end = TvTokens.PageHorizontalPadding,
+                        bottom = if (shouldShowPlaybackChrome) 88.dp else 28.dp,
+                    )
                     .testTag("tv-player-auto-next-notice"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.88f),
+                maxLines = 1,
             )
         }
 
