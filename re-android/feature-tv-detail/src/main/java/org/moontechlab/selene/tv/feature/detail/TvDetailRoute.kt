@@ -139,6 +139,16 @@ private val NcatMutedText = Color(0xFF9A9AA3)
 private val NcatRadius = 10.dp
 
 /**
+ * 详情页带图标按钮的统一图标尺寸（全屏/收藏/底部胶囊等）。
+ *
+ * 比早期 16~22 略放大，远距离看更清晰，且各入口一致。
+ */
+private val NcatActionIconSize = 26.dp
+
+/** 详情页字符类图标字号（如顶栏搜索 ⌕），与 [NcatActionIconSize] 视觉对齐。 */
+private val NcatActionGlyphSp = 22.sp
+
+/**
  * 详情页左侧对齐竖线。
  *
  * Logo、预览播放器、区块标题、横向列表首卡共用。
@@ -637,14 +647,16 @@ private fun NcatDetailTopBar(
             NcatTopPill(
                 label = "搜索",
                 leadingGlyph = "⌕",
-                leadingGlyphSize = 19.sp,
+                leadingGlyphSize = NcatActionGlyphSp,
                 focusRequester = focusTargets.search,
                 modifier = Modifier
                     .tvBringFocusedItemIntoView()
                     .focusProperties {
-                        down = focusTargets.player
+                        // 右列竖链：搜索 ↓ 进简介，不斜穿到左侧播放器。
+                        down = focusTargets.description
                         // 顶行最上：上键不再逃出详情内容区。
                         up = FocusRequester.Cancel
+                        left = focusTargets.player
                     },
                 onClick = { onSearchClick?.invoke() },
             )
@@ -672,7 +684,7 @@ private fun NcatDetailTopBar(
 private fun NcatTopPill(
     label: String,
     leadingGlyph: String? = null,
-    leadingGlyphSize: TextUnit = 19.sp,
+    leadingGlyphSize: TextUnit = NcatActionGlyphSp,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -855,6 +867,7 @@ private fun NcatPreviewPanel(
             .focusRequester(focusTargets.player)
             .tvBringFocusedItemIntoView()
             .focusProperties {
+                // 左列：上到搜索；右到简介；下到线路。
                 up = focusTargets.search
                 right = focusTargets.description
                 left = FocusRequester.Cancel
@@ -1217,9 +1230,11 @@ private fun NcatInfoPanel(
                 )
                 .focusRequester(focusTargets.description)
                 .focusProperties {
+                    // 右列中枢：上搜索、下全屏、左播放器。
                     up = focusTargets.search
                     left = focusTargets.player
                     down = focusTargets.fullscreen
+                    right = FocusRequester.Cancel
                 }
                 .focusable(interactionSource = descriptionInteraction)
                 .ncatClickable(onOpenDescription)
@@ -1279,13 +1294,19 @@ private fun NcatInfoPanel(
                 modifier = Modifier
                     .tvBringFocusedItemIntoView()
                     .focusProperties {
+                        // 右列底：上简介、左播放器、右收藏、下线路。
                         up = focusTargets.description
                         left = focusTargets.player
                         right = focusTargets.favorite
                         down = currentSourceFocusRequester ?: FocusRequester.Default
                     },
                 onPressed = { onPlayPressed?.invoke() },
-                iconContent = { NcatFullscreenGlyph(modifier = Modifier.size(22.dp), color = Color.White) },
+                iconContent = {
+                    NcatFullscreenGlyph(
+                        modifier = Modifier.size(NcatActionIconSize),
+                        color = Color.White,
+                    )
+                },
             )
             NcatActionTile(
                 // 收藏态只变心形颜色，文案固定“收藏”，贴近目标截图。
@@ -1303,7 +1324,7 @@ private fun NcatInfoPanel(
                 onPressed = { onFavoriteToggle?.invoke() },
                 iconContent = {
                     NcatFavoriteGlyph(
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(NcatActionIconSize),
                         favorited = state.isFavorite,
                     )
                 },
@@ -1431,8 +1452,8 @@ private fun NcatActionTile(
     }
     Column(
         modifier = modifier
-            .width(72.dp)
-            .height(72.dp)
+            .width(76.dp)
+            .height(76.dp)
             .background(background, shape)
             .border(BorderStroke(if (isFocused) 2.dp else 1.dp, borderColor), shape)
             .focusRequester(focusRequester)
@@ -1448,7 +1469,7 @@ private fun NcatActionTile(
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(NcatActionIconSize),
             contentAlignment = Alignment.Center,
         ) {
             if (iconContent != null) {
@@ -1457,12 +1478,12 @@ private fun NcatActionTile(
                 Text(
                     text = icon,
                     color = Color.White,
-                    fontSize = 18.sp,
+                    fontSize = NcatActionGlyphSp,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = label,
             color = Color.White,
@@ -2459,15 +2480,28 @@ private fun NcatBottomPill(
     leadingIcon: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    // 高度/圆角与顶栏「搜索」胶囊一致（TvTokens.TopActionHeight / TopActionRadius）。
     NcatPillFocusButton(
-        modifier = modifier.height(36.dp).width(128.dp),
+        modifier = modifier
+            .height(TvTokens.TopActionHeight)
+            .widthIn(min = 140.dp),
         focusRequester = focusRequester,
-        cornerRadius = 19.dp,
+        cornerRadius = TvTokens.TopActionRadius,
         onClick = onClick,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        ) {
             leadingIcon?.invoke()
-            Text(text = label, color = Color.White.copy(alpha = 0.88f), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.92f),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -2644,10 +2678,13 @@ private fun NcatPillFocusButton(
 private enum class NcatBottomActionIcon { BackToTop, RandomBrowse }
 
 @Composable
-private fun NcatBottomActionGlyph(kind: NcatBottomActionIcon, modifier: Modifier = Modifier.size(16.dp)) {
+private fun NcatBottomActionGlyph(
+    kind: NcatBottomActionIcon,
+    modifier: Modifier = Modifier.size(NcatActionIconSize),
+) {
     Canvas(modifier = modifier) {
-        val stroke = 1.8.dp.toPx()
-        val color = Color.White.copy(alpha = 0.9f)
+        val stroke = 2.2.dp.toPx()
+        val color = Color.White.copy(alpha = 0.92f)
         when (kind) {
             NcatBottomActionIcon.BackToTop -> {
                 val midX = size.width / 2f

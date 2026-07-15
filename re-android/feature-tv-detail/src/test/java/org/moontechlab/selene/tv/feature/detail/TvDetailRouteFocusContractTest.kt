@@ -89,9 +89,60 @@ class TvDetailRouteFocusContractTest {
 
         assertThat(source).contains("label = \"搜索\"")
         assertThat(source).contains("leadingGlyph = \"⌕\"")
-        assertThat(source).contains("leadingGlyphSize = 19.sp")
+        assertThat(source).contains("leadingGlyphSize = NcatActionGlyphSp")
+        assertThat(source).contains("NcatActionGlyphSp = 22.sp")
         assertThat(topPillSource).contains("Row(")
         assertThat(topPillSource).contains("fontSize = leadingGlyphSize")
+    }
+
+    /**
+     * Hero 焦点按几何右列竖链：搜索→简介→全屏/收藏，播放器左右横跨简介。
+     */
+    @Test
+    fun detail_hero_focus_uses_right_column_vertical_chain() {
+        val source = readRouteSource()
+        val topBar = source
+            .substringAfter("private fun NcatDetailTopBar(")
+            .substringBefore("private fun NcatTopPill(")
+        val preview = source
+            .substringAfter("private fun NcatPreviewPanel(")
+            .substringBefore("private fun NcatPreviewSolidFill(")
+        val info = source
+            .substringAfter("private fun NcatInfoPanel(")
+            .substringBefore("private fun NcatWrappedDescription(")
+
+        // 搜索 ↓ 进简介，禁止再下到左侧播放器。
+        assertThat(topBar).contains("down = focusTargets.description")
+        assertThat(topBar).doesNotContain("down = focusTargets.player")
+        // 播放器 → 简介；简介上下搜索/全屏。
+        assertThat(preview).contains("right = focusTargets.description")
+        assertThat(info).contains("up = focusTargets.search")
+        assertThat(info).contains("down = focusTargets.fullscreen")
+        assertThat(info).contains("left = focusTargets.player")
+        // 全屏左回播放器、右收藏。
+        assertThat(info).contains("left = focusTargets.player")
+        assertThat(info).contains("right = focusTargets.favorite")
+        assertThat(info).contains("left = focusTargets.fullscreen")
+    }
+
+    /**
+     * 底部「返回顶部 / 随便看看」高度与顶栏搜索胶囊一致；图标统一放大。
+     */
+    @Test
+    fun detail_bottom_pills_match_top_search_height_and_unified_icon_size() {
+        val source = readRouteSource()
+        val bottomPill = source
+            .substringAfter("private fun NcatBottomPill(")
+            .substringBefore("private fun NcatSectionHeader(")
+
+        assertThat(bottomPill).contains("TvTokens.TopActionHeight")
+        assertThat(bottomPill).contains("TvTokens.TopActionRadius")
+        assertThat(bottomPill).contains("fontSize = 16.sp")
+        assertThat(bottomPill).doesNotContain("height(36.dp)")
+        assertThat(source).contains("NcatActionIconSize = 26.dp")
+        assertThat(source).contains("NcatActionGlyphSp = 22.sp")
+        assertThat(source).contains(".size(NcatActionIconSize)")
+        assertThat(source).contains("NcatBottomActionGlyph(")
     }
 
     /**
