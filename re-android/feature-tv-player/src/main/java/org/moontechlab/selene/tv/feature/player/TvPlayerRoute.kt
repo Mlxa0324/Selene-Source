@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
@@ -239,8 +240,9 @@ fun TvPlayerRoute(
                 else -> requestSelectedPrimaryMenuFocus()
             }
         } else {
-            // 菜单关闭后重新露出进度条/标题，并启动 4s 无操作隐藏。
-            revealChrome()
+            // 菜单关闭（返回 / 无操作自动隐藏）：进度条与按钮组一起消失，不 re-reveal 底栏。
+            // 用户再按确认/左右/下键时仍会通过 revealChrome / openMenu 重新露出。
+            isChromeVisible = false
             // 首次进入全屏或菜单关闭后，根节点必须重新获焦，左右键才能稳定执行 seek。
             runCatching { playerRootFocusRequester.requestFocus() }
         }
@@ -1327,25 +1329,31 @@ private fun TvPlayerEpisodeGroupChoice(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = label,
-            color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
-            fontSize = 15.sp,
-            fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。占位高度固定，避免选中时布局跳动。
-        Box(
-            modifier = Modifier
-                .widthIn(min = 28.dp)
-                .fillMaxWidth(0.85f)
-                .height(3.dp)
-                .background(
-                    if (selected) TvTokens.Accent else Color.Transparent,
-                    RoundedCornerShape(1.5.dp),
-                ),
-        )
+        // 下划线宽度跟文字：内层 IntrinsicSize.Max，线 fillMaxWidth = 文案宽。
+        Column(
+            modifier = Modifier.width(IntrinsicSize.Max),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = label,
+                color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
+                fontSize = 15.sp,
+                fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            // 仅选中显示底部主题色下划线；获焦未确认只改文字色。占位高度固定，避免选中时布局跳动。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .widthIn(min = 14.dp)
+                    .background(
+                        if (selected) TvTokens.Accent else Color.Transparent,
+                        RoundedCornerShape(1.5.dp),
+                    ),
+            )
+        }
     }
 }
 

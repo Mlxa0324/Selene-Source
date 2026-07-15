@@ -47,6 +47,14 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("requestSelectedSecondaryMenuFocus()")
         assertThat(source).contains(".focusRequester(playerRootFocusRequester)")
         assertThat(source).contains(".focusable()")
+        // 关菜单（返回/自动隐藏）：进度条与按钮组一起消失，禁止 re-reveal。
+        assertThat(source).contains("进度条与按钮组一起消失")
+        assertThat(source).contains("isChromeVisible = false")
+        // 关闭分支不得再 revealChrome，否则返回关菜单后底栏又出来。
+        val menuVisibleEffect = source
+            .substringAfter("LaunchedEffect(state.isMenuVisible) {")
+            .substringBefore("val showLoadingOverlay")
+        assertThat(menuVisibleEffect).doesNotContain("revealChrome()")
     }
 
     /**
@@ -776,8 +784,11 @@ class TvPlayerRouteControlContractTest {
         assertThat(groupChoiceSource).contains("Key.Spacebar")
         assertThat(groupChoiceSource).contains("KeyEventType.KeyUp")
         assertThat(groupChoiceSource).contains("clickable(")
-        // 下划线 3dp 且外层 LazyRow 48dp，避免被裁切。
+        // 下划线 3dp、宽跟文字；外层 LazyRow 48dp，避免被裁切。
         assertThat(groupChoiceSource).contains("height(3.dp)")
+        assertThat(groupChoiceSource).contains("IntrinsicSize.Max")
+        assertThat(groupChoiceSource).contains("Modifier.width(IntrinsicSize.Max)")
+        assertThat(groupChoiceSource).doesNotContain("fillMaxWidth(0.85f)")
         assertThat(playlistSource).contains(".height(48.dp)")
         assertThat(groupChoiceSource).contains("if (selected) TvTokens.Accent else Color.Transparent")
         // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。

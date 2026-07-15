@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -2251,25 +2252,31 @@ private fun NcatEpisodeGroupChoice(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = label,
-            color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
-            fontSize = 15.sp,
-            fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-        )
-        Spacer(modifier = Modifier.height(3.dp))
-        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。占位高度固定，避免选中时布局跳动。
-        Box(
-            modifier = Modifier
-                .widthIn(min = 28.dp)
-                .fillMaxWidth(0.85f)
-                .height(3.dp)
-                .background(
-                    if (selected) TvTokens.Accent else Color.Transparent,
-                    RoundedCornerShape(1.5.dp),
-                ),
-        )
+        // 下划线宽度跟文字：内层 IntrinsicSize.Max，线 fillMaxWidth = 文案宽。
+        Column(
+            modifier = Modifier.width(IntrinsicSize.Max),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = label,
+                color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
+                fontSize = 15.sp,
+                fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            // 仅选中显示底部主题色下划线；获焦未确认只改文字色。占位高度固定，避免选中时布局跳动。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .widthIn(min = 14.dp)
+                    .background(
+                        if (selected) TvTokens.Accent else Color.Transparent,
+                        RoundedCornerShape(1.5.dp),
+                    ),
+            )
+        }
     }
 }
 
