@@ -8,6 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
+import org.moontechlab.selene.tv.core.player.api.PlaybackEpisode
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlaybackCachedRange
 import org.moontechlab.selene.tv.core.player.api.PlaybackSnapshot
@@ -1002,6 +1003,226 @@ class TvPlayerViewModelTest {
         assertThat(viewModel.state.value.danmakuEmissionComments.map { comment -> comment.text })
             .containsExactly("新位置弹幕")
         observeJob.cancel()
+    }
+
+    /**
+     * 本集自然播放结束时必须自动加载下一集，并展示自动下一集提示。
+     */
+    @Test
+    fun observePlayerState_auto_plays_next_episode_when_current_ends() = runTest {
+        val episodes = listOf(
+            PlaybackEpisode(id = "ep-1", title = "第01集", url = "https://cdn.test/1.m3u8"),
+            PlaybackEpisode(id = "ep-2", title = "第02集", url = "https://cdn.test/2.m3u8"),
+        )
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-1",
+            episodeIndex = 0,
+            episodeTitle = "第01集",
+            url = "https://cdn.test/1.m3u8",
+        )
+        val engine = RecordingPlayerEngine(durationMs = 100_000L)
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+            allEpisodes = episodes,
+        )
+        val observeJob = backgroundScope.launch {
+            viewModel.observePlayerState()
+        }
+        runCurrent()
+
+        engine.emitState(
+            PlayerState.Playing(
+                snapshot = request.toTestSnapshot(positionMs = 99_000L, durationMs = 100_000L),
+            ),
+        )
+        runCurrent()
+        engine.emitState(
+            PlayerState.Paused(
+                snapshot = request.toTestSnapshot(positionMs = 100_000L, durationMs = 100_000L),
+            ),
+        )
+        runCurrent()
+
+        assertThat(engine.loadCalls).isEqualTo(1)
+        assertThat(engine.loadedRequest?.episodeId).isEqualTo("ep-2")
+        assertThat(engine.loadedRequest?.url).isEqualTo("https://cdn.test/2.m3u8")
+        assertThat(viewModel.state.value.playbackRequest?.episodeId).isEqualTo("ep-2")
+        assertThat(viewModel.state.value.actionNoticeText).contains("本集结束，自动播放下一集")
+        assertThat(viewModel.state.value.actionNoticeText).contains("第02集")
+        assertThat(viewModel.state.value.switchLoadingMessage).isEqualTo("自动播放下一集...")
+        assertThat(viewModel.state.value.hasNextEpisode()).isFalse()
+        observeJob.cancel()
+    }
+
+    /**
+     * 最后一集播完不能再自动切集，避免空 load 或循环。
+     */
+    @Test
+    fun observePlayerState_does_not_auto_play_when_already_last_episode() = runTest {
+        val episodes = listOf(
+            PlaybackEpisode(id = "ep-1", title = "第01集", url = "https://cdn.test/1.m3u8"),
+            PlaybackEpisode(id = "ep-2", title = "第02集", url = "https://cdn.test/2.m3u8"),
+        )
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-2",
+            episodeIndex = 1,
+            episodeTitle = "第02集",
+            url = "https://cdn.test/2.m3u8",
+        )
+        val engine = RecordingPlayerEngine(durationMs = 80_000L)
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+            allEpisodes = episodes,
+        )
+        val observeJob = backgroundScope.launch {
+            viewModel.observePlayerState()
+        }
+        runCurrent()
+
+        engine.emitState(
+            PlayerState.Paused(
+                snapshot = request.toTestSnapshot(positionMs = 80_000L, durationMs = 80_000L),
+            ),
+        )
+        runCurrent()
+
+        assertThat(engine.loadCalls).isEqualTo(0)
+        assertThat(viewModel.state.value.playbackRequest?.episodeId).isEqualTo("ep-2")
+        assertThat(viewModel.state.value.actionNoticeText).isNull()
+        observeJob.cancel()
+    }
+
+    /**
+     * 进入片尾跳过窗口时，播放中也应自动下一集。
+     */
+    @Test
+    fun observePlayerState_auto_plays_next_episode_when_skip_outro_window_hit() = runTest {
+        val episodes = listOf(
+            PlaybackEpisode(id = "ep-1", title = "第01集", url = "https://cdn.test/1.m3u8"),
+            PlaybackEpisode(id = "ep-2", title = "第02集", url = "https://cdn.test/2.m3u8"),
+        )
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-1",
+            episodeIndex = 0,
+            url = "https://cdn.test/1.m3u8",
+        )
+        val engine = RecordingPlayerEngine(durationMs = 120_000L)
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+            allEpisodes = episodes,
+            loadSkipOutroSeconds = { 15 },
+        )
+        viewModel.loadSkipDurations()
+        val observeJob = backgroundScope.launch {
+            viewModel.observePlayerState()
+        }
+        runCurrent()
+
+        // 剩余 10 秒，落在 15 秒片尾窗口内。
+        engine.emitState(
+            PlayerState.Playing(
+                snapshot = request.toTestSnapshot(positionMs = 110_000L, durationMs = 120_000L),
+            ),
+        )
+        runCurrent()
+
+        assertThat(engine.loadCalls).isEqualTo(1)
+        assertThat(engine.loadedRequest?.episodeId).isEqualTo("ep-2")
+        assertThat(viewModel.state.value.actionNoticeText).contains("已跳过片尾，自动播放下一集")
+        observeJob.cancel()
+    }
+
+    /**
+     * 自动下一集同一集只触发一次，避免 ended 重复上报连切两集。
+     */
+    @Test
+    fun observePlayerState_auto_next_only_once_per_episode() = runTest {
+        val episodes = listOf(
+            PlaybackEpisode(id = "ep-1", title = "第01集", url = "https://cdn.test/1.m3u8"),
+            PlaybackEpisode(id = "ep-2", title = "第02集", url = "https://cdn.test/2.m3u8"),
+            PlaybackEpisode(id = "ep-3", title = "第03集", url = "https://cdn.test/3.m3u8"),
+        )
+        val request = PlaybackRequest(
+            videoId = "video-1",
+            sourceId = "source-a",
+            episodeId = "ep-1",
+            episodeIndex = 0,
+            url = "https://cdn.test/1.m3u8",
+        )
+        val engine = RecordingPlayerEngine(durationMs = 50_000L)
+        val viewModel = TvPlayerViewModel(
+            initialRequest = request,
+            playerEngine = engine,
+            allEpisodes = episodes,
+        )
+        val observeJob = backgroundScope.launch {
+            viewModel.observePlayerState()
+        }
+        runCurrent()
+
+        val ended = PlayerState.Paused(
+            snapshot = request.toTestSnapshot(positionMs = 50_000L, durationMs = 50_000L),
+        )
+        engine.emitState(ended)
+        runCurrent()
+        engine.emitState(ended)
+        runCurrent()
+
+        assertThat(engine.loadCalls).isEqualTo(1)
+        assertThat(engine.loadedRequest?.episodeId).isEqualTo("ep-2")
+        observeJob.cancel()
+    }
+
+    /**
+     * 解析下一集与结束/片尾判定的纯逻辑契约。
+     */
+    @Test
+    fun auto_next_helpers_resolve_next_episode_and_end_window() {
+        val episodes = listOf(
+            PlaybackEpisode(id = "ep-1", title = "1", url = "u1"),
+            PlaybackEpisode(id = "ep-2", title = "2", url = "u2"),
+        )
+        assertThat(resolveNextPlaybackEpisode(episodes, "ep-1")?.id).isEqualTo("ep-2")
+        assertThat(resolveNextPlaybackEpisode(episodes, "ep-2")).isNull()
+        assertThat(
+            shouldAutoPlayNextOnCompleted(
+                isPlaying = false,
+                positionMs = 99_500L,
+                durationMs = 100_000L,
+            ),
+        ).isTrue()
+        assertThat(
+            shouldAutoPlayNextOnCompleted(
+                isPlaying = true,
+                positionMs = 100_000L,
+                durationMs = 100_000L,
+            ),
+        ).isFalse()
+        assertThat(
+            shouldAutoPlayNextOnSkipOutro(
+                isPlaying = true,
+                positionMs = 90_000L,
+                durationMs = 100_000L,
+                skipOutroSeconds = 15,
+            ),
+        ).isTrue()
+        assertThat(
+            shouldAutoPlayNextOnSkipOutro(
+                isPlaying = true,
+                positionMs = 80_000L,
+                durationMs = 100_000L,
+                skipOutroSeconds = 15,
+            ),
+        ).isFalse()
     }
 }
 

@@ -110,7 +110,7 @@ class TvPlayerRouteControlContractTest {
 
         assertThat(keyUpBranchStart).isAtLeast(0)
         // 菜单打开时优先放行，禁止根节点抢菜单左右 KeyUp。
-        assertThat(source).contains("菜单打开时：左右/上下 KeyUp 必须留给菜单 chip 自己处理")
+        assertThat(source).contains("根节点不消费（return false），避免挡掉一级/二级/三级横向焦点。")
         assertThat(source.indexOf("if (state.isMenuVisible)")).isLessThan(keyUpBranchStart)
 
         // 只截取方向键 KeyUp 分支，避免其它生命周期 stop 调用造成契约误判。
@@ -176,6 +176,7 @@ class TvPlayerRouteControlContractTest {
 
     /**
      * 底部按钮组有操作后必须后延关闭，并保留底部渐变背景。
+     * 上下左右/确认 KeyDown 必须续约自动关闭（根节点 + chip 双路径）。
      */
     @Test
     fun route_menu_interaction_resets_auto_hide_and_keeps_bottom_gradient() {
@@ -185,6 +186,10 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("menuInteractionKey++")
         assertThat(source).contains("bumpMenuInteraction()")
         assertThat(source).contains("PLAYER_MENU_AUTO_HIDE_MS")
+        // 方向/确认续约：根节点菜单态 + chip 内 KeyDown。
+        assertThat(source).contains("isPlayerMenuRenewKey()")
+        assertThat(source).contains("LocalPlayerMenuInteractionBumps")
+        assertThat(source).contains("renewMenuAutoHide()")
         // 底部背景渐变必须保留。
         assertThat(source).contains("Brush.verticalGradient(")
         assertThat(source).contains("底部背景渐变")
@@ -389,6 +394,15 @@ class TvPlayerRouteControlContractTest {
         assertThat(source).contains("返回键退出")
         assertThat(source).contains("下键播放设置")
         assertThat(source).contains("保持安全观看距离")
+        // 有下一集时底部提示必须告知「本集结束后自动下一集」。
+        assertThat(source).contains("本集结束后自动下一集")
+        assertThat(source).contains("hasNextEpisode = state.hasNextEpisode()")
+        // 自动下一集动作提示 + 加载层自定义文案。
+        assertThat(source).contains("tv-player-auto-next-notice")
+        assertThat(source).contains("TvActionNotice")
+        assertThat(source).contains("switchLoadingMessage")
+        assertThat(source).contains("自动播放下一集...")
+        assertThat(source).contains("title = state.switchLoadingMessage ?: \"加载中\"")
         assertThat(bottomHintSource).doesNotContain(".clickable(")
         assertThat(bottomHintSource).doesNotContain(".focusable(")
     }
@@ -468,11 +482,13 @@ class TvPlayerRouteControlContractTest {
         // 进入二级菜单必须继续只由一级菜单的上键显式触发。
         assertThat(source).contains("onArrowUp = {")
         assertThat(source).contains("requestNearestSecondaryMenuFocus(index)")
-        // 播放线路例外：一级上键落到当前选中线路，不是空间就近。
-        assertThat(source).contains("if (menu == PLAYER_MENU_SOURCES)")
+        // 播放列表：门票滚焦；播放线路：当前选中线路；其余：空间就近。
+        assertThat(source).contains("PLAYER_MENU_PLAYLIST -> requestPlaylistSecondaryFocus()")
+        assertThat(source).contains("PLAYER_MENU_SOURCES ->")
         assertThat(source).contains("requestSelectedSecondaryMenuFocus()")
         assertThat(primaryMenuClickSource).doesNotContain("requestSelectedSecondaryMenuFocus()")
         assertThat(primaryMenuClickSource).doesNotContain("requestNearestSecondaryMenuFocus")
+        assertThat(primaryMenuClickSource).doesNotContain("requestPlaylistSecondaryFocus")
     }
 
     /**
@@ -521,8 +537,9 @@ class TvPlayerRouteControlContractTest {
         assertThat(sourceMenu).contains("focusRequesters.getOrNull(i)")
         assertThat(sourceMenu).contains("onItemCenterXChanged")
         assertThat(sourceMenu).doesNotContain("isFirst && focusRequester != null")
-        // 播放线路一级上键：当前选中线路；其它一级：空间就近。
-        assertThat(source).contains("if (menu == PLAYER_MENU_SOURCES)")
+        // 播放列表：门票滚焦；播放线路：当前选中线路；其它一级：空间就近。
+        assertThat(source).contains("PLAYER_MENU_PLAYLIST -> requestPlaylistSecondaryFocus()")
+        assertThat(source).contains("PLAYER_MENU_SOURCES ->")
         assertThat(source).contains("requestNearestSecondaryMenuFocus(index)")
         assertThat(source).contains("menuFocusGeometry.resolveNearestSecondaryIndex")
     }
@@ -541,7 +558,7 @@ class TvPlayerRouteControlContractTest {
     }
 
     /**
-     * 二级/三级横向滚动必须平滑 scrollBy 跟手，禁止末项整页 pin 造成“翻页感”。
+     * 二级/三级横向滚动：首/末与 contentPadding 对齐，用 scrollBy 跟手。
      */
     @Test
     fun route_secondary_menu_scroll_handles_first_and_last() {
@@ -552,10 +569,7 @@ class TvPlayerRouteControlContractTest {
         assertThat(scrollSource).contains("animateScrollBy(")
         assertThat(scrollSource).contains("leftDelta")
         assertThat(scrollSource).contains("rightDelta")
-        // 不再用 animateScrollToItem 把末项钉到视口起点（整页切换感）。
-        assertThat(scrollSource).doesNotContain("index >= lastIndex")
-        assertThat(scrollSource).doesNotContain("animateScrollToItem(index = lastIndex")
-        assertThat(scrollSource).doesNotContain("animateScrollToItem(index = 0")
+        assertThat(source).contains("PageHorizontalPadding")
     }
 
     /**
@@ -667,7 +681,6 @@ class TvPlayerRouteControlContractTest {
         assertThat(sourceMenu).contains("TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(")
         assertThat(sourceMenu).contains("rememberSaveable(saver = LazyListState.Saver)")
         assertThat(sourceMenu).contains("if (shouldScroll)")
-        assertThat(sourceMenu).doesNotContain("shouldScroll || i == 0 || i == sources.lastIndex")
         assertThat(sourceMenu).contains("TransformOrigin(1f, 0.5f)")
         assertThat(sourceMenu).contains("TransformOrigin(0f, 0.5f)")
         assertThat(sourceMenu).contains("focusScaleOrigin = when {")
@@ -696,15 +709,30 @@ class TvPlayerRouteControlContractTest {
 
     /**
      * 默认播放列表一级菜单也必须提供二级焦点落点，避免菜单刚打开时上键无目标。
+     *
+     * 全剧集 LazyRow 下当前集常在屏外：必须先 scroll 再 requestFocus，
+     * 禁止对未挂载 FocusRequester 硬点导致整页焦点丢失。
      */
     @Test
     fun route_playlist_menu_renders_current_episode_secondary_focus_target() {
         val source = readRouteSource()
+        val playlistSource = source.substringAfter("private fun TvPlayerPlaylistMenu(")
+            .substringBefore("/**\n * TV 全屏播放器播放线路二级菜单。")
 
         assertThat(source).contains("TvPlayerPlaylistMenu")
         assertThat(source).contains("playbackRequest = state.playbackRequest")
         assertThat(source).contains("resolvePlaylistMenuLabel")
         assertThat(source).contains("PLAYER_MENU_PLAYLIST ->")
+        // 打开菜单 / 一级上键走门票，内部滚到当前集再落焦。
+        assertThat(source).contains("playlistSecondaryFocusTicket")
+        assertThat(source).contains("requestPlaylistSecondaryFocus")
+        assertThat(source).contains("secondaryFocusTicket = playlistSecondaryFocusTicket")
+        assertThat(playlistSource).contains("secondaryFocusTicket")
+        assertThat(playlistSource).contains("LaunchedEffect(secondaryFocusTicket)")
+        assertThat(playlistSource).contains("onSecondaryFocusFailed")
+        assertThat(source).contains("onSecondaryFocusFailed = requestSelectedPrimaryMenuFocus")
+        // 一级播放列表上键必须走门票，不能 requestNearest 硬点屏外 requester。
+        assertThat(source).contains("PLAYER_MENU_PLAYLIST -> requestPlaylistSecondaryFocus()")
     }
 
     /**
@@ -717,29 +745,43 @@ class TvPlayerRouteControlContractTest {
         val playlistSource = source.substringAfter("private fun TvPlayerPlaylistMenu(")
             .substringBefore("/**\n * TV 全屏播放器播放线路二级菜单。")
 
-        // 布局：先渲染选集 LazyRow，再渲染分组。
-        val episodeItems = playlistSource.indexOf("items(group.size)")
+        // 布局：先渲染全剧集连续 LazyRow，再渲染分组条。
+        val episodeRow = playlistSource.indexOf("movePlaylistEpisodeFocus")
+            .takeIf { index -> index >= 0 }
+            ?: playlistSource.indexOf("items(")
         val groupChoice = playlistSource.indexOf("TvPlayerEpisodeGroupChoice(")
-        assertThat(episodeItems).isAtLeast(0)
+        assertThat(episodeRow).isAtLeast(0)
         assertThat(groupChoice).isAtLeast(0)
-        assertThat(episodeItems).isLessThan(groupChoice)
+        assertThat(episodeRow).isLessThan(groupChoice)
 
         // 分组无背景样式组件存在。
         assertThat(source).contains("private fun TvPlayerEpisodeGroupChoice(")
         assertThat(source).contains("获焦：主题色文字；选中：主题色文字 + 底部下划线")
-        assertThat(playlistSource).contains("pendingInGroupFocusIndex")
+        // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。
+        assertThat(source).contains("movePlaylistEpisodeFocus")
+        assertThat(source).contains("requestPlaylistEpisodeFocusWhenReady")
+        assertThat(source).contains("PlaylistFocusPinMode.SoftEdgeFollow")
+        assertThat(source).contains("PlaylistFocusPinMode.PinLeading")
+        assertThat(playlistSource).contains("LocalBringIntoViewSpec")
+        // 左右键不得再 KeepSlot 钉死原 X，否则会出现「向右焦点常驻左侧」的反转感。
+        assertThat(playlistSource).contains("pinFocusMode = PlaylistFocusPinMode.SoftEdgeFollow")
+        // 首/末集贴边与一级菜单水平边距对齐。
+        assertThat(source).contains("PageHorizontalPadding")
+        assertThat(playlistSource).doesNotContain("pendingInGroupFocusIndex")
+        assertThat(playlistSource).doesNotContain("isSettlingCrossGroupFocus")
+        assertThat(playlistSource).doesNotContain("keepVisualSlot = true")
 
-        // 二级/三级下键回一级当前选中项。
+        // 二级/三级下键回一级当前选中项；下键进分组需能 requestFocus。
         assertThat(source).contains("onArrowDownToPrimary = requestSelectedPrimaryMenuFocus")
         assertThat(playlistSource).contains("onArrowDownToPrimary")
         assertThat(playlistSource).contains("requestCurrentGroupFocus")
         assertThat(playlistSource).contains("requestCurrentEpisodeFocus")
+        assertThat(playlistSource).contains("groupListState.scrollToItem")
 
-        // 集数/分组横滑：state + 获焦 scrollPlayerMenuChipIntoView，禁止只动焦点不滚列表。
+        // 集数/分组横滑 state。
         assertThat(playlistSource).contains("episodeListState")
         assertThat(playlistSource).contains("groupListState")
         assertThat(playlistSource).contains("scrollPlayerMenuChipIntoView(")
-        assertThat(playlistSource).contains("shouldAnimateHorizontalScroll(")
         assertThat(playlistSource).contains("state = episodeListState")
         assertThat(playlistSource).contains("state = groupListState")
     }

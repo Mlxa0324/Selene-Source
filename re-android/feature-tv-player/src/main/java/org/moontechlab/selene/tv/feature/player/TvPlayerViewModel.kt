@@ -52,6 +52,8 @@ import org.moontechlab.selene.tv.core.player.api.toPlaybackIdentity
  * @property danmakuEmissionVersion 弹幕发射批次版本，用于 UI 识别新一轮渲染。
  * @property danmakuEmissionComments 当前进度新发射的弹幕评论。
  * @property danmakuErrorMessage 弹幕加载错误文案。
+ * @property switchLoadingMessage 中心加载层自定义文案；空则显示默认「加载中」。
+ * @property actionNoticeText 底部动作提示（如自动下一集），空表示不展示。
  */
 data class TvPlayerUiState(
     val playbackRequest: PlaybackRequest? = null,
@@ -86,6 +88,8 @@ data class TvPlayerUiState(
     val availableSources: List<PlaybackSource> = emptyList(),
     val allEpisodes: List<PlaybackEpisode> = emptyList(),
     val selectedEpisodeGroup: Int = 0,
+    val switchLoadingMessage: String? = null,
+    val actionNoticeText: String? = null,
 )
 
 /**
@@ -207,6 +211,16 @@ class TvPlayerViewModel(
     /** 松手后最短展示/收口任务。 */
     private var postSeekLoadingJob: Job? = null
 
+    /**
+     * 已对某集触发过自动下一集的媒体身份。
+     *
+     * 同一集只触发一次，避免 ended / 片尾跳过 / 进度轮询重复切集。
+     */
+    private var autoNextConsumedIdentity: PlaybackIdentity? = null
+
+    /** 自动下一集是否正在执行，防止 collect 与 tick 并发重入。 */
+    private var autoNextInFlight: Boolean = false
+
     /** ViewModel 内部协程（松手转圈收口用；Default 避免单测无 Main 崩溃）。 */
     private val viewModelScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -248,8 +262,12 @@ class TvPlayerViewModel(
      * 对齐 Flutter TV：切集后从 0 秒起播，并刷新弹幕。
      *
      * @param episodeId 目标剧集 ID。
+     * @param switchLoadingMessage 切集时中心加载文案；默认通用「切换选集...」。
      */
-    suspend fun selectEpisode(episodeId: String) {
+    suspend fun selectEpisode(
+        episodeId: String,
+        switchLoadingMessage: String? = "切换选集...",
+    ) {
         val current = mutableState.value.playbackRequest ?: return
         val targetId = episodeId.trim()
         if (targetId.isBlank() || targetId == current.episodeId) {
@@ -274,12 +292,17 @@ class TvPlayerViewModel(
             isMenuVisible = false,
             isSeekOverlayVisible = false,
             isPlayerLoading = true,
+            switchLoadingMessage = switchLoadingMessage,
             playerErrorMessage = null,
             currentPositionMs = 0L,
+            durationMs = 0L,
         )
         val engine = playerEngine
         if (engine == null) {
-            mutableState.value = mutableState.value.copy(isPlayerLoading = false)
+            mutableState.value = mutableState.value.copy(
+                isPlayerLoading = false,
+                switchLoadingMessage = null,
+            )
             return
         }
         runCatching {
@@ -290,9 +313,20 @@ class TvPlayerViewModel(
         }.onFailure { throwable ->
             mutableState.value = mutableState.value.copy(
                 isPlayerLoading = false,
+                switchLoadingMessage = null,
                 playerErrorMessage = throwable.message ?: "切换剧集失败",
             )
         }
+    }
+
+    /**
+     * 关闭底部动作提示（自动下一集等）。
+     */
+    fun dismissActionNotice() {
+        if (mutableState.value.actionNoticeText == null) {
+            return
+        }
+        mutableState.value = mutableState.value.copy(actionNoticeText = null)
     }
 
     /**
@@ -357,13 +391,18 @@ class TvPlayerViewModel(
                         continue
                     }
                     val snapshot = runCatching { engine.captureSnapshot() }.getOrNull() ?: continue
-                    syncPlayerState(PlayerState.Playing(snapshot))
+                    val playingState = PlayerState.Playing(snapshot)
+                    syncPlayerState(playingState)
+                    // 片尾跳过依赖进度 tick，不依赖 ended 事件。
+                    maybeAutoPlayNextEpisode(playingState)
                 }
             }
             try {
                 engine.state.collect { playerState ->
                     // WebView/Exo 的真实进度、暂停和错误都以播放器内核状态为准。
                     syncPlayerState(playerState)
+                    // 本集自然结束（Exo STATE_ENDED → Paused 且进度到末尾）时切下一集。
+                    maybeAutoPlayNextEpisode(playerState)
                 }
             } finally {
                 progressJob.cancel()
@@ -751,6 +790,13 @@ class TvPlayerViewModel(
         val request = mutableState.value.playbackRequest
         // 松手转圈：缓冲中保留；起播/就绪且最短展示已过再消失（见 resolveKeepPostSeekLoading）。
         val keepPostSeekLoading = resolveKeepPostSeekLoading(playerState)
+        // 起播或失败后清掉切集文案，避免加载层一直显示「自动播放下一集」。
+        val nextSwitchLoadingMessage = when (playerState) {
+            is PlayerState.Playing,
+            is PlayerState.Error,
+            -> null
+            else -> mutableState.value.switchLoadingMessage
+        }
         mutableState.value = mutableState.value.copy(
             isPlayerLoading = playerState is PlayerState.Loading,
             isPlaybackPlaying = playerState is PlayerState.Playing,
@@ -768,6 +814,7 @@ class TvPlayerViewModel(
             selectedPlaybackSpeed = snapshot?.playbackSpeed ?: mutableState.value.selectedPlaybackSpeed,
             selectedResizeMode = snapshot?.resizeMode ?: mutableState.value.selectedResizeMode,
             playerErrorMessage = (playerState as? PlayerState.Error)?.message,
+            switchLoadingMessage = nextSwitchLoadingMessage,
         )
         if (snapshot != null && request != null && playerState.matchesPlaybackRequest(request)) {
             // 只有当前快照仍属于目标媒体时，才允许写入续播记录，避免切集交界处误存旧进度。
@@ -780,6 +827,104 @@ class TvPlayerViewModel(
         emitDanmakuByPosition(
             positionMs = positionMs,
             canEmit = playerState is PlayerState.Playing,
+        )
+    }
+
+    /**
+     * 本集播完或进入片尾跳过窗口时，自动切换下一集。
+     *
+     * 对齐 Flutter TV / 手机端：有下一集才切；最后一集保持结束态。
+     *
+     * @param playerState 当前内核状态。
+     */
+    private suspend fun maybeAutoPlayNextEpisode(playerState: PlayerState) {
+        if (autoNextInFlight) {
+            return
+        }
+        if (playerState is PlayerState.Loading || playerState is PlayerState.Error || playerState is PlayerState.Idle) {
+            return
+        }
+        val request = mutableState.value.playbackRequest ?: return
+        val identity = request.toPlaybackIdentity()
+        if (autoNextConsumedIdentity == identity) {
+            return
+        }
+        val snapshot = playerState.snapshotOrNull()
+        // 内核若仍在上报上一集 ended 快照，不能拿来给新集做自动切集判定。
+        if (snapshot != null && !playerState.matchesPlaybackRequest(request)) {
+            return
+        }
+        val positionMs = snapshot?.positionMs ?: mutableState.value.currentPositionMs
+        val durationMs = snapshot?.durationMs ?: mutableState.value.durationMs
+        val isPlaying = playerState is PlayerState.Playing
+        val nextEpisode = resolveNextPlaybackEpisode(
+            episodes = mutableState.value.allEpisodes,
+            currentEpisodeId = request.episodeId,
+        ) ?: return
+
+        val skipOutroHit = shouldAutoPlayNextOnSkipOutro(
+            isPlaying = isPlaying,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            skipOutroSeconds = mutableState.value.skipOutroSeconds,
+        )
+        val completedHit = shouldAutoPlayNextOnCompleted(
+            isPlaying = isPlaying,
+            positionMs = positionMs,
+            durationMs = durationMs,
+        )
+        if (!skipOutroHit && !completedHit) {
+            return
+        }
+
+        autoNextConsumedIdentity = identity
+        autoNextInFlight = true
+        val reason = if (skipOutroHit) {
+            AutoNextReason.SkipOutro
+        } else {
+            AutoNextReason.Completed
+        }
+        try {
+            performAutoNextEpisode(
+                nextEpisode = nextEpisode,
+                nextEpisodeIndex = mutableState.value.allEpisodes.indexOfFirst { episode ->
+                    episode.id == nextEpisode.id
+                },
+                reason = reason,
+            )
+        } finally {
+            autoNextInFlight = false
+        }
+    }
+
+    /**
+     * 执行自动下一集：展示提示、加载层文案，并切到目标集。
+     *
+     * @param nextEpisode 下一集摘要。
+     * @param nextEpisodeIndex 下一集绝对下标。
+     * @param reason 触发原因。
+     */
+    private suspend fun performAutoNextEpisode(
+        nextEpisode: PlaybackEpisode,
+        nextEpisodeIndex: Int,
+        reason: AutoNextReason,
+    ) {
+        val label = nextEpisode.title.ifBlank {
+            val displayIndex = (nextEpisodeIndex + 1).coerceAtLeast(1)
+            "第${displayIndex.toString().padStart(2, '0')}集"
+        }
+        val notice = when (reason) {
+            AutoNextReason.SkipOutro -> "已跳过片尾，自动播放下一集 · $label"
+            AutoNextReason.Completed -> "本集结束，自动播放下一集 · $label"
+        }
+        mutableState.value = mutableState.value.copy(
+            actionNoticeText = notice,
+            isMenuVisible = false,
+            isSeekOverlayVisible = false,
+        )
+        selectEpisode(
+            episodeId = nextEpisode.id,
+            switchLoadingMessage = "自动播放下一集...",
         )
     }
 
@@ -988,7 +1133,103 @@ fun TvPlayerUiState.shouldShowLoadingOverlay(): Boolean {
     if (isSeekGestureActive) {
         return false
     }
-    return isPlayerLoading || isPostSeekLoading
+    if (isPlayerLoading || isPostSeekLoading) {
+        return true
+    }
+    // 自动下一集/手动切集：起播前保留中心加载层，展示「自动播放下一集...」等文案。
+    return !switchLoadingMessage.isNullOrBlank() && !isPlaybackPlaying
+}
+
+/**
+ * 当前是否还有下一集可自动播放。
+ */
+fun TvPlayerUiState.hasNextEpisode(): Boolean {
+    return resolveNextPlaybackEpisode(
+        episodes = allEpisodes,
+        currentEpisodeId = playbackRequest?.episodeId.orEmpty(),
+    ) != null
+}
+
+/**
+ * 解析当前集的下一集。
+ *
+ * @param episodes 全量选集。
+ * @param currentEpisodeId 当前剧集 ID。
+ * @return 下一集；已是最后一集或不存在时 null。
+ */
+internal fun resolveNextPlaybackEpisode(
+    episodes: List<PlaybackEpisode>,
+    currentEpisodeId: String,
+): PlaybackEpisode? {
+    if (episodes.size < 2) {
+        return null
+    }
+    val currentId = currentEpisodeId.trim()
+    if (currentId.isBlank()) {
+        return null
+    }
+    val index = episodes.indexOfFirst { episode -> episode.id == currentId }
+    if (index < 0 || index >= episodes.lastIndex) {
+        return null
+    }
+    return episodes[index + 1]
+}
+
+/**
+ * 判断本集是否已自然播放结束，应自动下一集。
+ *
+ * Exo `STATE_ENDED` 与 WebView `ended` 都会落到「非 Playing + 进度到末尾」。
+ *
+ * @param isPlaying 当前是否正在播放。
+ * @param positionMs 当前位置。
+ * @param durationMs 总时长。
+ * @param toleranceMs 末尾容差，吸收内核上报抖动。
+ */
+internal fun shouldAutoPlayNextOnCompleted(
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    toleranceMs: Long = PLAYBACK_END_TOLERANCE_MS,
+): Boolean {
+    if (isPlaying || durationMs <= 0L || positionMs <= 0L) {
+        return false
+    }
+    return positionMs >= (durationMs - toleranceMs).coerceAtLeast(0L)
+}
+
+/**
+ * 判断是否进入片尾跳过窗口，应自动下一集。
+ *
+ * 对齐手机端：播放中且剩余秒数 ≤ 片尾跳过设定时切下一集。
+ *
+ * @param isPlaying 当前是否正在播放。
+ * @param positionMs 当前位置。
+ * @param durationMs 总时长。
+ * @param skipOutroSeconds 片尾跳过剩余秒数设定。
+ */
+internal fun shouldAutoPlayNextOnSkipOutro(
+    isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    skipOutroSeconds: Int,
+): Boolean {
+    if (!isPlaying || skipOutroSeconds <= 0 || durationMs <= 0L || positionMs <= 0L) {
+        return false
+    }
+    val remainingMs = durationMs - positionMs
+    val windowMs = skipOutroSeconds.toLong() * 1_000L
+    return remainingMs in 1L..windowMs
+}
+
+/**
+ * 自动下一集触发原因。
+ */
+private enum class AutoNextReason {
+    /** 本集自然播放到结尾。 */
+    Completed,
+
+    /** 进入用户设定的片尾跳过窗口。 */
+    SkipOutro,
 }
 
 /**
@@ -1101,6 +1342,13 @@ private const val PROGRESS_SAVE_INTERVAL_MS = 10_000L
 
 /** 全屏播放进度主动抓取间隔。 */
 private const val POSITION_TICK_INTERVAL_MS = 500L
+
+/**
+ * 判定「本集结束」的进度末尾容差。
+ *
+ * Exo/WebView 上报可能略小于 duration，留 800ms 避免卡在最后一帧不切集。
+ */
+internal const val PLAYBACK_END_TOLERANCE_MS = 800L
 
 /** 续播进度尚未初始化的分段值。 */
 private const val UNINITIALIZED_PROGRESS_BUCKET = -1L
