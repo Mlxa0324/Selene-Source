@@ -114,8 +114,9 @@ class TvDetailRouteFocusContractTest {
         // 搜索 ↓ 进简介，禁止再下到左侧播放器。
         assertThat(topBar).contains("down = focusTargets.description")
         assertThat(topBar).doesNotContain("down = focusTargets.player")
-        // 播放器 → 简介；简介上下搜索/全屏。
-        assertThat(preview).contains("right = focusTargets.description")
+        // 播放器 → 全屏（与全屏 ← 播放器对开）；简介上下搜索/全屏。
+        assertThat(preview).contains("right = focusTargets.fullscreen")
+        assertThat(preview).doesNotContain("right = focusTargets.description")
         assertThat(info).contains("up = focusTargets.search")
         assertThat(info).contains("down = focusTargets.fullscreen")
         assertThat(info).contains("left = focusTargets.player")

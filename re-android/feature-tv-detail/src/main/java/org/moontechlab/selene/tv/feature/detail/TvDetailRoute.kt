@@ -867,9 +867,9 @@ private fun NcatPreviewPanel(
             .focusRequester(focusTargets.player)
             .tvBringFocusedItemIntoView()
             .focusProperties {
-                // 左列：上到搜索；右到简介；下到线路。
+                // 左列：上到搜索；右到全屏（与全屏左回播放器对开）；下到线路。
                 up = focusTargets.search
-                right = focusTargets.description
+                right = focusTargets.fullscreen
                 left = FocusRequester.Cancel
                 down = currentSourceFocusRequester ?: FocusRequester.Default
             }
