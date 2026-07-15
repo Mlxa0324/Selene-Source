@@ -1933,6 +1933,19 @@ private fun NcatEpisodeGroupRail(
         }
     }
 
+    // 选中分组（下划线）必须时刻在分组条可视区内，避免当前在 641-660 却只显示 1-20。
+    LaunchedEffect(selectedGroup.groupIndex, showGroupChoices, groups.size) {
+        if (!showGroupChoices || groups.isEmpty()) {
+            return@LaunchedEffect
+        }
+        scrollDetailOptionIntoView(
+            listState = episodeGroupListState,
+            focusedIndex = selectedGroup.groupIndex.coerceIn(0, groups.lastIndex),
+            itemCount = groups.size,
+            scrollScope = scrollScope,
+        )
+    }
+
     // 早版布局：选集在上、分组在下；长剧集时下方才出现分组条。
     LazyRow(
         state = episodeListState,
@@ -2075,28 +2088,31 @@ private fun NcatEpisodeGroupRail(
                         }
                         .onFocusChanged { focusState ->
                             if (focusState.isFocused) {
-                                val shouldScroll = TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
-                                    previousActiveIndex = activeGroupFocusedIndex,
-                                    newlyFocusedIndex = index,
-                                )
                                 activeGroupFocusedIndex = index
-                                // 分组移动即切换，无需再按确认。
-                                if (!group.selected) {
-                                    onGroupSelected?.invoke(group.groupIndex)
-                                }
-                                // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
-                                if (shouldScroll) {
-                                    scrollDetailOptionIntoView(
-                                        listState = episodeGroupListState,
-                                        focusedIndex = index,
-                                        itemCount = groups.size,
-                                        scrollScope = scrollScope,
-                                    )
-                                }
+                                // 获焦：仅主题色，不改选中、不切选集；保证芯片在可视区。
+                                scrollDetailOptionIntoView(
+                                    listState = episodeGroupListState,
+                                    focusedIndex = index,
+                                    itemCount = groups.size,
+                                    scrollScope = scrollScope,
+                                )
                             }
                         },
-                    // 保留确认键切换，兼容鼠标点击。
-                    onPressed = { onGroupSelected?.invoke(group.groupIndex) },
+                    // 确认：下划线 + 上方选集切到该组。
+                    onPressed = {
+                        onGroupSelected?.invoke(group.groupIndex)
+                        scrollDetailOptionIntoView(
+                            listState = episodeGroupListState,
+                            focusedIndex = index,
+                            itemCount = groups.size,
+                            scrollScope = scrollScope,
+                        )
+                        // 确认后把焦点落到该组首集，并滚到列表可见。
+                        val firstEpisode = group.episodes.firstOrNull()
+                        if (firstEpisode != null) {
+                            pendingEpisodeFocusIndex = firstEpisode.episodeIndex
+                        }
+                    },
                 )
             }
         }
@@ -2106,13 +2122,14 @@ private fun NcatEpisodeGroupRail(
 /**
  * 截图式选集分组选项。
  *
- * 获焦：主题色文字；选中：主题色文字 + 底部下划线。
+ * - 获焦未确认：主题色文字，无下划线
+ * - 选中（确认/当前选集所在组）：主题色文字 + 底部下划线
  *
  * @param label 分组文案。
- * @param selected 是否当前分组。
+ * @param selected 是否当前选中分组（下划线）。
  * @param focusRequester 焦点请求器。
  * @param modifier 外层修饰器。
- * @param onPressed 确认回调。
+ * @param onPressed 确认回调（改选中 + 切上方选集）。
  */
 @Composable
 private fun NcatEpisodeGroupChoice(
@@ -2124,7 +2141,8 @@ private fun NcatEpisodeGroupChoice(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    val emphasize = selected || isFocused
+    // 获焦或选中都用主题色；下划线仅 selected。
+    val textAccent = selected || isFocused
     val scale by animateFloatAsState(
         targetValue = if (isFocused) 1.04f else 1f,
         animationSpec = tween(140),
@@ -2138,25 +2156,30 @@ private fun NcatEpisodeGroupChoice(
             .focusable(interactionSource = interactionSource)
             .ncatClickable(onPressed)
             .onPreviewKeyEvent { event ->
-                if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
-                if (event.key == Key.Enter || event.key == Key.DirectionCenter) {
-                    onPressed()
-                    true
-                } else {
-                    false
+                // 确认用 KeyDown，避免与 clickable 叠成两次。
+                if (
+                    event.key == Key.Enter ||
+                    event.key == Key.DirectionCenter ||
+                    event.key == Key.NumPadEnter
+                ) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        onPressed()
+                    }
+                    return@onPreviewKeyEvent true
                 }
+                false
             }
             .padding(horizontal = 2.dp, vertical = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = label,
-            color = if (emphasize) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
+            color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
             fontSize = 15.sp,
-            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium,
+            fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
         )
-        Spacer(Modifier.height(4.dp))
-        // 仅选中显示底部主题色下划线；获焦未选中只改文字色。
+        Spacer(modifier = Modifier.height(4.dp))
+        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2169,15 +2192,6 @@ private fun NcatEpisodeGroupChoice(
     }
 }
 
-/**
- * 选集短按钮。
- *
- * @param label 选集文案。
- * @param selected 是否选中。
- * @param focusRequester 焦点请求器。
- * @param modifier 外层修饰器。
- * @param onPressed 确认回调。
- */
 @Composable
 private fun NcatEpisodeChip(
     label: String,

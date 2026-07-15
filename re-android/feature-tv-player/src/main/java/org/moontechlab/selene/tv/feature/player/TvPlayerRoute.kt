@@ -845,6 +845,24 @@ private fun TvPlayerPlaylistMenu(
         }
     }
 
+    /**
+     * 把分组条滚到 [groupIndex] 完整可见（与一级菜单左右边距对齐）。
+     */
+    fun ensureGroupChipVisible(groupIndex: Int) {
+        if (!showGroupChoices || groupCount <= 0) {
+            return
+        }
+        val target = groupIndex.coerceIn(0, groupCount - 1)
+        scrollPlayerMenuChipIntoView(
+            listState = groupListState,
+            index = target,
+            itemCount = groupCount,
+            scrollScope = playlistScrollScope,
+            leadingInsetPx = playlistLeadingInsetPx,
+            trailingInsetPx = playlistTrailingInsetPx,
+        )
+    }
+
     val requestCurrentGroupFocus: () -> Unit = {
         // 当前分组可能在 LazyRow 屏外，需先滚入再 requestFocus，否则下键无法进入分组条。
         val target = safeGroup
@@ -859,15 +877,16 @@ private fun TvPlayerPlaylistMenu(
             groupFocusRequesters.getOrNull(target)?.let { requester ->
                 runCatching { requester.requestFocus() }
             }
-            scrollPlayerMenuChipIntoView(
-                listState = groupListState,
-                index = target,
-                itemCount = groupCount,
-                scrollScope = playlistScrollScope,
-                leadingInsetPx = playlistLeadingInsetPx,
-                trailingInsetPx = playlistTrailingInsetPx,
-            )
+            ensureGroupChipVisible(target)
         }
+    }
+
+    // 选集浏览 / 确认分组后：下划线所在分组必须时刻在可视区内（避免只显示 1-20 而当前在 641-660）。
+    LaunchedEffect(safeGroup, showGroupChoices, groupCount) {
+        if (!showGroupChoices || groupCount <= 0) {
+            return@LaunchedEffect
+        }
+        ensureGroupChipVisible(safeGroup)
     }
 
     /**
@@ -1115,53 +1134,43 @@ private fun TvPlayerPlaylistMenu(
                     val end = minOf((gi + 1) * PLAYER_PLAYLIST_GROUP_SIZE, episodes.size)
                     TvPlayerEpisodeGroupChoice(
                         label = "$start-$end",
+                        // 下划线只跟「已确认/选集所在」分组；获焦未确认仅主题色文字。
                         selected = gi == safeGroup,
                         focusRequester = groupFocusRequesters.getOrNull(gi),
                         onArrowUp = { requestCurrentEpisodeFocus() },
                         onArrowDown = onArrowDownToPrimary,
                         onArrowLeft = if (gi > 0) {
                             {
-                                selectedGroup = gi - 1
-                                groupFocusRequesters.getOrNull(gi - 1)?.let { requester ->
+                                // 左右只移焦点，不改选中（无下划线、不跳选集）。
+                                val target = gi - 1
+                                groupFocusRequesters.getOrNull(target)?.let { requester ->
                                     runCatching { requester.requestFocus() }
                                 }
+                                ensureGroupChipVisible(target)
                             }
                         } else {
                             null
                         },
                         onArrowRight = if (gi < groupCount - 1) {
                             {
-                                selectedGroup = gi + 1
-                                groupFocusRequesters.getOrNull(gi + 1)?.let { requester ->
+                                val target = gi + 1
+                                groupFocusRequesters.getOrNull(target)?.let { requester ->
                                     runCatching { requester.requestFocus() }
                                 }
+                                ensureGroupChipVisible(target)
                             }
                         } else {
                             null
                         },
                         onFocused = {
-                            if (selectedGroup != gi) {
-                                selectedGroup = gi
-                            }
-                            val shouldScroll =
-                                TvLayeredHorizontalFocusScroll.shouldAnimateHorizontalScroll(
-                                    previousActiveIndex = activeGroupFocusedIndex,
-                                    newlyFocusedIndex = gi,
-                                )
                             activeGroupFocusedIndex = gi
-                            if (shouldScroll) {
-                                scrollPlayerMenuChipIntoView(
-                                    listState = groupListState,
-                                    index = gi,
-                                    itemCount = groupCount,
-                                    scrollScope = playlistScrollScope,
-                                    leadingInsetPx = playlistLeadingInsetPx,
-                                    trailingInsetPx = playlistTrailingInsetPx,
-                                )
-                            }
+                            // 获焦只保证芯片可见；不改 selectedGroup。
+                            ensureGroupChipVisible(gi)
                         },
                         onClick = {
+                            // 确认：下划线落到该组 + 上方选集滚到组首集。
                             selectedGroup = gi
+                            ensureGroupChipVisible(gi)
                             val firstAbs = gi * PLAYER_PLAYLIST_GROUP_SIZE
                             moveEpisodeFocus(
                                 targetIndex = firstAbs.coerceIn(0, episodes.lastIndex),
@@ -1178,17 +1187,18 @@ private fun TvPlayerPlaylistMenu(
 /**
  * 全屏播放列表分组选项。
  *
- * 获焦：主题色文字；选中：主题色文字 + 底部下划线。
+ * - 获焦未确认：主题色文字，无下划线
+ * - 选中（确认/选集所在组）：主题色文字 + 底部下划线
  *
  * @param label 分组文案，如 `1-20`。
- * @param selected 是否当前分组。
+ * @param selected 是否当前选中分组（下划线）。
  * @param focusRequester 焦点请求器。
  * @param onArrowUp 上键回调。
  * @param onArrowDown 下键回调。
  * @param onArrowLeft 左键回调。
  * @param onArrowRight 右键回调。
- * @param onFocused 获焦回调。
- * @param onClick 确认回调。
+ * @param onFocused 获焦回调（不得改选中）。
+ * @param onClick 确认回调（改选中 + 跳选集）。
  */
 @Composable
 private fun TvPlayerEpisodeGroupChoice(
@@ -1205,7 +1215,8 @@ private fun TvPlayerEpisodeGroupChoice(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val renewMenuAutoHide = LocalPlayerMenuInteractionBumps.current
-    val emphasize = selected || isFocused
+    // 获焦或选中都用主题色；下划线仅 selected。
+    val textAccent = selected || isFocused
     val scale by animateFloatAsState(
         targetValue = if (isFocused) 1.04f else 1f,
         animationSpec = tween(140),
@@ -1261,11 +1272,12 @@ private fun TvPlayerEpisodeGroupChoice(
     ) {
         Text(
             text = label,
-            color = if (emphasize) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
+            color = if (textAccent) TvTokens.Accent else Color.White.copy(alpha = 0.86f),
             fontSize = 15.sp,
-            fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Medium,
+            fontWeight = if (textAccent) FontWeight.Bold else FontWeight.Medium,
         )
         Spacer(modifier = Modifier.height(4.dp))
+        // 仅选中显示底部主题色下划线；获焦未确认只改文字色。
         Box(
             modifier = Modifier
                 .fillMaxWidth()

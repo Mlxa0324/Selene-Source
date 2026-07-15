@@ -756,7 +756,10 @@ class TvPlayerRouteControlContractTest {
 
         // 分组无背景样式组件存在。
         assertThat(source).contains("private fun TvPlayerEpisodeGroupChoice(")
-        assertThat(source).contains("获焦：主题色文字；选中：主题色文字 + 底部下划线")
+        assertThat(source).contains("获焦未确认：主题色文字，无下划线")
+        assertThat(source).contains("ensureGroupChipVisible")
+        assertThat(playlistSource).contains("获焦只保证芯片可见；不改 selectedGroup")
+        assertThat(playlistSource).contains("确认：下划线落到该组")
         // 连续横轨；左右键 SoftEdgeFollow（焦点随方向走，贴边才滚），打开菜单钉左。
         assertThat(source).contains("movePlaylistEpisodeFocus")
         assertThat(source).contains("requestPlaylistEpisodeFocusWhenReady")

@@ -37,7 +37,9 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("pinCurrentSource = false")
         // 选集在上、分组在下：先渲染 episode LazyRow，再渲染分组条。
         assertThat(source.indexOf("NcatEpisodeChip(")).isLessThan(source.lastIndexOf("NcatEpisodeGroupChoice("))
-        assertThat(source).contains("分组移动即切换")
+        assertThat(source).contains("获焦：仅主题色，不改选中、不切选集")
+        assertThat(source).contains("确认：下划线 + 上方选集切到该组")
+        assertThat(source).contains("获焦未确认：主题色文字，无下划线")
 
         assertThat(source).doesNotContain("网飞猫")
     }
