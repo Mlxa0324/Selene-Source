@@ -1,7 +1,9 @@
 package org.moontechlab.selene.tv.core.design
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
  * TV 端视觉 token 集合。
@@ -144,6 +146,20 @@ object TvTokens {
      * TV 顶部快捷入口圆角。
      */
     val TopActionRadius = 22.dp
+
+    /**
+     * 胶囊按钮内字符图标字号（⌕ 等）。
+     *
+     * 与 [ActionIconSize] 矢量图标视觉等重，全局搜索/详情顶栏共用。
+     */
+    val TopActionIconGlyph: TextUnit = 24.sp
+
+    /**
+     * 按钮内矢量图标统一尺寸（详情全屏/收藏/底部胶囊等）。
+     *
+     * 与 [TopActionIconGlyph] 对齐观感，避免一处偏大一处偏小。
+     */
+    val ActionIconSize = 22.dp
 
     /**
      * TV 弹窗水平内边距。

@@ -226,7 +226,9 @@ class TvAppFocusContractTest {
         assertThat(pillSource).contains("IntrinsicSize.Max")
         assertThat(pillSource).contains("Spacer(modifier = Modifier.height(1.dp))")
         assertThat(pillSource).contains(".height(3.dp)")
+        // 主菜单选中字号仍 19sp；快捷入口图标走 TopActionIconGlyph。
         assertThat(pillSource).contains("fontSize = 19.sp")
+        assertThat(pillSource).contains("TvTokens.TopActionIconGlyph")
         assertThat(pillSource).contains("FontWeight.ExtraBold")
         // 左右间距接近原先胶囊视觉疏密度。
         assertThat(topNavSource).contains("horizontalSpacing = 28.dp")

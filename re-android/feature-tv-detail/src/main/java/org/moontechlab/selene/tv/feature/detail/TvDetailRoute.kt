@@ -137,15 +137,7 @@ private val NcatMutedText = Color(0xFF9A9AA3)
 /** TV 详情页截图版圆角。 */
 private val NcatRadius = 10.dp
 
-/**
- * 详情页带图标按钮的统一图标尺寸（全屏/收藏/底部胶囊等）。
- *
- * 比早期 16~22 略放大，远距离看更清晰，且各入口一致。
- */
-private val NcatActionIconSize = 26.dp
-
-/** 详情页字符类图标字号（如顶栏搜索 ⌕），与 [NcatActionIconSize] 视觉对齐。 */
-private val NcatActionGlyphSp = 22.sp
+// 按钮图标尺寸统一走 TvTokens.ActionIconSize / TopActionIconGlyph，与全局搜索胶囊一致。
 
 /**
  * 详情页左侧对齐竖线。
@@ -649,7 +641,7 @@ private fun NcatDetailTopBar(
             NcatTopPill(
                 label = "搜索",
                 leadingGlyph = "⌕",
-                leadingGlyphSize = NcatActionGlyphSp,
+                leadingGlyphSize = TvTokens.TopActionIconGlyph,
                 focusRequester = focusTargets.search,
                 modifier = Modifier
                     .tvBringFocusedItemIntoView()
@@ -686,7 +678,7 @@ private fun NcatDetailTopBar(
 private fun NcatTopPill(
     label: String,
     leadingGlyph: String? = null,
-    leadingGlyphSize: TextUnit = NcatActionGlyphSp,
+    leadingGlyphSize: TextUnit = TvTokens.TopActionIconGlyph,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -1305,7 +1297,7 @@ private fun NcatInfoPanel(
                 onPressed = { onPlayPressed?.invoke() },
                 iconContent = {
                     NcatFullscreenGlyph(
-                        modifier = Modifier.size(NcatActionIconSize),
+                        modifier = Modifier.size(TvTokens.ActionIconSize),
                         color = Color.White,
                     )
                 },
@@ -1326,7 +1318,7 @@ private fun NcatInfoPanel(
                 onPressed = { onFavoriteToggle?.invoke() },
                 iconContent = {
                     NcatFavoriteGlyph(
-                        modifier = Modifier.size(NcatActionIconSize),
+                        modifier = Modifier.size(TvTokens.ActionIconSize),
                         favorited = state.isFavorite,
                     )
                 },
@@ -1471,7 +1463,7 @@ private fun NcatActionTile(
         verticalArrangement = Arrangement.Center,
     ) {
         Box(
-            modifier = Modifier.size(NcatActionIconSize),
+            modifier = Modifier.size(TvTokens.ActionIconSize),
             contentAlignment = Alignment.Center,
         ) {
             if (iconContent != null) {
@@ -1480,7 +1472,7 @@ private fun NcatActionTile(
                 Text(
                     text = icon,
                     color = Color.White,
-                    fontSize = NcatActionGlyphSp,
+                    fontSize = TvTokens.TopActionIconGlyph,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -2765,10 +2757,11 @@ private enum class NcatBottomActionIcon { BackToTop, RandomBrowse }
 @Composable
 private fun NcatBottomActionGlyph(
     kind: NcatBottomActionIcon,
-    modifier: Modifier = Modifier.size(NcatActionIconSize),
+    modifier: Modifier = Modifier.size(TvTokens.ActionIconSize),
 ) {
     Canvas(modifier = modifier) {
-        val stroke = 2.2.dp.toPx()
+        // 线宽随统一图标尺寸略收，避免 22dp 框内显得过粗。
+        val stroke = 2.dp.toPx()
         val color = Color.White.copy(alpha = 0.92f)
         when (kind) {
             NcatBottomActionIcon.BackToTop -> {

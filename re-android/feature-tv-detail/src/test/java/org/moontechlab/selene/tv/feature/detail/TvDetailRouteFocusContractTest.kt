@@ -89,8 +89,7 @@ class TvDetailRouteFocusContractTest {
 
         assertThat(source).contains("label = \"搜索\"")
         assertThat(source).contains("leadingGlyph = \"⌕\"")
-        assertThat(source).contains("leadingGlyphSize = NcatActionGlyphSp")
-        assertThat(source).contains("NcatActionGlyphSp = 22.sp")
+        assertThat(source).contains("leadingGlyphSize = TvTokens.TopActionIconGlyph")
         assertThat(topPillSource).contains("Row(")
         assertThat(topPillSource).contains("fontSize = leadingGlyphSize")
     }
@@ -140,9 +139,9 @@ class TvDetailRouteFocusContractTest {
         assertThat(bottomPill).contains("TvTokens.TopActionRadius")
         assertThat(bottomPill).contains("fontSize = 16.sp")
         assertThat(bottomPill).doesNotContain("height(36.dp)")
-        assertThat(source).contains("NcatActionIconSize = 26.dp")
-        assertThat(source).contains("NcatActionGlyphSp = 22.sp")
-        assertThat(source).contains(".size(NcatActionIconSize)")
+        // 底部/全屏/收藏矢量图标与全局搜索字标统一走 token。
+        assertThat(source).contains("TvTokens.ActionIconSize")
+        assertThat(source).contains("TvTokens.TopActionIconGlyph")
         assertThat(source).contains("NcatBottomActionGlyph(")
     }
 

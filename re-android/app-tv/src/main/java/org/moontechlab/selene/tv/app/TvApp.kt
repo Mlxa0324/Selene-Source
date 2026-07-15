@@ -618,7 +618,8 @@ private fun TvNavigationPill(
                     Text(
                         text = iconGlyph,
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 19.sp,
+                            // 与详情/底部操作图标视觉等重（TvTokens.TopActionIconGlyph）。
+                            fontSize = TvTokens.TopActionIconGlyph,
                             fontWeight = FontWeight.Bold,
                         ),
                         color = Color.White,
