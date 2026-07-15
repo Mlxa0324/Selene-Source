@@ -28,6 +28,12 @@ val LocalTvDesignMetrics = compositionLocalOf {
 }
 
 /**
+ * 固定顶栏（Logo + 主菜单）在画布坐标系下的像素高度。
+ * 分类筛选短距下滑行程会参考该值。
+ */
+val LocalTvTopChromeHeightPx = compositionLocalOf { 0 }
+
+/**
  * TV 设计稿画布。
  *
  * 固定使用指定设计稿尺寸作为视觉基准：

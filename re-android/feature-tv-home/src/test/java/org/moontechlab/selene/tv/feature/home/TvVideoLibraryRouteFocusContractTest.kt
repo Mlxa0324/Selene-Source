@@ -43,16 +43,20 @@ class TvVideoLibraryRouteFocusContractTest {
     }
 
     /**
-     * 分类筛选从页面顶部下滑展开，隐藏重复网格标题以优先展示影视海报。
+     * 分类筛选从顶栏下短距下滑，按实测高度顶开列表。
      */
     @Test
     fun category_filter_slides_from_top_and_prioritizes_grid_space() {
         val source = readLibraryRouteSource()
 
-        assertThat(source).contains("slideInVertically(")
-        assertThat(source).contains("initialOffsetY = { fullHeight -> -fullHeight }")
-        assertThat(source).contains("slideOutVertically(")
-        assertThat(source).contains("headerContent = if (showFilter) null else")
+        assertThat(source).contains("animateFloatAsState(")
+        assertThat(source).contains("LocalTvTopChromeHeightPx")
+        assertThat(source).contains("filterPanelHeightPx")
+        assertThat(source).contains("slideTravelPx")
+        assertThat(source).contains("pushDownHeightPx")
+        assertThat(source).contains(".weight(1f)")
+        assertThat(source).contains("topChromeHeightPx > 0 -> topChromeHeightPx")
+        assertThat(source).doesNotContain("slideInVertically(")
         assertThat(source).contains("firstItemFocusRequester = if (showFilter) null else contentFocusRequester")
     }
 

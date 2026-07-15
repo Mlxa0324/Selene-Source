@@ -26,8 +26,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -45,6 +47,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -57,6 +60,7 @@ import org.moontechlab.selene.tv.app.navigation.TvDestination
 import org.moontechlab.selene.tv.app.navigation.TvNavGraph
 import org.moontechlab.selene.tv.core.design.SeleneTvTheme
 import org.moontechlab.selene.tv.core.design.TvTokens
+import org.moontechlab.selene.tv.core.design.layout.LocalTvTopChromeHeightPx
 import org.moontechlab.selene.tv.core.design.layout.TvDesignCanvas
 import org.moontechlab.selene.tv.core.design.layout.TvDesignPreset
 import org.moontechlab.selene.tv.core.design.focus.TvRemotePressAction
@@ -130,6 +134,8 @@ fun TvApp() {
             val topDestinationFocusRequesters = rememberTopDestinationFocusRequesters()
             var topNavHasFocus by remember { mutableStateOf(false) }
             var showCategoryFilter by remember { mutableStateOf(false) }
+            // 顶栏实测高度，供分类筛选短距下滑参考。
+            var topChromeHeightPx by remember { mutableIntStateOf(0) }
             val isPrimaryRoute = currentRoute in TvDestination.primaryMenuDestinations.map { it.route }
 
             fun focusCurrentPrimaryTab(): Boolean {
@@ -145,6 +151,7 @@ fun TvApp() {
             /**
              * 主菜单页内容区返回：关闭筛选（若有）并落焦当前 tab。
              * 不 pop 导航栈，避免从剧集/电影等分类页被弹回首页。
+             * 顶栏始终固定，筛选只在其下方展开。
              */
             fun handlePrimaryContentBack(): Boolean {
                 if (!isPrimaryRoute || topNavHasFocus) {
@@ -168,64 +175,84 @@ fun TvApp() {
                     contentFocusRequester.requestFocus()
                 }
             }
+            LaunchedEffect(isPrimaryRoute) {
+                if (!isPrimaryRoute) {
+                    topChromeHeightPx = 0
+                }
+            }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .onPreviewKeyEvent { event ->
-                        // 模拟器 Esc 与返回键一致：内容区 → 当前主 tab（筛选一并收起）。
-                        val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
-                        if (!isBackOrEsc || !isPrimaryRoute || topNavHasFocus) {
-                            return@onPreviewKeyEvent false
-                        }
-                        if (event.type == KeyEventType.KeyDown) {
-                            return@onPreviewKeyEvent handlePrimaryContentBack()
-                        }
-                        // KeyUp 一并消费，避免再被系统 pop 回首页。
-                        if (event.type == KeyEventType.KeyUp) {
-                            return@onPreviewKeyEvent true
-                        }
-                        false
-                    },
+            CompositionLocalProvider(
+                LocalTvTopChromeHeightPx provides topChromeHeightPx,
             ) {
-                if (isPrimaryRoute) {
-                    // 筛选展开时仍保留顶栏：返回落焦当前 tab 不丢 requester，也避免显隐整栏抖动。
-                    TvTopNavigationBar(
-                        currentRoute = currentRoute,
-                        contentFocusRequester = contentFocusRequester,
-                        topDestinationFocusRequesters = topDestinationFocusRequesters,
-                        topNavHasFocus = topNavHasFocus,
-                        onTopNavHasFocusChange = { focused -> topNavHasFocus = focused },
-                        onNavigate = { destination ->
-                            if (destination.route != currentRoute) {
-                                // 点击顶部标签时只保留顶层单实例，避免重复入栈。
-                                navController.navigate(destination.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .onPreviewKeyEvent { event ->
+                            // 模拟器 Esc 与返回键一致：内容区 → 当前主 tab（筛选一并收起）。
+                            val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape
+                            if (!isBackOrEsc || !isPrimaryRoute || topNavHasFocus) {
+                                return@onPreviewKeyEvent false
                             }
+                            if (event.type == KeyEventType.KeyDown) {
+                                return@onPreviewKeyEvent handlePrimaryContentBack()
+                            }
+                            // KeyUp 一并消费，避免再被系统 pop 回首页。
+                            if (event.type == KeyEventType.KeyUp) {
+                                return@onPreviewKeyEvent true
+                            }
+                            false
                         },
-                        onFilterToggle = {
-                            // 仅切换当前分类页的内联筛选状态，不创建或跳转新路由。
-                            showCategoryFilter = !showCategoryFilter
+                ) {
+                    // 顶栏固定：筛选展开时不隐藏。
+                    if (isPrimaryRoute) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onSizeChanged { size ->
+                                    if (size.height > 0 && size.height != topChromeHeightPx) {
+                                        topChromeHeightPx = size.height
+                                    }
+                                },
+                        ) {
+                            TvTopNavigationBar(
+                                currentRoute = currentRoute,
+                                contentFocusRequester = contentFocusRequester,
+                                topDestinationFocusRequesters = topDestinationFocusRequesters,
+                                topNavHasFocus = topNavHasFocus,
+                                onTopNavHasFocusChange = { focused -> topNavHasFocus = focused },
+                                onNavigate = { destination ->
+                                    if (destination.route != currentRoute) {
+                                        // 点击顶部标签时只保留顶层单实例，避免重复入栈。
+                                        navController.navigate(destination.route) {
+                                            popUpTo(navController.graph.startDestinationId) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
+                                },
+                                onFilterToggle = {
+                                    // 仅切换当前分类页的内联筛选状态，不创建或跳转新路由。
+                                    showCategoryFilter = !showCategoryFilter
+                                },
+                            )
+                        }
+                    }
+
+                    TvNavGraph(
+                        navController = navController,
+                        appContainer = appContainer,
+                        contentFocusRequester = contentFocusRequester,
+                        showCategoryFilter = showCategoryFilter,
+                        onServerConfigSaved = {
+                            serverConfigVersion++
                         },
+                        // 顶栏下方剩余高度。
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
-
-                TvNavGraph(
-                    navController = navController,
-                    appContainer = appContainer,
-                    contentFocusRequester = contentFocusRequester,
-                    showCategoryFilter = showCategoryFilter,
-                    onServerConfigSaved = {
-                        serverConfigVersion++
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
             }
         }
     }
