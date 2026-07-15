@@ -50,7 +50,7 @@ val LocalCategoryFilterOverlayState = compositionLocalOf<CategoryFilterOverlaySt
 /**
  * 全屏坐标系下的分类筛选图层。
  *
- * - 起点：面板在屏幕上方（translationY = -H）
+ * - 起点：贴近屏幕顶边（略上方约 12% 面板高）
  * - 落点：顶栏下沿（translationY = topChromeHeightPx）
  * - 顶栏与 Logo 仍在底层占位，不参与收起
  * - 动画仅用 graphicsLayer，列表用 [CategoryFilterOverlayState.revealedHeightPx] inset
@@ -78,10 +78,15 @@ fun TvCategoryFilterOverlayLayer(
     val composePanel = (visible || progress > 0.001f) && state.filters.isNotEmpty()
     // 列表 inset：只顶海报区，不动顶栏。
     val revealedHeightPx = (panelHeightPx * progress).roundToInt()
-    // 整屏坐标：p=0 在屏上沿外，p=1 落在顶栏下沿。
-    val restY = topChromeHeightPx.coerceAtLeast(0)
+    // 落点：顶栏下沿。起点贴近屏幕顶（略上方 12% 面板高），行程≈顶栏高，不再整板从屏外飞入。
+    val restY = topChromeHeightPx.coerceAtLeast(0).toFloat()
+    val startY = if (heightReady) {
+        -panelHeightPx * 0.12f
+    } else {
+        0f
+    }
     val translationYPx = if (heightReady) {
-        -panelHeightPx + (restY + panelHeightPx) * progress
+        startY + (restY - startY) * progress
     } else {
         0f
     }
