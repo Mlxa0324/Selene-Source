@@ -376,7 +376,7 @@ internal fun TvLibraryFilterPanel(
             .fillMaxWidth()
             // 紧凑深色筛选层与下方海报区分开，同时不占用额外标题高度。
             .background(
-                // 与全屏纯色遮罩同系，不透明实底。
+                // 仅弹框区域实色底，不铺全屏遮罩。
                 color = TvTokens.Surface,
                 shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
             )

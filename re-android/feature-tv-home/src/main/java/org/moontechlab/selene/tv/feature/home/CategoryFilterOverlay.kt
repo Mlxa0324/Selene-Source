@@ -3,9 +3,7 @@ package org.moontechlab.selene.tv.feature.home
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
@@ -27,7 +25,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-import org.moontechlab.selene.tv.core.design.TvTokens
 
 /**
  * 壳层分类筛选 overlay 状态：由分类页写入数据，由壳层绘制图层。
@@ -135,18 +132,12 @@ fun TvCategoryFilterOverlayLayer(
     val minCoverHeight = with(density) { chromePx.toDp() }
     val panelAlpha = if (heightReady) progress.coerceIn(0f, 1f) else 0f
 
+    // 仅筛选弹框本身做图层与动画；不铺全屏实色，海报保持清晰可见。
     Box(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .zIndex(12f),
     ) {
-        // 全屏纯色遮罩：挡住底层海报，不使用模糊。
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = panelAlpha }
-                .background(TvTokens.Background),
-        )
         TvLibraryFilterPanel(
             filters = state.filters,
             contentFocusRequester = entryFocus.takeIf { visible },
