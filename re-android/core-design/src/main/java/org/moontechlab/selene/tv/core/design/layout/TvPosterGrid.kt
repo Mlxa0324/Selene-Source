@@ -164,11 +164,14 @@ fun TvPosterGrid(
                             // 首行交给系统几何搜索（顶栏/筛选），不在网格内线性回退。
                             FocusRequester.Default
                         }
-                        down = if (index + safeColumns <= lastIndex) {
-                            itemFocusRequesters[index + safeColumns]
-                        } else {
-                            FocusRequester.Cancel
-                        }
+                        // 同列优先；下一行缺列时落到末项，避免末列 Down 无响应。
+                        down = resolveGridDownIndex(
+                            index = index,
+                            itemCount = items.size,
+                            columns = safeColumns,
+                        )?.let { downIndex ->
+                            itemFocusRequesters[downIndex]
+                        } ?: FocusRequester.Cancel
                     },
                     onClick = onItemClick?.let { click -> { click(item) } },
                     onFocusChanged = { hasFocus ->
@@ -226,6 +229,38 @@ private fun resolveLastRowStartIndex(itemCount: Int, columns: Int): Int {
     } else {
         itemCount - rem
     }
+}
+
+/**
+ * 网格 Down 邻居业务下标。
+ *
+ * - 下一行同列存在：落到 `index + columns`。
+ * - 下一行存在但缺列（半行）：落到列表末项，避免末列 Down 被 Cancel 卡死。
+ * - 已在末行：返回 null（调用方 Cancel 或交给外层）。
+ *
+ * @param index 当前业务下标。
+ * @param itemCount 业务项数量。
+ * @param columns 列数。
+ * @return 目标下标；无向下邻居时 null。
+ */
+fun resolveGridDownIndex(
+    index: Int,
+    itemCount: Int,
+    columns: Int,
+): Int? {
+    if (itemCount <= 0 || index < 0 || index >= itemCount) {
+        return null
+    }
+    val safeColumns = columns.coerceAtLeast(1)
+    val lastIndex = itemCount - 1
+    val exactDown = index + safeColumns
+    if (exactDown <= lastIndex) {
+        return exactDown
+    }
+    val currentRow = index / safeColumns
+    val lastRow = lastIndex / safeColumns
+    // 还有更低的半行：夹到末项（用户期望的「落到最后一个」）。
+    return if (currentRow < lastRow) lastIndex else null
 }
 
 /**

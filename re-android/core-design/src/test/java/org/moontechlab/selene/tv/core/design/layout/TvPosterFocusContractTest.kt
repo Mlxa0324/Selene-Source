@@ -108,6 +108,7 @@ class TvPosterFocusContractTest {
 
     /**
      * 分类网格上下左右必须按行列邻居显式指定，禁止默认搜索退化成「上一行最后一个」。
+     * 末列 Down 在下一行缺列时须落到末项（resolveGridDownIndex），禁止直接 Cancel 卡死。
      */
     @Test
     fun posterGrid_uses_explicit_row_column_neighbors_for_dpad() {
@@ -116,14 +117,36 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("itemFocusRequesters")
         assertThat(source).contains("val column = index % safeColumns")
         assertThat(source).contains("index - safeColumns")
-        assertThat(source).contains("index + safeColumns")
         assertThat(source).contains("FocusRequester.Cancel")
         assertThat(source).contains("FocusRequester.Default")
         assertThat(source).contains("focusProperties = {")
         assertThat(source).contains("headerLazyOffset")
         // 上下同列，不得暗示线性 prev/next 作为主策略。
         assertThat(source).contains("itemFocusRequesters[index - safeColumns]")
-        assertThat(source).contains("itemFocusRequesters[index + safeColumns]")
+        // 半行末列 Down 夹到 lastIndex，而不是 index+columns 超界就 Cancel。
+        assertThat(source).contains("resolveGridDownIndex(")
+        assertThat(source).contains("itemFocusRequesters[downIndex]")
+        assertThat(source).contains("fun resolveGridDownIndex(")
+    }
+
+    /**
+     * 网格 Down：同列优先；下一行不足列数时落到末项；已在末行返回 null。
+     */
+    @Test
+    fun resolveGridDownIndex_clamps_to_last_item_on_short_next_row() {
+        // 13 项 7 列：行0 = 0..6，行1 = 7..12（半行）
+        assertThat(resolveGridDownIndex(index = 0, itemCount = 13, columns = 7)).isEqualTo(7)
+        assertThat(resolveGridDownIndex(index = 5, itemCount = 13, columns = 7)).isEqualTo(12)
+        // 末列 6 正下方不存在 → 落到末项 12（用户箭头期望）
+        assertThat(resolveGridDownIndex(index = 6, itemCount = 13, columns = 7)).isEqualTo(12)
+        // 已在末行：无向下邻居
+        assertThat(resolveGridDownIndex(index = 12, itemCount = 13, columns = 7)).isNull()
+        assertThat(resolveGridDownIndex(index = 9, itemCount = 13, columns = 7)).isNull()
+        // 满行网格：正常同列
+        assertThat(resolveGridDownIndex(index = 6, itemCount = 14, columns = 7)).isEqualTo(13)
+        // 边界
+        assertThat(resolveGridDownIndex(index = 0, itemCount = 0, columns = 7)).isNull()
+        assertThat(resolveGridDownIndex(index = -1, itemCount = 10, columns = 7)).isNull()
     }
 
     /**

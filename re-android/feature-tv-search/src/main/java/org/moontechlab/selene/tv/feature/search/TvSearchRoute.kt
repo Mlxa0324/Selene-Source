@@ -58,6 +58,7 @@ import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
+import org.moontechlab.selene.tv.core.design.layout.resolveGridDownIndex
 import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
 
 // ── 布局常量：左输入区更紧凑，右结果区更宽 ──
@@ -1193,9 +1194,14 @@ private fun WordTileGrid(
                                             }
                                         },
                                         onDown = {
-                                            val down = index + columns
-                                            if (down <= lastIndex) {
-                                                itemFocusRequesters.getOrNull(down)
+                                            // 同列优先；下一行缺列时落到末项，避免末列 Down 无响应。
+                                            val downIndex = resolveGridDownIndex(
+                                                index = index,
+                                                itemCount = words.size,
+                                                columns = columns,
+                                            )
+                                            if (downIndex != null) {
+                                                itemFocusRequesters.getOrNull(downIndex)
                                                     ?.let { runCatching { it.requestFocus() } }
                                             } else {
                                                 // 底行下键：把列号交给外层，落到下区同列首项。
