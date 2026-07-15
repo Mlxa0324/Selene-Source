@@ -127,7 +127,7 @@ class TvPosterFocusContractTest {
     }
 
     /**
-     * 纵向网格获焦跟滚必须走中心带 + scrollBy，禁止每个获焦项 pin 到 firstVisible 顶缘。
+     * 纵向网格获焦跟滚必须走中心带 + scrollBy；首行强制回顶，禁止顶缘被藏/被裁。
      */
     @Test
     fun posterGrid_uses_center_band_follow_scroll_instead_of_pin_to_top() {
@@ -137,6 +137,10 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("animateScrollBy")
         assertThat(source).contains("centerLine")
         assertThat(source).contains("itemCenter > centerLine")
+        assertThat(source).contains("firstRowEndExclusive")
+        assertThat(source).contains("contentTopPadding")
+        // 首行回顶，不得残留 scrollOffset 把封面顶裁掉。
+        assertThat(source).contains("animateScrollToItem(0)")
         // 不得再对每个获焦项无条件 pin firstVisible。
         assertThat(source).doesNotContain("if (lazyIndex != gridState.firstVisibleItemIndex)")
     }

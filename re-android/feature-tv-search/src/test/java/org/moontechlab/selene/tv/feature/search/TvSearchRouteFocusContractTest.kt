@@ -76,6 +76,7 @@ class TvSearchRouteFocusContractTest {
         assertThat(source).contains("columns = 5")
         assertThat(source).contains("fillCellWidth = true")
         assertThat(source).contains("contentHorizontalPadding = 2.dp")
+        assertThat(source).contains("contentTopPadding = 14.dp")
         assertThat(source).contains("horizontalSpacing = 12.dp")
         assertThat(source).contains("verticalSpacing = 32.dp")
         assertThat(source).contains("rating = video.doubanRate")

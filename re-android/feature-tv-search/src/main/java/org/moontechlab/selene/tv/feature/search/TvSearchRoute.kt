@@ -1386,7 +1386,7 @@ private fun SearchResultPanel(
             )
 
             else -> {
-                // 5 列铺满格宽；上下行间距加宽，避免上下两行标题/封面贴太近。
+                // 5 列铺满格宽；顶留白防首行放大裁切；上下行间距加宽。
                 TvPosterGrid(
                     items = state.resultCards.map { video ->
                         TvPosterItem(
@@ -1402,6 +1402,7 @@ private fun SearchResultPanel(
                     columns = 5,
                     modifier = Modifier.fillMaxSize(),
                     contentHorizontalPadding = 2.dp,
+                    contentTopPadding = 14.dp,
                     contentBottomPadding = 20.dp,
                     horizontalSpacing = 12.dp,
                     verticalSpacing = 32.dp,

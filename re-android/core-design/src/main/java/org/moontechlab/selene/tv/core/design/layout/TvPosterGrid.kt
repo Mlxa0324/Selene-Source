@@ -38,6 +38,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给首张海报。
  * @param onItemClick 卡片点击回调。
  * @param contentHorizontalPadding 网格左右 contentPadding；容器内嵌时可减小。
+ * @param contentTopPadding 网格顶部 contentPadding；给首行获焦放大留白，避免顶缘被裁。
  * @param contentBottomPadding 网格底部 contentPadding。
  * @param horizontalSpacing 列间距。
  * @param verticalSpacing 行间距。
@@ -54,6 +55,7 @@ fun TvPosterGrid(
     firstItemFocusRequester: FocusRequester? = null,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
     contentHorizontalPadding: Dp = TvListLayoutMetrics.GridHorizontalPadding,
+    contentTopPadding: Dp = TvListLayoutMetrics.FocusSafePadding,
     contentBottomPadding: Dp = TvListLayoutMetrics.GridBottomPadding,
     horizontalSpacing: Dp = TvTokens.CardSpacing,
     verticalSpacing: Dp = TvTokens.CardSpacing,
@@ -97,6 +99,7 @@ fun TvPosterGrid(
         state = gridState,
         contentPadding = PaddingValues(
             start = contentHorizontalPadding,
+            top = contentTopPadding,
             end = contentHorizontalPadding,
             bottom = contentBottomPadding,
         ),
@@ -167,9 +170,14 @@ fun TvPosterGrid(
                             // 记录真实业务焦点，避免首卡被 LazyGrid 回收后顶部下探没有目标。
                             lastFocusedItemIndex = index
                             val lazyIndex = index + headerLazyOffset
+                            // 首行 lazy 下标范围：[headerOffset, headerOffset + columns)
+                            val firstRowEndExclusive = headerLazyOffset + safeColumns
                             scrollScope.launch {
-                                // 中心带跟焦：中线以上不滚，避免获焦即 pin 顶把列表拽走、顶部被藏。
-                                gridState.scrollFocusedItemWithCenterBand(lazyIndex)
+                                // 中心带跟焦；首行强制回顶，避免顶部被藏/被裁。
+                                gridState.scrollFocusedItemWithCenterBand(
+                                    lazyIndex = lazyIndex,
+                                    firstRowEndExclusive = firstRowEndExclusive,
+                                )
                             }
                         }
                         // 焦点进入预取阈值时后台请求下一页，避免用户触底后停在加载态。
@@ -187,13 +195,24 @@ fun TvPosterGrid(
 /**
  * 纵向网格中心带跟焦。
  *
- * - 获焦项仍在视口上半区且完整可见：不滚动，顶部行/标题保持原位。
- * - 项中心越过视口中线：按差值 scrollBy，列表被焦点「带走」而不是钉到顶。
- * - 顶/底被裁：只滚裁切量；未布局时先滚近再按中心带微调。
+ * - **首行**：列表滚回顶部（index=0, offset=0），封面顶缘与 contentTopPadding 完整可见。
+ * - 非首行、中线以上且完整可见：不滚动。
+ * - 项中心越过视口中线：按差值 scrollBy。
+ * - 顶/底被裁：只滚裁切量；未布局时先滚近再微调。
  *
- * 禁止对每个获焦项 animateScrollToItem 无 offset（会把项钉在 firstVisible 顶缘）。
+ * 禁止对每个获焦项 animateScrollToItem 无条件 pin 到 firstVisible 顶缘。
  */
-private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(lazyIndex: Int) {
+private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(
+    lazyIndex: Int,
+    firstRowEndExclusive: Int,
+) {
+    // 首行左右移动/从下行返回：必须顶对齐，否则标题下封面顶被裁或整行被顶出视口。
+    if (lazyIndex in 0 until firstRowEndExclusive) {
+        if (firstVisibleItemIndex != 0 || firstVisibleItemScrollOffset != 0) {
+            animateScrollToItem(0)
+        }
+        return
+    }
     var target = layoutInfo.visibleItemsInfo.firstOrNull { info -> info.index == lazyIndex }
     if (target == null) {
         // 尚未进入布局：先滚进可见范围，再交给中心带逻辑，避免一直停在屏外。
@@ -211,7 +230,8 @@ private suspend fun LazyGridState.scrollFocusedItemWithCenterBand(lazyIndex: Int
     val itemHeight = target.size.height
     val itemEnd = itemStart + itemHeight
     val itemCenter = itemStart + itemHeight / 2
-    val edgeSafePx = 8
+    // 略大于焦点描边/放大溢出，避免「刚露一点仍被裁」。
+    val edgeSafePx = 12
     when {
         // 顶部被裁：刚好露出，不要 pin 成 firstVisible。
         itemStart < viewportStart + edgeSafePx -> {
