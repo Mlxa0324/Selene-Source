@@ -10,14 +10,14 @@ import org.junit.Test
  */
 class TvPreferencesStoreTest {
     /**
-     * 播放器内核默认值必须回到 WebView，优先对齐 Flutter TV 的兼容播放链路。
+     * 播放器内核默认值为 Exo；设置页已隐藏切换入口。
      */
     @Test
-    fun player_kernel_defaults_to_webview() = runTest {
+    fun player_kernel_defaults_to_exo() = runTest {
         val store = TvPreferencesStore()
 
-        assertThat(store.peekPlayerKernel()).isEqualTo("webview")
-        assertThat(store.getPlayerKernel()).isEqualTo("webview")
+        assertThat(store.peekPlayerKernel()).isEqualTo("exo")
+        assertThat(store.getPlayerKernel()).isEqualTo("exo")
     }
 
     /**

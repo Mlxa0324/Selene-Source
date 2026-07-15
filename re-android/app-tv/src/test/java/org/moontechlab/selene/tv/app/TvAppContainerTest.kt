@@ -76,7 +76,7 @@ class TvAppContainerTest {
         assertThat(state.account).isEqualTo("demo")
         assertThat(state.password).isEqualTo("secret")
         assertThat(state.danmakuApi).isEqualTo("https://danmaku.example.com")
-        assertThat(state.playerKernelKey).isEqualTo("webview")
+        assertThat(state.playerKernelKey).isEqualTo("exo")
     }
 
     /**

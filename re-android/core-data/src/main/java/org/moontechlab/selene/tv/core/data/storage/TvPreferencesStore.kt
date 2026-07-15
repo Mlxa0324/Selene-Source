@@ -370,6 +370,7 @@ class TvPreferencesStore(
         private const val DEFAULT_DANMAKU_OPACITY = 0.8f
         private const val DEFAULT_DANMAKU_FONT_SCALE = 1.0f
         private const val DEFAULT_DANMAKU_DISPLAY_AREA = 1.0f
-        private const val DEFAULT_PLAYER_KERNEL = "webview"
+        /** 默认播放内核：ExoPlayer（设置页已隐藏切换入口）。 */
+        private const val DEFAULT_PLAYER_KERNEL = "exo"
     }
 }

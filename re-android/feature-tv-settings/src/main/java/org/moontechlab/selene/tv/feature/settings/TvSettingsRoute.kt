@@ -73,22 +73,11 @@ private val backgroundOptions = listOf(
     FormOption("deep_green", "深绿", Color(0xFF064E3B)),
 )
 
-private val focusEffectOptions = listOf(
-    FormOption("magnifier", "放大镜"),
-    FormOption("scale_border", "缩放边框"),
-    FormOption("underline", "下划线"),
-)
-
 private val imageSourceOptions = listOf(
     FormOption("official_cdn", "官方精品"),
     FormOption("direct", "直连"),
     FormOption("tencent_cdn", "腾讯CDN"),
     FormOption("alibaba_cdn", "阿里CDN"),
-)
-
-private val playerKernelOptions = listOf(
-    FormOption("exo", "ExoPlayer"),
-    FormOption("webview", "WebView"),
 )
 
 /**
@@ -136,9 +125,7 @@ fun TvSettingsRoute(
     val saveServerFocus = remember { FocusRequester() }
     val themeFocus = remember { FocusRequester() }
     val backgroundFocus = remember { FocusRequester() }
-    val focusEffectFocus = remember { FocusRequester() }
     val imageSourceFocus = remember { FocusRequester() }
-    val playerKernelFocus = remember { FocusRequester() }
     val adFilterFocus = remember { FocusRequester() }
     val danmakuApiFocus = remember { FocusRequester() }
     val danmakuMatchFocus = remember { FocusRequester() }
@@ -286,7 +273,8 @@ fun TvSettingsRoute(
                     )
                 }
 
-                TvFormPanel(title = "外观与焦点") {
+                // 焦点效果未接入全局样式；播放器默认固定 Exo，设置页暂不暴露。
+                TvFormPanel(title = "外观") {
                     TvFormChipOptionRow(
                         label = "主题色",
                         options = themeOptions,
@@ -313,26 +301,13 @@ fun TvSettingsRoute(
                         onOptionSelected = { onBackgroundSelected(it.key) },
                         entryFocusRequester = backgroundFocus,
                         onArrowUp = { focusAndScroll(themeFocus, "theme") },
-                        onArrowDown = { focusAndScroll(focusEffectFocus, "focusEffect") },
+                        onArrowDown = { focusAndScroll(imageSourceFocus, "imageSource") },
                         chipPreview = { option, _ ->
                             option.color?.let { color ->
                                 Box(Modifier.size(12.dp).clip(CircleShape).background(color))
                             }
                         },
                         modifier = Modifier.trackAnchor("background"),
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TvFormChipOptionRow(
-                        label = "焦点效果",
-                        options = focusEffectOptions,
-                        selectedKey = focusEffectOptions.firstOrNull { it.key == state.focusEffectKey }
-                            ?: focusEffectOptions.first(),
-                        optionLabel = { it.label },
-                        onOptionSelected = { onFocusEffectSelected(it.key) },
-                        entryFocusRequester = focusEffectFocus,
-                        onArrowUp = { focusAndScroll(backgroundFocus, "background") },
-                        onArrowDown = { focusAndScroll(imageSourceFocus, "imageSource") },
-                        modifier = Modifier.trackAnchor("focusEffect"),
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     TvFormChipOptionRow(
@@ -344,22 +319,9 @@ fun TvSettingsRoute(
                         optionLabel = { it.label },
                         onOptionSelected = { onImageSourceSelected(it.key) },
                         entryFocusRequester = imageSourceFocus,
-                        onArrowUp = { focusAndScroll(focusEffectFocus, "focusEffect") },
-                        onArrowDown = { focusAndScroll(playerKernelFocus, "playerKernel") },
-                        modifier = Modifier.trackAnchor("imageSource"),
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TvFormChipOptionRow(
-                        label = "播放器内核",
-                        options = playerKernelOptions,
-                        selectedKey = playerKernelOptions.firstOrNull { it.key == state.playerKernelKey }
-                            ?: playerKernelOptions.first(),
-                        optionLabel = { it.label },
-                        onOptionSelected = { onPlayerKernelSelected(it.key) },
-                        entryFocusRequester = playerKernelFocus,
-                        onArrowUp = { focusAndScroll(imageSourceFocus, "imageSource") },
+                        onArrowUp = { focusAndScroll(backgroundFocus, "background") },
                         onArrowDown = { focusAndScroll(adFilterFocus, "adFilter") },
-                        modifier = Modifier.trackAnchor("playerKernel"),
+                        modifier = Modifier.trackAnchor("imageSource"),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     TvFormSwitchRow(
@@ -367,7 +329,7 @@ fun TvSettingsRoute(
                         checked = state.adFilterEnabled,
                         onCheckedChange = onAdFilterToggle,
                         focusRequester = adFilterFocus,
-                        onArrowUp = { focusAndScroll(playerKernelFocus, "playerKernel") },
+                        onArrowUp = { focusAndScroll(imageSourceFocus, "imageSource") },
                         onArrowDown = { focusAndScroll(danmakuApiFocus, "danmakuApi") },
                         modifier = Modifier.trackAnchor("adFilter"),
                     )

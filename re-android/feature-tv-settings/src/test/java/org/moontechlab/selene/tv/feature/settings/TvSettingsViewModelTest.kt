@@ -12,7 +12,7 @@ class TvSettingsViewModelTest {
     fun default_player_kernel_matches_persisted_storage_default() {
         val viewModel = TvSettingsViewModel()
 
-        assertThat(viewModel.state.value.playerKernelKey).isEqualTo("webview")
+        assertThat(viewModel.state.value.playerKernelKey).isEqualTo("exo")
     }
 
     @Test

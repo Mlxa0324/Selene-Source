@@ -48,7 +48,8 @@ data class TvSettingsUiState(
     val backgroundKey: String = "deep_blue",
     val focusEffectKey: String = "magnifier",
     val imageSourceKey: String = "直连",
-    val playerKernelKey: String = "webview",
+    // 设置页不再暴露内核选择；默认 Exo。
+    val playerKernelKey: String = "exo",
     val adFilterEnabled: Boolean = true,
     val danmakuApi: String = "",
     val danmakuEnabled: Boolean = true,
