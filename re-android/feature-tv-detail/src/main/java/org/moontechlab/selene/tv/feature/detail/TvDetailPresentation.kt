@@ -597,11 +597,10 @@ fun buildDetailLayoutSections(
     recommends: List<TvVideoCard>,
     recommendLoadState: TvDetailRecommendLoadState = TvDetailRecommendLoadState.Idle,
 ): TvDetailLayoutSections {
-    // 对齐 Flutter：有数据展示列表；调度/加载/失败时展示轻量状态，空结果时隐藏。
+    // 有数据出列表；Idle/调度/加载中一律保留骨架占位；失败保留错误态；
+    // 仅确认 Empty 后隐藏整块，避免底部突然塌缩。焦点仍只落在真实卡片上。
     val showRecommends = recommends.isNotEmpty() ||
-        recommendLoadState == TvDetailRecommendLoadState.Scheduled ||
-        recommendLoadState == TvDetailRecommendLoadState.Loading ||
-        recommendLoadState == TvDetailRecommendLoadState.Failed
+        recommendLoadState != TvDetailRecommendLoadState.Empty
     return TvDetailLayoutSections(
         showSources = sources.isNotEmpty(),
         showEpisodes = episodes.isNotEmpty(),

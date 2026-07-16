@@ -86,20 +86,52 @@ class TvDetailPresentationTest {
     }
 
     /**
-     * 推荐为空时，推荐区不展示但底部动作始终展示。
+     * Idle 无数据时仍展示推荐区（骨架占位），底部动作始终展示。
      */
     @Test
-    fun buildDetailLayoutSections_hides_recommend_but_keeps_bottom_actions_when_recommends_are_empty() {
+    fun buildDetailLayoutSections_keeps_recommend_skeleton_while_idle_without_cards() {
         val sections = buildDetailLayoutSections(
             sources = listOf(source(id = "a", episodeCount = 1)),
             episodes = episodes(count = 1),
             recommends = emptyList(),
+            recommendLoadState = TvDetailRecommendLoadState.Idle,
         )
 
         assertThat(sections.showSources).isTrue()
         assertThat(sections.showEpisodes).isTrue()
+        assertThat(sections.showRecommends).isTrue()
+        assertThat(sections.showBottomActions).isTrue()
+    }
+
+    /**
+     * 确认无推荐（Empty）后才隐藏推荐区，避免空结果仍占骨架。
+     */
+    @Test
+    fun buildDetailLayoutSections_hides_recommend_when_empty_result() {
+        val sections = buildDetailLayoutSections(
+            sources = listOf(source(id = "a", episodeCount = 1)),
+            episodes = episodes(count = 1),
+            recommends = emptyList(),
+            recommendLoadState = TvDetailRecommendLoadState.Empty,
+        )
+
         assertThat(sections.showRecommends).isFalse()
         assertThat(sections.showBottomActions).isTrue()
+    }
+
+    /**
+     * 加载中必须展示推荐区骨架，不能整块消失。
+     */
+    @Test
+    fun buildDetailLayoutSections_shows_recommend_skeleton_while_loading() {
+        val sections = buildDetailLayoutSections(
+            sources = listOf(source(id = "a", episodeCount = 1)),
+            episodes = episodes(count = 1),
+            recommends = emptyList(),
+            recommendLoadState = TvDetailRecommendLoadState.Loading,
+        )
+
+        assertThat(sections.showRecommends).isTrue()
     }
 
     /**

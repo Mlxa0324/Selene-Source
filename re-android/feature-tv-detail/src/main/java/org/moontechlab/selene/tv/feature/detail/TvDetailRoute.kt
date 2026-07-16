@@ -2193,9 +2193,9 @@ private fun NcatRecommendRail(
     val sectionHint = when {
         cards.isNotEmpty() -> "${cards.size} 部"
         loadState == TvDetailRecommendLoadState.Failed -> "暂时不可用"
-        loadState == TvDetailRecommendLoadState.Loading ||
-            loadState == TvDetailRecommendLoadState.Scheduled -> "加载中…"
-        else -> null
+        loadState == TvDetailRecommendLoadState.Empty -> "暂无推荐"
+        // Idle / Scheduled / Loading：骨架占位阶段统一「加载中…」
+        else -> "加载中…"
     }
     NcatSectionHeader(
         title = "相关推荐",
@@ -2322,7 +2322,8 @@ private fun NcatRecommendRail(
             }
 
             else -> {
-                // 调度/加载中：骨架占位，高度与正式轨一致，避免底部突然顶开。
+                // Idle / 调度 / 加载中：骨架屏占位（不可获焦），高度与正式轨一致，避免底部塌缩。
+                // Empty 时上层 showRecommends=false 整块不渲染，不会走到这里。
                 NcatRecommendSkeletonRail(
                     cardWidth = cardWidth,
                     coverHeight = coverHeight,
