@@ -47,7 +47,8 @@ data class TvSettingsUiState(
     val themeKey: String = "netflix_red",
     val backgroundKey: String = "deep_blue",
     val focusEffectKey: String = "magnifier",
-    val imageSourceKey: String = "直连",
+    // 与设置页 chip key、SharedPreferences 规范化 key 保持一致。
+    val imageSourceKey: String = "direct",
     // 设置页不再暴露内核选择；默认 Exo。
     val playerKernelKey: String = "exo",
     val adFilterEnabled: Boolean = true,

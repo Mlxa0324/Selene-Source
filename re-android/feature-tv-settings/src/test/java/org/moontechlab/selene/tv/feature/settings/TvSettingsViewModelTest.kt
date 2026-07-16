@@ -1,23 +1,75 @@
 package org.moontechlab.selene.tv.feature.settings
 
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
+import org.moontechlab.selene.tv.core.network.TvMobileSettingsBridgeSession
+import org.moontechlab.selene.tv.core.network.TvMobileSettingsDraft
 
 /**
  * 校验 TV 设置状态管理契约。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class TvSettingsViewModelTest {
+    private val testDispatcher = UnconfinedTestDispatcher()
+
+    @Before
+    fun setUp() {
+        // ViewModel 内部使用 Dispatchers.Main.immediate，单测需注入测试调度器。
+        Dispatchers.setMain(testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    /**
+     * 构造不启动真实扫码桥接的 ViewModel，避免 JVM 单测依赖网络与 Main 之外的副作用。
+     */
+    private fun createViewModel(
+        initialState: TvSettingsUiState = TvSettingsUiState(),
+        savePlayerKernel: suspend (String) -> String = { it },
+        saveAdFilter: suspend (Boolean) -> Unit = {},
+        saveImageSource: suspend (String) -> Unit = {},
+        saveTheme: suspend (String) -> Unit = {},
+        saveBackground: suspend (String) -> Unit = {},
+    ): TvSettingsViewModel {
+        return TvSettingsViewModel(
+            initialState = initialState,
+            savePlayerKernel = savePlayerKernel,
+            saveAdFilter = saveAdFilter,
+            saveImageSource = saveImageSource,
+            saveTheme = saveTheme,
+            saveBackground = saveBackground,
+            startMobileBridge = { draft, _, _ ->
+                TvMobileSettingsBridgeSession(
+                    shareUri = "http://127.0.0.1:9/?draft=${draft.serverUrl}",
+                    statusText = "test-bridge",
+                    updateDraft = {},
+                    dispose = {},
+                )
+            },
+        )
+    }
+
     @Test
     fun default_player_kernel_matches_persisted_storage_default() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
         assertThat(viewModel.state.value.playerKernelKey).isEqualTo("exo")
     }
 
     @Test
     fun init_prefills_server_config() {
-        val viewModel = TvSettingsViewModel(
+        val viewModel = createViewModel(
             initialState = TvSettingsUiState(
                 serverUrl = "http://127.0.0.1:3000",
                 account = "demo",
@@ -33,7 +85,7 @@ class TvSettingsViewModelTest {
 
     @Test
     fun updateServerConfig_updates_account_config() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
         viewModel.updatePassword("secret")
         viewModel.updateDanmakuEnabled(false)
@@ -50,7 +102,7 @@ class TvSettingsViewModelTest {
 
     @Test
     fun updateDanmaku_updates_api_and_switch() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
         viewModel.updateDanmakuApi("https://danmaku.example.com")
         viewModel.updateDanmakuEnabled(true)
@@ -61,7 +113,7 @@ class TvSettingsViewModelTest {
 
     @Test
     fun updateMediaOptions_updates_playback_settings() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
         viewModel.updateAdFilterEnabled(false)
         viewModel.updateImageSourceKey("tencent_cdn")
@@ -78,7 +130,7 @@ class TvSettingsViewModelTest {
     @Test
     fun performSavePlayerKernel_updates_state_with_effective_kernel() = runTest {
         var savedKernel = ""
-        val viewModel = TvSettingsViewModel(
+        val viewModel = createViewModel(
             initialState = TvSettingsUiState(playerKernelKey = "webview"),
             savePlayerKernel = { kernel ->
                 savedKernel = kernel
@@ -94,21 +146,34 @@ class TvSettingsViewModelTest {
 
     @Test
     fun updateAppearance_updates_theme_background_and_focus() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
-        viewModel.updateThemeKey("amber")
-        viewModel.updateBackgroundKey("pure_black")
+        viewModel.updateThemeKey("violet")
+        viewModel.updateBackgroundKey("charcoal")
         viewModel.updateFocusEffectKey("underline")
 
         val state = viewModel.state.value
-        assertThat(state.themeKey).isEqualTo("amber")
-        assertThat(state.backgroundKey).isEqualTo("pure_black")
+        assertThat(state.themeKey).isEqualTo("violet")
+        assertThat(state.backgroundKey).isEqualTo("charcoal")
         assertThat(state.focusEffectKey).isEqualTo("underline")
     }
 
     @Test
+    fun performSaveTheme_persists_selected_theme() = runTest {
+        var savedTheme = ""
+        val viewModel = createViewModel(
+            saveTheme = { key -> savedTheme = key },
+        )
+
+        viewModel.updateThemeKey("ice_blue")
+        viewModel.performSaveTheme()
+
+        assertThat(savedTheme).isEqualTo("ice_blue")
+    }
+
+    @Test
     fun updateDanmakuSettings_updates_all_fields() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
         viewModel.updateDanmakuOpacity(0.5f)
         viewModel.updateDanmakuFontScale(1.5f)
@@ -126,7 +191,7 @@ class TvSettingsViewModelTest {
 
     @Test
     fun notice_shows_and_dismisses() {
-        val viewModel = TvSettingsViewModel()
+        val viewModel = createViewModel()
 
         viewModel.showNotice("测试通知")
         assertThat(viewModel.state.value.noticeVisible).isTrue()

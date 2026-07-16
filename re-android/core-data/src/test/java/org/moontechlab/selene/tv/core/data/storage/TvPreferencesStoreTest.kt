@@ -73,6 +73,42 @@ class TvPreferencesStoreTest {
     }
 
     /**
+     * 外观设置（主题色/图片代理/去广告）必须可保存并同步 peek，供设置页回填与壳层立即生效。
+     */
+    @Test
+    fun appearance_settings_can_be_saved_and_peeked() = runTest {
+        val store = TvPreferencesStore()
+
+        store.saveThemeKey("violet")
+        store.saveBackgroundKey("charcoal")
+        store.saveImageSource("tencent_cdn")
+        store.saveAdFilterEnabled(false)
+
+        assertThat(store.peekThemeKey()).isEqualTo("violet")
+        assertThat(store.peekBackgroundKey()).isEqualTo("charcoal")
+        assertThat(store.peekImageSource()).isEqualTo("tencent_cdn")
+        assertThat(store.peekAdFilterEnabled()).isFalse()
+        assertThat(store.peekAppearance().themeKey).isEqualTo("violet")
+        assertThat(store.peekAppearance().imageSource).isEqualTo("tencent_cdn")
+    }
+
+    /**
+     * 外观字段必须声明 SharedPreferences 持久化键，避免只改内存导致重启丢失。
+     */
+    @Test
+    fun appearance_source_declares_persistent_backing_store() = runTest {
+        val source = readStoreSource()
+
+        assertThat(source).contains("KEY_THEME_KEY")
+        assertThat(source).contains("KEY_IMAGE_SOURCE")
+        assertThat(source).contains("KEY_AD_FILTER_ENABLED")
+        assertThat(source).contains("putString(KEY_THEME_KEY")
+        assertThat(source).contains("putString(KEY_IMAGE_SOURCE")
+        assertThat(source).contains("putBoolean(KEY_AD_FILTER_ENABLED")
+        assertThat(source).contains("DEFAULT_THEME_KEY = TvAppearancePreferences.DEFAULT_THEME_KEY")
+    }
+
+    /**
      * 读取偏好存储源码。
      *
      * @return 当前偏好存储源码文本。

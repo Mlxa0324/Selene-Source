@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +63,7 @@ import org.moontechlab.selene.tv.app.navigation.TvNavGraph
 import org.moontechlab.selene.tv.core.design.SeleneTvTheme
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.dialog.TvConfirmDialog
+import org.moontechlab.selene.tv.core.design.layout.LocalTvImageSourceKey
 import org.moontechlab.selene.tv.core.design.layout.LocalTvTopChromeHeightPx
 import org.moontechlab.selene.tv.core.design.layout.TvDesignCanvas
 import org.moontechlab.selene.tv.core.design.layout.TvDesignPreset
@@ -81,20 +83,28 @@ import java.time.format.DateTimeFormatter
  */
 @Composable
 fun TvApp() {
-    SeleneTvTheme {
+    val context = LocalContext.current
+    // 服务器配置变更时重新创建容器，确保新配置在后续请求中生效。
+    var serverConfigVersion by remember { mutableStateOf(0) }
+    val appContainer = remember(serverConfigVersion) {
+        TvAppContainer(
+            gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
+            appContext = context.applicationContext,
+        )
+    }
+    // 外观设置：主题色 / 背景 / 图片代理即时套用。
+    val appearance by appContainer.appearance.collectAsState()
+    LaunchedEffect(appearance.themeKey) {
+        TvTokens.applyThemeKey(appearance.themeKey)
+    }
+    SeleneTvTheme(
+        accent = TvTokens.resolveAccentColor(appearance.themeKey),
+        background = TvTokens.resolveBackgroundColor(appearance.backgroundKey),
+    ) {
         TvDesignCanvas(
             preset = TvDesignPreset.QHD_1440,
         ) {
-            val context = LocalContext.current
             val navController = rememberNavController()
-            // 服务器配置变更时重新创建容器，确保新配置在后续请求中生效。
-            var serverConfigVersion by remember { mutableStateOf(0) }
-            val appContainer = remember(serverConfigVersion) {
-                TvAppContainer(
-                    gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
-                    appContext = context.applicationContext,
-                )
-            }
 
             // Coil 配置：对 doubanio.com 图片附加 Referer 头，避免 403 空白封面。
             LaunchedEffect(Unit) {
@@ -240,12 +250,15 @@ fun TvApp() {
             CompositionLocalProvider(
                 LocalTvTopChromeHeightPx provides topChromeHeightPx,
                 LocalCategoryFilterOverlayState provides categoryFilterOverlayState,
+                LocalTvImageSourceKey provides appearance.imageSource,
             ) {
+                // 主题/背景变更只更新配色与 CompositionLocal，禁止 key() 整树重建，
+                // 否则设置页确认选项后滚动位置和焦点会掉回顶部。
                 // 底层：顶栏 + 内容；顶层：分类筛选 overlay（从屏顶滑到顶栏下）。
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
+                        .background(TvTokens.resolveBackgroundColor(appearance.backgroundKey))
                         .onPreviewKeyEvent { event ->
                             // 模拟器 Esc 与返回键一致：关筛选 / 内容回 tab / 顶栏退出确认。
                             val isBackOrEsc = event.key == Key.Back || event.key == Key.Escape

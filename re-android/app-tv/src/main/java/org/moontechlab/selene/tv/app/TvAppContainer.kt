@@ -26,7 +26,9 @@ import org.moontechlab.selene.tv.core.data.repository.TvHomeRepository
 import org.moontechlab.selene.tv.core.data.repository.TvPlaybackRepository
 import org.moontechlab.selene.tv.core.data.repository.TvSearchRepository
 import org.moontechlab.selene.tv.core.data.repository.TvVideoLibraryRepository
+import org.moontechlab.selene.tv.core.data.storage.TvAppearancePreferences
 import org.moontechlab.selene.tv.core.data.storage.TvPreferencesStore
+import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.threading.AppDispatchers
 import org.moontechlab.selene.tv.core.network.DoubanSubjectHtmlSource
 import org.moontechlab.selene.tv.core.network.SeleneDanmakuApi
@@ -56,9 +58,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.moontechlab.selene.tv.core.player.exo.M3u8AdFilterPlaybackResolver
 import org.moontechlab.selene.tv.feature.detail.TvDetailSourcesResult
 import org.moontechlab.selene.tv.feature.home.TvHomeSectionProgress
 import org.moontechlab.selene.tv.feature.home.TvHomeViewModel
@@ -341,6 +347,17 @@ class TvAppContainer(
     private val externalSearchSuggestionService: ExternalSearchSuggestionService =
         ExternalSearchSuggestionService(),
 ) {
+    /** 外观设置状态：设置页改完后立即广播，壳层与详情页同帧套用。 */
+    private val appearanceState = MutableStateFlow(preferencesStore.peekAppearance())
+
+    /** 对外只读外观状态。 */
+    val appearance: StateFlow<TvAppearancePreferences> = appearanceState.asStateFlow()
+
+    init {
+        // 进程启动即套用已持久化主题色，避免首帧仍是硬编码奈飞红。
+        TvTokens.applyThemeKey(appearanceState.value.themeKey)
+    }
+
     /** 后台客户端按需创建，避免缺配置时启动阶段直接抛错。 */
     private val gatewayClient: SeleneTvGatewayClient? by lazy {
         if (gatewayConfig.isComplete) {
@@ -816,9 +833,14 @@ class TvAppContainer(
      */
     fun createExoPlayerEngine(context: Context): PlayerEngine {
         val adapter = ExoPlayerFactory.create(context)
+        val cacheDir = context.applicationContext.cacheDir
+            ?.let { root -> java.io.File(root, "m3u8_ad_filter") }
         return ExoPlayerEngine(
             player = adapter,
             dispatchers = AppDispatchers.createDefault(),
+            // 起播时读最新开关，避免设置页切换后旧会话仍用旧值。
+            adFilterEnabled = { preferencesStore.peekAdFilterEnabled() },
+            playbackUrlResolver = M3u8AdFilterPlaybackResolver(cacheDir = cacheDir),
         )
     }
 
@@ -878,6 +900,36 @@ class TvAppContainer(
      */
     fun peekBackgroundKey(): String {
         return preferencesStore.peekBackgroundKey()
+    }
+
+    /**
+     * 读取主题色同步快照。
+     *
+     * @return 设置页当前主题色标识。
+     */
+    fun peekThemeKey(): String = preferencesStore.peekThemeKey()
+
+    /**
+     * 读取图片代理同步快照。
+     *
+     * @return 设置页当前图片代理标识。
+     */
+    fun peekImageSource(): String = preferencesStore.peekImageSource()
+
+    /**
+     * 读取自动去广告同步快照。
+     *
+     * @return 是否开启自动去广告。
+     */
+    fun peekAdFilterEnabled(): Boolean = preferencesStore.peekAdFilterEnabled()
+
+    /**
+     * 刷新外观状态流，让壳层与设置页订阅方立刻拿到最新值。
+     */
+    private fun publishAppearance() {
+        val next = preferencesStore.peekAppearance()
+        appearanceState.value = next
+        TvTokens.applyThemeKey(next.themeKey)
     }
 
     /**
@@ -1112,7 +1164,8 @@ class TvAppContainer(
         },
     ): TvSettingsViewModel {
         val currentPlayerKernel = peekPlayerKernel()
-        val currentBackgroundKey = peekBackgroundKey()
+        // 设置页首屏必须回填已持久化外观，避免每次进入都回到默认奈飞红/直连。
+        val appearance = preferencesStore.peekAppearance()
         return TvSettingsViewModel(
             initialState = TvSettingsUiState(
                 serverUrl = gatewayConfig.baseUrl,
@@ -1121,8 +1174,11 @@ class TvAppContainer(
                 danmakuApi = gatewayConfig.danmakuBaseUrl,
                 // 设置页首屏展示必须与当前真实播放内核一致，避免界面显示 Exo、实际仍走 WebView。
                 playerKernelKey = currentPlayerKernel,
-                // 设置页重新进入时保留当前背景选项，与详情页使用同一份配置。
-                backgroundKey = currentBackgroundKey,
+                themeKey = appearance.themeKey,
+                backgroundKey = appearance.backgroundKey,
+                focusEffectKey = appearance.focusEffectKey,
+                imageSourceKey = appearance.imageSource,
+                adFilterEnabled = appearance.adFilterEnabled,
             ),
             loadCacheSize = loadCacheSize,
             clearCache = clearCache,
@@ -1152,18 +1208,23 @@ class TvAppContainer(
             },
             saveAdFilter = { enabled ->
                 preferencesStore.saveAdFilterEnabled(enabled)
+                publishAppearance()
             },
             saveImageSource = { source ->
                 preferencesStore.saveImageSource(source)
+                publishAppearance()
             },
             saveTheme = { themeKey ->
                 preferencesStore.saveThemeKey(themeKey)
+                publishAppearance()
             },
             saveBackground = { backgroundKey ->
                 preferencesStore.saveBackgroundKey(backgroundKey)
+                publishAppearance()
             },
             saveFocusEffect = { effectKey ->
                 preferencesStore.saveFocusEffectKey(effectKey)
+                publishAppearance()
             },
             savePlayerKernel = { kernel ->
                 savePlayerKernel(kernel)

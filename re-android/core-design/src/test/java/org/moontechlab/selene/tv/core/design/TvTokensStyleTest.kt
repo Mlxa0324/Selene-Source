@@ -23,9 +23,13 @@ class TvTokensStyleTest {
     @Test
     fun configuredBackground_resolvesSettingPaletteAndFallsBackToDeepBlue() {
         assertThat(TvTokens.resolveBackgroundColor("deep_blue")).isEqualTo(Color(0xFF1A1D29))
-        assertThat(TvTokens.resolveBackgroundColor("pure_black")).isEqualTo(Color(0xFF000000))
-        assertThat(TvTokens.resolveBackgroundColor("dark_purple")).isEqualTo(Color(0xFF2D1B4E))
-        assertThat(TvTokens.resolveBackgroundColor("deep_green")).isEqualTo(Color(0xFF064E3B))
+        assertThat(TvTokens.resolveBackgroundColor("charcoal")).isEqualTo(Color(0xFF121212))
+        assertThat(TvTokens.resolveBackgroundColor("slate")).isEqualTo(Color(0xFF0F172A))
+        assertThat(TvTokens.resolveBackgroundColor("graphite")).isEqualTo(Color(0xFF1C1C1E))
+        // 历史 key 兼容映射，避免旧用户存盘后回退异常。
+        assertThat(TvTokens.resolveBackgroundColor("pure_black")).isEqualTo(Color(0xFF121212))
+        assertThat(TvTokens.resolveBackgroundColor("dark_purple")).isEqualTo(Color(0xFF0F172A))
+        assertThat(TvTokens.resolveBackgroundColor("deep_green")).isEqualTo(Color(0xFF1C1C1E))
         assertThat(TvTokens.resolveBackgroundColor("unknown")).isEqualTo(TvTokens.Background)
     }
 
@@ -34,7 +38,27 @@ class TvTokensStyleTest {
      */
     @Test
     fun defaultAccent_matchesFlutterTvNetflixRed() {
+        TvTokens.applyThemeKey("netflix_red")
         assertThat(TvTokens.IvyGreen).isEqualTo(Color(0xFFE50914))
+        assertThat(TvTokens.Accent).isEqualTo(Color(0xFFE50914))
+    }
+
+    /**
+     * 设置页主题色标识必须映射为对应主色，未知值回退奈飞红。
+     */
+    @Test
+    fun configuredTheme_resolvesAccentPaletteAndFallsBackToNetflixRed() {
+        assertThat(TvTokens.resolveAccentColor("teal")).isEqualTo(Color(0xFF14B8A6))
+        assertThat(TvTokens.resolveAccentColor("violet")).isEqualTo(Color(0xFF8B5CF6))
+        assertThat(TvTokens.resolveAccentColor("ice_blue")).isEqualTo(Color(0xFF3B82F6))
+        assertThat(TvTokens.resolveAccentColor("emerald")).isEqualTo(Color(0xFF10B981))
+        // 历史 key 兼容。
+        assertThat(TvTokens.resolveAccentColor("amber")).isEqualTo(Color(0xFF8B5CF6))
+        assertThat(TvTokens.resolveAccentColor("dark_gray")).isEqualTo(Color(0xFF10B981))
+        assertThat(TvTokens.resolveAccentColor("unknown")).isEqualTo(Color(0xFFE50914))
+        TvTokens.applyThemeKey("teal")
+        assertThat(TvTokens.Accent).isEqualTo(Color(0xFF14B8A6))
+        TvTokens.applyThemeKey("netflix_red")
     }
 
     /**
@@ -51,7 +75,7 @@ class TvTokensStyleTest {
     @Test
     fun homeDensity_matchesFlutterTvHomeLayout() {
         assertThat(TvTokens.PageHorizontalPadding).isEqualTo(50.dp)
-        assertThat(TvTokens.CardSpacing).isEqualTo(18.dp)
+        assertThat(TvTokens.CardSpacing).isEqualTo(16.dp)
         assertThat(TvTokens.PosterWidth).isEqualTo(158.dp)
         assertThat(TvTokens.PosterHeight).isEqualTo(288.dp)
         assertThat(TvTokens.PosterCoverHeight).isEqualTo(225.dp)

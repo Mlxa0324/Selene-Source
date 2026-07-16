@@ -17,12 +17,28 @@ class TvSettingsRouteFocusContractTest {
 
         assertThat(source).contains("import androidx.compose.ui.focus.FocusRequester")
         assertThat(source).contains("settingsEntryFocusRequester.requestFocus()")
+        // 首焦只在首次进入请求一次，避免选项确认后重组再次抢回顶部。
+        assertThat(source).contains("LaunchedEffect(Unit)")
+        assertThat(source).doesNotContain("LaunchedEffect(settingsEntryFocusRequester)")
         assertThat(source).contains("focusAndScroll")
         assertThat(source).contains("scrollAnchorToCenter")
         assertThat(source).contains("positionInRoot()")
         assertThat(source).contains("regenerateModifier = Modifier.trackAnchor(\"qr\")")
         assertThat(source).contains("regenerateQrFocus")
         assertThat(source).contains("clearCacheFocus")
+    }
+
+    /**
+     * 壳层不得用 appearance key 整树重建，否则设置页确认后滚回顶部。
+     */
+    @Test
+    fun app_shell_must_not_key_nav_graph_on_appearance_change() {
+        // 单测工作目录为 feature-tv-settings 模块根。
+        val appSource = File(
+            "../app-tv/src/main/java/org/moontechlab/selene/tv/app/TvApp.kt",
+        ).readText()
+        assertThat(appSource).doesNotContain("key(appearance.themeKey")
+        assertThat(appSource).contains("禁止 key() 整树重建")
     }
 
     /**

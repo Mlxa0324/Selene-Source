@@ -29,12 +29,29 @@ object TvTheme {
 /**
  * 应用 TV 端主题。
  *
+ * @param accent 当前主题色；默认读取运行时 [TvTokens.Accent]。
+ * @param background 页面背景色；默认读取 [TvTokens.Background]。
  * @param content 需要套用 TV 主题的页面内容。
  */
 @Composable
-fun SeleneTvTheme(content: @Composable () -> Unit) {
+fun SeleneTvTheme(
+    accent: Color = TvTokens.Accent,
+    background: Color = TvTokens.Background,
+    content: @Composable () -> Unit,
+) {
     MaterialTheme(
-        colorScheme = TvTheme.DarkColors,
+        colorScheme = darkColorScheme(
+            primary = accent,
+            onPrimary = Color.White,
+            background = background,
+            surface = TvTokens.Surface,
+            onBackground = TvTokens.TextPrimary,
+            onSurface = TvTokens.TextPrimary,
+            surfaceVariant = TvTokens.SurfaceElevated,
+            onSurfaceVariant = TvTokens.TextSecondary,
+            secondary = TvTokens.TextSecondary,
+            onSecondary = Color.White,
+        ),
         content = content,
     )
 }

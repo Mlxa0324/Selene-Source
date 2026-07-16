@@ -58,19 +58,21 @@ private data class FormOption<T>(
     val color: Color? = null,
 )
 
+// 主题色参考流媒体/大厂主色：奈飞红、青绿、星云紫(Twitch/Discord)、冰蓝、翡翠绿(Spotify)。
 private val themeOptions = listOf(
     FormOption("netflix_red", "奈飞红", Color(0xFFE50914)),
     FormOption("teal", "青绿", Color(0xFF14B8A6)),
-    FormOption("amber", "暖橙", Color(0xFFD97706)),
-    FormOption("ice_blue", "冰蓝", Color(0xFF38BDF8)),
-    FormOption("dark_gray", "墨灰", Color(0xFF6B7280)),
+    FormOption("violet", "星云紫", Color(0xFF8B5CF6)),
+    FormOption("ice_blue", "冰蓝", Color(0xFF3B82F6)),
+    FormOption("emerald", "翡翠绿", Color(0xFF10B981)),
 )
 
+// 背景参考大厂深色底：深蓝灰、炭黑(Spotify/YT)、石板(Tailwind slate)、石墨(Apple)。
 private val backgroundOptions = listOf(
     FormOption("deep_blue", "深蓝", Color(0xFF1A1D29)),
-    FormOption("pure_black", "纯黑", Color(0xFF000000)),
-    FormOption("dark_purple", "暗紫", Color(0xFF2D1B4E)),
-    FormOption("deep_green", "深绿", Color(0xFF064E3B)),
+    FormOption("charcoal", "炭黑", Color(0xFF121212)),
+    FormOption("slate", "石板", Color(0xFF0F172A)),
+    FormOption("graphite", "石墨", Color(0xFF1C1C1E)),
 )
 
 private val imageSourceOptions = listOf(
@@ -139,8 +141,9 @@ fun TvSettingsRoute(
     val clearCacheFocus = remember { FocusRequester() }
 
     // 首焦点：服务器地址（保留顶部导航下探契约）。
+    // 仅在首次进入请求一次，避免外观保存触发重组后再次抢焦到顶部。
     val settingsEntryFocusRequester = contentFocusRequester ?: serverUrlFocus
-    LaunchedEffect(settingsEntryFocusRequester) {
+    LaunchedEffect(Unit) {
         runCatching { settingsEntryFocusRequester.requestFocus() }
     }
 

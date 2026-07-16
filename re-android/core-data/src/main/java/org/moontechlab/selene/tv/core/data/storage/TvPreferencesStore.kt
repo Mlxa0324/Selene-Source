@@ -27,9 +27,45 @@ data class TvDanmakuManualMatchRecord(
 )
 
 /**
+ * TV 外观与播放相关设置快照。
+ *
+ * 供设置页首屏回填和应用壳立即套用同一份值。
+ *
+ * @property themeKey 主题色标识。
+ * @property backgroundKey 背景色标识。
+ * @property focusEffectKey 焦点效果标识。
+ * @property imageSource 图片代理标识。
+ * @property adFilterEnabled 是否自动去广告。
+ */
+data class TvAppearancePreferences(
+    val themeKey: String = DEFAULT_THEME_KEY,
+    val backgroundKey: String = DEFAULT_BACKGROUND_KEY,
+    val focusEffectKey: String = DEFAULT_FOCUS_EFFECT_KEY,
+    val imageSource: String = DEFAULT_IMAGE_SOURCE,
+    val adFilterEnabled: Boolean = DEFAULT_AD_FILTER_ENABLED,
+) {
+    companion object {
+        /** 默认主题色：奈飞红。 */
+        const val DEFAULT_THEME_KEY = "netflix_red"
+
+        /** 默认背景：深蓝。 */
+        const val DEFAULT_BACKGROUND_KEY = "deep_blue"
+
+        /** 默认焦点效果。 */
+        const val DEFAULT_FOCUS_EFFECT_KEY = "magnifier"
+
+        /** 默认图片代理：直连。 */
+        const val DEFAULT_IMAGE_SOURCE = "direct"
+
+        /** 默认开启自动去广告。 */
+        const val DEFAULT_AD_FILTER_ENABLED = true
+    }
+}
+
+/**
  * TV 偏好存储。
  *
- * 关键播放配置优先落到 SharedPreferences，避免安装新包或进程重启后丢失；
+ * 关键播放与外观配置优先落到 SharedPreferences，避免安装新包或进程重启后丢失；
  * 当没有 Android Context 时回退到内存实现，供 JVM 单测和纯源码契约测试复用。
  */
 class TvPreferencesStore(
@@ -187,7 +223,9 @@ class TvPreferencesStore(
     // ── 设置页持久化字段 ──
 
     /** 主题色标识。 */
-    private var themeKey: String = DEFAULT_THEME_KEY
+    private var themeKey: String = sharedPreferences
+        ?.getString(KEY_THEME_KEY, DEFAULT_THEME_KEY)
+        ?: DEFAULT_THEME_KEY
 
     /** 背景色标识。 */
     private var backgroundKey: String = sharedPreferences
@@ -195,13 +233,19 @@ class TvPreferencesStore(
         ?: DEFAULT_BACKGROUND_KEY
 
     /** 焦点效果标识。 */
-    private var focusEffectKey: String = DEFAULT_FOCUS_EFFECT_KEY
+    private var focusEffectKey: String = sharedPreferences
+        ?.getString(KEY_FOCUS_EFFECT_KEY, DEFAULT_FOCUS_EFFECT_KEY)
+        ?: DEFAULT_FOCUS_EFFECT_KEY
 
     /** 自动去广告开关。 */
-    private var adFilterEnabled: Boolean = true
+    private var adFilterEnabled: Boolean = sharedPreferences
+        ?.getBoolean(KEY_AD_FILTER_ENABLED, DEFAULT_AD_FILTER_ENABLED)
+        ?: DEFAULT_AD_FILTER_ENABLED
 
     /** 图片代理源。 */
-    private var imageSource: String = DEFAULT_IMAGE_SOURCE
+    private var imageSource: String = normalizeImageSource(
+        sharedPreferences?.getString(KEY_IMAGE_SOURCE, DEFAULT_IMAGE_SOURCE),
+    )
 
     /** 弹幕开关。 */
     private var danmakuEnabled: Boolean = true
@@ -248,8 +292,37 @@ class TvPreferencesStore(
             ?.apply()
     }
 
+    /**
+     * 同步读取当前外观设置快照。
+     *
+     * @return 主题色 / 背景 / 图片代理 / 去广告等外观字段。
+     */
+    fun peekAppearance(): TvAppearancePreferences {
+        return TvAppearancePreferences(
+            themeKey = themeKey,
+            backgroundKey = backgroundKey,
+            focusEffectKey = focusEffectKey,
+            imageSource = imageSource,
+            adFilterEnabled = adFilterEnabled,
+        )
+    }
+
+    fun peekThemeKey(): String = themeKey
     suspend fun getThemeKey(): String = themeKey
-    suspend fun saveThemeKey(key: String) { themeKey = key }
+
+    /**
+     * 保存主题色标识。
+     *
+     * @param key 设置页选中的主题标识。
+     */
+    suspend fun saveThemeKey(key: String) {
+        val normalized = key.trim().ifBlank { DEFAULT_THEME_KEY }
+        themeKey = normalized
+        sharedPreferences
+            ?.edit()
+            ?.putString(KEY_THEME_KEY, normalized)
+            ?.apply()
+    }
 
     /**
      * 读取当前进程内的背景色同步快照。
@@ -277,14 +350,54 @@ class TvPreferencesStore(
             ?.apply()
     }
 
+    fun peekFocusEffectKey(): String = focusEffectKey
     suspend fun getFocusEffectKey(): String = focusEffectKey
-    suspend fun saveFocusEffectKey(key: String) { focusEffectKey = key }
 
+    /**
+     * 保存焦点效果标识。
+     *
+     * @param key 设置页选中的效果标识。
+     */
+    suspend fun saveFocusEffectKey(key: String) {
+        focusEffectKey = key
+        sharedPreferences
+            ?.edit()
+            ?.putString(KEY_FOCUS_EFFECT_KEY, key)
+            ?.apply()
+    }
+
+    fun peekAdFilterEnabled(): Boolean = adFilterEnabled
     suspend fun getAdFilterEnabled(): Boolean = adFilterEnabled
-    suspend fun saveAdFilterEnabled(enabled: Boolean) { adFilterEnabled = enabled }
 
+    /**
+     * 保存自动去广告开关。
+     *
+     * @param enabled 是否开启。
+     */
+    suspend fun saveAdFilterEnabled(enabled: Boolean) {
+        adFilterEnabled = enabled
+        sharedPreferences
+            ?.edit()
+            ?.putBoolean(KEY_AD_FILTER_ENABLED, enabled)
+            ?.apply()
+    }
+
+    fun peekImageSource(): String = imageSource
     suspend fun getImageSource(): String = imageSource
-    suspend fun saveImageSource(source: String) { imageSource = source }
+
+    /**
+     * 保存图片代理源。
+     *
+     * @param source 图片代理标识或历史中文显示名。
+     */
+    suspend fun saveImageSource(source: String) {
+        val normalized = normalizeImageSource(source)
+        imageSource = normalized
+        sharedPreferences
+            ?.edit()
+            ?.putString(KEY_IMAGE_SOURCE, normalized)
+            ?.apply()
+    }
 
     suspend fun getDanmakuEnabled(): Boolean = danmakuEnabled
     suspend fun saveDanmakuEnabled(enabled: Boolean) { danmakuEnabled = enabled }
@@ -347,6 +460,23 @@ class TvPreferencesStore(
         }
     }
 
+    /**
+     * 规整图片代理标识，兼容历史中文值与设置页内部 key。
+     *
+     * @param source 原始值。
+     * @return 规范化 key。
+     */
+    private fun normalizeImageSource(source: String?): String {
+        return when (source?.trim()) {
+            null, "" -> DEFAULT_IMAGE_SOURCE
+            "直连", "direct" -> "direct"
+            "官方精品", "豆瓣官方精品 CDN", "official_cdn" -> "official_cdn"
+            "腾讯CDN", "豆瓣 CDN By CMLiussss（腾讯云）", "tencent_cdn", "cdn_tencent" -> "tencent_cdn"
+            "阿里CDN", "豆瓣 CDN By CMLiussss（阿里云）", "alibaba_cdn", "cdn_aliyun" -> "alibaba_cdn"
+            else -> source.trim()
+        }
+    }
+
     companion object {
         /** SharedPreferences 文件名。 */
         private const val PREFERENCES_NAME = "selene_tv_preferences"
@@ -357,16 +487,29 @@ class TvPreferencesStore(
         /** 详情等页面背景色持久化键。 */
         private const val KEY_BACKGROUND_KEY = "background_key"
 
+        /** 主题色持久化键。 */
+        private const val KEY_THEME_KEY = "theme_key"
+
+        /** 焦点效果持久化键。 */
+        private const val KEY_FOCUS_EFFECT_KEY = "focus_effect_key"
+
+        /** 自动去广告持久化键。 */
+        private const val KEY_AD_FILTER_ENABLED = "ad_filter_enabled"
+
+        /** 图片代理持久化键。 */
+        private const val KEY_IMAGE_SOURCE = "image_source"
+
         /** ExoPlayer 内核标识。 */
         private const val PLAYER_KERNEL_EXO = "exo"
 
         /** WebView 内核标识。 */
         private const val PLAYER_KERNEL_WEBVIEW = "webview"
 
-        private const val DEFAULT_THEME_KEY = "teal"
-        private const val DEFAULT_BACKGROUND_KEY = "deep_blue"
-        private const val DEFAULT_FOCUS_EFFECT_KEY = "smooth_border"
-        private const val DEFAULT_IMAGE_SOURCE = "直连"
+        private const val DEFAULT_THEME_KEY = TvAppearancePreferences.DEFAULT_THEME_KEY
+        private const val DEFAULT_BACKGROUND_KEY = TvAppearancePreferences.DEFAULT_BACKGROUND_KEY
+        private const val DEFAULT_FOCUS_EFFECT_KEY = TvAppearancePreferences.DEFAULT_FOCUS_EFFECT_KEY
+        private const val DEFAULT_IMAGE_SOURCE = TvAppearancePreferences.DEFAULT_IMAGE_SOURCE
+        private const val DEFAULT_AD_FILTER_ENABLED = TvAppearancePreferences.DEFAULT_AD_FILTER_ENABLED
         private const val DEFAULT_DANMAKU_OPACITY = 0.8f
         private const val DEFAULT_DANMAKU_FONT_SCALE = 1.0f
         private const val DEFAULT_DANMAKU_DISPLAY_AREA = 1.0f

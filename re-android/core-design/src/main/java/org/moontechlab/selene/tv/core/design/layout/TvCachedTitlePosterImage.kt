@@ -38,13 +38,15 @@ fun TvCachedTitlePosterImage(
     alignment: Alignment = Alignment.Center,
 ) {
     val context = LocalContext.current
-    val primaryUrl = remember(title, posterUrl) {
-        TvPosterTitleUrlCache.resolvePrimaryUrl(title = title, posterUrl = posterUrl)
+    val imageSourceKey = LocalTvImageSourceKey.current
+    val primaryUrl = remember(title, posterUrl, imageSourceKey) {
+        val resolved = TvPosterTitleUrlCache.resolvePrimaryUrl(title = title, posterUrl = posterUrl)
+        resolved?.let { resolveDoubanImageUrl(it, imageSourceKey) }
     }
-    var activeUrl by remember(title, posterUrl) {
+    var activeUrl by remember(title, posterUrl, imageSourceKey) {
         mutableStateOf(primaryUrl)
     }
-    var fallbackTried by remember(title, posterUrl) {
+    var fallbackTried by remember(title, posterUrl, imageSourceKey) {
         mutableStateOf(false)
     }
     val requestUrl = activeUrl
@@ -73,7 +75,7 @@ fun TvCachedTitlePosterImage(
                 val fallback = TvPosterTitleUrlCache.resolveFallbackUrl(
                     title = title,
                     failedUrl = requestUrl,
-                )
+                )?.let { resolveDoubanImageUrl(it, imageSourceKey) }
                 if (fallback != null) {
                     fallbackTried = true
                     activeUrl = fallback

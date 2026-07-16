@@ -24,10 +24,14 @@ import org.moontechlab.selene.tv.core.player.api.TvResizeMode
  *
  * @property player ExoPlayer 控制适配器。
  * @property dispatchers TV 协程调度器分层。
+ * @property adFilterEnabled 是否开启自动去广告；默认关闭过滤链路。
+ * @property playbackUrlResolver M3U8 去广告地址解析器；未注入时保持原地址。
  */
 class ExoPlayerEngine(
     private val player: ExoPlayerAdapter,
     private val dispatchers: DispatcherProvider,
+    private val adFilterEnabled: () -> Boolean = { false },
+    private val playbackUrlResolver: M3u8AdFilterPlaybackResolver? = null,
 ) : PlayerEngine {
     /** 底层 ExoPlayer 实例，供 SurfaceView 绑定。 */
     val exoPlayer get() = player.getExoPlayer()
@@ -146,13 +150,20 @@ class ExoPlayerEngine(
      * @param request 播放请求。
      */
     override suspend fun load(request: PlaybackRequest) {
+        // 去广告解析走 IO；主线程只负责装载与起播。
+        val playbackUrl = playbackUrlResolver
+            ?.resolvePlaybackUrl(
+                url = request.url,
+                adFilterEnabled = adFilterEnabled(),
+            )
+            ?: request.url
         withContext(dispatchers.main) {
             mutableState.value = PlayerState.Loading
             lastSnapshot = request.toSnapshot()
             player.setEventCallback(playerEventCallback)
             // 续播：把 startPositionMs 交给 setMediaItem 起播点，避免只 prepare 后从 0 开始。
             player.loadMedia(
-                url = request.url,
+                url = playbackUrl,
                 startPositionMs = request.startPositionMs.coerceAtLeast(0L),
             )
             if (request.startPositionMs > 0L) {

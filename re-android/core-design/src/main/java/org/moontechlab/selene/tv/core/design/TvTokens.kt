@@ -10,14 +10,60 @@ import androidx.compose.ui.unit.sp
  */
 object TvTokens {
     /**
-     * TV 默认选中主色，贴近 Flutter TV 默认奈飞红。
+     * 默认主题色：奈飞红。
      */
-    val IvyGreen = Color(0xFFE50914)
+    private val DefaultAccent = Color(0xFFE50914)
+
+    /**
+     * 当前进程内生效的主题色。
+     *
+     * 设置页切换主题后由 [applyThemeKey] 更新；Compose 需配合外观版本号重组才能立刻重绘。
+     */
+    @Volatile
+    private var accentOverride: Color = DefaultAccent
+
+    /**
+     * TV 默认选中主色，贴近 Flutter TV 默认奈飞红。
+     *
+     * 历史命名保留 IvyGreen，实际默认值已是奈飞红。
+     */
+    val IvyGreen: Color
+        get() = accentOverride
 
     /**
      * TV 默认选中主色别名，供新样式语义化调用。
      */
-    val Accent = IvyGreen
+    val Accent: Color
+        get() = accentOverride
+
+    /**
+     * 根据设置页主题色标识解析主色。
+     *
+     * @param themeKey 设置页保存的主题标识。
+     * @return 对应主题色；未知标识回退奈飞红。
+     */
+    fun resolveAccentColor(themeKey: String): Color {
+        return when (themeKey.trim()) {
+            "netflix_red" -> Color(0xFFE50914)
+            "teal" -> Color(0xFF14B8A6)
+            // 星云紫：Twitch / Discord 系，替代旧「暖橙」。
+            "violet", "amber" -> Color(0xFF8B5CF6)
+            // 冰蓝略偏品牌蓝，更接近大厂按钮主色。
+            "ice_blue" -> Color(0xFF3B82F6)
+            // 翡翠绿：Spotify 系，替代旧「墨灰」。
+            "emerald", "dark_gray" -> Color(0xFF10B981)
+            else -> DefaultAccent
+        }
+    }
+
+    /**
+     * 应用设置页主题色到全局 Accent。
+     *
+     * @param themeKey 设置页保存的主题标识。
+     */
+    fun applyThemeKey(themeKey: String) {
+        accentOverride = resolveAccentColor(themeKey)
+    }
 
     /**
      * TV 快捷入口和弱焦点的半透明白色蒙层。
@@ -42,10 +88,14 @@ object TvTokens {
      */
     fun resolveBackgroundColor(backgroundKey: String): Color {
         return when (backgroundKey) {
+            // 深蓝灰：当前默认，接近奈飞/视频站冷色底。
             "deep_blue" -> Background
-            "pure_black" -> Color(0xFF000000)
-            "dark_purple" -> Color(0xFF2D1B4E)
-            "deep_green" -> Color(0xFF064E3B)
+            // 炭黑：Spotify / YouTube Material Dark（#121212），避免刺眼纯黑。
+            "charcoal", "pure_black" -> Color(0xFF121212)
+            // 石板：Tailwind slate-900，现代后台深色。
+            "slate", "dark_purple" -> Color(0xFF0F172A)
+            // 石墨：Apple 系统深色底 #1C1C1E。
+            "graphite", "deep_green" -> Color(0xFF1C1C1E)
             else -> Background
         }
     }
