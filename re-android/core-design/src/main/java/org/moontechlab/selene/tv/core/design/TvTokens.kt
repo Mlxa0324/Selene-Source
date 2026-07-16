@@ -188,28 +188,43 @@ object TvTokens {
     val PosterCoverHeight = 225.dp
 
     /**
-     * TV 顶部快捷入口高度。
+     * TV 顶部快捷入口 / 详情底栏胶囊高度。
      */
-    val TopActionHeight = 38.dp
+    val TopActionHeight = 40.dp
 
     /**
      * TV 顶部快捷入口圆角。
      */
-    val TopActionRadius = 22.dp
+    val TopActionRadius = 20.dp
 
     /**
-     * 胶囊按钮内字符图标字号（⌕ 等）。
-     *
-     * 与 [ActionIconSize] 矢量图标视觉等重，全局搜索/详情顶栏共用。
+     * 胶囊按钮左右内边距（图标/文字到边框的距离）。
      */
-    val TopActionIconGlyph: TextUnit = 24.sp
+    val TopActionHorizontalPadding = 18.dp
 
     /**
-     * 按钮内矢量图标统一尺寸（详情全屏/收藏/底部胶囊等）。
-     *
-     * 与 [TopActionIconGlyph] 对齐观感，避免一处偏大一处偏小。
+     * 胶囊内图标与文字间距。
      */
-    val ActionIconSize = 22.dp
+    val TopActionIconTextSpacing = 6.dp
+
+    /**
+     * 胶囊按钮标签字号。
+     */
+    val TopActionLabelSize: TextUnit = 15.sp
+
+    /**
+     * 胶囊按钮内字符图标字号（⌕ ⚙ 等）。
+     *
+     * 略小于旧值，避免图标压过文字。
+     */
+    val TopActionIconGlyph: TextUnit = 18.sp
+
+    /**
+     * 按钮内矢量图标统一尺寸（详情底栏等）。
+     *
+     * 与 [TopActionIconGlyph] 对齐观感。
+     */
+    val ActionIconSize = 18.dp
 
     /**
      * TV 弹窗水平内边距。

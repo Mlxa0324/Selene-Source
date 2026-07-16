@@ -2611,26 +2611,26 @@ private fun NcatBottomPill(
     leadingIcon: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    // 高度/圆角与顶栏「搜索」胶囊一致（TvTokens.TopActionHeight / TopActionRadius）。
+    // 高度/圆角/内边距与顶栏「搜索」胶囊共用 token，避免两套尺寸漂移。
     NcatPillFocusButton(
         modifier = modifier
             .height(TvTokens.TopActionHeight)
-            .widthIn(min = 140.dp),
+            .widthIn(min = 132.dp),
         focusRequester = focusRequester,
         cornerRadius = TvTokens.TopActionRadius,
         onClick = onClick,
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(TvTokens.TopActionIconTextSpacing),
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = TvTokens.TopActionHorizontalPadding),
         ) {
             leadingIcon?.invoke()
             Text(
                 text = label,
                 color = Color.White.copy(alpha = 0.92f),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+                fontSize = TvTokens.TopActionLabelSize,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
         }
@@ -2896,24 +2896,27 @@ private fun NcatBottomActionGlyph(
     modifier: Modifier = Modifier.size(TvTokens.ActionIconSize),
 ) {
     Canvas(modifier = modifier) {
-        // 线宽随统一图标尺寸略收，避免 22dp 框内显得过粗。
-        val stroke = 2.dp.toPx()
+        // 18dp 框内用细线，避免图标糊成块、在部分 TV 上像乱码。
+        val stroke = 1.6.dp.toPx()
         val color = Color.White.copy(alpha = 0.92f)
         when (kind) {
             NcatBottomActionIcon.BackToTop -> {
+                // 简洁上箭头（无顶横线，避免与箭头连成「不」形）。
                 val midX = size.width / 2f
-                drawLine(color, Offset(midX, size.height * 0.78f), Offset(midX, size.height * 0.28f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(midX, size.height * 0.28f), Offset(size.width * 0.28f, size.height * 0.52f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(midX, size.height * 0.28f), Offset(size.width * 0.72f, size.height * 0.52f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(size.width * 0.22f, size.height * 0.18f), Offset(size.width * 0.78f, size.height * 0.18f), stroke, StrokeCap.Square)
+                val tipY = size.height * 0.22f
+                val baseY = size.height * 0.78f
+                val wingY = size.height * 0.48f
+                drawLine(color, Offset(midX, baseY), Offset(midX, tipY), stroke, StrokeCap.Round)
+                drawLine(color, Offset(midX, tipY), Offset(size.width * 0.28f, wingY), stroke, StrokeCap.Round)
+                drawLine(color, Offset(midX, tipY), Offset(size.width * 0.72f, wingY), stroke, StrokeCap.Round)
             }
             NcatBottomActionIcon.RandomBrowse -> {
-                drawLine(color, Offset(size.width * 0.18f, size.height * 0.34f), Offset(size.width * 0.72f, size.height * 0.34f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(size.width * 0.72f, size.height * 0.34f), Offset(size.width * 0.55f, size.height * 0.18f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(size.width * 0.72f, size.height * 0.34f), Offset(size.width * 0.55f, size.height * 0.50f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(size.width * 0.82f, size.height * 0.66f), Offset(size.width * 0.28f, size.height * 0.66f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(size.width * 0.28f, size.height * 0.66f), Offset(size.width * 0.45f, size.height * 0.50f), stroke, StrokeCap.Square)
-                drawLine(color, Offset(size.width * 0.28f, size.height * 0.66f), Offset(size.width * 0.45f, size.height * 0.82f), stroke, StrokeCap.Square)
+                drawLine(color, Offset(size.width * 0.18f, size.height * 0.34f), Offset(size.width * 0.72f, size.height * 0.34f), stroke, StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.72f, size.height * 0.34f), Offset(size.width * 0.55f, size.height * 0.18f), stroke, StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.72f, size.height * 0.34f), Offset(size.width * 0.55f, size.height * 0.50f), stroke, StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.82f, size.height * 0.66f), Offset(size.width * 0.28f, size.height * 0.66f), stroke, StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.28f, size.height * 0.66f), Offset(size.width * 0.45f, size.height * 0.50f), stroke, StrokeCap.Round)
+                drawLine(color, Offset(size.width * 0.28f, size.height * 0.66f), Offset(size.width * 0.45f, size.height * 0.82f), stroke, StrokeCap.Round)
             }
         }
     }

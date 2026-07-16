@@ -157,7 +157,8 @@ class TvDetailRouteFocusContractTest {
 
         assertThat(bottomPill).contains("TvTokens.TopActionHeight")
         assertThat(bottomPill).contains("TvTokens.TopActionRadius")
-        assertThat(bottomPill).contains("fontSize = 16.sp")
+        assertThat(bottomPill).contains("TvTokens.TopActionLabelSize")
+        assertThat(bottomPill).contains("TvTokens.TopActionHorizontalPadding")
         assertThat(bottomPill).doesNotContain("height(36.dp)")
         // 底部/全屏/收藏矢量图标与全局搜索字标统一走 token。
         assertThat(source).contains("TvTokens.ActionIconSize")

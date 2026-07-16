@@ -853,20 +853,19 @@ private fun TvNavigationPill(
                     shape = pillShape,
                 )
                 .then(focusAndClickModifier)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = TvTokens.TopActionHorizontalPadding),
             contentAlignment = Alignment.Center,
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(TvTokens.TopActionIconTextSpacing),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (!iconGlyph.isNullOrBlank()) {
                     Text(
                         text = iconGlyph,
                         style = MaterialTheme.typography.titleMedium.copy(
-                            // 与详情/底部操作图标视觉等重（TvTokens.TopActionIconGlyph）。
                             fontSize = TvTokens.TopActionIconGlyph,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Medium,
                         ),
                         color = Color.White,
                     )
@@ -874,7 +873,7 @@ private fun TvNavigationPill(
                 Text(
                     text = label,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 16.sp,
+                        fontSize = TvTokens.TopActionLabelSize,
                         fontWeight = if (selected || isFocused) FontWeight.Bold else FontWeight.SemiBold,
                     ),
                     color = labelColor,
