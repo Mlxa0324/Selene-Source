@@ -15,8 +15,11 @@ class TvPosterFocusContractTest {
     fun posterRail_declares_focus_group() {
         val source = readLayoutSource("TvPosterRail.kt")
 
-        assertThat(source).contains("modifier = modifier")
         assertThat(source).contains(".posterFocusGroup(")
+        // 上下进轨支持就近落焦（列表不在可视区仍可进入）。
+        assertThat(source).contains("listState = listState")
+        assertThat(source).contains("preferredIndex = { lastFocusedItemIndex }")
+        assertThat(source).contains("TvLazyListFocusEntry(")
     }
 
     /**
@@ -26,7 +29,8 @@ class TvPosterFocusContractTest {
     fun posterGrid_declares_focus_group() {
         val source = readLayoutSource("TvPosterGrid.kt")
 
-        assertThat(source).contains("modifier = modifier.posterFocusGroup(")
+        assertThat(source).contains(".posterGridFocusGroup(")
+        assertThat(source).contains("focusLazyGridItemNearest")
     }
 
     /**
@@ -64,7 +68,8 @@ class TvPosterFocusContractTest {
     }
 
     /**
-     * 横向海报带必须把顶部下探入口绑定到最近获焦卡片，避免首卡被 LazyRow 回收后下键失效。
+     * 横向海报带必须记录最近获焦卡片，并用始终组合的入口承接顶栏下探
+     * （避免首卡/上次卡被 LazyRow 回收后下键失效）。
      */
     @Test
     fun posterRail_remembers_last_focused_card_for_top_navigation_reentry() {
@@ -74,8 +79,10 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("designMetrics.viewportWidth.toInt()")
         assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("var lastFocusedItemIndex by rememberSaveable")
-        assertThat(source).contains("val bindsContentEntry = index == lastFocusedItemIndex")
-        assertThat(source).contains("firstItemFocusRequester")
+        assertThat(source).contains("TvLazyListFocusEntry(")
+        assertThat(source).contains("entryFocusRequester = firstItemFocusRequester")
+        assertThat(source).contains("preferredIndex = { lastFocusedItemIndex }")
+        assertThat(source).contains("scrollPreferredIntoView = true")
         assertThat(source).contains("lastFocusedItemIndex = index")
     }
 
@@ -95,7 +102,8 @@ class TvPosterFocusContractTest {
     }
 
     /**
-     * 纵向网格必须像横向海报带一样记录最近获焦卡片，避免首卡回收后顶部下探失效。
+     * 纵向网格必须记录最近获焦卡片，并用始终组合的入口承接顶栏下探
+     * （避免首卡/上次卡被 LazyGrid 回收后下键失效）。
      */
     @Test
     fun posterGrid_remembers_last_focused_card_for_top_navigation_reentry() {
@@ -105,8 +113,8 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("designMetrics.viewportWidth.toInt()")
         assertThat(source).contains("designMetrics.viewportHeight.toInt()")
         assertThat(source).contains("var lastFocusedItemIndex by rememberSaveable")
-        assertThat(source).contains("val bindsContentEntry = index == lastFocusedItemIndex")
-        assertThat(source).contains("firstItemFocusRequester")
+        assertThat(source).contains("focusRequester(firstItemFocusRequester)")
+        assertThat(source).contains("restoreFocusToLastItem()")
         assertThat(source).contains("lastFocusedItemIndex = index")
     }
 
@@ -221,13 +229,16 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("import androidx.compose.ui.focus.focusProperties")
         assertThat(source).contains("import androidx.compose.ui.focus.FocusDirection")
         assertThat(focusGroupSource).contains("onEnter = {")
-        // 上下跨轨进入必须走几何就近，不能强制 requestFocus 到首卡。
+        // 上下跨轨进入：就近落焦（可见优先），不能强制 requestFocus 到首卡。
         assertThat(focusGroupSource).contains("FocusDirection.Up")
         assertThat(focusGroupSource).contains("FocusDirection.Down")
         assertThat(focusGroupSource).contains("isVerticalEnter")
         assertThat(focusGroupSource).contains("onVerticalEnter")
         assertThat(focusGroupSource).contains("firstCardFocusRequester.requestFocus()")
+        assertThat(focusGroupSource).contains("focusLazyListItemNearest")
+        assertThat(focusGroupSource).contains("scrollPreferredIntoView = false")
         assertThat(focusGroupSource).doesNotContain("contentFocusRequester")
+        // 入口 1dp bridge 在 TvLazyListFocusEntry，分组本身不挂 focusable。
         assertThat(focusGroupSource).doesNotContain("focusable()")
     }
 

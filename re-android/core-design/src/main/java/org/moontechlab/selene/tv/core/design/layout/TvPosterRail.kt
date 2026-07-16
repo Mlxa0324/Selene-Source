@@ -2,6 +2,7 @@ package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -86,14 +87,37 @@ fun TvPosterRail(
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
     val lastIndex = items.lastIndex
     val hasTrailing = trailingContent != null
+    val requestItemFocus: suspend (Int) -> Boolean = { index ->
+        runCatching {
+            itemFocusRequesters.getOrNull(index)?.requestFocus() == true
+        }.getOrDefault(false)
+    }
 
+    Column(modifier = modifier) {
+        // 顶栏下探入口始终组合：上次卡片横向屏外时也能 scroll + 就近落焦。
+        if (firstItemFocusRequester != null && items.isNotEmpty()) {
+            TvLazyListFocusEntry(
+                entryFocusRequester = firstItemFocusRequester,
+                preferredIndex = { lastFocusedItemIndex },
+                itemCount = items.size,
+                listState = listState,
+                requestItemFocus = requestItemFocus,
+                scrollPreferredIntoView = true,
+                scope = scrollScope,
+            )
+        }
     LazyRow(
-        modifier = modifier.posterFocusGroup(
+        modifier = Modifier.posterFocusGroup(
             firstCardFocusRequester = firstCardFocusRequester,
             onVerticalEnter = {
                 // 上下进轨前清会话下标，确保就近落点不会触发横向 animateScroll。
                 activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
             },
+            // 上下进轨：可见项就近落焦；项在 Lazy 视口外时先组合再进，避免整轨无法获焦。
+            listState = listState,
+            preferredIndex = { lastFocusedItemIndex },
+            itemCount = items.size,
+            requestItemFocus = requestItemFocus,
         ),
         state = listState,
         contentPadding = PaddingValues(
@@ -103,14 +127,9 @@ fun TvPosterRail(
         horizontalArrangement = Arrangement.spacedBy(TvTokens.CardSpacing),
     ) {
         itemsIndexed(items, key = ::posterListItemKey) { index, item ->
-            val bindsContentEntry = index == lastFocusedItemIndex
+            // 内容入口改由 TvLazyListFocusEntry 独占 firstItemFocusRequester，避免双挂失效。
             val cardFocusRequesters = buildList {
                 itemFocusRequesters.getOrNull(index)?.let { add(it) }
-                if (bindsContentEntry && firstItemFocusRequester != null) {
-                    if (index != 0 || firstItemFocusRequester !== firstCardFocusRequester) {
-                        add(firstItemFocusRequester)
-                    }
-                }
             }
             val isFirst = index == 0
             val isLast = index == lastIndex
@@ -193,6 +212,7 @@ fun TvPosterRail(
             }
         }
     }
+    } // Column
 }
 
 /**

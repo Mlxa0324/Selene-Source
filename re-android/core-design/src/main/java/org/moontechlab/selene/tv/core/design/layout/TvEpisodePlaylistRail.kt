@@ -113,6 +113,7 @@ data class TvEpisodePlaylistChipScope(
  * @param groupSpacing 分组间距。
  * @param groupSize 每组集数。
  * @param currentEpisodeFocusRequester 当前集优先挂载的焦点（详情/二级入口）。
+ * @param entryFocusRequester 始终可挂载的列表入口：上下键进选集时先就近/滚到目标再落焦。
  * @param pinCurrentTicket 递增后把焦点钉到当前集（打开菜单/进入层）。
  * @param onEpisodeSelected 选集确认。
  * @param onArrowUpFromEpisode 选集上键（到线路等）。
@@ -136,6 +137,7 @@ fun TvEpisodePlaylistRail(
     groupSpacing: Dp = 12.dp,
     groupSize: Int = TV_EPISODE_PLAYLIST_GROUP_SIZE,
     currentEpisodeFocusRequester: FocusRequester? = null,
+    entryFocusRequester: FocusRequester? = null,
     pinCurrentTicket: Int = 0,
     onEpisodeSelected: (String) -> Unit,
     onArrowUpFromEpisode: (() -> Unit)? = null,
@@ -415,6 +417,29 @@ fun TvEpisodePlaylistRail(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // 始终组合的入口：Hero/线路 down 指向它，避免 current 集未组合时整轨进不去。
+        if (entryFocusRequester != null) {
+            TvLazyListFocusEntry(
+                entryFocusRequester = entryFocusRequester,
+                preferredIndex = {
+                    activeEpisodeFocusedIndex
+                        .takeIf { index -> index >= 0 }
+                        ?: currentAbsoluteIndex
+                },
+                itemCount = episodes.size,
+                listState = episodeListState,
+                requestItemFocus = { index ->
+                    val primary = focusRequesterForAbsoluteIndex(index)
+                    val fallback = episodeFocusRequesters.getOrNull(index)
+                    requestFocusWhenReady(
+                        primary = primary,
+                        fallback = if (fallback !== primary) fallback else null,
+                    )
+                },
+                // 入口下探允许滚到当前/上次集，保证业务落点正确。
+                scrollPreferredIntoView = true,
+            )
+        }
         CompositionLocalProvider(LocalBringIntoViewSpec provides noAutoBringIntoViewSpec) {
             LazyRow(
                 state = episodeListState,
@@ -434,6 +459,29 @@ fun TvEpisodePlaylistRail(
                             if (isVerticalEnter) {
                                 activeEpisodeFocusedIndex =
                                     TvLayeredHorizontalFocusScroll.NoActiveIndex
+                                // 几何进轨时：可见就近；无可见则滚到当前集。
+                                cancelFocusChange()
+                                scrollScope.launch {
+                                    val preferred = currentAbsoluteIndex
+                                    focusLazyListItemNearest(
+                                        listState = episodeListState,
+                                        preferredIndex = preferred,
+                                        itemCount = episodes.size,
+                                        requestFocus = { index ->
+                                            val primary = focusRequesterForAbsoluteIndex(index)
+                                            val fallback = episodeFocusRequesters.getOrNull(index)
+                                            requestFocusWhenReady(
+                                                primary = primary,
+                                                fallback = if (fallback !== primary) {
+                                                    fallback
+                                                } else {
+                                                    null
+                                                },
+                                            )
+                                        },
+                                        scrollPreferredIntoView = false,
+                                    )
+                                }
                             }
                         }
                     }

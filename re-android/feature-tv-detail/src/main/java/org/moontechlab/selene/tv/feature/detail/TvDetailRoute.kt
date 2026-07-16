@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -63,6 +64,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -128,9 +130,11 @@ import org.moontechlab.selene.tv.core.design.layout.TvCachedTitlePosterImage
 import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistItem
 import org.moontechlab.selene.tv.core.design.layout.TvEpisodePlaylistRail
 import org.moontechlab.selene.tv.core.design.layout.TvLayeredHorizontalFocusScroll
+import org.moontechlab.selene.tv.core.design.layout.TvLazyListFocusEntry
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPosterTitleUrlCache
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
+import org.moontechlab.selene.tv.core.design.layout.focusLazyListItemNearest
 
 /**
  * 详情页纵向焦点跟滚宿主：嵌套 LazyRow 时 bringIntoView 常失效，改用窗口坐标 + ScrollState。
@@ -482,7 +486,7 @@ fun TvDetailRoute(
             if (layoutSections.showBottomActions) {
                 NcatBottomActions(
                     focusTargets = focusTargets,
-                    hasEpisodeGroupChoices = shouldShowDetailEpisodeGroupChoices(episodeGroups.size),
+                    hasRecommends = state.recommendCards.isNotEmpty(),
                     onBackToTop = {
                         detailScrollScope.launch {
                             // 显式「返回顶部」：回到切换线路分区，不与焦点 bringIntoView 抢动画。
@@ -518,9 +522,12 @@ fun TvDetailRoute(
  * @property favorite 收藏按钮焦点。
  * @property feedback 反馈按钮焦点。
  * @property sources 线路焦点列表。
+ * @property sourceEntry 线路轨入口（始终组合，就近/滚到目标后再落业务卡）。
  * @property episodes 选集焦点列表。
+ * @property episodeEntry 选集轨入口（始终组合）。
  * @property episodeGroups 分组焦点列表。
  * @property recommends 推荐焦点列表。
+ * @property recommendEntry 推荐轨入口（始终组合）。
  * @property backTop 底部返回顶部焦点。
  * @property random 底部随便看看焦点。
  */
@@ -534,9 +541,12 @@ private data class TvDetailFocusTargets(
     val favorite: FocusRequester,
     val feedback: FocusRequester,
     val sources: List<FocusRequester>,
+    val sourceEntry: FocusRequester,
     val episodes: List<FocusRequester>,
+    val episodeEntry: FocusRequester,
     val episodeGroups: List<FocusRequester>,
     val recommends: List<FocusRequester>,
+    val recommendEntry: FocusRequester,
     val backTop: FocusRequester,
     val random: FocusRequester,
 )
@@ -567,9 +577,12 @@ private fun rememberDetailFocusTargets(
         favorite = remember { FocusRequester() },
         feedback = remember { FocusRequester() },
         sources = remember(sourceCount) { List(sourceCount) { FocusRequester() } },
+        sourceEntry = remember { FocusRequester() },
         episodes = remember(episodeCount) { List(episodeCount) { FocusRequester() } },
+        episodeEntry = remember { FocusRequester() },
         episodeGroups = remember(episodeGroupCount) { List(episodeGroupCount) { FocusRequester() } },
         recommends = remember(recommendCount) { List(recommendCount) { FocusRequester() } },
+        recommendEntry = remember { FocusRequester() },
         backTop = remember { FocusRequester() },
         random = remember { FocusRequester() },
     )
@@ -1054,7 +1067,8 @@ private fun NcatPreviewPanel(
                 up = focusTargets.search
                 right = focusTargets.fullscreen
                 left = FocusRequester.Cancel
-                down = currentSourceFocusRequester ?: FocusRequester.Default
+                // 下到线路入口（始终组合），避免当前线路 chip 横向屏外时无法下探。
+                down = focusTargets.sourceEntry
             }
             .focusable(interactionSource = interactionSource)
             .onPreviewKeyEvent { event ->
@@ -1482,11 +1496,11 @@ private fun NcatInfoPanel(
                     // Hero 内左右切焦禁止纵向跟滚，真机从播放器右移到全屏时否则会上下抖。
                     .tvBringFocusedItemIntoView(pin = DetailVerticalPin.HeroStay)
                     .focusProperties {
-                        // 右列底：上简介、左播放器、右收藏、下线路。
+                        // 右列底：上简介、左播放器、右收藏、下线路入口。
                         up = focusTargets.description
                         left = focusTargets.player
                         right = focusTargets.favorite
-                        down = currentSourceFocusRequester ?: FocusRequester.Default
+                        down = focusTargets.sourceEntry
                     },
                 onPressed = { onPlayPressed?.invoke() },
                 iconContent = {
@@ -1509,7 +1523,7 @@ private fun NcatInfoPanel(
                         up = focusTargets.description
                         left = focusTargets.fullscreen
                         right = FocusRequester.Cancel
-                        down = currentSourceFocusRequester ?: FocusRequester.Default
+                        down = focusTargets.sourceEntry
                     },
                 edgeShakeRight = true,
                 edgeShakeState = favoriteEdgeShake,
@@ -1722,6 +1736,10 @@ private fun NcatSourceRail(
 ) {
     val scrollScope = rememberCoroutineScope()
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
+    // 最近业务落点：入口下探优先当前选中，否则上次浏览下标。
+    var lastFocusedIndex by remember { mutableIntStateOf(0) }
+    val selectedIndex = sourceOptions.indexOfFirst { option -> option.selected }
+        .takeIf { index -> index >= 0 } ?: 0
     NcatSectionHeader(
         title = "切换线路",
         hint = "遇播放卡顿，音画不同步或无法播放时，请切换播放线路或播放内核",
@@ -1745,11 +1763,59 @@ private fun NcatSourceRail(
         )
         return
     }
+    // 始终组合入口：Hero down → 就近/当前线路，避免 chip 横向屏外整轨进不去。
+    TvLazyListFocusEntry(
+        entryFocusRequester = focusTargets.sourceEntry,
+        preferredIndex = {
+            when {
+                selectedIndex in sourceOptions.indices -> selectedIndex
+                lastFocusedIndex in sourceOptions.indices -> lastFocusedIndex
+                else -> 0
+            }
+        },
+        itemCount = sourceOptions.size,
+        listState = listState,
+        requestItemFocus = { index ->
+            runCatching {
+                focusTargets.sources.getOrNull(index)?.requestFocus() == true
+            }.getOrDefault(false)
+        },
+        scrollPreferredIntoView = true,
+        scope = scrollScope,
+    )
     LazyRow(
         state = listState,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(start = NcatContentStartPadding, end = NcatContentEndPadding),
-        modifier = Modifier.height(77.dp),
+        modifier = Modifier
+            .height(77.dp)
+            .focusProperties {
+                onEnter = {
+                    val isVerticalEnter =
+                        requestedFocusDirection == FocusDirection.Up ||
+                            requestedFocusDirection == FocusDirection.Down
+                    if (isVerticalEnter) {
+                        activeFocusedIndex = TvLayeredHorizontalFocusScroll.NoActiveIndex
+                        cancelFocusChange()
+                        scrollScope.launch {
+                            focusLazyListItemNearest(
+                                listState = listState,
+                                preferredIndex = lastFocusedIndex.takeIf { it in sourceOptions.indices }
+                                    ?: selectedIndex,
+                                itemCount = sourceOptions.size,
+                                requestFocus = { index ->
+                                    runCatching {
+                                        focusTargets.sources.getOrNull(index)?.requestFocus() == true
+                                    }.getOrDefault(false)
+                                },
+                                // 跨层 re-enter：可见就近，保持横向 offset。
+                                scrollPreferredIntoView = false,
+                            )
+                        }
+                    }
+                }
+            }
+            .focusGroup(),
     ) {
         items(sourceOptions.size, key = { index -> sourceOptions[index].sourceId }) { index ->
             val option = sourceOptions[index]
@@ -1764,9 +1830,8 @@ private fun NcatSourceRail(
                     .tvBringFocusedItemIntoView()
                     .focusProperties {
                         up = focusTargets.player
-                        down = currentEpisodeFocusRequester ?: focusTargets.episodeGroups.firstOrNull()
-                            ?: focusTargets.recommends.firstOrNull()
-                            ?: FocusRequester.Default
+                        // 下到选集入口（始终组合），不依赖当前集 chip 是否已挂载。
+                        down = focusTargets.episodeEntry
                         // 首/末项禁止 left/right 指回自己，否则永远到不了横向边界。
                         left = if (index > 0) {
                             focusTargets.sources.getOrNull(index - 1) ?: FocusRequester.Cancel
@@ -1793,6 +1858,7 @@ private fun NcatSourceRail(
                                 newlyFocusedIndex = index,
                             )
                             activeFocusedIndex = index
+                            lastFocusedIndex = index
                             // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
                             if (shouldScroll) {
                                 scrollDetailOptionIntoView(
@@ -1966,8 +2032,12 @@ private fun NcatEpisodeGroupRail(
             )
         }
     }
-    val downFromGroup = focusTargets.recommends.takeIf { hasRecommends }?.firstOrNull()
-        ?: focusTargets.backTop
+    // 下探：有推荐走入口就近落焦；无推荐到底栏。
+    val downFromGroup = if (hasRecommends) {
+        focusTargets.recommendEntry
+    } else {
+        focusTargets.backTop
+    }
 
     TvEpisodePlaylistRail(
         episodes = playlistItems,
@@ -1977,9 +2047,11 @@ private fun NcatEpisodeGroupRail(
         episodeRowHeight = 54.dp,
         groupRowHeight = 48.dp,
         currentEpisodeFocusRequester = currentEpisodeFocusRequester,
+        entryFocusRequester = focusTargets.episodeEntry,
         onEpisodeSelected = { id -> onEpisodeSelected?.invoke(id) },
         onArrowUpFromEpisode = {
-            currentSourceFocusRequester?.let { runCatching { it.requestFocus() } }
+            // 上到线路入口，避免当前线路 chip 屏外 requestFocus 失败。
+            runCatching { focusTargets.sourceEntry.requestFocus() }
         },
         onArrowDownFromEpisodeNoGroups = {
             runCatching { downFromGroup.requestFocus() }
@@ -2205,6 +2277,7 @@ private fun NcatRecommendRail(
 ) {
     val scrollScope = rememberCoroutineScope()
     var activeFocusedIndex by remember { mutableIntStateOf(TvLayeredHorizontalFocusScroll.NoActiveIndex) }
+    var lastFocusedIndex by remember { mutableIntStateOf(0) }
     // 相关推荐左右边距对齐全局横向列表契约，首屏刚好放下 PosterColumns 列。
     // 相关推荐与线路/选集共用详情页内容竖线，滚动由 LazyRow contentPadding 单独控制。
     val recommendStartPadding = NcatContentStartPadding
@@ -2237,6 +2310,22 @@ private fun NcatRecommendRail(
         val railHeight = coverHeight + recommendTitleBlockHeight
         when {
             cards.isNotEmpty() -> {
+                // 始终组合入口：选集 down → 就近推荐卡。
+                TvLazyListFocusEntry(
+                    entryFocusRequester = focusTargets.recommendEntry,
+                    preferredIndex = {
+                        lastFocusedIndex.coerceIn(0, cards.lastIndex)
+                    },
+                    itemCount = cards.size,
+                    listState = listState,
+                    requestItemFocus = { index ->
+                        runCatching {
+                            focusTargets.recommends.getOrNull(index)?.requestFocus() == true
+                        }.getOrDefault(false)
+                    },
+                    scrollPreferredIntoView = true,
+                    scope = scrollScope,
+                )
                 // 首次有数据：淡入 + 轻微上滑，替代整段突然蹦出。
                 val appearState = remember {
                     MutableTransitionState(false).apply { targetState = true }
@@ -2255,7 +2344,35 @@ private fun NcatRecommendRail(
                             start = recommendStartPadding,
                             end = recommendEndPadding,
                         ),
-                        modifier = Modifier.height(railHeight),
+                        modifier = Modifier
+                            .height(railHeight)
+                            .focusProperties {
+                                onEnter = {
+                                    val isVerticalEnter =
+                                        requestedFocusDirection == FocusDirection.Up ||
+                                            requestedFocusDirection == FocusDirection.Down
+                                    if (isVerticalEnter) {
+                                        activeFocusedIndex =
+                                            TvLayeredHorizontalFocusScroll.NoActiveIndex
+                                        cancelFocusChange()
+                                        scrollScope.launch {
+                                            focusLazyListItemNearest(
+                                                listState = listState,
+                                                preferredIndex = lastFocusedIndex,
+                                                itemCount = cards.size,
+                                                requestFocus = { index ->
+                                                    runCatching {
+                                                        focusTargets.recommends.getOrNull(index)
+                                                            ?.requestFocus() == true
+                                                    }.getOrDefault(false)
+                                                },
+                                                scrollPreferredIntoView = false,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            .focusGroup(),
                     ) {
                         items(
                             cards.size,
@@ -2277,11 +2394,8 @@ private fun NcatRecommendRail(
                                     .tvEdgeShake(edgeShake)
                                     .tvBringFocusedItemIntoView()
                                     .focusProperties {
-                                        up = focusTargets.episodeGroups
-                                            .firstOrNull()
-                                            .takeIf { hasEpisodeGroupChoices }
-                                            ?: focusTargets.episodes.firstOrNull()
-                                            ?: FocusRequester.Default
+                                        // 上到选集入口，避免当前集/分组 chip 屏外无法回上。
+                                        up = focusTargets.episodeEntry
                                         down = focusTargets.backTop
                                         left = if (index > 0) {
                                             focusTargets.recommends.getOrNull(index - 1)
@@ -2311,6 +2425,7 @@ private fun NcatRecommendRail(
                                                     newlyFocusedIndex = index,
                                                 )
                                             activeFocusedIndex = index
+                                            lastFocusedIndex = index
                                             // 仅同轨左右相邻才横向滚动，上下跨层进入不拽 offset。
                                             if (shouldScroll) {
                                                 scrollDetailOptionIntoView(
@@ -2546,10 +2661,16 @@ private fun NcatPosterPlaceholder() {
 @Composable
 private fun NcatBottomActions(
     focusTargets: TvDetailFocusTargets,
-    hasEpisodeGroupChoices: Boolean,
+    hasRecommends: Boolean,
     onBackToTop: () -> Unit,
     onExitClick: (() -> Unit)?,
 ) {
+    // 底栏上键：有推荐走推荐入口，否则选集入口（均始终组合，支持就近落焦）。
+    val upFromBottom = if (hasRecommends) {
+        focusTargets.recommendEntry
+    } else {
+        focusTargets.episodeEntry
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2564,10 +2685,7 @@ private fun NcatBottomActions(
                 modifier = Modifier
                     .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Bottom)
                     .focusProperties {
-                        up = focusTargets.recommends.firstOrNull()
-                            ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
-                            ?: focusTargets.episodes.firstOrNull()
-                            ?: FocusRequester.Default
+                        up = upFromBottom
                         down = FocusRequester.Cancel
                         left = FocusRequester.Cancel
                         right = focusTargets.random
@@ -2581,10 +2699,7 @@ private fun NcatBottomActions(
                 modifier = Modifier
                     .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Bottom)
                     .focusProperties {
-                        up = focusTargets.recommends.firstOrNull()
-                            ?: focusTargets.episodeGroups.firstOrNull().takeIf { hasEpisodeGroupChoices }
-                            ?: focusTargets.episodes.firstOrNull()
-                            ?: FocusRequester.Default
+                        up = upFromBottom
                         down = FocusRequester.Cancel
                         left = focusTargets.backTop
                         right = FocusRequester.Cancel

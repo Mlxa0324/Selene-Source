@@ -61,7 +61,7 @@ class TvHomeRouteFocusContractTest {
         // 纵向焦点滚动需给标题副标题预留底部边距，避免只露出封面。
         assertThat(source).contains("LocalBringIntoViewSpec")
         assertThat(source).contains("bottomMarginPx")
-        assertThat(source).contains("contentPadding = PaddingValues(bottom = 136.dp)")
+        assertThat(source).contains("contentPadding = PaddingValues(top = 8.dp, bottom = 148.dp)")
     }
 
     /**

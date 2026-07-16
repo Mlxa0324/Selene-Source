@@ -2,10 +2,13 @@ package org.moontechlab.selene.tv.core.design.layout
 
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -23,8 +26,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlin.math.abs
@@ -157,10 +167,34 @@ fun TvPosterGrid(
         }
     }
 
+    Box(modifier = modifier) {
+        // 顶栏下探入口始终组合：上次卡片不在可视区时仍可 scroll + 落焦。
+        if (firstItemFocusRequester != null && items.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .size(1.dp)
+                    .focusRequester(firstItemFocusRequester)
+                    .onFocusChanged { focusState ->
+                        if (focusState.isFocused) {
+                            restoreFocusToLastItem()
+                        }
+                    }
+                    .focusable(),
+            )
+        }
     LazyVerticalGrid(
         columns = GridCells.Fixed(safeColumns),
-        modifier = modifier.posterFocusGroup(
+        modifier = Modifier.posterGridFocusGroup(
             firstCardFocusRequester = firstCardFocusRequester,
+            gridState = gridState,
+            preferredIndex = { lastFocusedItemIndex },
+            itemCount = items.size,
+            headerOffset = headerLazyOffset,
+            requestItemFocus = { index ->
+                runCatching {
+                    itemFocusRequesters.getOrNull(index)?.requestFocus() == true
+                }.getOrDefault(false)
+            },
         ),
         state = gridState,
         contentPadding = PaddingValues(
@@ -179,16 +213,10 @@ fun TvPosterGrid(
             }
         }
         itemsIndexed(items, key = ::posterListItemKey) { index, item ->
-            val bindsContentEntry = index == lastFocusedItemIndex
+            // 内容入口由外层 1dp entry 独占 firstItemFocusRequester。
             val cardFocusRequesters = buildList {
                 // 每项挂索引 requester，供方向键同列/同行就近移动。
                 itemFocusRequesters.getOrNull(index)?.let { add(it) }
-                if (bindsContentEntry && firstItemFocusRequester != null) {
-                    // 顶部下探回到最近业务卡；index0 时与 firstCard 为同一对象已在列表中。
-                    if (index != 0 || firstItemFocusRequester !== firstCardFocusRequester) {
-                        add(firstItemFocusRequester)
-                    }
-                }
             }
             val column = index % safeColumns
             val lastIndex = items.lastIndex
@@ -245,6 +273,42 @@ fun TvPosterGrid(
                         } ?: FocusRequester.Cancel
                     },
                     onPreviewKey = { event ->
+                        // 同列上下目标若未组合：先 scroll 再落焦，避免「不在可视区就无法移动」。
+                        if (event.type == KeyEventType.KeyDown) {
+                            val verticalTarget = when (event.key) {
+                                Key.DirectionDown -> downIndex
+                                Key.DirectionUp -> if (index >= safeColumns) {
+                                    index - safeColumns
+                                } else {
+                                    null
+                                }
+                                else -> null
+                            }
+                            if (verticalTarget != null) {
+                                val attached = runCatching {
+                                    itemFocusRequesters.getOrNull(verticalTarget)?.requestFocus() == true
+                                }.getOrDefault(false)
+                                if (attached) {
+                                    return@TvPosterCard true
+                                }
+                                scrollScope.launch {
+                                    focusLazyGridItemNearest(
+                                        gridState = gridState,
+                                        preferredIndex = verticalTarget,
+                                        itemCount = items.size,
+                                        headerOffset = headerLazyOffset,
+                                        requestFocus = { businessIndex ->
+                                            runCatching {
+                                                itemFocusRequesters.getOrNull(businessIndex)
+                                                    ?.requestFocus() == true
+                                            }.getOrDefault(false)
+                                        },
+                                        scrollPreferredIntoView = true,
+                                    )
+                                }
+                                return@TvPosterCard true
+                            }
+                        }
                         edgeShake.consumeBoundaryKey(
                             event = event,
                             left = isLeftEdge,
@@ -299,6 +363,7 @@ fun TvPosterGrid(
             }
         }
     }
+    } // Box
 }
 
 /**
