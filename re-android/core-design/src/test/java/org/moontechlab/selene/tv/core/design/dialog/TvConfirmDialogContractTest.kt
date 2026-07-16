@@ -27,6 +27,10 @@ class TvConfirmDialogContractTest {
         // 默认焦点在取消，降低误触确认风险。
         assertThat(source).contains("cancelFocusRequester.requestFocus()")
         assertThat(source).contains("默认焦点落在取消")
+        // 卡片与按钮均圆角，且 clip 保证四角完整。
+        assertThat(source).contains("clip(RoundedCornerShape(DialogCorner))")
+        assertThat(source).contains("ActionCorner")
+        assertThat(source).contains("width(312.dp)")
     }
 
     @Test
