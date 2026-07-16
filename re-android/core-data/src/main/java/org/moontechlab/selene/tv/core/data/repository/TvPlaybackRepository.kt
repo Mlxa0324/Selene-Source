@@ -14,22 +14,31 @@ import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
  * - **先保证保留记录已在服务端**（先保存/先选定保留 key），再删同名其它 key；
  * - 删除失败时保留重复项，绝不“先删再存”导致唯一副本丢失。
  *
+ * 继续观看列表默认 **1 天内存缓存**（进程内共享）：TTL 内重复读不打 `/api/playrecords`；
+ * 保存/删除/清空会立刻失效，保证写后读到最新。
+ *
  * @property api TV 服务端接口。
- * @property continueWatching 首期注入的继续观看列表。
+ * @property continueWatching 首期注入的继续观看列表（无 api 时使用）。
+ * @property continueWatchingCache 可注入的缓存（默认进程共享）。
  */
 class TvPlaybackRepository(
     private val api: SeleneTvApi? = null,
     private val continueWatching: List<TvVideoCard> = emptyList(),
+    private val continueWatchingCache: ContinueWatchingCache = sharedContinueWatchingCache,
 ) {
     /**
      * 读取继续观看列表。
      *
      * 拉取后会按同名策略清理服务端多余记录，再返回最新列表。
+     * 未过期缓存命中时跳过网络；写操作后缓存已失效。
      *
      * @return 按最近播放排序的影视卡片列表。
      */
     suspend fun readContinueWatching(): List<TvVideoCard> {
         val remoteApi = api ?: return continueWatching
+        continueWatchingCache.getValid()?.let { cached ->
+            return cached
+        }
         // 远端接口成功但为空时返回空列表；异常交给调用方展示错误态。
         val remoteRecords = remoteApi.getPlayRecords()
         // 仅删除“非保留”的同名 key，保留项始终先存在于服务端。
@@ -38,9 +47,16 @@ class TvPlaybackRepository(
             records = remoteRecords,
             preferredKeepKey = null,
         )
-        return remoteApi.getPlayRecords()
+        val cards = remoteApi.getPlayRecords()
             .map { (key, record) -> record.toVideoCard(key) }
             .sortedByDescending { card -> card.saveTime }
+        // 有数据才缓存；空列表不缓存，避免长期挡住其它设备新写入的记录。
+        if (cards.isNotEmpty()) {
+            continueWatchingCache.put(cards)
+        } else {
+            continueWatchingCache.clear()
+        }
+        return cards
     }
 
     /**
@@ -55,6 +71,8 @@ class TvPlaybackRepository(
         val keepKey = video.toRecordKey()
         // 1) 先写入/更新当前记录，确保服务端已有最新副本。
         remoteApi.savePlayRecord(video.toUpsertRequest())
+        // 写库后失效缓存，首页 dirty 刷新必须打到最新列表。
+        continueWatchingCache.clear()
         // 2) 再清理同名其它线路/id 的旧记录；失败只影响去重，不丢当前记录。
         val remoteRecords = runCatching { remoteApi.getPlayRecords() }.getOrNull() ?: return
         purgeDuplicateTitleRecords(
@@ -82,6 +100,7 @@ class TvPlaybackRepository(
      */
     suspend fun deletePlayRecordByKey(key: String) {
         api?.deletePlayRecord(key)
+        continueWatchingCache.clear()
     }
 
     /**
@@ -89,6 +108,7 @@ class TvPlaybackRepository(
      */
     suspend fun clearPlayRecords() {
         api?.clearPlayRecords()
+        continueWatchingCache.clear()
     }
 
     /**
@@ -227,6 +247,69 @@ class TvPlaybackRepository(
             ),
         )
     }
+
+    companion object {
+        /**
+         * 继续观看缓存 TTL：1 天。
+         * 与相关推荐 [DoubanRepository.RECOMMEND_CACHE_TTL_MS] 对齐。
+         */
+        const val CONTINUE_WATCHING_CACHE_TTL_MS: Long = 86_400_000L
+
+        /**
+         * 进程内共享缓存：Container 每次 `TvPlaybackRepository(api=…)` 新建实例仍能命中。
+         */
+        internal val sharedContinueWatchingCache: ContinueWatchingCache =
+            ContinueWatchingCache(ttlMs = CONTINUE_WATCHING_CACHE_TTL_MS)
+    }
+}
+
+/**
+ * 继续观看列表内存缓存（带 TTL）。
+ *
+ * @param ttlMs 有效期毫秒，默认 1 天。
+ * @param nowMs 当前时间，便于单测注入。
+ */
+class ContinueWatchingCache(
+    private val ttlMs: Long = TvPlaybackRepository.CONTINUE_WATCHING_CACHE_TTL_MS,
+    private val nowMs: () -> Long = { System.currentTimeMillis() },
+) {
+    private var entry: CacheEntry? = null
+
+    /**
+     * 读取未过期缓存。
+     *
+     * @return 有效列表；未命中或过期为 null。
+     */
+    @Synchronized
+    fun getValid(): List<TvVideoCard>? {
+        val current = entry ?: return null
+        if (nowMs() - current.savedAtMs >= ttlMs) {
+            entry = null
+            return null
+        }
+        return current.cards
+    }
+
+    /**
+     * 写入缓存快照。
+     *
+     * @param cards 继续观看列表。
+     */
+    @Synchronized
+    fun put(cards: List<TvVideoCard>) {
+        entry = CacheEntry(cards = cards.toList(), savedAtMs = nowMs())
+    }
+
+    /** 清空（写库/删库后调用）。 */
+    @Synchronized
+    fun clear() {
+        entry = null
+    }
+
+    private data class CacheEntry(
+        val cards: List<TvVideoCard>,
+        val savedAtMs: Long,
+    )
 }
 
 /**

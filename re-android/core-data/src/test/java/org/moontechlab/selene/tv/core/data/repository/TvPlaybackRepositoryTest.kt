@@ -2,6 +2,7 @@ package org.moontechlab.selene.tv.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
+import org.junit.Before
 import org.junit.Test
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.network.model.TvPlayRecordResponse
@@ -11,6 +12,20 @@ import org.moontechlab.selene.tv.core.network.model.TvPlayRecordUpsertRequest
  * 校验 TV 播放历史仓库映射契约。
  */
 class TvPlaybackRepositoryTest {
+    @Before
+    fun clearSharedContinueWatchingCache() {
+        // 避免用例间共享进程缓存互相污染。
+        TvPlaybackRepository.sharedContinueWatchingCache.clear()
+    }
+
+    /**
+     * 继续观看 TTL 默认 1 天。
+     */
+    @Test
+    fun continue_watching_cache_ttl_is_one_day() {
+        assertThat(TvPlaybackRepository.CONTINUE_WATCHING_CACHE_TTL_MS).isEqualTo(86_400_000L)
+    }
+
     /**
      * 远端播放历史应按保存时间倒序转成卡片。
      */
@@ -45,6 +60,7 @@ class TvPlaybackRepositoryTest {
                     )
                 }
             },
+            continueWatchingCache = ContinueWatchingCache(),
         )
 
         val cards = repository.readContinueWatching()
@@ -68,6 +84,7 @@ class TvPlaybackRepositoryTest {
                     error("播放历史接口失败")
                 }
             },
+            continueWatchingCache = ContinueWatchingCache(),
         )
 
         val error = runCatching { repository.readContinueWatching() }.exceptionOrNull()
@@ -88,6 +105,7 @@ class TvPlaybackRepositoryTest {
                     savedRequest = request
                 }
             },
+            continueWatchingCache = ContinueWatchingCache(),
         )
 
         repository.savePlayRecord(
@@ -154,6 +172,7 @@ class TvPlaybackRepositoryTest {
                     store.remove(key)
                 }
             },
+            continueWatchingCache = ContinueWatchingCache(),
         )
 
         repository.savePlayRecord(
@@ -196,9 +215,12 @@ class TvPlaybackRepositoryTest {
             ),
         )
         val deleted = mutableListOf<String>()
+        var getCount = 0
+        val cache = ContinueWatchingCache()
         val repository = TvPlaybackRepository(
             api = object : FakeSeleneTvApi() {
                 override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+                    getCount += 1
                     return store.toMap()
                 }
 
@@ -207,12 +229,106 @@ class TvPlaybackRepositoryTest {
                     store.remove(key)
                 }
             },
+            continueWatchingCache = cache,
         )
 
         val cards = repository.readContinueWatching()
+        // 第二次读应命中 1 天缓存，不再打 getPlayRecords。
+        val cached = repository.readContinueWatching()
 
         assertThat(deleted).containsExactly("source_old+id_old")
         assertThat(cards.map { it.id }).containsExactly("id_new", "id_x").inOrder()
+        assertThat(cached).isEqualTo(cards)
+        // 首次：purge 前 1 次 + 映射 1 次；二次命中缓存不增加。
+        assertThat(getCount).isEqualTo(2)
+    }
+
+    /**
+     * TTL 内命中缓存；过期后重新拉远端。
+     */
+    @Test
+    fun readContinueWatching_refetches_after_ttl_expires() = runTest {
+        var now = 1_000_000L
+        var getCount = 0
+        val store = mutableMapOf(
+            "source_a+video_a" to TvPlayRecordResponse(
+                title = "续看",
+                searchTitle = "续看",
+                saveTime = 20L,
+                cover = "a.jpg",
+            ),
+        )
+        val repository = TvPlaybackRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+                    getCount += 1
+                    return store.toMap()
+                }
+            },
+            continueWatchingCache = ContinueWatchingCache(
+                ttlMs = TvPlaybackRepository.CONTINUE_WATCHING_CACHE_TTL_MS,
+                nowMs = { now },
+            ),
+        )
+
+        repository.readContinueWatching()
+        now += TvPlaybackRepository.CONTINUE_WATCHING_CACHE_TTL_MS - 1
+        repository.readContinueWatching()
+        now += 2
+        repository.readContinueWatching()
+
+        // 首次 2 次 get（purge+map）；TTL 内 0；过期后再 2 次。
+        assertThat(getCount).isEqualTo(4)
+    }
+
+    /**
+     * 保存播放记录后必须失效缓存，下次读取重新请求。
+     */
+    @Test
+    fun savePlayRecord_invalidates_continue_watching_cache() = runTest {
+        var getCount = 0
+        val store = mutableMapOf(
+            "source_a+video_a" to TvPlayRecordResponse(
+                title = "续看",
+                searchTitle = "续看",
+                saveTime = 20L,
+            ),
+        )
+        val repository = TvPlaybackRepository(
+            api = object : FakeSeleneTvApi() {
+                override suspend fun getPlayRecords(): Map<String, TvPlayRecordResponse> {
+                    getCount += 1
+                    return store.toMap()
+                }
+
+                override suspend fun savePlayRecord(request: TvPlayRecordUpsertRequest) {
+                    store[request.key] = TvPlayRecordResponse(
+                        title = request.record.title,
+                        searchTitle = request.record.searchTitle,
+                        saveTime = request.record.saveTime,
+                    )
+                }
+            },
+            continueWatchingCache = ContinueWatchingCache(),
+        )
+
+        repository.readContinueWatching()
+        val afterFirst = getCount
+        repository.savePlayRecord(
+            TvVideoCard(
+                id = "video_a",
+                source = "source_a",
+                title = "续看",
+                posterUrl = "",
+                searchTitle = "续看",
+                saveTime = 99L,
+            ),
+        )
+        repository.readContinueWatching()
+
+        assertThat(afterFirst).isEqualTo(2)
+        // save 后 purge 可能再 get；read 必须再次 get，不能仍用旧缓存。
+        assertThat(getCount).isGreaterThan(afterFirst)
     }
 
     /**
@@ -245,6 +361,7 @@ class TvPlaybackRepositoryTest {
                     error("delete failed")
                 }
             },
+            continueWatchingCache = ContinueWatchingCache(),
         )
 
         repository.savePlayRecord(
