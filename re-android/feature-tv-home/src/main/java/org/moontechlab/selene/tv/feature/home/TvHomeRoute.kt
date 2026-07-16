@@ -187,6 +187,15 @@ fun TvHomeRoute(
         val showServerHint = state.needsServerLoginHint && onOpenSettings != null
         // 提示条占 1 个 Lazy 下标，分区滚动锚点需加上偏移。
         val sectionListOffset = if (showServerHint) 1 else 0
+        // 「去登录」与首轨入口各自一个 requester，二者互指上下键。
+        val fallbackLoginFocus = remember { FocusRequester() }
+        val firstSectionEntryFocus = remember { FocusRequester() }
+        // 有登录提示时：顶栏 contentFocusRequester 挂在「去登录」上，保证可下探可回上。
+        val loginFocus = if (showServerHint) {
+            contentFocusRequester ?: fallbackLoginFocus
+        } else {
+            null
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = homeListState,
@@ -196,14 +205,18 @@ fun TvHomeRoute(
             contentPadding = PaddingValues(top = 8.dp, bottom = 148.dp),
             verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
         ) {
-            if (showServerHint) {
+            if (showServerHint && loginFocus != null) {
                 item(key = "server-login-hint") {
                     TvServerLoginHintBanner(
-                        message = "配置服务器后可同步「继续观看」、播放历史与收藏夹",
+                        message = "登录后可同步「继续观看」、播放历史与收藏夹",
                         onOpenSettings = onOpenSettings!!,
-                        // 有热门分区时提示条不抢内容首焦；无分区时承接顶栏下探。
-                        focusRequester = contentFocusRequester.takeIf {
-                            firstFocusableSectionIndex == null
+                        focusRequester = loginFocus,
+                        onArrowDown = if (firstFocusableSectionIndex != null) {
+                            {
+                                runCatching { firstSectionEntryFocus.requestFocus() }
+                            }
+                        } else {
+                            null
                         },
                         modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
                     )
@@ -216,10 +229,15 @@ fun TvHomeRoute(
                 // 分区展示模型统一处理数量截断和更多入口，Route 只负责渲染。
                 val presentation = section.toHomeSectionPresentation()
                 val moreTarget = presentation.moreTarget
-                val sectionFocusRequester = if (sectionIndex == firstFocusableSectionIndex) {
-                    contentFocusRequester
-                } else {
-                    null
+                // 有登录提示时：顶栏入口给「去登录」；首轨用独立 entry，便于提示条下键落入。
+                val sectionFocusRequester = when {
+                    showServerHint && sectionIndex == firstFocusableSectionIndex -> {
+                        firstSectionEntryFocus
+                    }
+                    !showServerHint && sectionIndex == firstFocusableSectionIndex -> {
+                        contentFocusRequester
+                    }
+                    else -> null
                 }
                 val listIndex = sectionIndex + sectionListOffset
                 TvPageSection(
@@ -233,6 +251,10 @@ fun TvHomeRoute(
                 ) {
                     TvPosterRail(
                         firstItemFocusRequester = sectionFocusRequester,
+                        // 首轨上键回「去登录」，避免几何搜索跳过提示条。
+                        upFromFirst = loginFocus.takeIf {
+                            showServerHint && sectionIndex == firstFocusableSectionIndex
+                        },
                         onRailFocused = {
                             val sectionAlreadyAnchored =
                                 homeListState.firstVisibleItemIndex == listIndex &&
@@ -273,11 +295,12 @@ fun TvHomeRoute(
 }
 
 /**
- * 未配置服务器时的轻量提示条：说明受影响能力，并提供「去设置」入口。
+ * 未登录时的轻量提示条：说明登录后能力，并提供「去登录」入口。
  *
  * @param message 提示文案。
- * @param onOpenSettings 跳转设置。
- * @param focusRequester 可选内容焦点入口。
+ * @param onOpenSettings 跳转设置/登录。
+ * @param focusRequester 按钮焦点请求器（顶栏下探入口）。
+ * @param onArrowDown 下键落到下方首个业务轨。
  * @param modifier 外层修饰器。
  */
 @Composable
@@ -285,6 +308,7 @@ private fun TvServerLoginHintBanner(
     message: String,
     onOpenSettings: () -> Unit,
     focusRequester: FocusRequester? = null,
+    onArrowDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -336,6 +360,12 @@ private fun TvServerLoginHintBanner(
                     },
                 )
                 .onPreviewKeyEvent { event ->
+                    if (event.key == Key.DirectionDown && onArrowDown != null) {
+                        if (event.type == KeyEventType.KeyDown) {
+                            onArrowDown.invoke()
+                        }
+                        return@onPreviewKeyEvent true
+                    }
                     if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
                     if (event.key.isTvConfirmKey()) {
                         onOpenSettings()
@@ -349,7 +379,7 @@ private fun TvServerLoginHintBanner(
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = "去设置",
+                text = "去登录",
                 color = if (isFocused) Color.White else TvTokens.Accent,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,

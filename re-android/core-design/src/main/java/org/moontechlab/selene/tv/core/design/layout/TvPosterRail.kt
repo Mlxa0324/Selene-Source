@@ -46,6 +46,7 @@ import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
  * @param contentStartPadding 列表左 contentPadding（首卡静止左停靠，与右侧可不同）。
  * @param contentEndPadding 列表右 contentPadding（末卡末端收口，与左侧可不同）。
  * @param onLeftFromFirst 首项再按左时的显式出口（如搜索页回键盘分带）；null 时首项左键走系统几何搜索。
+ * @param upFromFirst 首项上键显式出口（如首页「去登录」提示条）；null 时走系统几何搜索。
  * @param trailingContent 列表尾部附加内容。
  */
 @Composable
@@ -58,6 +59,7 @@ fun TvPosterRail(
     contentStartPadding: Dp = TvListLayoutMetrics.RailStartPadding,
     contentEndPadding: Dp = TvListLayoutMetrics.RailEndPadding,
     onLeftFromFirst: (() -> Unit)? = null,
+    upFromFirst: FocusRequester? = null,
     trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val designMetrics = LocalTvDesignMetrics.current
@@ -173,8 +175,11 @@ fun TvPosterRail(
                         hasTrailing -> FocusRequester.Default
                         else -> FocusRequester.Cancel
                     }
-                    // 上下不锁死，便于搜索推荐区与上方词块几何切换。
-                    up = FocusRequester.Default
+                    // 首项可显式上出（首页登录提示）；其余上下交给系统几何。
+                    up = when {
+                        isFirst && upFromFirst != null -> upFromFirst
+                        else -> FocusRequester.Default
+                    }
                     down = FocusRequester.Default
                 },
                 onPreviewKey = horizontalEdgePreviewKey,

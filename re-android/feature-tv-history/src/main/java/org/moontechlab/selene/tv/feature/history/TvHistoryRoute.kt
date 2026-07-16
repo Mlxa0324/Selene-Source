@@ -66,13 +66,13 @@ fun TvHistoryRoute(
                 state.errorMessage.contains("服务器")
             TvStatePanel(
                 kind = TvStatePanelKind.Error,
-                title = if (needsServerConfig) "需要登录服务器" else "历史加载失败",
+                title = if (needsServerConfig) "登录后可查看播放历史" else "历史加载失败",
                 message = if (needsServerConfig) {
-                    "播放历史依赖服务器账号同步。请先填写服务器地址、账号和密码。"
+                    "登录后可同步并管理最近播放记录，从上次离开的地方继续观看。"
                 } else {
                     state.errorMessage
                 },
-                actionLabel = if (needsServerConfig && onOpenSettings != null) "去设置" else null,
+                actionLabel = if (needsServerConfig && onOpenSettings != null) "去登录" else null,
                 onAction = if (needsServerConfig) onOpenSettings else null,
                 contentFocusRequester = resolvedContentFocus,
                 modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),

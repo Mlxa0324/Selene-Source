@@ -65,13 +65,13 @@ fun TvFavoritesRoute(
                 state.errorMessage.contains("服务器")
             TvStatePanel(
                 kind = TvStatePanelKind.Error,
-                title = if (needsServerConfig) "需要登录服务器" else "收藏夹加载失败",
+                title = if (needsServerConfig) "登录后可查看收藏夹" else "收藏夹加载失败",
                 message = if (needsServerConfig) {
-                    "收藏夹依赖服务器账号同步。请先填写服务器地址、账号和密码。"
+                    "登录后可同步并管理收藏的影视，方便遥控器快速回看。"
                 } else {
                     state.errorMessage
                 },
-                actionLabel = if (needsServerConfig && onOpenSettings != null) "去设置" else null,
+                actionLabel = if (needsServerConfig && onOpenSettings != null) "去登录" else null,
                 onAction = if (needsServerConfig) onOpenSettings else null,
                 contentFocusRequester = resolvedContentFocus,
                 modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
