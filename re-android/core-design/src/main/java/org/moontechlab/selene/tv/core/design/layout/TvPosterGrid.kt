@@ -57,6 +57,7 @@ import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
  * @param headerContent 网格顶部内容（全宽 span，随网格滚动）。
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给首张海报。
  * @param onItemClick 卡片点击回调。
+ * @param onItemLongClick 卡片长按 / 菜单键回调（播放历史、收藏删除等）。
  * @param contentHorizontalPadding 网格左右 contentPadding；容器内嵌时可减小。
  * @param contentTopPadding 网格顶部 contentPadding；给首行获焦放大留白，避免顶缘被裁。
  * @param contentBottomPadding 网格底部 contentPadding。
@@ -74,6 +75,7 @@ fun TvPosterGrid(
     headerContent: (@Composable () -> Unit)? = null,
     firstItemFocusRequester: FocusRequester? = null,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
+    onItemLongClick: ((TvPosterItem) -> Unit)? = null,
     contentHorizontalPadding: Dp = TvListLayoutMetrics.GridHorizontalPadding,
     contentTopPadding: Dp = TvListLayoutMetrics.FocusSafePadding,
     contentBottomPadding: Dp = TvListLayoutMetrics.GridBottomPadding,
@@ -324,6 +326,12 @@ fun TvPosterGrid(
                             // 确认时立刻记下位置，返回后即使焦点链路被重置也能还原。
                             lastFocusedItemIndex = index
                             click(item)
+                        }
+                    },
+                    onLongClick = onItemLongClick?.let { longClick ->
+                        {
+                            lastFocusedItemIndex = index
+                            longClick(item)
                         }
                     },
                     onFocusChanged = { hasFocus ->

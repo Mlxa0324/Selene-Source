@@ -17,4 +17,11 @@ class TvConfirmInputTest {
         assertThat(Key.DirectionDown.isTvConfirmKey()).isFalse()
         assertThat(Key.Back.isTvConfirmKey()).isFalse()
     }
+
+    @Test
+    fun menu_key_is_recognized() {
+        assertThat(Key.Menu.isTvMenuKey()).isTrue()
+        assertThat(Key.Enter.isTvMenuKey()).isFalse()
+        assertThat(Key.Back.isTvMenuKey()).isFalse()
+    }
 }

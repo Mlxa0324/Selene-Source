@@ -30,10 +30,12 @@ import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
  * TV 收藏夹路由。
  *
  * 页头紧凑、随网格滚动（对齐电影 Tab）；右侧「删除全部」需二次确认。
+ * 卡片支持确认键长按 / 菜单键删除单条。
  *
  * @param state 收藏夹界面状态。
  * @param contentFocusRequester 内容区首张海报焦点请求器。
  * @param onVideoClick 视频卡片点击回调。
+ * @param onDeleteVideo 删除单条收藏回调。
  * @param onClearAll 清空全部收藏回调。
  * @param onOpenSettings 未配置服务器时跳转设置。
  */
@@ -42,11 +44,13 @@ fun TvFavoritesRoute(
     state: TvFavoritesUiState = TvFavoritesUiState(),
     contentFocusRequester: FocusRequester? = null,
     onVideoClick: (String) -> Unit = {},
+    onDeleteVideo: (suspend (videoId: String) -> Unit)? = null,
     onClearAll: (suspend () -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var showClearConfirm by remember { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<TvPosterItem?>(null) }
     val firstItemFocusRequester = remember { FocusRequester() }
     val resolvedContentFocus = contentFocusRequester ?: firstItemFocusRequester
 
@@ -106,10 +110,15 @@ fun TvFavoritesRoute(
                 columns = TvListLayoutMetrics.PosterColumns,
                 firstItemFocusRequester = resolvedContentFocus,
                 onItemClick = { item -> onVideoClick(item.toVideoDetailKey()) },
+                onItemLongClick = if (onDeleteVideo != null) {
+                    { item -> pendingDelete = item }
+                } else {
+                    null
+                },
                 headerContent = {
                     TvScrollablePageHeader(
                         title = "收藏夹",
-                        subtitle = "共 ${state.videos.size} 部",
+                        subtitle = "共 ${state.videos.size} 部 · 长按删除",
                         trailing = if (onClearAll != null) {
                             {
                                 TvHeaderActionButton(
@@ -127,6 +136,25 @@ fun TvFavoritesRoute(
                 },
             )
         }
+    }
+
+    // 单条删除：长按确认键或菜单键后二次确认。
+    val deleteTarget = pendingDelete
+    if (deleteTarget != null && onDeleteVideo != null) {
+        TvConfirmDialog(
+            title = "删除当前收藏",
+            message = "确定要删除「${deleteTarget.title}」吗？",
+            confirmLabel = "删除",
+            cancelLabel = "取消",
+            confirmIsDanger = true,
+            onConfirm = {
+                val target = pendingDelete
+                pendingDelete = null
+                if (target == null) return@TvConfirmDialog
+                scope.launch { onDeleteVideo(target.id) }
+            },
+            onDismiss = { pendingDelete = null },
+        )
     }
 
     // 删除全部：公共 TvConfirmDialog；返回/取消即退出确认。

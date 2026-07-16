@@ -183,6 +183,9 @@ fun TvNavGraph(
                         launchSingleTop = true
                     }
                 },
+                onDeleteContinueWatching = { source, videoId ->
+                    homeViewModel.deleteContinueWatching(source = source, videoId = videoId)
+                },
                 onSectionMoreClick = { target ->
                     // 首页分区查看更多沿用既有顶层页面，避免额外引入中转页。
                     navController.navigate(target.toDestination().route)
@@ -310,6 +313,7 @@ fun TvNavGraph(
                         launchSingleTop = true
                     }
                 },
+                onDeleteVideo = { videoId -> historyViewModel.deleteVideo(videoId) },
                 onClearAll = { historyViewModel.clear() },
                 onOpenSettings = {
                     navController.navigate(TvDestination.Settings.route)
@@ -336,6 +340,7 @@ fun TvNavGraph(
                         launchSingleTop = true
                     }
                 },
+                onDeleteVideo = { videoId -> favoritesViewModel.deleteVideo(videoId) },
                 onClearAll = { favoritesViewModel.clear() },
                 onOpenSettings = {
                     navController.navigate(TvDestination.Settings.route)

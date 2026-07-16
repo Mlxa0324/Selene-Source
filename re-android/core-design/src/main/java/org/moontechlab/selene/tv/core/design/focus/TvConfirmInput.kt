@@ -25,12 +25,33 @@ fun Key.isTvConfirmKey(): Boolean {
 }
 
 /**
+ * 判断是否为「菜单」类按键。
+ *
+ * 用于继续观看 / 播放历史 / 收藏等列表：菜单键与确认键长按等价触发删除。
+ *
+ * @param key 原始按键。
+ * @return 是否菜单键。
+ */
+fun Key.isTvMenuKey(): Boolean {
+    // Android KEYCODE_MENU / KEYCODE_SOFT_RIGHT 在部分盒子上映射到 Menu。
+    return this == Key.Menu
+}
+
+/**
  * 判断键盘事件是否属于确认键。
  *
  * @receiver 键盘事件。
  * @return 是否确认键。
  */
 fun KeyEvent.isTvConfirmKey(): Boolean = key.isTvConfirmKey()
+
+/**
+ * 判断键盘事件是否属于菜单键。
+ *
+ * @receiver 键盘事件。
+ * @return 是否菜单键。
+ */
+fun KeyEvent.isTvMenuKey(): Boolean = key.isTvMenuKey()
 
 /**
  * 在 KeyUp 阶段消费确认键并触发业务。
@@ -70,15 +91,20 @@ fun handleTvConfirmKeyUp(
 fun Modifier.tvPointerClickable(
     enabled: Boolean = true,
     onClick: (() -> Unit)?,
+    onLongClick: (() -> Unit)? = null,
 ): Modifier {
-    if (!enabled || onClick == null) {
+    if (!enabled || (onClick == null && onLongClick == null)) {
         return this
     }
-    return this.pointerInput(onClick) {
+    return this.pointerInput(onClick, onLongClick) {
         detectTapGestures(
             onTap = {
                 // 鼠标左键与触摸点按统一走业务确认，不改焦点树。
-                onClick()
+                onClick?.invoke()
+            },
+            onLongPress = {
+                // 长按与遥控器确认键长按 / 菜单键等价，用于删除等二次操作。
+                onLongClick?.invoke()
             },
         )
     }

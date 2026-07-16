@@ -25,6 +25,8 @@ class TvFavoritesRouteFocusContractTest {
         assertThat(source).contains("删除全部")
         assertThat(source).contains("TvConfirmDialog")
         assertThat(source).contains("onClearAll")
+        assertThat(source).contains("onDeleteVideo")
+        assertThat(source).contains("onItemLongClick")
         assertThat(source).contains("title = null")
     }
 

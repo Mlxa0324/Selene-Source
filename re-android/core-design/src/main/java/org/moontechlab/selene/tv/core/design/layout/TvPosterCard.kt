@@ -55,6 +55,7 @@ import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
  * @param focusRequesters 需要绑定到真实卡片焦点节点的请求器。
  * @param onFocusChanged 卡片焦点变化回调。
  * @param onClick 卡片点击回调。
+ * @param onLongClick 确认键长按 / 菜单键 / 鼠标长按回调（删除等）。
  * @param focusProperties 可选方向键焦点图（网格同列就近移动）。
  * @param onPreviewKey 可选按键预览（挂在真实 focusable 上）。
  * @param requestBringIntoViewOnFocus 获焦时是否 bringIntoView；纵向网格应关闭，
@@ -68,6 +69,7 @@ fun TvPosterCard(
     focusRequesters: List<FocusRequester> = emptyList(),
     onFocusChanged: ((Boolean) -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
     /**
      * 卡片宽度；默认全局海报宽。搜索等网格可传入单元格宽，封面高度按比例缩放。
      */
@@ -127,8 +129,9 @@ fun TvPosterCard(
                     onFocusChanged?.invoke(focusState.hasFocus)
                 },
             focusRequesters = focusRequesters,
-            enabled = onClick != null,
+            enabled = onClick != null || onLongClick != null,
             onPressed = onClick,
+            onLongPressed = onLongClick,
             focusProperties = focusProperties,
             onPreviewKey = onPreviewKey,
         ) {

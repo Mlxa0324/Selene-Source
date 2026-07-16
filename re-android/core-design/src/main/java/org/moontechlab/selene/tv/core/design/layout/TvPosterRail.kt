@@ -43,6 +43,7 @@ import org.moontechlab.selene.tv.core.design.focus.tvEdgeShake
  * @param firstItemFocusRequester 内容区入口焦点请求器，进入分组后转给最近业务海报。
  * @param onRailFocused 横向分区获焦回调，用于驱动外层页面纵向滚动。
  * @param onItemClick 卡片点击回调。
+ * @param onItemLongClick 卡片长按 / 菜单键回调（首页继续观看删除等）。
  * @param contentStartPadding 列表左 contentPadding（首卡静止左停靠，与右侧可不同）。
  * @param contentEndPadding 列表右 contentPadding（末卡末端收口，与左侧可不同）。
  * @param onLeftFromFirst 首项再按左时的显式出口（如搜索页回键盘分带）；null 时首项左键走系统几何搜索。
@@ -56,6 +57,7 @@ fun TvPosterRail(
     firstItemFocusRequester: FocusRequester? = null,
     onRailFocused: (() -> Unit)? = null,
     onItemClick: ((TvPosterItem) -> Unit)? = null,
+    onItemLongClick: ((TvPosterItem) -> Unit)? = null,
     contentStartPadding: Dp = TvListLayoutMetrics.RailStartPadding,
     contentEndPadding: Dp = TvListLayoutMetrics.RailEndPadding,
     onLeftFromFirst: (() -> Unit)? = null,
@@ -208,6 +210,7 @@ fun TvPosterRail(
                     }
                 },
                 onClick = onItemClick?.let { click -> { click(item) } },
+                onLongClick = onItemLongClick?.let { longClick -> { longClick(item) } },
             )
         }
         if (trailingContent != null) {

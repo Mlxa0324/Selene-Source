@@ -441,6 +441,11 @@ class TvAppContainer(
         return TvHomeViewModel(
             loadHome = ::loadHome,
             loadContinueWatching = ::loadContinueWatching,
+            deleteContinueWatchingItem = { recordKey ->
+                ensureSession()
+                TvPlaybackRepository(api = requireGatewayClient().tvApi)
+                    .deletePlayRecordByKey(recordKey)
+            },
             // 分区流式回填：哪个接口先返回就先展示哪块。
             observeHome = ::observeHome,
         )

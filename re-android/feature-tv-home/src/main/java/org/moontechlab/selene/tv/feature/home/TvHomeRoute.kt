@@ -64,6 +64,7 @@ import org.moontechlab.selene.tv.core.design.layout.TvLibrarySkeleton
 import org.moontechlab.selene.tv.core.design.layout.TvMorePosterCard
 import org.moontechlab.selene.tv.core.design.layout.TvPosterItem
 import org.moontechlab.selene.tv.core.design.layout.TvPosterGrid
+import org.moontechlab.selene.tv.core.design.dialog.TvConfirmDialog
 import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
@@ -95,6 +96,7 @@ private val CATEGORY_FILTER_CHIP_FOCUSED_TEXT = Color(0xFF0F141A)
  * @param onRetry 首页状态面板重试回调。
  * @param onOpenSettings 未配置服务器时跳转设置。
  * @param onVideoClick 视频卡片点击回调。
+ * @param onDeleteContinueWatching 继续观看单条删除回调。
  * @param onSectionMoreClick 分区查看更多点击回调。
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -105,8 +107,11 @@ fun TvHomeRoute(
     onRetry: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     onVideoClick: (String) -> Unit = {},
+    onDeleteContinueWatching: (suspend (source: String, videoId: String) -> Unit)? = null,
     onSectionMoreClick: (TvHomeSectionMoreTarget) -> Unit = {},
 ) {
+    val homeActionScope = rememberCoroutineScope()
+    var pendingContinueDelete by remember { mutableStateOf<TvPosterItem?>(null) }
     TvPageScaffold(
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -286,11 +291,40 @@ fun TvHomeRoute(
                             // 首页卡片统一把视频身份交给宿主路由，避免页面直接持有 NavController。
                             onVideoClick(item.toVideoDetailKey())
                         },
+                        onItemLongClick = if (
+                            section.key == "continue_watching" &&
+                            onDeleteContinueWatching != null
+                        ) {
+                            { item -> pendingContinueDelete = item }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
         }
         }
+    }
+
+    // 继续观看：长按确认键 / 菜单键删除单条，二次确认后回调宿主。
+    val continueDeleteTarget = pendingContinueDelete
+    if (continueDeleteTarget != null && onDeleteContinueWatching != null) {
+        TvConfirmDialog(
+            title = "删除继续观看",
+            message = "确定要删除「${continueDeleteTarget.title}」吗？",
+            confirmLabel = "删除",
+            cancelLabel = "取消",
+            confirmIsDanger = true,
+            onConfirm = {
+                val target = pendingContinueDelete
+                pendingContinueDelete = null
+                if (target == null) return@TvConfirmDialog
+                homeActionScope.launch {
+                    onDeleteContinueWatching(target.source, target.id)
+                }
+            },
+            onDismiss = { pendingContinueDelete = null },
+        )
     }
 }
 

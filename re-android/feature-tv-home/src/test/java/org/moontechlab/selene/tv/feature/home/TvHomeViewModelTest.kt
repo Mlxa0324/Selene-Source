@@ -316,6 +316,51 @@ class TvHomeViewModelTest {
     }
 
     /**
+     * 删除继续观看单条后应移除卡片，且保留其它分区。
+     */
+    @Test
+    fun deleteContinueWatching_removes_item_and_keeps_other_sections() = runTest {
+        val deletedKeys = mutableListOf<String>()
+        val viewModel = TvHomeViewModel(
+            loadHome = {
+                TvHomePayload(
+                    sections = listOf(
+                        TvHomeSection(
+                            key = "continue_watching",
+                            title = "继续观看",
+                            videos = listOf(
+                                TvVideoCard(
+                                    id = "resume-1",
+                                    source = "src-a",
+                                    title = "续播甲",
+                                    posterUrl = "",
+                                ),
+                                TvVideoCard(
+                                    id = "resume-2",
+                                    source = "src-b",
+                                    title = "续播乙",
+                                    posterUrl = "",
+                                ),
+                            ),
+                        ),
+                        sectionWithVideos("hot_movies", "热门电影", "m1"),
+                    ),
+                )
+            },
+            deleteContinueWatchingItem = { key -> deletedKeys += key },
+        )
+
+        viewModel.load()
+        viewModel.deleteContinueWatching(source = "src-a", videoId = "resume-1")
+
+        assertThat(deletedKeys).containsExactly("src-a+resume-1")
+        assertThat(viewModel.state.value.sections.first().key).isEqualTo("continue_watching")
+        assertThat(viewModel.state.value.sections.first().videos.map { it.id })
+            .containsExactly("resume-2")
+        assertThat(viewModel.state.value.sections.map { it.key }).contains("hot_movies")
+    }
+
+    /**
      * 构造带一张占位卡的首页分区。
      */
     private fun sectionWithVideos(key: String, title: String, videoId: String): TvHomeSection {

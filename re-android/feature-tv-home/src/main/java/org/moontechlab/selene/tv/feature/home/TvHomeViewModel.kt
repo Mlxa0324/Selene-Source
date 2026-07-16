@@ -247,11 +247,13 @@ data class TvVideoLibraryUiState(
  *
  * @property loadHome 首页一次性加载函数（兼容旧测试与兜底）。
  * @property loadContinueWatching 继续观看分区单独刷新函数。
+ * @property deleteContinueWatchingItem 继续观看单条删除函数（按 recordKey）。
  * @property observeHome 首页分区流式加载函数；返回 null 时退回 loadHome。
  */
 class TvHomeViewModel(
     private val loadHome: suspend () -> TvHomePayload,
     private val loadContinueWatching: suspend () -> List<TvVideoCard> = { emptyList() },
+    private val deleteContinueWatchingItem: suspend (recordKey: String) -> Unit = {},
     private val observeHome: (() -> Flow<TvHomeSectionProgress>)? = null,
 ) {
     /** 首页内部状态。 */
@@ -329,6 +331,43 @@ class TvHomeViewModel(
             .onFailure {
                 // 局部续播刷新失败时保留当前首页内容，不额外打断用户浏览。
             }
+    }
+
+    /**
+     * 删除继续观看中的单条记录。
+     *
+     * 先请求远端删除，再本地移除卡片，避免整页重载。
+     *
+     * @param source 播放来源。
+     * @param videoId 视频 ID。
+     */
+    suspend fun deleteContinueWatching(
+        source: String,
+        videoId: String,
+    ) {
+        val target = mutableState.value.sections
+            .firstOrNull { section -> section.key == "continue_watching" }
+            ?.videos
+            ?.firstOrNull { video ->
+                video.id == videoId && (source.isBlank() || video.source == source)
+            }
+            ?: return
+        val recordKey = if (target.source.isBlank()) {
+            target.id
+        } else {
+            "${target.source}+${target.id}"
+        }
+        deleteContinueWatchingItem(recordKey)
+        val remaining = mutableState.value.sections
+            .firstOrNull { section -> section.key == "continue_watching" }
+            ?.videos
+            ?.filterNot { video ->
+                video.id == target.id && video.source == target.source
+            }
+            .orEmpty()
+        mutableState.value = mutableState.value.copy(
+            sections = mutableState.value.sections.withContinueWatchingVideos(remaining),
+        )
     }
 }
 
