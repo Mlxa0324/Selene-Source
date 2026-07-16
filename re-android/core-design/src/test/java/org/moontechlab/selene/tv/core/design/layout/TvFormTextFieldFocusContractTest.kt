@@ -37,4 +37,18 @@ class TvFormTextFieldFocusContractTest {
         assertThat(source).contains("TvPasswordVisibilityEye(")
         assertThat(source).contains("\"•\".repeat")
     }
+
+    /**
+     * 编辑态返回键必须提交当前输入，不得还原丢内容。
+     */
+    @Test
+    fun editing_back_commits_instead_of_discarding() {
+        val source = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvFormTextField.kt")
+            .readText()
+
+        assertThat(source).contains("isEditing && event.key == Key.Back")
+        assertThat(source).contains("onValueChange(editText)")
+        // 禁止返回时把草稿打回旧值。
+        assertThat(source).doesNotContain("editText = value\n                        isEditing = false")
+    }
 }

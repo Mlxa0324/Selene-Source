@@ -48,8 +48,8 @@ import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 /**
  * TV 表单文本输入行 —— 浏览/编辑双模式。
  *
- * 浏览态显示当前值 + "按确认编辑"提示；确认键进入编辑态，
- * 编辑态中 Enter 确认、Back 取消。
+ * 浏览态显示当前值 + "按确认编辑"提示；确认键进入编辑态。
+ * 编辑态中 **确认键或返回键** 都会提交当前输入并退出编辑（避免返回丢内容）。
  *
  * 密码模式 [isPassword]：浏览/编辑默认以星花掩码，右侧小眼睛可切换明文。
  *
@@ -143,10 +143,10 @@ fun TvFormTextField(
                             else -> Unit
                         }
                     }
-                    // 编辑态: Back 在 KeyDown 消费
+                    // 编辑态：返回与确认同样「提交并退出」，避免返回清空刚输入的内容。
                     if (isEditing && event.key == Key.Back) {
                         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        editText = value
+                        onValueChange(editText)
                         isEditing = false
                         return@onPreviewKeyEvent true
                     }
