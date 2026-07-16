@@ -2506,7 +2506,7 @@ private fun NcatRecommendSkeletonRail(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth(0.72f)
-                        .height(12.dp)
+                        .height(16.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(NcatSurface.copy(alpha = 0.65f)),
                 )

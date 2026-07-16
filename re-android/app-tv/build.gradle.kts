@@ -43,9 +43,6 @@ fun loadReleaseKeystoreProperties(): Properties {
 }
 
 val releaseKeystoreProperties = loadReleaseKeystoreProperties()
-val releaseBaseUrl = localGatewayProperties.getProperty("SELENE_TV_BASE_URL").orEmpty()
-// 网关仍是 HTTP 时放行明文，否则正式包无法连当前后台。
-val releaseAllowsCleartext = releaseBaseUrl.startsWith("http://")
 
 android {
     // 约束 TV 壳工程的 Android 编译参数，避免与 Flutter 工程互相耦合。
@@ -85,7 +82,7 @@ android {
             (localGatewayProperties.getProperty("SELENE_TV_DANMAKU_BASE_URL") ?: "").toBuildConfigString(),
         )
 
-        // Debug 默认服务本地 HTTP 后台；Release 按网关协议决定是否明文。
+        // 设置页可填任意 http:// 后台，编译期无法预知协议；与 Flutter 壳一致始终放行明文。
         manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "true"
     }
 
@@ -104,8 +101,7 @@ android {
 
     buildTypes {
         debug {
-            // 本地后台常用 HTTP 地址，debug 包允许直连便于 TV 端联调。
-            manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "true"
+            // 继承 defaultConfig 明文放行，便于联调本地/穿透 HTTP 后台。
         }
 
         release {
@@ -117,8 +113,7 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            manifestPlaceholders["seleneTvUsesCleartextTraffic"] =
-                if (releaseAllowsCleartext) "true" else "false"
+            // 用户在设置里手填 http:// 服务器时，正式包也必须允许 CLEARTEXT。
         }
     }
 

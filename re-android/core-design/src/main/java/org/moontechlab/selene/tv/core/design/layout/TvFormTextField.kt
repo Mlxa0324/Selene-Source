@@ -49,7 +49,8 @@ import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
  * TV 表单文本输入行 —— 浏览/编辑双模式。
  *
  * 浏览态显示当前值 + "按确认编辑"提示；确认键进入编辑态。
- * 编辑态中 **确认键或返回键** 都会提交当前输入并退出编辑（避免返回丢内容）。
+ * 编辑态中 **确认键或返回键** 都会提交当前输入并退出编辑（避免返回丢内容），
+ * 退出后焦点回到该输入行浏览态，便于继续上下移动或再次编辑。
  *
  * 密码模式 [isPassword]：浏览/编辑默认以星花掩码，右侧小眼睛可切换明文。
  *
@@ -78,10 +79,15 @@ fun TvFormTextField(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     var isEditing by remember { mutableStateOf(false) }
+    // 经历过编辑态后才在退出时回焦，避免首帧误抢焦点。
+    var hasEnteredEditing by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf(value) }
     // 密码默认隐藏；明文仅在点眼睛后显示。
     var passwordVisible by remember { mutableStateOf(false) }
     val textFieldFocusRequester = remember { FocusRequester() }
+    // 无外部 requester 时用本地节点承接「编辑后回焦」。
+    val localBrowseFocusRequester = remember { FocusRequester() }
+    val browseFocusRequester = focusRequester ?: localBrowseFocusRequester
     val eyeFocusRequester = remember { FocusRequester() }
 
     val borderColor = when {
@@ -114,9 +120,7 @@ fun TvFormTextField(
                     shape = RoundedCornerShape(TvTokens.FormFieldRadius),
                 )
                 .padding(horizontal = TvTokens.FormRowHorizontalPadding)
-                .then(
-                    if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier,
-                )
+                .focusRequester(browseFocusRequester)
                 .onPreviewKeyEvent { event ->
                     if (!enabled) return@onPreviewKeyEvent false
                     // 浏览态：上/下交给宿主；密码行右键落到眼睛。
@@ -254,7 +258,7 @@ fun TvFormTextField(
                 focusRequester = eyeFocusRequester,
                 onToggle = { passwordVisible = !passwordVisible },
                 onArrowLeft = {
-                    focusRequester?.let { runCatching { it.requestFocus() } }
+                    runCatching { browseFocusRequester.requestFocus() }
                 },
                 onArrowUp = onArrowUp,
                 onArrowDown = onArrowDown,
@@ -263,10 +267,14 @@ fun TvFormTextField(
         }
     }
 
-    // 编辑态时自动请求焦点到输入框
-    if (isEditing) {
-        androidx.compose.runtime.LaunchedEffect(Unit) {
+    // 进入编辑：焦点落到真实输入框；确认/返回退出编辑后：焦点停在该输入行。
+    androidx.compose.runtime.LaunchedEffect(isEditing) {
+        if (isEditing) {
+            hasEnteredEditing = true
             textFieldFocusRequester.requestFocus()
+        } else if (hasEnteredEditing) {
+            hasEnteredEditing = false
+            runCatching { browseFocusRequester.requestFocus() }
         }
     }
 }

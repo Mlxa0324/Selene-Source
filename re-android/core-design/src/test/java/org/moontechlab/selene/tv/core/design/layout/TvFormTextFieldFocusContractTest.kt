@@ -51,4 +51,21 @@ class TvFormTextFieldFocusContractTest {
         // 禁止返回时把草稿打回旧值。
         assertThat(source).doesNotContain("editText = value\n                        isEditing = false")
     }
+
+    /**
+     * 账号/密码等编辑结束后，焦点必须回到该输入行浏览态。
+     */
+    @Test
+    fun exit_editing_restores_browse_focus_on_same_field() {
+        val source = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvFormTextField.kt")
+            .readText()
+
+        assertThat(source).contains("var hasEnteredEditing by remember { mutableStateOf(false) }")
+        assertThat(source).contains("val localBrowseFocusRequester = remember { FocusRequester() }")
+        assertThat(source).contains("val browseFocusRequester = focusRequester ?: localBrowseFocusRequester")
+        assertThat(source).contains("LaunchedEffect(isEditing)")
+        assertThat(source).contains("browseFocusRequester.requestFocus()")
+        // 退出编辑后回焦，而不是只在 isEditing=true 时 requestFocus。
+        assertThat(source).contains("else if (hasEnteredEditing)")
+    }
 }

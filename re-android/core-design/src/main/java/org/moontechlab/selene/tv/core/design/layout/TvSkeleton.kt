@@ -64,7 +64,7 @@ fun TvSkeletonTextLine(
     Box(
         modifier = modifier
             .fillMaxWidth(widthFraction)
-            .height(14.dp)
+            .height(16.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(Color.White.copy(alpha = shimmer * 0.12f)),
     )
@@ -101,7 +101,7 @@ fun TvSkeletonPoster(
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.85f)
-                .height(12.dp)
+                .height(16.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Color.White.copy(alpha = shimmer * 0.1f)),
         )
@@ -109,7 +109,7 @@ fun TvSkeletonPoster(
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.6f)
-                .height(10.dp)
+                .height(12.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Color.White.copy(alpha = shimmer * 0.08f)),
         )
