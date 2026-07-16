@@ -125,6 +125,22 @@ class TvDetailPresentationTest {
     }
 
     /**
+     * 推荐加载中可展示骨架，但焦点图必须按卡片数=0 跳过推荐区。
+     */
+    @Test
+    fun focus_graph_skips_recommend_while_loading_without_cards() {
+        val graph = TvDetailFocusGraph(
+            sourceCount = 1,
+            episodeCount = 5,
+            recommendCount = 0,
+        )
+        val fromEpisode = TvDetailFocusPosition.episode(index = 0)
+        val move = graph.resolve(fromEpisode, TvDetailFocusDirection.Down)
+        // 无推荐卡片时不应进入 Recommend，避免落在未加载区域。
+        assertThat(move.target.area).isNotEqualTo(TvDetailFocusArea.Recommend)
+    }
+
+    /**
      * 构造播放线路。
      *
      * @param id 线路 ID。

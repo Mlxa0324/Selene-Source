@@ -443,7 +443,8 @@ fun TvDetailRoute(
                 focusTargets = focusTargets,
                 currentSourceFocusRequester = currentSourceFocusRequester,
                 currentEpisodeFocusRequester = currentEpisodeFocusRequester,
-                hasRecommends = layoutSections.showRecommends,
+                // 焦点下探只在「已有推荐卡片」时进入相关推荐；加载中/失败骨架不可获焦，直接落到底栏。
+                hasRecommends = state.recommendCards.isNotEmpty(),
                 onEpisodeSelected = onEpisodeSelected,
                 onGroupSelected = onEpisodeGroupSelected,
             )
