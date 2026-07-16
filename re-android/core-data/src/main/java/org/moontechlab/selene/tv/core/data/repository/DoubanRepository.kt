@@ -10,13 +10,18 @@ import java.util.logging.Logger
  * 豆瓣分类数据仓库。
  *
  * 提供会话级内存 LRU 缓存，同一 session 内相同筛选参数不重复请求。
+ * 详情「相关推荐」额外带 **1 天 TTL**，命中期内不重复抓 HTML / PoW。
  *
  * @property api 豆瓣代理 API 接口。
  * @property htmlSource 豆瓣详情页 HTML 数据源。
+ * @property recommendTtlMs 相关推荐缓存有效期（默认 1 天）。
+ * @property nowMs 当前时间毫秒，便于单测注入。
  */
 class DoubanRepository(
     private val api: SeleneDoubanApi,
     private val htmlSource: DoubanSubjectHtmlSource? = null,
+    private val recommendTtlMs: Long = RECOMMEND_CACHE_TTL_MS,
+    private val nowMs: () -> Long = { System.currentTimeMillis() },
 ) {
     /** 会话级 LRU 缓存，最多保留 [MAX_CACHE_ENTRIES] 组查询结果。 */
     private val cache = object : LinkedHashMap<String, List<TvVideoCard>>(
@@ -27,12 +32,15 @@ class DoubanRepository(
         ): Boolean = size > MAX_CACHE_ENTRIES
     }
 
-    /** 详情相关推荐 LRU：同一 doubanId 二次进入详情直接命中，避免重复抓 HTML / PoW。 */
-    private val recommendCache = object : LinkedHashMap<String, List<TvVideoCard>>(
+    /**
+     * 详情相关推荐 LRU：按 doubanId 缓存卡片 + 写入时间。
+     * accessOrder=true 便于容量淘汰；读取时校验 [recommendTtlMs]。
+     */
+    private val recommendCache = object : LinkedHashMap<String, RecommendCacheEntry>(
         MAX_RECOMMEND_CACHE_ENTRIES, 0.75f, /* accessOrder = */ true,
     ) {
         override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<String, List<TvVideoCard>>?,
+            eldest: MutableMap.MutableEntry<String, RecommendCacheEntry>?,
         ): Boolean = size > MAX_RECOMMEND_CACHE_ENTRIES
     }
 
@@ -66,6 +74,8 @@ class DoubanRepository(
     /**
      * 从豆瓣详情页抓取并解析「相关推荐」。
      *
+     * 同一 doubanId 在 [recommendTtlMs]（默认 1 天）内命中内存缓存，跳过 HTML 与 PoW。
+     *
      * @param doubanId 豆瓣条目 ID。
      * @return 推荐影视卡片列表；未注入 HTML 数据源时返回空列表。
      */
@@ -74,9 +84,11 @@ class DoubanRepository(
         if (cleanId.isEmpty()) {
             return emptyList()
         }
-        // 同 id 二次进入详情：直接复用内存推荐，跳过 HTML 与 PoW。
-        recommendCache[cleanId]?.let { cached ->
-            LOGGER.info("loadDetailRecommends id=$cleanId cacheHit count=${cached.size}")
+        // 同 id 且未过期：直接复用，跳过 HTML 与 PoW。
+        getValidRecommendCache(cleanId)?.let { cached ->
+            LOGGER.info(
+                "loadDetailRecommends id=$cleanId cacheHit count=${cached.size} ttlMs=$recommendTtlMs",
+            )
             return cached
         }
         val source = htmlSource ?: return emptyList()
@@ -89,9 +101,29 @@ class DoubanRepository(
             "loadDetailRecommends id=$cleanId htmlLen=${html.length} hasSec=$hasSec hasRecommendations=$hasRecommendations count=${cards.size}",
         )
         if (cards.isNotEmpty()) {
-            recommendCache[cleanId] = cards
+            recommendCache[cleanId] = RecommendCacheEntry(
+                cards = cards,
+                savedAtMs = nowMs(),
+            )
         }
         return cards
+    }
+
+    /**
+     * 读取未过期的相关推荐缓存；过期则移除并返回 null。
+     *
+     * @param cleanId 已 trim 的豆瓣 ID。
+     * @return 有效卡片列表；未命中或过期为 null。
+     */
+    private fun getValidRecommendCache(cleanId: String): List<TvVideoCard>? {
+        val entry = recommendCache[cleanId] ?: return null
+        val ageMs = nowMs() - entry.savedAtMs
+        if (ageMs >= recommendTtlMs) {
+            recommendCache.remove(cleanId)
+            LOGGER.info("loadDetailRecommends id=$cleanId cacheExpired ageMs=$ageMs ttlMs=$recommendTtlMs")
+            return null
+        }
+        return entry.cards
     }
 
     /**
@@ -202,11 +234,29 @@ class DoubanRepository(
         return tags.joinToString(",")
     }
 
+    /**
+     * 相关推荐缓存条目。
+     *
+     * @property cards 解析后的推荐卡片快照。
+     * @property savedAtMs 写入时间毫秒。
+     */
+    private data class RecommendCacheEntry(
+        val cards: List<TvVideoCard>,
+        val savedAtMs: Long,
+    )
+
     companion object {
         private const val MAX_CACHE_ENTRIES = 50
 
         /** 详情相关推荐缓存条数（按 doubanId）。 */
         private const val MAX_RECOMMEND_CACHE_ENTRIES = 40
+
+        /**
+         * 相关推荐缓存 TTL：1 天。
+         * 对齐 Flutter 豆瓣成功结果「缓存时间为 1 天」的产品预期。
+         */
+        const val RECOMMEND_CACHE_TTL_MS: Long = 86_400_000L
+
         private val LOGGER: Logger = Logger.getLogger("TvDetailRecommend")
     }
 }

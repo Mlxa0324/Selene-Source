@@ -33,6 +33,45 @@ class DoubanRepositoryTest {
         assertThat(fetchCount).isEqualTo(1)
     }
 
+    /**
+     * 相关推荐 TTL 默认 1 天，与 Flutter 豆瓣成功结果缓存时长一致。
+     */
+    @Test
+    fun recommend_cache_ttl_is_one_day() {
+        assertThat(DoubanRepository.RECOMMEND_CACHE_TTL_MS).isEqualTo(86_400_000L)
+    }
+
+    /**
+     * 未过期时命中缓存；超过 TTL 后应重新抓 HTML。
+     */
+    @Test
+    fun loadDetailRecommends_refetches_after_ttl_expires() = runTest {
+        var fetchCount = 0
+        var now = 1_000_000L
+        val repository = DoubanRepository(
+            api = UnusedDoubanApi,
+            htmlSource = DoubanSubjectHtmlSource {
+                fetchCount += 1
+                RECOMMENDATION_HTML
+            },
+            recommendTtlMs = DoubanRepository.RECOMMEND_CACHE_TTL_MS,
+            nowMs = { now },
+        )
+
+        val first = repository.loadDetailRecommends("1292052")
+        // TTL 内：仍命中。
+        now += DoubanRepository.RECOMMEND_CACHE_TTL_MS - 1
+        val withinTtl = repository.loadDetailRecommends("1292052")
+        // 刚过 TTL：重新请求。
+        now += 2
+        val afterTtl = repository.loadDetailRecommends("1292052")
+
+        assertThat(first).isNotEmpty()
+        assertThat(withinTtl).isEqualTo(first)
+        assertThat(afterTtl).isEqualTo(first)
+        assertThat(fetchCount).isEqualTo(2)
+    }
+
     @Test
     fun loadDetailRecommends_fetches_html_and_returns_parsed_cards() = runTest {
         val source = DoubanSubjectHtmlSource { doubanId ->
