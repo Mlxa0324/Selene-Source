@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -22,9 +23,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.Dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlin.math.abs
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.rememberTvEdgeShakeState
@@ -96,6 +101,61 @@ fun TvPosterGrid(
     }
     // 全宽 header 占 1 个 lazy 下标，animateScrollToItem 必须加上偏移。
     val headerLazyOffset = if (headerContent != null) 1 else 0
+    // 首次 RESUME 不抢焦（留给顶栏/入口）；之后从详情返回再 RESUME 时恢复上次卡片。
+    var hasCompletedFirstResume by rememberSaveable { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    /**
+     * 滚到 [lastFocusedItemIndex] 并请求焦点；用于详情返回后还原选中卡。
+     */
+    fun restoreFocusToLastItem() {
+        if (items.isEmpty()) {
+            return
+        }
+        val target = lastFocusedItemIndex.coerceIn(0, items.lastIndex)
+        lastFocusedItemIndex = target
+        val lazyIndex = target + headerLazyOffset
+        gridFocusScrollJob?.cancel()
+        gridFocusScrollJob = scrollScope.launch {
+            // 先瞬时滚进视口，避免 requestFocus 打在已回收 item 上失败。
+            val visible = gridState.layoutInfo.visibleItemsInfo.any { info -> info.index == lazyIndex }
+            if (!visible) {
+                runCatching { gridState.scrollToItem(index = lazyIndex) }
+                delay(32)
+            }
+            val focused = runCatching {
+                itemFocusRequesters.getOrNull(target)?.requestFocus() == true
+            }.getOrDefault(false)
+            if (!focused) {
+                // 首帧 requester 未挂上时再试一次入口 requester。
+                delay(16)
+                runCatching {
+                    itemFocusRequesters.getOrNull(target)?.requestFocus()
+                        ?: firstItemFocusRequester?.requestFocus()
+                }
+            }
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, items.size) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    if (!hasCompletedFirstResume) {
+                        hasCompletedFirstResume = true
+                    } else if (items.isNotEmpty()) {
+                        // 详情页 pop 后分类页回到 RESUMED：落焦并露出上次卡片。
+                        restoreFocusToLastItem()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(safeColumns),
@@ -192,7 +252,16 @@ fun TvPosterGrid(
                             down = isDownEdge,
                         )
                     },
-                    onClick = onItemClick?.let { click -> { click(item) } },
+                    onClick = onItemClick?.let { click ->
+                        {
+                            // 进详情前停掉跟滚，避免确认瞬间列表还在 animate 造成整页抖一下。
+                            gridFocusScrollJob?.cancel()
+                            gridFocusScrollJob = null
+                            // 确认时立刻记下位置，返回后即使焦点链路被重置也能还原。
+                            lastFocusedItemIndex = index
+                            click(item)
+                        }
+                    },
                     onFocusChanged = { hasFocus ->
                         if (hasFocus) {
                             // 记录真实业务焦点，避免首卡被 LazyGrid 回收后顶部下探没有目标。

@@ -198,6 +198,11 @@ class TvPosterFocusContractTest {
         assertThat(source).contains("bottomEdgeSafePx")
         assertThat(source).contains("gridFocusScrollJob")
         assertThat(source).contains("只露出封面、标题仍在视口外")
+        // 进详情前取消跟滚；返回 RESUME 后 restore 上次卡片。
+        assertThat(source).contains("restoreFocusToLastItem")
+        assertThat(source).contains("hasCompletedFirstResume")
+        assertThat(source).contains("Lifecycle.Event.ON_RESUME")
+        assertThat(source).contains("gridFocusScrollJob?.cancel()")
         // 不得再对每个获焦项无条件 pin firstVisible。
         assertThat(source).doesNotContain("if (lazyIndex != gridState.firstVisibleItemIndex)")
     }

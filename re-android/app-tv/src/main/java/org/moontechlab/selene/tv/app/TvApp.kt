@@ -205,13 +205,25 @@ fun TvApp() {
             BackHandler(enabled = isPrimaryRoute && !showExitConfirm) {
                 handlePrimaryContentBack()
             }
+            // 记录上一路由，用于「详情 → 分类页」返回时触发内容区落焦（网格内再还原到上次卡片）。
+            var previousRoute by remember { mutableStateOf<String?>(null) }
             LaunchedEffect(currentRoute) {
+                val previous = previousRoute
+                previousRoute = currentRoute
                 // 切换顶层页面后重置筛选面板可见态。
                 showCategoryFilter = false
                 pendingRestoreTopTabFocus = false
                 if (!isPrimaryRoute) {
                     // 子页面（搜索/设置/播放器等）无顶部主导航，直接落焦到内容区。
                     contentFocusRequester.requestFocus()
+                } else if (
+                    previous != null &&
+                    isDetailOrPlayerRoute(previous) &&
+                    isLibraryRoute(currentRoute)
+                ) {
+                    // 从详情/播放器返回电影/剧集/动漫/综艺：请求内容入口，网格会落到上次卡片。
+                    delay(48)
+                    runCatching { contentFocusRequester.requestFocus() }
                 }
             }
             // 进入支持筛选的分类 tab：短暂提示「确认键可打开分类筛选」。
@@ -928,6 +940,31 @@ private fun TvDestination.supportsCategoryFilter(): Boolean {
         this is TvDestination.Tv ||
         this is TvDestination.Anime ||
         this is TvDestination.Show
+}
+
+/**
+ * 是否为分类库页（电影/剧集/动漫/综艺）。
+ */
+private fun isLibraryRoute(route: String?): Boolean {
+    return route != null && (
+        route == TvDestination.Movie.route ||
+            route == TvDestination.Tv.route ||
+            route == TvDestination.Anime.route ||
+            route == TvDestination.Show.route
+        )
+}
+
+/**
+ * 是否为详情或全屏播放路由（用于判断「从深层页返回分类」）。
+ */
+private fun isDetailOrPlayerRoute(route: String?): Boolean {
+    if (route == null) {
+        return false
+    }
+    // 实际导航 route 形如 detail/xxx、player/xxx。
+    return route.startsWith("detail/") ||
+        route.startsWith("player/") ||
+        route.startsWith("danmaku-match/")
 }
 
 /**

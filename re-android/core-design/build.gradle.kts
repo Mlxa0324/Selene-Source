@@ -39,6 +39,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
     implementation(libs.zxing.core)
+    // 分类网格从详情返回时用 Lifecycle 恢复焦点。
+    implementation(libs.androidx.lifecycle.runtime.ktx)
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)
