@@ -361,23 +361,21 @@ class TvAppContainer(
         TvTokens.applyThemeKey(appearanceState.value.themeKey)
     }
 
-    /** 后台客户端按需创建，避免缺配置时启动阶段直接抛错。 */
-    private val gatewayClient: SeleneTvGatewayClient? by lazy {
-        if (gatewayConfig.isComplete) {
-            gatewayClientFactory(gatewayConfig.baseUrl, sessionCookieStore)
-        } else {
-            null
-        }
-    }
+    /**
+     * 当前生效的网关凭据：优先用户已保存的服务器配置，否则 BuildConfig 本地预置。
+     * 设置页保存后会更新并重建客户端。
+     */
+    @Volatile
+    private var activeGatewayConfig: TvLocalGatewayConfig =
+        resolveActiveGatewayConfig(buildConfig = gatewayConfig, preferencesStore = preferencesStore)
 
-    /** 标题补源 SSE 客户端，详情页用于边搜边追加线路。 */
-    private val searchStreamClient: SeleneTvSearchStreamClient? by lazy {
-        if (gatewayConfig.isComplete) {
-            searchStreamClientFactory(gatewayConfig.baseUrl, sessionCookieStore)
-        } else {
-            null
-        }
-    }
+    /** 后台客户端；配置变更后置空以便按新地址重建。 */
+    @Volatile
+    private var gatewayClient: SeleneTvGatewayClient? = null
+
+    /** 标题补源 SSE 客户端；与 [gatewayClient] 同步重建。 */
+    @Volatile
+    private var searchStreamClient: SeleneTvSearchStreamClient? = null
 
     /** 弹幕仓库按需创建，未配置弹幕地址时保持空。 */
     private val danmakuRepository: TvDanmakuRepository? by lazy {
@@ -1169,11 +1167,13 @@ class TvAppContainer(
         val currentPlayerKernel = peekPlayerKernel()
         // 设置页首屏必须回填已持久化外观，避免每次进入都回到默认奈飞红/直连。
         val appearance = preferencesStore.peekAppearance()
+        // 服务器凭据：只回填用户已保存的配置，不展示 BuildConfig/本地网关预置明文。
+        val savedServer = preferencesStore.peekServerConfig()
         return TvSettingsViewModel(
             initialState = TvSettingsUiState(
-                serverUrl = gatewayConfig.baseUrl,
-                account = gatewayConfig.username,
-                password = gatewayConfig.password,
+                serverUrl = savedServer?.baseUrl.orEmpty(),
+                account = savedServer?.account.orEmpty(),
+                password = savedServer?.password.orEmpty(),
                 danmakuApi = gatewayConfig.danmakuBaseUrl,
                 // 设置页首屏展示必须与当前真实播放内核一致，避免界面显示 Exo、实际仍走 WebView。
                 playerKernelKey = currentPlayerKernel,
@@ -1187,6 +1187,12 @@ class TvAppContainer(
             clearCache = clearCache,
             saveServerConfig = { url, account, password ->
                 preferencesStore.saveServerConfig(url, account, password)
+                // 保存后立即套用到运行时网关，并清会话以便下次 ensureSession 用新凭据登录。
+                applySavedServerConfig(
+                    baseUrl = url,
+                    username = account,
+                    password = password,
+                )
             },
             saveDanmakuApi = { api ->
                 preferencesStore.saveDanmakuApi(api)
@@ -1440,9 +1446,10 @@ class TvAppContainer(
         if (!sessionCookieStore.currentCookie().isNullOrBlank()) {
             return
         }
+        val config = activeGatewayConfig
         client.login(
-            username = gatewayConfig.username,
-            password = gatewayConfig.password,
+            username = config.username,
+            password = config.password,
         )
     }
 
@@ -1452,13 +1459,71 @@ class TvAppContainer(
      * @return 后台客户端。
      */
     private fun requireGatewayClient(): SeleneTvGatewayClient {
-        return gatewayClient ?: throw IllegalStateException(LOCAL_CONFIG_MISSING_MESSAGE)
+        gatewayClient?.let { return it }
+        val config = activeGatewayConfig
+        if (!config.isComplete) {
+            throw IllegalStateException(LOCAL_CONFIG_MISSING_MESSAGE)
+        }
+        val client = gatewayClientFactory(config.baseUrl, sessionCookieStore)
+        gatewayClient = client
+        searchStreamClient = searchStreamClientFactory(config.baseUrl, sessionCookieStore)
+        return client
+    }
+
+    /**
+     * 设置页保存后套用服务器配置。
+     *
+     * @param baseUrl 服务器地址。
+     * @param username 账号。
+     * @param password 密码。
+     */
+    private fun applySavedServerConfig(
+        baseUrl: String,
+        username: String,
+        password: String,
+    ) {
+        activeGatewayConfig = TvLocalGatewayConfig(
+            baseUrl = baseUrl.trim(),
+            username = username.trim(),
+            password = password,
+            danmakuBaseUrl = activeGatewayConfig.danmakuBaseUrl,
+        )
+        // 地址/账号变更后旧 Cookie 与客户端均失效。
+        sessionCookieStore.clear()
+        gatewayClient = null
+        searchStreamClient = null
     }
 
     private companion object {
         /** 本地后台配置缺失提示。 */
         const val LOCAL_CONFIG_MISSING_MESSAGE =
-            "请填写 re-android/local.gateway.properties 后重新构建 TV 应用"
+            "请在设置页填写服务器地址、账号和密码并保存"
+
+        /**
+         * 解析运行时网关配置。
+         *
+         * @param buildConfig 构建期预置（可为空）。
+         * @param preferencesStore 用户已保存配置。
+         */
+        fun resolveActiveGatewayConfig(
+            buildConfig: TvLocalGatewayConfig,
+            preferencesStore: TvPreferencesStore,
+        ): TvLocalGatewayConfig {
+            val saved = preferencesStore.peekServerConfig()
+            if (saved != null &&
+                saved.baseUrl.isNotBlank() &&
+                saved.account.isNotBlank() &&
+                saved.password.isNotBlank()
+            ) {
+                return TvLocalGatewayConfig(
+                    baseUrl = saved.baseUrl,
+                    username = saved.account,
+                    password = saved.password,
+                    danmakuBaseUrl = buildConfig.danmakuBaseUrl,
+                )
+            }
+            return buildConfig
+        }
     }
 }
 

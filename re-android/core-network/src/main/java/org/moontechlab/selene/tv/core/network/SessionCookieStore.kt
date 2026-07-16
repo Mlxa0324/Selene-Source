@@ -62,4 +62,11 @@ class SessionCookieStore {
      * @return 当前 Cookie；未登录时返回 null。
      */
     fun currentCookie(): String? = session?.cookie
+
+    /**
+     * 清空会话（服务器配置变更后重新登录前调用）。
+     */
+    fun clear() {
+        session = null
+    }
 }

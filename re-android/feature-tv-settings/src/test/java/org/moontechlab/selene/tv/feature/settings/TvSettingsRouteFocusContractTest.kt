@@ -9,6 +9,16 @@ import org.junit.Test
  */
 class TvSettingsRouteFocusContractTest {
     /**
+     * 密码行必须启用密码模式（默认星花 + 眼睛切换）。
+     */
+    @Test
+    fun password_field_uses_password_mask_mode() {
+        val source = readRouteSource()
+        assertThat(source).contains("label = \"密码\"")
+        assertThat(source).contains("isPassword = true")
+    }
+
+    /**
      * 设置页首焦点落在服务器地址，并提供线性上下链与获焦滚动。
      */
     @Test

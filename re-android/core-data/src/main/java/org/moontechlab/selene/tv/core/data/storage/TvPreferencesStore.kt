@@ -76,8 +76,25 @@ class TvPreferencesStore(
         appContext?.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     }
 
-    /** 当前服务器配置。 */
+    /** 当前服务器配置（优先 SharedPreferences，无 Context 时用内存）。 */
     private var serverConfig: TvServerConfig? = null
+
+    init {
+        // 启动时从本地偏好恢复服务器配置，设置页与登录可共用。
+        val prefs = sharedPreferences
+        if (prefs != null) {
+            val url = prefs.getString(KEY_SERVER_URL, null).orEmpty()
+            val account = prefs.getString(KEY_SERVER_ACCOUNT, null).orEmpty()
+            val password = prefs.getString(KEY_SERVER_PASSWORD, null).orEmpty()
+            if (url.isNotBlank() || account.isNotBlank() || password.isNotBlank()) {
+                serverConfig = TvServerConfig(
+                    baseUrl = url,
+                    account = account,
+                    password = password,
+                )
+            }
+        }
+    }
 
     /** 弹幕手动匹配记录表。 */
     private val danmakuManualMatches = mutableMapOf<String, TvDanmakuManualMatchRecord>()
@@ -103,13 +120,27 @@ class TvPreferencesStore(
         account: String,
         password: String,
     ) {
-        // 首期使用内存存储，替换为 DataStore 时保持同名契约。
-        serverConfig = TvServerConfig(
-            baseUrl = baseUrl,
-            account = account,
+        val config = TvServerConfig(
+            baseUrl = baseUrl.trim(),
+            account = account.trim(),
             password = password,
         )
+        serverConfig = config
+        // 持久化，避免重启后设置页又空、或需重新填写。
+        sharedPreferences
+            ?.edit()
+            ?.putString(KEY_SERVER_URL, config.baseUrl)
+            ?.putString(KEY_SERVER_ACCOUNT, config.account)
+            ?.putString(KEY_SERVER_PASSWORD, config.password)
+            ?.apply()
     }
+
+    /**
+     * 同步读取服务器配置（设置页首屏回填）。
+     *
+     * @return 已保存配置；从未保存时 null。
+     */
+    fun peekServerConfig(): TvServerConfig? = serverConfig
 
     /**
      * 读取服务器配置。
@@ -480,6 +511,15 @@ class TvPreferencesStore(
     companion object {
         /** SharedPreferences 文件名。 */
         private const val PREFERENCES_NAME = "selene_tv_preferences"
+
+        /** 服务器地址持久化键。 */
+        private const val KEY_SERVER_URL = "server_url"
+
+        /** 服务器账号持久化键。 */
+        private const val KEY_SERVER_ACCOUNT = "server_account"
+
+        /** 服务器密码持久化键。 */
+        private const val KEY_SERVER_PASSWORD = "server_password"
 
         /** 播放器内核持久化键。 */
         private const val KEY_PLAYER_KERNEL = "player_kernel"

@@ -16,9 +16,25 @@ class TvFormTextFieldFocusContractTest {
         val source = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvFormTextField.kt")
             .readText()
 
-        assertThat(source).contains("val arrowHandler = when (event.key)")
-        assertThat(source).contains("val hasArrowHandler = arrowHandler != null")
-        assertThat(source).contains("if (!isEditing && hasArrowHandler)")
-        assertThat(source).contains("arrowHandler.invoke()")
+        // 未绑定 onArrowUp/Down 时不消费方向键，交还系统导航。
+        assertThat(source).contains("if (onArrowUp == null) return@onPreviewKeyEvent false")
+        assertThat(source).contains("if (onArrowDown == null) return@onPreviewKeyEvent false")
+        assertThat(source).contains("onArrowUp.invoke()")
+        assertThat(source).contains("onArrowDown.invoke()")
+    }
+
+    /**
+     * 密码字段默认星花掩码，右侧眼睛可切换明文。
+     */
+    @Test
+    fun password_field_masks_by_default_with_eye_toggle() {
+        val source = File("src/main/java/org/moontechlab/selene/tv/core/design/layout/TvFormTextField.kt")
+            .readText()
+
+        assertThat(source).contains("isPassword: Boolean = false")
+        assertThat(source).contains("var passwordVisible by remember { mutableStateOf(false) }")
+        assertThat(source).contains("PasswordVisualTransformation")
+        assertThat(source).contains("TvPasswordVisibilityEye(")
+        assertThat(source).contains("\"•\".repeat")
     }
 }

@@ -263,6 +263,8 @@ fun TvSettingsRoute(
                         focusRequester = passwordFocus,
                         onArrowUp = { focusAndScroll(accountFocus, "account") },
                         onArrowDown = { focusAndScroll(saveServerFocus, "saveServer") },
+                        // 默认星花掩码，右侧眼睛可切换明文。
+                        isPassword = true,
                         modifier = Modifier.trackAnchor("password"),
                     )
                     Spacer(modifier = Modifier.height(16.dp))
