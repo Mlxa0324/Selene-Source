@@ -281,6 +281,8 @@ class TvDetailRouteFocusContractTest {
         assertThat(source).contains("LocalDetailVerticalScroll")
         assertThat(source).contains("DetailVerticalPin.Top")
         assertThat(source).contains("DetailVerticalPin.Bottom")
+        // 全屏/收藏 Hero 内切焦不纵向跟滚，避免真机播放器→全屏上下抖。
+        assertThat(source).contains("DetailVerticalPin.HeroStay")
         assertThat(source).doesNotContain("scrollDetailToSourceTop")
         assertThat(source).doesNotContain("scrollDetailToRecommendBottom")
         assertThat(source).doesNotContain("onRailItemFocused")

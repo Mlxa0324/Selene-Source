@@ -112,6 +112,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvEpisode
@@ -133,12 +134,19 @@ import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 
 /**
  * 详情页纵向焦点跟滚宿主：嵌套 LazyRow 时 bringIntoView 常失效，改用窗口坐标 + ScrollState。
+ *
+ * @property scrollState 外层 verticalScroll。
+ * @property scope 协程作用域。
+ * @property viewportBounds 视口窗口矩形。
  */
-private data class DetailVerticalScrollHost(
+private class DetailVerticalScrollHost(
     val scrollState: ScrollState,
     val scope: CoroutineScope,
     val viewportBounds: () -> Rect?,
-)
+) {
+    /** 进行中的跟滚任务；新获焦时取消，避免真机上两次 animate 对冲导致上下抖。 */
+    var activeScrollJob: Job? = null
+}
 
 private val LocalDetailVerticalScroll = compositionLocalOf<DetailVerticalScrollHost?> { null }
 
@@ -149,8 +157,19 @@ private enum class DetailVerticalPin {
     /** 仅保证获焦项完整可见（上下安全边）。 */
     Visible,
 
-    /** 顶部区（搜索/播放器/简介/全屏）：钉到 scroll=0。 */
+    /**
+     * 顶部区（搜索/播放器/简介）：需要时钉到 scroll=0。
+     *
+     * 仅在离开线路/选集等下方区域回顶部时使用；Hero 内部左右移动不要重复跟滚。
+     */
     Top,
+
+    /**
+     * Hero 内部控件（全屏/收藏）：不触发纵向滚动。
+     *
+     * 播放器 → 全屏 已在顶部可见区；再 animate 到顶会在真机上叠系统 focus-scroll 造成上下抖。
+     */
+    HeroStay,
 
     /** 底部操作：钉到 scroll=max。 */
     Bottom,
@@ -1460,7 +1479,8 @@ private fun NcatInfoPanel(
                 selected = false,
                 focusRequester = focusTargets.fullscreen,
                 modifier = Modifier
-                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
+                    // Hero 内左右切焦禁止纵向跟滚，真机从播放器右移到全屏时否则会上下抖。
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.HeroStay)
                     .focusProperties {
                         // 右列底：上简介、左播放器、右收藏、下线路。
                         up = focusTargets.description
@@ -1484,7 +1504,7 @@ private fun NcatInfoPanel(
                 focusRequester = focusTargets.favorite,
                 modifier = Modifier
                     .tvEdgeShake(favoriteEdgeShake)
-                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.Top)
+                    .tvBringFocusedItemIntoView(pin = DetailVerticalPin.HeroStay)
                     .focusProperties {
                         up = focusTargets.description
                         left = focusTargets.fullscreen
@@ -3187,11 +3207,17 @@ private fun Modifier.tvBringFocusedItemIntoView(
             if (!focusState.isFocused) {
                 return@onFocusChanged
             }
+            // Hero 内左右切焦：完全不跟滚，避免真机播放器↔全屏上下抖。
+            if (pin == DetailVerticalPin.HeroStay) {
+                return@onFocusChanged
+            }
             val scrollHost = host ?: return@onFocusChanged
             val coords = itemCoords?.takeIf { item -> item.isAttached } ?: return@onFocusChanged
             val viewport = scrollHost.viewportBounds() ?: return@onFocusChanged
             val itemBounds = coords.boundsInWindow()
-            scrollHost.scope.launch {
+            // 取消上一次跟滚，防止焦点快速移动时多段动画对冲。
+            scrollHost.activeScrollJob?.cancel()
+            scrollHost.activeScrollJob = scrollHost.scope.launch {
                 scrollDetailFocusedItemVertically(
                     scrollState = scrollHost.scrollState,
                     itemBounds = itemBounds,
@@ -3201,6 +3227,9 @@ private fun Modifier.tvBringFocusedItemIntoView(
             }
         }
 }
+
+/** 距顶/底小于该像素视为已到位，不再 animate，减少真机残差抖动。 */
+private const val DETAIL_SCROLL_NEAR_EDGE_PX = 8
 
 /**
  * 根据获焦项与视口的窗口坐标，调整详情纵向 ScrollState。
@@ -3223,21 +3252,18 @@ private suspend fun scrollDetailFocusedItemVertically(
     bottomEdgePaddingPx: Float = 56f,
 ) {
     when (pin) {
+        DetailVerticalPin.HeroStay -> Unit
         DetailVerticalPin.Top -> {
-            // 顶部区：真正到顶，避免 Hero 半截停在视口。
-            if (scrollState.value > 0) {
-                scrollState.animateScrollTo(0)
+            // 顶部区：已在顶部则不动；需要回顶时用瞬时 scrollTo，避免 animate 与系统 focus-scroll 对冲。
+            if (scrollState.value > DETAIL_SCROLL_NEAR_EDGE_PX) {
+                scrollState.scrollTo(0)
             }
         }
         DetailVerticalPin.Bottom -> {
             // 底栏：真正到底，完整露出返回顶部/随便看看。
             val max = scrollState.maxValue
-            if (max > 0 && scrollState.value < max) {
-                scrollState.animateScrollTo(max)
-            }
-            // 再夹一次 residual。
-            if (scrollState.value < scrollState.maxValue) {
-                scrollState.scrollTo(scrollState.maxValue)
+            if (max > 0 && scrollState.maxValue - scrollState.value > DETAIL_SCROLL_NEAR_EDGE_PX) {
+                scrollState.scrollTo(max)
             }
         }
         DetailVerticalPin.Visible -> {
@@ -3256,7 +3282,7 @@ private suspend fun scrollDetailFocusedItemVertically(
             val target = (scrollState.value + delta)
                 .toInt()
                 .coerceIn(0, scrollState.maxValue.coerceAtLeast(0))
-            if (target != scrollState.value) {
+            if (abs(target - scrollState.value) > DETAIL_SCROLL_NEAR_EDGE_PX) {
                 scrollState.animateScrollTo(target)
             }
         }
