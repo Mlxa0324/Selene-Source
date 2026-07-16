@@ -29,6 +29,24 @@ fun String.toBuildConfigString(): String {
 
 val localGatewayProperties = loadLocalGatewayProperties()
 
+/** 与 Flutter android 共用正式签名；文件缺失时不配置 release 签名。 */
+fun loadReleaseKeystoreProperties(): Properties {
+    val properties = Properties()
+    // re-android 与 Flutter android 同级：../android/key.properties
+    val keyFile = rootProject.file("../android/key.properties")
+    if (keyFile.exists()) {
+        keyFile.inputStream().use { input ->
+            properties.load(input)
+        }
+    }
+    return properties
+}
+
+val releaseKeystoreProperties = loadReleaseKeystoreProperties()
+val releaseBaseUrl = localGatewayProperties.getProperty("SELENE_TV_BASE_URL").orEmpty()
+// 网关仍是 HTTP 时放行明文，否则正式包无法连当前后台。
+val releaseAllowsCleartext = releaseBaseUrl.startsWith("http://")
+
 android {
     // 约束 TV 壳工程的 Android 编译参数，避免与 Flutter 工程互相耦合。
     namespace = "org.moontechlab.selene.tv.app"
@@ -39,8 +57,9 @@ android {
         applicationId = "org.moontechlab.selene.tv.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // 首个正式 TV 原生版本。
+        versionCode = 100
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -66,8 +85,21 @@ android {
             (localGatewayProperties.getProperty("SELENE_TV_DANMAKU_BASE_URL") ?: "").toBuildConfigString(),
         )
 
-        // Debug 默认服务本地 HTTP 后台；Release 在 buildTypes 中关闭明文流量。
+        // Debug 默认服务本地 HTTP 后台；Release 按网关协议决定是否明文。
         manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "true"
+    }
+
+    signingConfigs {
+        create("release") {
+            val storeFileName = releaseKeystoreProperties.getProperty("storeFile")
+            if (!storeFileName.isNullOrBlank()) {
+                // Flutter 工程内的 upload-keystore.jks。
+                storeFile = rootProject.file("../android/app/$storeFileName")
+                storePassword = releaseKeystoreProperties.getProperty("storePassword")
+                keyAlias = releaseKeystoreProperties.getProperty("keyAlias")
+                keyPassword = releaseKeystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -77,9 +109,16 @@ android {
         }
 
         release {
-            // Release 默认要求 HTTPS，避免把本地调试策略带到正式包。
             isMinifyEnabled = false
-            manifestPlaceholders["seleneTvUsesCleartextTraffic"] = "false"
+            // 有正式 keystore 时签名；否则退回 debug 签名仍可装，但不应上架。
+            val releaseSigning = signingConfigs.findByName("release")
+            signingConfig = if (releaseSigning?.storeFile?.exists() == true) {
+                releaseSigning
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            manifestPlaceholders["seleneTvUsesCleartextTraffic"] =
+                if (releaseAllowsCleartext) "true" else "false"
         }
     }
 
