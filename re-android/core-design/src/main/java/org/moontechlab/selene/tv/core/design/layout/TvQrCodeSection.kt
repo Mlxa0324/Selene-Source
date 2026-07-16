@@ -36,7 +36,7 @@ import org.moontechlab.selene.tv.core.design.TvTokens
 /**
  * TV 二维码扫码配置区域。
  *
- * 对齐 Flutter 设置页：左侧真二维码 + 右侧说明与重新生成按钮。
+ * 左侧真二维码 + 右侧说明与重新生成按钮；样式对齐设置页表单卡片。
  *
  * @param qrData 二维码内容（通常为局域网配置页 URL）；null 时显示不可用占位。
  * @param statusText 状态说明文案。
@@ -63,60 +63,78 @@ fun TvQrCodeSection(
     val qrBitmap = remember(qrData) {
         qrData?.takeIf { it.isNotBlank() }?.let { encodeQrBitmap(it, sizePx = 512) }
     }
+    val cardShape = RoundedCornerShape(TvTokens.FormCardRadius)
+    val fieldShape = RoundedCornerShape(TvTokens.FormFieldRadius)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .background(
                 color = TvTokens.FormCardBackground,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = cardShape,
             )
             .border(
                 width = 1.dp,
                 color = TvTokens.FormBorder,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = cardShape,
             )
             .padding(TvTokens.FormPanelPadding),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        androidx.tv.material3.Text(
-            text = "手机扫码配置",
-            color = TvTokens.TextPrimary,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        androidx.tv.material3.Text(
-            text = "手机和电视连接同一局域网后，扫码可在手机上填写服务器、图片代理和弹幕地址，提交后会回填到电视表单里。",
-            color = TvTokens.FormTextSecondary,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-        )
-        Spacer(modifier = Modifier.height(18.dp))
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 3.dp)
+                    .width(TvTokens.FormSectionAccentWidth)
+                    .height(36.dp)
+                    .background(
+                        color = TvTokens.Accent,
+                        shape = RoundedCornerShape(2.dp),
+                    ),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                androidx.tv.material3.Text(
+                    text = "手机扫码配置",
+                    color = TvTokens.TextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                androidx.tv.material3.Text(
+                    text = "与电视同一局域网时，可用手机扫码填写服务器与账号，提交后回填到本页。",
+                    color = TvTokens.FormTextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
             verticalAlignment = Alignment.Top,
         ) {
             // 左侧二维码卡片
             Column(
                 modifier = Modifier
-                    .width(252.dp)
+                    .width(228.dp)
                     .background(
-                        color = Color(0xFF0E1112),
-                        shape = RoundedCornerShape(10.dp),
+                        color = TvTokens.FormFieldBackground,
+                        shape = fieldShape,
                     )
                     .border(
                         width = 1.dp,
-                        color = Color(0xFF293136),
-                        shape = RoundedCornerShape(10.dp),
+                        color = TvTokens.FormBorder,
+                        shape = fieldShape,
                     )
-                    .padding(16.dp),
+                    .padding(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Box(
                     modifier = Modifier
-                        .size(220.dp)
+                        .size(188.dp)
                         .background(Color.White, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -124,24 +142,24 @@ fun TvQrCodeSection(
                         Image(
                             bitmap = qrBitmap.asImageBitmap(),
                             contentDescription = "手机配置二维码",
-                            modifier = Modifier.size(204.dp),
+                            modifier = Modifier.size(172.dp),
                             contentScale = ContentScale.Fit,
                         )
                     } else {
                         androidx.tv.material3.Text(
                             text = "等待局域网地址",
                             color = TvTokens.FormTextSecondary,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             textAlign = TextAlign.Center,
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 androidx.tv.material3.Text(
                     text = if (qrBitmap != null) "使用手机扫码打开配置页" else "等待局域网地址",
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
+                    color = TvTokens.TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -152,48 +170,48 @@ fun TvQrCodeSection(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 androidx.tv.material3.Text(
-                    text = "手机端可编辑字段",
-                    color = Color.White,
-                    fontSize = 17.sp,
+                    text = "可在手机编辑",
+                    color = TvTokens.TextPrimary,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 androidx.tv.material3.Text(
-                    text = "服务器地址、账号、密码、图片代理、自动去广告、弹幕服务器地址。",
-                    color = Color(0xFFB6C1C6),
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
+                    text = "服务器地址、账号、密码、图片代理、自动去广告、弹幕服务器。",
+                    color = TvTokens.FormTextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
                 )
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(
-                            color = Color(0xFF0E1112),
-                            shape = RoundedCornerShape(10.dp),
+                            color = TvTokens.FormFieldBackground,
+                            shape = fieldShape,
                         )
                         .border(
                             width = 1.dp,
-                            color = Color(0xFF293136),
-                            shape = RoundedCornerShape(10.dp),
+                            color = TvTokens.FormBorder,
+                            shape = fieldShape,
                         )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     androidx.tv.material3.Text(
                         text = "扫码地址",
-                        color = Color(0xFF98A2A8),
-                        fontSize = 13.sp,
+                        color = TvTokens.FormTextSecondary,
+                        fontSize = 12.sp,
                     )
                     androidx.tv.material3.Text(
                         text = shareAddress?.takeIf { it.isNotBlank() }
                             ?: "当前未生成可供手机访问的局域网地址",
-                        color = Color.White,
-                        fontSize = 15.sp,
+                        color = TvTokens.TextPrimary,
+                        fontSize = 14.sp,
                     )
                     androidx.tv.material3.Text(
                         text = statusText,
                         color = TvTokens.FormTextSecondary,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
                     )
                 }
                 TvFormActionButton(

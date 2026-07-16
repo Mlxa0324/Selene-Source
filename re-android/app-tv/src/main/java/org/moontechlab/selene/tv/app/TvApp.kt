@@ -84,9 +84,8 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun TvApp() {
     val context = LocalContext.current
-    // 服务器配置变更时重新创建容器，确保新配置在后续请求中生效。
-    var serverConfigVersion by remember { mutableStateOf(0) }
-    val appContainer = remember(serverConfigVersion) {
+    // 单例容器：登录时在容器内 apply + ensureSession，不整树重建（否则设置页提示会被冲掉）。
+    val appContainer = remember {
         TvAppContainer(
             gatewayConfig = TvLocalGatewayConfig.fromBuildConfig(),
             appContext = context.applicationContext,
@@ -337,9 +336,7 @@ fun TvApp() {
                             appContainer = appContainer,
                             contentFocusRequester = contentFocusRequester,
                             showCategoryFilter = showCategoryFilter,
-                            onServerConfigSaved = {
-                                serverConfigVersion++
-                            },
+                            // 登录成功后配置已在容器内生效；首页回前台时按需 load。
                             // 顶栏下方剩余高度。
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )

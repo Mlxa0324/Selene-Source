@@ -68,12 +68,12 @@ fun TvFormSliderRow(
             .fillMaxWidth()
             .background(
                 color = TvTokens.FormFieldBackground,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = RoundedCornerShape(TvTokens.FormFieldRadius),
             )
             .border(
                 width = if (isFocused) 2.dp else 1.dp,
                 color = if (isFocused) TvTokens.FocusBorder else TvTokens.FormBorder,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = RoundedCornerShape(TvTokens.FormFieldRadius),
             )
             .padding(
                 horizontal = TvTokens.FormRowHorizontalPadding,

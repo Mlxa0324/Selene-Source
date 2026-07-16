@@ -34,7 +34,7 @@ import org.moontechlab.selene.tv.core.network.TvMobileSettingsDraft
  * @property qrShareAddress 扫码地址展示文案。
  * @property qrStatusText 二维码状态说明。
  * @property regeneratingQr 是否正在重新生成二维码。
- * @property savingServerConfig 是否正在保存服务器配置。
+ * @property savingServerConfig 是否正在登录（保存配置并验证会话）。
  * @property savingDanmaku 是否正在保存弹幕配置。
  * @property clearingCache 是否正在清理缓存。
  * @property noticeText 页内提示文案。
@@ -176,14 +176,36 @@ class TvSettingsViewModel(
     }
 
     /**
-     * 保存服务器配置。
+     * 保存服务器配置并尝试登录。
+     *
+     * @return 是否登录成功（供导航在成功后刷新首页数据）。
      */
-    suspend fun performSaveServerConfig() {
+    suspend fun performSaveServerConfig(): Boolean {
         mutableState.value = mutableState.value.copy(savingServerConfig = true)
-        val current = mutableState.value
-        saveServerConfig(current.serverUrl, current.account, current.password)
-        mutableState.value = mutableState.value.copy(savingServerConfig = false)
-        showNotice("服务器配置已保存")
+        return try {
+            val current = mutableState.value
+            // 本地校验：三项齐全再交给宿主落盘并登录。
+            if (current.serverUrl.isBlank() ||
+                current.account.isBlank() ||
+                current.password.isBlank()
+            ) {
+                showNotice("请填写服务器地址、账号和密码")
+                false
+            } else {
+                saveServerConfig(current.serverUrl, current.account, current.password)
+                showNotice("登录成功")
+                true
+            }
+        } catch (error: Exception) {
+            val message = error.message
+                ?.takeIf { it.isNotBlank() }
+                ?.let { text -> if (text.length > 160) text.take(157) + "…" else text }
+                ?: "登录失败，请检查服务器与账号密码"
+            showNotice(message)
+            false
+        } finally {
+            mutableState.value = mutableState.value.copy(savingServerConfig = false)
+        }
     }
 
     // ── 外观 ──
@@ -493,7 +515,7 @@ class TvSettingsViewModel(
             danmakuApi = draft.danmakuBaseApi,
             qrStatusText = TvMobileSettingsBridge.APPLIED_STATUS,
         )
-        showNotice("已从手机接收配置，请确认后保存")
+        showNotice("已从手机接收配置，请确认后登录")
     }
 
     /**
@@ -535,12 +557,20 @@ class TvSettingsViewModel(
     // ── 通知 ──
 
     /**
-     * 展示页内提示。
+     * 展示页内公共轻提示（[org.moontechlab.selene.tv.core.design.layout.TvActionNotice]）。
+     *
+     * 先关掉再打开，保证同文案连续触发时也能重新动画与计时。
      *
      * @param text 提示文案。
      */
     fun showNotice(text: String) {
-        mutableState.value = mutableState.value.copy(noticeText = text, noticeVisible = true)
+        val message = text.trim()
+        if (message.isEmpty()) {
+            return
+        }
+        // 同帧先收起再展开，避免 noticeVisible 已为 true 时重组不刷新。
+        mutableState.value = mutableState.value.copy(noticeText = message, noticeVisible = false)
+        mutableState.value = mutableState.value.copy(noticeText = message, noticeVisible = true)
     }
 
     /**

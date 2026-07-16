@@ -249,24 +249,24 @@ object TvTokens {
     // ── 表单专用 Token ──
 
     /**
-     * TV 表单输入框/开关/滑杆背景色。
+     * TV 表单输入框/开关/滑杆背景色（内凹于卡片）。
      */
-    val FormFieldBackground = Color(0xFF0E1112)
+    val FormFieldBackground = Color(0xFF12161F)
 
     /**
-     * TV 表单分区面板背景色。
+     * TV 表单分区面板背景色（略浮于页面底色）。
      */
-    val FormCardBackground = Color(0xFF15191B)
+    val FormCardBackground = Color(0xFF222833)
 
     /**
      * TV 表单默认边框色。
      */
-    val FormBorder = Color(0xFF293136)
+    val FormBorder = Color(0xFF343B4A)
 
     /**
      * TV 表单标签/提示文字颜色。
      */
-    val FormTextSecondary = Color(0xFF98A2A8)
+    val FormTextSecondary = Color(0xFF9AA3B2)
 
     /**
      * TV 表单单行高度。
@@ -276,10 +276,25 @@ object TvTokens {
     /**
      * TV 表单分区内边距。
      */
-    val FormPanelPadding = 24.dp
+    val FormPanelPadding = 22.dp
 
     /**
      * TV 表单行水平内边距。
      */
-    val FormRowHorizontalPadding = 20.dp
+    val FormRowHorizontalPadding = 18.dp
+
+    /**
+     * TV 表单卡片圆角（略大于海报卡，更偏设置面板）。
+     */
+    val FormCardRadius = 14.dp
+
+    /**
+     * TV 表单字段圆角。
+     */
+    val FormFieldRadius = 12.dp
+
+    /**
+     * TV 表单分区标题左侧强调条宽度。
+     */
+    val FormSectionAccentWidth = 3.dp
 }

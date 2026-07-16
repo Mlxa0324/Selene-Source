@@ -34,12 +34,12 @@ fun TvFormValueRow(
             .height(TvTokens.FormRowHeight)
             .background(
                 color = TvTokens.FormFieldBackground,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = RoundedCornerShape(TvTokens.FormFieldRadius),
             )
             .border(
                 width = 1.dp,
                 color = TvTokens.FormBorder,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = RoundedCornerShape(TvTokens.FormFieldRadius),
             )
             .padding(horizontal = TvTokens.FormRowHorizontalPadding),
         verticalAlignment = Alignment.CenterVertically,

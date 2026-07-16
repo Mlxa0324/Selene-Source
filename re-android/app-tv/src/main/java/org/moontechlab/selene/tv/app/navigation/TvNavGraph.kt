@@ -62,7 +62,6 @@ fun TvNavGraph(
     appContainer: TvAppContainer,
     contentFocusRequester: FocusRequester? = null,
     showCategoryFilter: Boolean = false,
-    onServerConfigSaved: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -371,8 +370,8 @@ fun TvNavGraph(
                 onPasswordChange = settingsViewModel::updatePassword,
                 onServerConfigSave = {
                     settingsScope.launch {
+                        // 结果由 ViewModel 经公共 TvActionNotice 提示；配置已在容器内套用。
                         settingsViewModel.performSaveServerConfig()
-                        onServerConfigSaved()
                     }
                 },
                 onThemeSelected = { key ->

@@ -106,12 +106,12 @@ fun TvFormTextField(
                 .height(TvTokens.FormRowHeight)
                 .background(
                     color = TvTokens.FormFieldBackground,
-                    shape = RoundedCornerShape(TvTokens.CardRadius),
+                    shape = RoundedCornerShape(TvTokens.FormFieldRadius),
                 )
                 .border(
                     width = if (isFocused || isEditing) 2.dp else 1.dp,
                     color = borderColor,
-                    shape = RoundedCornerShape(TvTokens.CardRadius),
+                    shape = RoundedCornerShape(TvTokens.FormFieldRadius),
                 )
                 .padding(horizontal = TvTokens.FormRowHorizontalPadding)
                 .then(
@@ -304,12 +304,12 @@ private fun TvPasswordVisibilityEye(
             .size(TvTokens.FormRowHeight)
             .background(
                 color = TvTokens.FormFieldBackground,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = RoundedCornerShape(TvTokens.FormFieldRadius),
             )
             .border(
                 width = if (isFocused) 2.dp else 1.dp,
                 color = borderColor,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                shape = RoundedCornerShape(TvTokens.FormFieldRadius),
             )
             .focusRequester(focusRequester)
             .onPreviewKeyEvent { event ->

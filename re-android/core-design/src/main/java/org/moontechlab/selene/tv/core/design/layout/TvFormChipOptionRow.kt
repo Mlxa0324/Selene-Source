@@ -148,12 +148,12 @@ fun <T> TvFormChipOptionRow(
                         .height(40.dp)
                         .background(
                             color = chipBg,
-                            shape = RoundedCornerShape(TvTokens.CardRadius),
+                            shape = RoundedCornerShape(TvTokens.FormFieldRadius),
                         )
                         .border(
                             width = if (isFocused) 2.dp else 1.dp,
                             color = chipBorder,
-                            shape = RoundedCornerShape(TvTokens.CardRadius),
+                            shape = RoundedCornerShape(TvTokens.FormFieldRadius),
                         )
                         .focusRequester(chipFocusRequesters[index])
                         .onPreviewKeyEvent { event ->

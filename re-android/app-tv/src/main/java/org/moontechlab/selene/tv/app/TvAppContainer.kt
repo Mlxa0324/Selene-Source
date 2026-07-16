@@ -1194,12 +1194,13 @@ class TvAppContainer(
             clearCache = clearCache,
             saveServerConfig = { url, account, password ->
                 preferencesStore.saveServerConfig(url, account, password)
-                // 保存后立即套用到运行时网关，并清会话以便下次 ensureSession 用新凭据登录。
+                // 保存后立即套用到运行时网关，并清会话，再立刻用新凭据登录验证。
                 applySavedServerConfig(
                     baseUrl = url,
                     username = account,
                     password = password,
                 )
+                ensureSession()
             },
             saveDanmakuApi = { api ->
                 preferencesStore.saveDanmakuApi(api)
@@ -1531,7 +1532,7 @@ class TvAppContainer(
     private companion object {
         /** 本地后台配置缺失提示。 */
         const val LOCAL_CONFIG_MISSING_MESSAGE =
-            "请在设置页填写服务器地址、账号和密码并保存"
+            "请在设置页填写服务器地址、账号和密码并登录"
 
         /**
          * 解析运行时网关配置。

@@ -19,6 +19,18 @@ class TvSettingsRouteFocusContractTest {
     }
 
     /**
+     * 服务器主操作按钮文案为「登录」，与首页「去登录」语义一致。
+     */
+    @Test
+    fun server_primary_action_is_login() {
+        val source = readRouteSource()
+        assertThat(source).contains("登录中...")
+        assertThat(source).contains("\"登录\"")
+        assertThat(source).contains("title = \"账号登录\"")
+        assertThat(source).doesNotContain("保存配置")
+    }
+
+    /**
      * 设置页首焦点落在服务器地址，并提供线性上下链与获焦滚动。
      */
     @Test
@@ -31,11 +43,89 @@ class TvSettingsRouteFocusContractTest {
         assertThat(source).contains("LaunchedEffect(Unit)")
         assertThat(source).doesNotContain("LaunchedEffect(settingsEntryFocusRequester)")
         assertThat(source).contains("focusAndScroll")
-        assertThat(source).contains("scrollAnchorToCenter")
+        assertThat(source).contains("scrollAnchorIntoView")
+        assertThat(source).contains("computeSettingsFocusScrollTarget")
         assertThat(source).contains("positionInRoot()")
         assertThat(source).contains("regenerateModifier = Modifier.trackAnchor(\"qr\")")
         assertThat(source).contains("regenerateQrFocus")
         assertThat(source).contains("clearCacheFocus")
+        // 顶/底锚点必须真正滚到 0/max，禁止永远居中导致到不了两端。
+        assertThat(source).contains("SETTINGS_TOP_EDGE_ANCHOR_KEYS")
+        assertThat(source).contains("SETTINGS_BOTTOM_EDGE_ANCHOR_KEYS")
+        assertThat(source).doesNotContain("scrollAnchorToCenter")
+    }
+
+    /**
+     * 顶区（含登录按钮）目标必须为 0，底区必须为 max。
+     */
+    @Test
+    fun focus_scroll_target_reaches_true_top_and_bottom() {
+        assertThat(
+            computeSettingsFocusScrollTarget(
+                anchorKey = "server",
+                anchorTop = 80,
+                anchorHeight = 52,
+                viewport = 600,
+                currentScroll = 200,
+                maxScroll = 1200,
+            ),
+        ).isEqualTo(0)
+        // 登录按钮获焦时也要回顶，保证滚动内容顶部全部可见。
+        assertThat(
+            computeSettingsFocusScrollTarget(
+                anchorKey = "saveServer",
+                anchorTop = 320,
+                anchorHeight = 50,
+                viewport = 600,
+                currentScroll = 180,
+                maxScroll = 1200,
+            ),
+        ).isEqualTo(0)
+        assertThat(SETTINGS_TOP_EDGE_ANCHOR_KEYS).containsAtLeast(
+            "server",
+            "account",
+            "password",
+            "saveServer",
+        )
+        assertThat(
+            computeSettingsFocusScrollTarget(
+                anchorKey = "clearCache",
+                anchorTop = 1500,
+                anchorHeight = 52,
+                viewport = 600,
+                currentScroll = 200,
+                maxScroll = 1200,
+            ),
+        ).isEqualTo(1200)
+    }
+
+    /**
+     * 中部锚点仅在裁切时移动，已完全可见时保持当前位置。
+     */
+    @Test
+    fun middle_anchor_only_scrolls_when_clipped() {
+        // 项已在视口中：不滚动。
+        assertThat(
+            computeSettingsFocusScrollTarget(
+                anchorKey = "theme",
+                anchorTop = 400,
+                anchorHeight = 52,
+                viewport = 600,
+                currentScroll = 300,
+                maxScroll = 1200,
+            ),
+        ).isEqualTo(300)
+        // 项在视口下方被裁：向下滚到露出底边。
+        val scrolledDown = computeSettingsFocusScrollTarget(
+            anchorKey = "theme",
+            anchorTop = 900,
+            anchorHeight = 52,
+            viewport = 600,
+            currentScroll = 200,
+            maxScroll = 1200,
+        )
+        assertThat(scrolledDown).isGreaterThan(200)
+        assertThat(scrolledDown).isAtMost(1200)
     }
 
     /**

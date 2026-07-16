@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.handleTvConfirmKeyUp
-import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
 import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 
 /**
@@ -39,6 +38,7 @@ import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
  * @param modifier 外层修饰器。
  * @param focusRequester 外部焦点请求器。
  * @param accentColor 按钮主题色，默认使用 [TvTokens.Accent]。
+ * @param filled 是否始终实心填充（登录等主 CTA）；false 时未获焦半透明、获焦实心。
  * @param onArrowUp 上键自定义焦点回调。
  * @param onArrowDown 下键自定义焦点回调。
  */
@@ -49,24 +49,41 @@ fun TvFormActionButton(
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
     accentColor: Color = TvTokens.Accent,
+    filled: Boolean = false,
     onArrowUp: (() -> Unit)? = null,
     onArrowDown: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(TvTokens.FormFieldRadius)
+    val background = when {
+        filled && isFocused -> accentColor
+        filled -> accentColor.copy(alpha = 0.92f)
+        isFocused -> accentColor
+        else -> accentColor.copy(alpha = 0.16f)
+    }
+    val borderColor = when {
+        isFocused -> TvTokens.FocusBorder
+        filled -> accentColor.copy(alpha = 0.55f)
+        else -> Color.Transparent
+    }
+    val textColor = when {
+        filled || isFocused -> Color.White
+        else -> accentColor
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(50.dp)
             .background(
-                color = if (isFocused) accentColor else accentColor.copy(alpha = 0.15f),
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                color = background,
+                shape = shape,
             )
             .border(
-                width = if (isFocused) 2.dp else 0.dp,
-                color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
-                shape = RoundedCornerShape(TvTokens.CardRadius),
+                width = if (isFocused || filled) 2.dp else 0.dp,
+                color = borderColor,
+                shape = shape,
             )
             .then(
                 if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
@@ -91,7 +108,7 @@ fun TvFormActionButton(
     ) {
         androidx.tv.material3.Text(
             text = label,
-            color = if (isFocused) Color.White else accentColor,
+            color = textColor,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
         )

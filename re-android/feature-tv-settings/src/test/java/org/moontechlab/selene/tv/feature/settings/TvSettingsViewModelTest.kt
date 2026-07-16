@@ -200,4 +200,62 @@ class TvSettingsViewModelTest {
         viewModel.dismissNotice()
         assertThat(viewModel.state.value.noticeVisible).isFalse()
     }
+
+    /**
+     * 未填齐服务器信息时，登录应失败并提示，不调用持久化回调。
+     */
+    @Test
+    fun performSaveServerConfig_requires_complete_credentials() = runTest {
+        var saved = false
+        val viewModel = TvSettingsViewModel(
+            initialState = TvSettingsUiState(serverUrl = "http://example.com"),
+            saveServerConfig = { _, _, _ -> saved = true },
+            startMobileBridge = { draft, _, _ ->
+                TvMobileSettingsBridgeSession(
+                    shareUri = "http://127.0.0.1:9/?draft=${draft.serverUrl}",
+                    statusText = "test-bridge",
+                    updateDraft = {},
+                    dispose = {},
+                )
+            },
+        )
+
+        val ok = viewModel.performSaveServerConfig()
+
+        assertThat(ok).isFalse()
+        assertThat(saved).isFalse()
+        assertThat(viewModel.state.value.noticeText).contains("请填写")
+        assertThat(viewModel.state.value.savingServerConfig).isFalse()
+    }
+
+    /**
+     * 完整凭据下登录成功应返回 true，并展示成功提示。
+     */
+    @Test
+    fun performSaveServerConfig_succeeds_with_complete_credentials() = runTest {
+        var savedUrl = ""
+        val viewModel = TvSettingsViewModel(
+            initialState = TvSettingsUiState(
+                serverUrl = "http://example.com",
+                account = "demo",
+                password = "secret",
+            ),
+            saveServerConfig = { url, _, _ -> savedUrl = url },
+            startMobileBridge = { draft, _, _ ->
+                TvMobileSettingsBridgeSession(
+                    shareUri = "http://127.0.0.1:9/?draft=${draft.serverUrl}",
+                    statusText = "test-bridge",
+                    updateDraft = {},
+                    dispose = {},
+                )
+            },
+        )
+
+        val ok = viewModel.performSaveServerConfig()
+
+        assertThat(ok).isTrue()
+        assertThat(savedUrl).isEqualTo("http://example.com")
+        assertThat(viewModel.state.value.noticeText).isEqualTo("登录成功")
+        assertThat(viewModel.state.value.savingServerConfig).isFalse()
+    }
 }
