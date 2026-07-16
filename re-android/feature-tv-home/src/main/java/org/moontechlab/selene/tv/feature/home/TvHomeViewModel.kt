@@ -15,6 +15,7 @@ import org.moontechlab.selene.tv.core.data.model.TvVideoCard
  * @property sections 首页分区列表。
  * @property isLoading 是否正在加载首页数据。
  * @property errorMessage 首页加载失败文案。
+ * @property needsServerLoginHint 未配置服务器时提示继续观看需登录（热门分区仍可展示）。
  */
 data class TvHomeUiState(
     val selectedMainTab: String = HOME_TAB_KEY,
@@ -26,6 +27,7 @@ data class TvHomeUiState(
      */
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val needsServerLoginHint: Boolean = false,
 )
 
 /**
@@ -281,6 +283,7 @@ class TvHomeViewModel(
                         selectedMainTab = HOME_TAB_KEY,
                         isLoading = !progress.isComplete,
                         errorMessage = null,
+                        needsServerLoginHint = progress.needsServerLoginHint,
                     )
                 }
             }.onFailure { throwable ->
@@ -335,11 +338,13 @@ class TvHomeViewModel(
  * @property sections 当前已就绪分区（可无序）。
  * @property readyKeys 已回填分区 key，用于避免补齐未加载空分区。
  * @property isComplete 是否全部请求结束。
+ * @property needsServerLoginHint 未配置服务器时展示登录提示条。
  */
 data class TvHomeSectionProgress(
     val sections: List<TvHomeSection>,
     val readyKeys: Set<String>,
     val isComplete: Boolean,
+    val needsServerLoginHint: Boolean = false,
 )
 
 /**

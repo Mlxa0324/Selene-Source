@@ -529,6 +529,10 @@ class TvAppContainer(
     fun createHistoryViewModel(): TvHistoryViewModel {
         return TvHistoryViewModel(
             loadHistory = {
+                if (!isGatewayConfigured()) {
+                    // 专用异常：历史页展示「去设置」而不是通用错误重试。
+                    throw IllegalStateException(LOCAL_CONFIG_MISSING_MESSAGE)
+                }
                 ensureSession()
                 TvPlaybackRepository(api = requireGatewayClient().tvApi)
                     .readContinueWatching()
@@ -554,6 +558,9 @@ class TvAppContainer(
     fun createFavoritesViewModel(): TvFavoritesViewModel {
         return TvFavoritesViewModel(
             loadFavorites = {
+                if (!isGatewayConfigured()) {
+                    throw IllegalStateException(LOCAL_CONFIG_MISSING_MESSAGE)
+                }
                 ensureSession()
                 TvFavoritesRepository(requireGatewayClient().tvApi).readFavorites()
             },
@@ -1313,17 +1320,20 @@ class TvAppContainer(
      * @return 首页聚合数据。
      */
     private suspend fun loadHome(): TvHomePayload {
-        // 首页数据请求前保证本地配置已经换成有效 Cookie。
-        ensureSession()
+        // 仅在已配置服务器时登录；豆瓣分区无后台也能展示。
+        ensureSessionIfConfigured()
         return createHomeRepository().loadHome()
     }
 
     /**
      * 单独读取继续观看列表。
      *
-     * @return 最新播放历史卡片列表。
+     * @return 最新播放历史卡片列表；未配置服务器时返回空。
      */
     private suspend fun loadContinueWatching(): List<TvVideoCard> {
+        if (!isGatewayConfigured()) {
+            return emptyList()
+        }
         ensureSession()
         return TvPlaybackRepository(api = requireGatewayClient().tvApi).readContinueWatching()
     }
@@ -1411,14 +1421,16 @@ class TvAppContainer(
      */
     private fun observeHome(): Flow<TvHomeSectionProgress> {
         return flow {
-            // 流式订阅前先确保会话，避免首包失败。
-            ensureSession()
+            // 未配置服务器时跳过登录：继续观看为空，热门分区仍走豆瓣/Bangumi。
+            ensureSessionIfConfigured()
+            val needsServerLoginHint = !isGatewayConfigured()
             createHomeRepository().observeHome().collect { progress ->
                 emit(
                     TvHomeSectionProgress(
                         sections = progress.payload.sections,
                         readyKeys = progress.payload.sections.map { section -> section.key }.toSet(),
                         isComplete = progress.isComplete,
+                        needsServerLoginHint = needsServerLoginHint,
                     ),
                 )
             }
@@ -1428,14 +1440,36 @@ class TvAppContainer(
     /**
      * 创建首页仓库。
      *
+     * 未配置服务器时 playback API 为空，继续观看静默为空列表，不影响热门分区。
+     *
      * @return 首页数据仓库。
      */
     private fun createHomeRepository(): TvHomeRepository {
+        val playbackApi = if (isGatewayConfigured()) {
+            runCatching { requireGatewayClient().tvApi }.getOrNull()
+        } else {
+            null
+        }
         return TvHomeRepository(
-            playbackRepository = TvPlaybackRepository(api = requireGatewayClient().tvApi),
+            playbackRepository = TvPlaybackRepository(api = playbackApi),
             doubanRepository = doubanRepository,
             bangumiRepository = bangumiRepository,
         )
+    }
+
+    /**
+     * 当前是否已配置可用的服务器账号密码。
+     */
+    fun isGatewayConfigured(): Boolean = activeGatewayConfig.isComplete
+
+    /**
+     * 已配置时才登录；未配置不抛错。
+     */
+    private suspend fun ensureSessionIfConfigured() {
+        if (!isGatewayConfigured()) {
+            return
+        }
+        ensureSession()
     }
 
     /**

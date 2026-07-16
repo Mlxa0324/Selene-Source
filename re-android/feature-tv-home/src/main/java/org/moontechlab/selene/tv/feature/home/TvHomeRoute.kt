@@ -2,6 +2,7 @@ package org.moontechlab.selene.tv.feature.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,8 +34,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -50,6 +53,8 @@ import kotlinx.coroutines.launch
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
 import org.moontechlab.selene.tv.core.design.TvTokens
 import org.moontechlab.selene.tv.core.design.focus.TvFocusableCard
+import org.moontechlab.selene.tv.core.design.focus.isTvConfirmKey
+import org.moontechlab.selene.tv.core.design.focus.tvPointerClickable
 import org.moontechlab.selene.tv.core.design.layout.TvListLayoutMetrics
 import org.moontechlab.selene.tv.core.design.layout.LocalTvDesignMetrics
 import org.moontechlab.selene.tv.core.design.layout.TvPageScaffold
@@ -63,6 +68,9 @@ import org.moontechlab.selene.tv.core.design.layout.TvPosterRail
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanel
 import org.moontechlab.selene.tv.core.design.layout.TvStatePanelKind
 import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 
 /** 分类页慢接口的预取提前量：焦点进入末尾五行时开始加载下一页。 */
 private const val CATEGORY_PAGE_PREFETCH_ROWS = 5
@@ -85,6 +93,7 @@ private val CATEGORY_FILTER_CHIP_FOCUSED_TEXT = Color(0xFF0F141A)
  * @param state 首页界面状态。
  * @param contentFocusRequester 首页内容区入口焦点请求器。
  * @param onRetry 首页状态面板重试回调。
+ * @param onOpenSettings 未配置服务器时跳转设置。
  * @param onVideoClick 视频卡片点击回调。
  * @param onSectionMoreClick 分区查看更多点击回调。
  */
@@ -94,6 +103,7 @@ fun TvHomeRoute(
     state: TvHomeUiState = TvHomeUiState(),
     contentFocusRequester: FocusRequester? = null,
     onRetry: (() -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
     onVideoClick: (String) -> Unit = {},
     onSectionMoreClick: (TvHomeSectionMoreTarget) -> Unit = {},
 ) {
@@ -174,6 +184,9 @@ fun TvHomeRoute(
             }
         }
         CompositionLocalProvider(LocalBringIntoViewSpec provides homeBringIntoViewSpec) {
+        val showServerHint = state.needsServerLoginHint && onOpenSettings != null
+        // 提示条占 1 个 Lazy 下标，分区滚动锚点需加上偏移。
+        val sectionListOffset = if (showServerHint) 1 else 0
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = homeListState,
@@ -183,6 +196,19 @@ fun TvHomeRoute(
             contentPadding = PaddingValues(top = 8.dp, bottom = 148.dp),
             verticalArrangement = Arrangement.spacedBy(TvTokens.SectionSpacing),
         ) {
+            if (showServerHint) {
+                item(key = "server-login-hint") {
+                    TvServerLoginHintBanner(
+                        message = "配置服务器后可同步「继续观看」、播放历史与收藏夹",
+                        onOpenSettings = onOpenSettings!!,
+                        // 有热门分区时提示条不抢内容首焦；无分区时承接顶栏下探。
+                        focusRequester = contentFocusRequester.takeIf {
+                            firstFocusableSectionIndex == null
+                        },
+                        modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
+                    )
+                }
+            }
             itemsIndexed(
                 items = state.sections,
                 key = { _, section -> section.key },
@@ -195,21 +221,27 @@ fun TvHomeRoute(
                 } else {
                     null
                 }
+                val listIndex = sectionIndex + sectionListOffset
                 TvPageSection(
                     title = section.title,
-                    hint = if (sectionIndex == 0) "长按删除" else null,
+                    hint = if (sectionIndex == 0 && section.key == "continue_watching") {
+                        "长按删除"
+                    } else {
+                        null
+                    },
                     insetContent = false,
                 ) {
                     TvPosterRail(
                         firstItemFocusRequester = sectionFocusRequester,
                         onRailFocused = {
-                            val sectionAlreadyAnchored = homeListState.firstVisibleItemIndex == sectionIndex &&
-                                homeListState.firstVisibleItemScrollOffset == 0
+                            val sectionAlreadyAnchored =
+                                homeListState.firstVisibleItemIndex == listIndex &&
+                                    homeListState.firstVisibleItemScrollOffset == 0
                             if (!sectionAlreadyAnchored) {
                                 homeScrollScope.launch {
                                     // 纵向换排：分区标题顶到内容区顶部，整卡（含片名）才能完整露出。
                                     homeListState.animateScrollToItem(
-                                        index = sectionIndex,
+                                        index = listIndex,
                                         scrollOffset = 0,
                                     )
                                 }
@@ -236,6 +268,92 @@ fun TvHomeRoute(
                 }
             }
         }
+        }
+    }
+}
+
+/**
+ * 未配置服务器时的轻量提示条：说明受影响能力，并提供「去设置」入口。
+ *
+ * @param message 提示文案。
+ * @param onOpenSettings 跳转设置。
+ * @param focusRequester 可选内容焦点入口。
+ * @param modifier 外层修饰器。
+ */
+@Composable
+private fun TvServerLoginHintBanner(
+    message: String,
+    onOpenSettings: () -> Unit,
+    focusRequester: FocusRequester? = null,
+    modifier: Modifier = Modifier,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                color = Color.White.copy(alpha = 0.06f),
+                shape = RoundedCornerShape(14.dp),
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(14.dp),
+            )
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = message,
+            color = TvTokens.TextSecondary,
+            fontSize = 14.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            modifier = Modifier
+                .widthIn(min = 112.dp)
+                .height(40.dp)
+                .background(
+                    color = if (isFocused) {
+                        TvTokens.Accent
+                    } else {
+                        TvTokens.Accent.copy(alpha = 0.18f)
+                    },
+                    shape = RoundedCornerShape(20.dp),
+                )
+                .border(
+                    width = if (isFocused) 2.dp else 0.dp,
+                    color = if (isFocused) TvTokens.FocusBorder else Color.Transparent,
+                    shape = RoundedCornerShape(20.dp),
+                )
+                .then(
+                    if (focusRequester != null) {
+                        Modifier.focusRequester(focusRequester)
+                    } else {
+                        Modifier
+                    },
+                )
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyUp) return@onPreviewKeyEvent false
+                    if (event.key.isTvConfirmKey()) {
+                        onOpenSettings()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                .tvPointerClickable(onClick = onOpenSettings)
+                .focusable(interactionSource = interactionSource),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "去设置",
+                color = if (isFocused) Color.White else TvTokens.Accent,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

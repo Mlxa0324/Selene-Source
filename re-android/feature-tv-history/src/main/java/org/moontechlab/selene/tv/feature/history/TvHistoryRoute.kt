@@ -35,6 +35,7 @@ import org.moontechlab.selene.tv.core.design.layout.toVideoDetailKey
  * @param contentFocusRequester 内容区首张海报焦点请求器。
  * @param onVideoClick 视频卡片点击回调。
  * @param onClearAll 清空全部历史回调。
+ * @param onOpenSettings 未配置服务器时跳转设置。
  */
 @Composable
 fun TvHistoryRoute(
@@ -42,6 +43,7 @@ fun TvHistoryRoute(
     contentFocusRequester: FocusRequester? = null,
     onVideoClick: (String) -> Unit = {},
     onClearAll: (suspend () -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var showClearConfirm by remember { mutableStateOf(false) }
@@ -60,10 +62,18 @@ fun TvHistoryRoute(
         }
 
         if (!state.errorMessage.isNullOrBlank() && state.videos.isEmpty()) {
+            val needsServerConfig = state.errorMessage.contains("设置") ||
+                state.errorMessage.contains("服务器")
             TvStatePanel(
                 kind = TvStatePanelKind.Error,
-                title = "历史加载失败",
-                message = state.errorMessage,
+                title = if (needsServerConfig) "需要登录服务器" else "历史加载失败",
+                message = if (needsServerConfig) {
+                    "播放历史依赖服务器账号同步。请先填写服务器地址、账号和密码。"
+                } else {
+                    state.errorMessage
+                },
+                actionLabel = if (needsServerConfig && onOpenSettings != null) "去设置" else null,
+                onAction = if (needsServerConfig) onOpenSettings else null,
                 contentFocusRequester = resolvedContentFocus,
                 modifier = Modifier.padding(horizontal = TvTokens.PageHorizontalPadding),
             )

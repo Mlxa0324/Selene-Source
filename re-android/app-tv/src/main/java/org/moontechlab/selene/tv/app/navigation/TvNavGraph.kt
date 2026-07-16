@@ -127,10 +127,19 @@ fun TvNavGraph(
             }
             // 从详情/全屏返回：进度写库成功会置脏。
             // ON_RESUME 立即刷一次；另轮询兜底（写库比返回慢时也能刷到最新进度）。
+            // 从设置页保存服务器后回来：若此前缺配置则整页重载以拉继续观看。
             val homeLifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(homeLifecycleOwner, homeViewModel, appContainer) {
                 val observer = LifecycleEventObserver { _, event ->
                     if (event != Lifecycle.Event.ON_RESUME) {
+                        return@LifecycleEventObserver
+                    }
+                    if (homeViewModel.state.value.needsServerLoginHint &&
+                        appContainer.isGatewayConfigured()
+                    ) {
+                        homeScope.launch {
+                            homeViewModel.load()
+                        }
                         return@LifecycleEventObserver
                     }
                     if (!appContainer.consumeContinueWatchingDirty()) {
@@ -161,6 +170,9 @@ fun TvNavGraph(
                     homeScope.launch {
                         homeViewModel.load()
                     }
+                },
+                onOpenSettings = {
+                    navController.navigate(TvDestination.Settings.route)
                 },
                 onVideoClick = { videoId ->
                     // 首页所有视频卡片统一进入原生 TV 详情页。
@@ -300,6 +312,9 @@ fun TvNavGraph(
                     }
                 },
                 onClearAll = { historyViewModel.clear() },
+                onOpenSettings = {
+                    navController.navigate(TvDestination.Settings.route)
+                },
             )
         }
         composable(TvDestination.Favorites.route) {
@@ -323,6 +338,9 @@ fun TvNavGraph(
                     }
                 },
                 onClearAll = { favoritesViewModel.clear() },
+                onOpenSettings = {
+                    navController.navigate(TvDestination.Settings.route)
+                },
             )
         }
         composable(TvDestination.Settings.route) {
