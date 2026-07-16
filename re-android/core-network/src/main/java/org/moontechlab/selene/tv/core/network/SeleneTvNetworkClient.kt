@@ -240,7 +240,12 @@ object SeleneTvNetworkFactory {
      */
     fun createBangumiApi(): SeleneBangumiApi {
         val baseUrl = normalizeBaseUrl(BANGUMI_BASE_URL)
+        // Bangumi 在国内常不可达：连接/读超时单独收紧到 3s，配合仓库层 withTimeout 尽快豆瓣兜底。
         val okHttpClient = createBaseOkHttpClientBuilder()
+            .connectTimeout(BANGUMI_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(BANGUMI_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(BANGUMI_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            .callTimeout(BANGUMI_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
             .addInterceptor(BangumiHeaderInterceptor())
             .build()
         return Retrofit.Builder()
@@ -342,6 +347,9 @@ object SeleneTvNetworkFactory {
 
     /** Bangumi 官方 API 根地址。 */
     private const val BANGUMI_BASE_URL = "https://api.bgm.tv/"
+
+    /** Bangumi 专用超时秒数：国内不可达时尽快失败，交给首页豆瓣兜底。 */
+    private const val BANGUMI_TIMEOUT_SECONDS = 3L
 
     /** 豆瓣代理 API 基础地址（腾讯 CDN 镜像）。 */
     private const val DOUBAN_BASE_URL = "https://m.douban.cmliussss.net/"

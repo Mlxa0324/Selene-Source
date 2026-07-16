@@ -897,8 +897,9 @@ private fun List<TvHomeSection>.normalizedForFlutterTvHome(
         }
         .map { template -> incomingByKey[template.key] ?: template }
         .filterNot { section ->
-            // 继续观看无记录时隐藏；其它分区即便空列表也保留标题（失败可见）。
-            section.key == "continue_watching" && section.videos.isEmpty()
+            // 无卡片分区整块隐藏：遥控器下移时不会落到空「新番放送」等轨道上。
+            // 继续观看空也隐藏；流式加载中未就绪分区本就不会进入 onlyReadyKeys。
+            section.videos.isEmpty()
         }
         .toList()
 }

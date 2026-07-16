@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import org.moontechlab.selene.tv.core.data.model.TvHomePayload
 import org.moontechlab.selene.tv.core.data.model.TvHomeSection
 import org.moontechlab.selene.tv.core.data.model.TvVideoCard
@@ -178,17 +179,17 @@ class TvHomeRepository(
     /**
      * 安全加载「新番放送」分区。
      *
-     * 优先走 Bangumi 当日日历；国内无代理时该接口常不可达。
-     * 失败或结果为空时，回退豆瓣动画热门，避免首页动漫轨整块空白。
+     * 优先走 Bangumi 当日日历，**单独 3 秒超时**；超时/失败/空结果时立刻回退豆瓣动画，
+     * 避免默认 OkHttp 长超时把整条动漫轨拖到 20 秒后才出现。
      *
      * @return 优先 Bangumi 今日放送；否则豆瓣动画热门；两边都失败则空列表。
      */
     private suspend fun loadBangumiCalendarSafely(): List<TvVideoCard> {
-        // 1) 优先 Bangumi：对齐 Flutter 新番放送主数据源。
+        // 1) Bangumi 单独 3s 超时：国内不可达时尽快失败，不阻塞其它分区焦点链。
         val bangumiVideos = bangumiRepository?.let { repository ->
-            runCatching {
-                repository.loadTodayCalendar()
-            }.getOrDefault(emptyList())
+            withTimeoutOrNull(BANGUMI_REQUEST_TIMEOUT_MS) {
+                runCatching { repository.loadTodayCalendar() }.getOrDefault(emptyList())
+            }
         }.orEmpty()
         if (bangumiVideos.isNotEmpty()) {
             return bangumiVideos
@@ -199,6 +200,9 @@ class TvHomeRepository(
     }
 
     private companion object {
+        /** Bangumi 日历请求超时（毫秒），超时后立即豆瓣兜底。 */
+        const val BANGUMI_REQUEST_TIMEOUT_MS = 3_000L
+
         /** 继续观看分区标识。 */
         const val CONTINUE_WATCHING_KEY = "continue_watching"
 

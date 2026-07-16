@@ -121,6 +121,63 @@ class TvHomeRepositoryTest {
     }
 
     /**
+     * Bangumi 超过 3 秒未返回时，应立刻豆瓣兜底，不能拖到默认 OkHttp 长超时。
+     */
+    @Test
+    fun loadHome_fallsBackToDoubanWhenBangumiTimesOut() = runTest {
+        var doubanAnimeFallbackCalled = false
+        val repository = TvHomeRepository(
+            playbackRepository = TvPlaybackRepository(continueWatching = emptyList()),
+            doubanRepository = DoubanRepository(api = object : FakeHomeDoubanApi() {
+                override suspend fun getRecommends(
+                    kind: String,
+                    refresh: Int,
+                    start: Int,
+                    count: Int,
+                    selectedCategories: String,
+                    uncollect: Boolean,
+                    scoreRange: String,
+                    tags: String,
+                    sort: String,
+                ): DoubanCategoryResponse {
+                    doubanAnimeFallbackCalled = true
+                    return DoubanCategoryResponse(
+                        items = listOf(
+                            DoubanMovieItem(
+                                id = "anime-timeout-1",
+                                title = "超时兜底动画",
+                                pic = org.moontechlab.selene.tv.core.network.model.DoubanPic(
+                                    normal = "test.jpg",
+                                    large = "test-lg.jpg",
+                                ),
+                                rating = org.moontechlab.selene.tv.core.network.model.DoubanRating(value = 8.5),
+                                cardSubtitle = "2026 / 日本",
+                            ),
+                        ),
+                    )
+                }
+            }),
+            bangumiRepository = BangumiRepository(
+                api = object : org.moontechlab.selene.tv.core.network.SeleneBangumiApi {
+                    override suspend fun getCalendar(): List<org.moontechlab.selene.tv.core.network.model.BangumiCalendarDayResponse> {
+                        // 故意挂起超过 Bangumi 3s 超时，验证 withTimeoutOrNull 生效。
+                        kotlinx.coroutines.delay(10_000)
+                        return emptyList()
+                    }
+                },
+            ),
+        )
+
+        val payload = repository.loadHome()
+        val bangumiSection = payload.sections.first { it.key == "bangumi_calendar" }
+
+        assertThat(doubanAnimeFallbackCalled).isTrue()
+        assertThat(bangumiSection.videos.first().title).isEqualTo("超时兜底动画")
+        // 虚拟时间下总耗时应远小于 10s 挂起（约 3s 超时 + 兜底）。
+        assertThat(testScheduler.currentTime).isLessThan(5_000)
+    }
+
+    /**
      * Bangumi 接口失败时，新番放送应回退豆瓣动画热门，避免整轨空白。
      */
     @Test

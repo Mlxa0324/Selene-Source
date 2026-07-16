@@ -27,7 +27,7 @@ class TvHomeViewModelTest {
             loadHome = {
                 TvHomePayload(
                     sections = listOf(
-                        TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                        sectionWithVideos("hot_movies", "热门电影", "m1"),
                     ),
                 )
             },
@@ -40,15 +40,17 @@ class TvHomeViewModelTest {
     }
 
     /**
-     * 首页加载后应补齐 Flutter TV 首页固定分区顺序。
+     * 首页只展示已有卡片的分区；空分区（含未加载完的新番）不进列表，焦点自然跳过。
      */
     @Test
-    fun loadHome_emits_flutter_tv_section_order() = runTest {
+    fun loadHome_hides_empty_sections_from_focus_chain() = runTest {
         val viewModel = TvHomeViewModel(
             loadHome = {
                 TvHomePayload(
                     sections = listOf(
-                        TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                        sectionWithVideos("hot_movies", "热门电影", "m1"),
+                        TvHomeSection(key = "bangumi_calendar", title = "新番放送", videos = emptyList()),
+                        sectionWithVideos("hot_shows", "热门综艺", "s1"),
                     ),
                 )
             },
@@ -58,10 +60,9 @@ class TvHomeViewModelTest {
 
         assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
             "hot_movies",
-            "hot_tv_shows",
-            "bangumi_calendar",
             "hot_shows",
         ).inOrder()
+        assertThat(viewModel.state.value.sections.map { it.key }).doesNotContain("bangumi_calendar")
     }
 
     /**
@@ -78,7 +79,7 @@ class TvHomeViewModelTest {
                             title = "继续观看",
                             videos = listOf(TvVideoCard(id = "resume-1", title = "续看", posterUrl = "")),
                         ),
-                        TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                        sectionWithVideos("hot_movies", "热门电影", "m1"),
                     ),
                 )
             },
@@ -89,9 +90,6 @@ class TvHomeViewModelTest {
         assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
             "continue_watching",
             "hot_movies",
-            "hot_tv_shows",
-            "bangumi_calendar",
-            "hot_shows",
         ).inOrder()
     }
 
@@ -125,14 +123,14 @@ class TvHomeViewModelTest {
                 if (loadCalls == 1) {
                     TvHomePayload(
                         sections = listOf(
-                            TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                            sectionWithVideos("hot_movies", "热门电影", "m1"),
                         ),
                     )
                 } else {
                     secondLoadGate.await()
                     TvHomePayload(
                         sections = listOf(
-                            TvHomeSection(key = "hot_tv_shows", title = "热门剧集", videos = emptyList()),
+                            sectionWithVideos("hot_tv_shows", "热门剧集", "t1"),
                         ),
                     )
                 }
@@ -146,23 +144,14 @@ class TvHomeViewModelTest {
         }
         runCurrent()
 
-        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
-            "hot_movies",
-            "hot_tv_shows",
-            "bangumi_calendar",
-            "hot_shows",
-        ).inOrder()
+        // 刷新中仍保留旧的有数据分区，避免列表闪空。
+        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly("hot_movies")
         assertThat(viewModel.state.value.isLoading).isTrue()
 
         secondLoadGate.complete(Unit)
         refreshJob.join()
 
-        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly(
-            "hot_movies",
-            "hot_tv_shows",
-            "bangumi_calendar",
-            "hot_shows",
-        ).inOrder()
+        assertThat(viewModel.state.value.sections.map { it.key }).containsExactly("hot_tv_shows")
     }
 
 
@@ -296,7 +285,7 @@ class TvHomeViewModelTest {
                             title = "继续观看",
                             videos = listOf(TvVideoCard(id = "resume-old", title = "旧续播", posterUrl = "")),
                         ),
-                        TvHomeSection(key = "hot_movies", title = "热门电影", videos = emptyList()),
+                        sectionWithVideos("hot_movies", "热门电影", "m1"),
                     ),
                 )
             },
@@ -324,6 +313,17 @@ class TvHomeViewModelTest {
         assertThat(viewModel.state.value.sections.first().videos.map { it.id })
             .containsExactly("resume-new")
         assertThat(viewModel.state.value.sections.map { it.key }).contains("hot_movies")
+    }
+
+    /**
+     * 构造带一张占位卡的首页分区。
+     */
+    private fun sectionWithVideos(key: String, title: String, videoId: String): TvHomeSection {
+        return TvHomeSection(
+            key = key,
+            title = title,
+            videos = listOf(TvVideoCard(id = videoId, title = title, posterUrl = "")),
+        )
     }
 
     /**
