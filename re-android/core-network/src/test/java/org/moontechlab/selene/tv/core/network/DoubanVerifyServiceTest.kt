@@ -126,6 +126,39 @@ class DoubanVerifyServiceTest {
     }
 
     /**
+     * 磁盘 Cookie 应在构造时回灌，后续请求直接携带会话，避免重复 PoW。
+     */
+    @Test
+    fun fetchWithVerify_restores_persisted_session_cookie() = runTest {
+        val store = InMemoryDoubanCookieStore(
+            initial = listOf(
+                DoubanPersistedCookie(
+                    name = "dbsawcv1",
+                    value = "persisted-session",
+                    expiryEpochMs = System.currentTimeMillis() + 120_000,
+                ),
+            ),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""<div id="recommendations"><dl></dl></div>"""),
+        )
+        val service = DoubanVerifyService(
+            client = OkHttpClient(),
+            verifyUrl = server.url("/c").toString(),
+            cookieStore = store,
+        )
+
+        assertThat(service.hasVerifySessionCookie()).isTrue()
+        service.fetchWithVerify(server.url("/subject/1").toString())
+
+        val request = server.takeRequest()
+        assertThat(request.getHeader("Cookie")).contains("dbsawcv1=persisted-session")
+        assertThat(server.requestCount).isEqualTo(1)
+    }
+
+    /**
      * 无验证页时直接返回正文，不应额外提交 PoW。
      */
     @Test
@@ -164,5 +197,20 @@ class DoubanVerifyServiceTest {
                 return nonce
             }
         }
+    }
+}
+
+/**
+ * 测试用内存 Cookie 存储。
+ */
+private class InMemoryDoubanCookieStore(
+    initial: List<DoubanPersistedCookie> = emptyList(),
+) : DoubanCookieStore {
+    private var cookies: List<DoubanPersistedCookie> = initial
+
+    override fun load(): List<DoubanPersistedCookie> = cookies
+
+    override fun save(cookies: List<DoubanPersistedCookie>) {
+        this.cookies = cookies
     }
 }

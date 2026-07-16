@@ -15,6 +15,25 @@ class DoubanRepositoryTest {
      * HTML 数据源返回推荐页面时，仓库应传入指定豆瓣 ID 并返回解析后的卡片。
      */
     @Test
+    fun loadDetailRecommends_uses_memory_cache_on_second_call() = runTest {
+        var fetchCount = 0
+        val repository = DoubanRepository(
+            api = UnusedDoubanApi,
+            htmlSource = DoubanSubjectHtmlSource {
+                fetchCount += 1
+                RECOMMENDATION_HTML
+            },
+        )
+
+        val first = repository.loadDetailRecommends("1292052")
+        val second = repository.loadDetailRecommends("1292052")
+
+        assertThat(first).isNotEmpty()
+        assertThat(second).isEqualTo(first)
+        assertThat(fetchCount).isEqualTo(1)
+    }
+
+    @Test
     fun loadDetailRecommends_fetches_html_and_returns_parsed_cards() = runTest {
         val source = DoubanSubjectHtmlSource { doubanId ->
             assertThat(doubanId).isEqualTo("1292052")

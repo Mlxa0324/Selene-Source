@@ -279,19 +279,24 @@ object SeleneTvNetworkFactory {
      *
      * @return 豆瓣 HTML 抓取接口。
      */
-    fun createDoubanHtmlApi(): SeleneDoubanHtmlApi {
-        val verifyService = createDoubanVerifyService()
+    fun createDoubanHtmlApi(
+        cookieStore: DoubanCookieStore? = null,
+    ): SeleneDoubanHtmlApi {
+        val verifyService = createDoubanVerifyService(cookieStore = cookieStore)
         return SeleneDoubanHtmlApi(verifyService = verifyService)
     }
 
     /**
      * 创建豆瓣 PoW 验证绕过服务。
      *
+     * @param cookieStore 可选会话 Cookie 持久化，跨启动复用 dbsawcv1。
      * @return PoW 验证绕过服务。
      */
-    fun createDoubanVerifyService(): DoubanVerifyService {
+    fun createDoubanVerifyService(
+        cookieStore: DoubanCookieStore? = null,
+    ): DoubanVerifyService {
         val client = createBaseOkHttpClientBuilder().build()
-        return DoubanVerifyService(client = client)
+        return DoubanVerifyService(client = client, cookieStore = cookieStore)
     }
 
     /**

@@ -1604,7 +1604,8 @@ class TvDetailViewModel(
         const val EPISODE_GROUP_SIZE = 20
 
         /** 真实预览开始后等待推荐加载的毫秒数。 */
-        const val RECOMMEND_PLAYING_DELAY_MS = 2_000L
+        // 播放成功后再延迟拉推荐会多等 2s；改为 0，与播控并行，尽快填相关推荐。
+        const val RECOMMEND_PLAYING_DELAY_MS = 0L
 
         /** 详情页预览续播进度保存间隔。 */
         const val PROGRESS_SAVE_INTERVAL_MS = 10_000L

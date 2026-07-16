@@ -1,6 +1,9 @@
 package org.moontechlab.selene.tv.core.network
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -9,6 +12,7 @@ import okhttp3.Response
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 豆瓣 PoW 验证绕过服务。
@@ -16,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
  * 镜像 Flutter `douban_verify_service_with_expir.dart`：
  * - 首次请求豆瓣页面时可能遇到 `id="sec"` 验证页；
  * - 自动求解 SHA-512 PoW 难题并提交验证；
- * - 使用带过期管理的 Cookie 缓存维持验证会话。
+ * - Cookie 内存 + 可选磁盘持久化，成功后约 5 分钟内复用 `dbsawcv1`，不必每次重算。
  *
  * 关键：
  * OkHttp 默认跟随重定向时，最终 [Response] 不会暴露中间 302 的 `Set-Cookie`。
@@ -24,16 +28,24 @@ import java.util.concurrent.ConcurrentHashMap
  * 链路，否则重试详情页仍会卡在验证页，相关推荐解析结果恒为空。
  *
  * @property client 专用于豆瓣直连的 OkHttp 客户端（不走代理）。
+ * @property verifyUrl PoW 提交地址。
+ * @property cookieStore 可选磁盘持久化；为 null 时仅进程内缓存。
  */
 class DoubanVerifyService(
     private val client: OkHttpClient,
     private val verifyUrl: String = DEFAULT_VERIFY_URL,
+    private val cookieStore: DoubanCookieStore? = null,
 ) {
     /** Cookie 值缓存。 */
     private val cookieCache = ConcurrentHashMap<String, String>()
 
     /** Cookie 过期时间戳（毫秒）。 */
     private val cookieExpiries = ConcurrentHashMap<String, Long>()
+
+    init {
+        // 冷启动先回灌磁盘 Cookie，首进详情有机会跳过 PoW。
+        restorePersistedCookies()
+    }
 
     /**
      * 带 PoW 验证的页面抓取。
@@ -65,6 +77,7 @@ class DoubanVerifyService(
 
         val sol = solvePoW(cha)
         postVerify(tok, cha, sol, red, targetUrl)
+        persistCookies()
 
         val retryResponse = get(targetUrl)
         return@withContext retryResponse.use { resp ->
@@ -78,41 +91,109 @@ class DoubanVerifyService(
     // ---- PoW ----
 
     /**
-     * SHA-512 暴力求解 nonce，使 `sha512(cha + nonce)` 以 `difficulty` 个零开头。
+     * 多核并行 SHA-512 暴力求解 nonce，使 `sha512(cha + nonce)` 以 `difficulty` 个零开头。
      *
      * @param cha 验证页挑战串。
      * @param difficulty 前导零难度，默认 4。
      * @return 满足条件的 nonce。
      */
     private suspend fun solvePoW(cha: String, difficulty: Int = 4): Int = withContext(Dispatchers.Default) {
-        solvePoWInternal(cha, difficulty)
+        solvePoWParallel(cha, difficulty)
     }
 
     /**
-     * 同步求解 PoW nonce。
+     * 多线程分段扫描 nonce，显著缩短首次验证耗时。
      *
-     * @param cha 验证页挑战串。
-     * @param difficulty 前导零难度。
-     * @return 满足条件的 nonce。
+     * @param cha 挑战串。
+     * @param difficulty 前导零个数。
+     * @return 第一个合法 nonce。
      */
-    private fun solvePoWInternal(cha: String, difficulty: Int): Int {
+    private suspend fun solvePoWParallel(cha: String, difficulty: Int): Int = coroutineScope {
+        val targetPrefix = "0".repeat(difficulty)
+        val workers = Runtime.getRuntime().availableProcessors().coerceIn(2, 8)
+        val found = AtomicInteger(-1)
+        val jobs = List(workers) { workerIndex ->
+            async(Dispatchers.Default) {
+                val digest = MessageDigest.getInstance("SHA-512")
+                // 各 worker 从不同起点按步长扫描，避免重复计算。
+                var nonce = workerIndex + 1
+                while (found.get() < 0) {
+                    val hash = digest.digest((cha + nonce).toByteArray(Charsets.UTF_8)).toHexString()
+                    if (hash.startsWith(targetPrefix)) {
+                        found.compareAndSet(-1, nonce)
+                        return@async
+                    }
+                    nonce += workers
+                    if ((nonce / workers) % 8_000 == 0) {
+                        // 给其它协程让出时间片，避免占满 UI 调度。
+                        Thread.yield()
+                        if (found.get() >= 0) {
+                            return@async
+                        }
+                    }
+                }
+            }
+        }
+        jobs.awaitAll()
+        val result = found.get()
+        if (result <= 0) {
+            // 极端兜底：串行再扫一轮，保证总能返回。
+            return@coroutineScope solvePoWSerial(cha, difficulty)
+        }
+        result
+    }
+
+    /**
+     * 串行 PoW 兜底。
+     */
+    private fun solvePoWSerial(cha: String, difficulty: Int): Int {
         val targetPrefix = "0".repeat(difficulty)
         val digest = MessageDigest.getInstance("SHA-512")
         var nonce = 0
         while (true) {
             nonce++
-            val input = cha + nonce.toString()
-            val hash = digest.digest(input.toByteArray(Charsets.UTF_8)).toHexString()
+            val hash = digest.digest((cha + nonce).toByteArray(Charsets.UTF_8)).toHexString()
             if (hash.startsWith(targetPrefix)) {
                 return nonce
-            }
-            if (nonce % 10000 == 0) {
-                Thread.yield()
             }
         }
     }
 
     // ---- Cookie ----
+
+    /**
+     * 从磁盘回灌 Cookie。
+     */
+    private fun restorePersistedCookies() {
+        val store = cookieStore ?: return
+        val now = System.currentTimeMillis()
+        for (cookie in store.load()) {
+            val expiry = cookie.expiryEpochMs
+            if (expiry != null && now > expiry) {
+                continue
+            }
+            cookieCache[cookie.name] = cookie.value
+            if (expiry != null) {
+                cookieExpiries[cookie.name] = expiry
+            }
+        }
+    }
+
+    /**
+     * 将内存 Cookie 快照写回磁盘。
+     */
+    private fun persistCookies() {
+        val store = cookieStore ?: return
+        cleanupExpiredCookies()
+        val snapshot = cookieCache.map { (name, value) ->
+            DoubanPersistedCookie(
+                name = name,
+                value = value,
+                expiryEpochMs = cookieExpiries[name],
+            )
+        }
+        store.save(snapshot)
+    }
 
     /**
      * 清理已过期 Cookie，避免继续携带失效会话。
@@ -126,12 +207,13 @@ class DoubanVerifyService(
             cookieCache.remove(key)
             cookieExpiries.remove(key)
         }
+        if (expiredKeys.isNotEmpty()) {
+            persistCookies()
+        }
     }
 
     /**
      * 从单次响应（含重定向 prior 链）回收全部 `Set-Cookie`。
-     *
-     * 中间 302 的 Cookie 必须一并写入缓存，尤其是 `dbsawcv1`。
      *
      * @param response 最终响应。
      */
@@ -140,6 +222,7 @@ class DoubanVerifyService(
         for (item in response.redirectChain()) {
             updateCookiesFromHeaders(item.headers("Set-Cookie"))
         }
+        persistCookies()
     }
 
     /**
@@ -192,6 +275,7 @@ class DoubanVerifyService(
         // dbsawcv1 每次读取续期 300 秒（滑动过期）。
         if (cookieCache.containsKey("dbsawcv1")) {
             cookieExpiries["dbsawcv1"] = System.currentTimeMillis() + DBSAWCV1_DEFAULT_TTL_MS
+            persistCookies()
         }
         return cookieCache.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }

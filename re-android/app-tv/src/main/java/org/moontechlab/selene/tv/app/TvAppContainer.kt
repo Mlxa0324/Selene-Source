@@ -40,6 +40,7 @@ import org.moontechlab.selene.tv.core.network.SeleneTvNetworkFactory
 import org.moontechlab.selene.tv.core.network.SeleneTvSearchStreamClient
 import org.moontechlab.selene.tv.core.network.SeleneTvSseSearchClient
 import org.moontechlab.selene.tv.core.network.SessionCookieStore
+import org.moontechlab.selene.tv.core.network.SharedPreferencesDoubanCookieStore
 import org.moontechlab.selene.tv.core.player.api.PlaybackRequest
 import org.moontechlab.selene.tv.core.player.api.PlayerEngine
 import org.moontechlab.selene.tv.core.player.webview.WebViewPlayerEngine
@@ -340,7 +341,9 @@ class TvAppContainer(
         SeleneTvNetworkFactory.createBangumiApi()
     },
     private val doubanHtmlSourceFactory: () -> DoubanSubjectHtmlSource = {
-        SeleneTvNetworkFactory.createDoubanHtmlApi()
+        // 注入 SharedPreferences Cookie 持久化：相关推荐 PoW 会话可跨进程复用约 5 分钟。
+        val cookieStore = appContext?.let(::SharedPreferencesDoubanCookieStore)
+        SeleneTvNetworkFactory.createDoubanHtmlApi(cookieStore = cookieStore)
     },
     private val recommendDiagnosticSink: TvDetailRecommendDiagnosticSink = DEFAULT_TV_DETAIL_RECOMMEND_DIAGNOSTIC_SINK,
     private val searchRecommendCache: TvSearchRecommendCache = TvSearchRecommendCache(),

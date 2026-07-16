@@ -27,6 +27,15 @@ class DoubanRepository(
         ): Boolean = size > MAX_CACHE_ENTRIES
     }
 
+    /** 详情相关推荐 LRU：同一 doubanId 二次进入详情直接命中，避免重复抓 HTML / PoW。 */
+    private val recommendCache = object : LinkedHashMap<String, List<TvVideoCard>>(
+        MAX_RECOMMEND_CACHE_ENTRIES, 0.75f, /* accessOrder = */ true,
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, List<TvVideoCard>>?,
+        ): Boolean = size > MAX_RECOMMEND_CACHE_ENTRIES
+    }
+
     /**
      * 加载分类数据。
      *
@@ -51,6 +60,7 @@ class DoubanRepository(
      */
     fun clearCache() {
         cache.clear()
+        recommendCache.clear()
     }
 
     /**
@@ -60,15 +70,27 @@ class DoubanRepository(
      * @return 推荐影视卡片列表；未注入 HTML 数据源时返回空列表。
      */
     suspend fun loadDetailRecommends(doubanId: String): List<TvVideoCard> {
+        val cleanId = doubanId.trim()
+        if (cleanId.isEmpty()) {
+            return emptyList()
+        }
+        // 同 id 二次进入详情：直接复用内存推荐，跳过 HTML 与 PoW。
+        recommendCache[cleanId]?.let { cached ->
+            LOGGER.info("loadDetailRecommends id=$cleanId cacheHit count=${cached.size}")
+            return cached
+        }
         val source = htmlSource ?: return emptyList()
-        val html = source.fetchSubjectHtml(doubanId)
+        val html = source.fetchSubjectHtml(cleanId)
         val cards = DoubanDetailsParser.parseRecommends(html)
         // 设备侧排查：确认验证后 HTML 是否真有推荐容器，避免再次误判为 UI 问题。
         val hasSec = html.contains("id=\"sec\"")
         val hasRecommendations = html.contains("id=\"recommendations\"")
         LOGGER.info(
-            "loadDetailRecommends id=$doubanId htmlLen=${html.length} hasSec=$hasSec hasRecommendations=$hasRecommendations count=${cards.size}",
+            "loadDetailRecommends id=$cleanId htmlLen=${html.length} hasSec=$hasSec hasRecommendations=$hasRecommendations count=${cards.size}",
         )
+        if (cards.isNotEmpty()) {
+            recommendCache[cleanId] = cards
+        }
         return cards
     }
 
@@ -182,6 +204,9 @@ class DoubanRepository(
 
     companion object {
         private const val MAX_CACHE_ENTRIES = 50
+
+        /** 详情相关推荐缓存条数（按 doubanId）。 */
+        private const val MAX_RECOMMEND_CACHE_ENTRIES = 40
         private val LOGGER: Logger = Logger.getLogger("TvDetailRecommend")
     }
 }
