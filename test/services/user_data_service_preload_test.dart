@@ -105,4 +105,23 @@ void main() {
       'https://proxy-b.example.com/',
     );
   });
+
+  test('getDoubanImageSourceKey uses memory cache and save refreshes it',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      'douban_image_source': 'direct',
+    });
+
+    expect(await UserDataService.getDoubanImageSourceKey(), 'direct');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('douban_image_source', 'official_cdn');
+    expect(await UserDataService.getDoubanImageSourceKey(), 'direct');
+
+    await UserDataService.saveDoubanImageSource('豆瓣官方精品 CDN');
+    expect(
+      await UserDataService.getDoubanImageSourceKey(),
+      'official_cdn',
+    );
+  });
 }

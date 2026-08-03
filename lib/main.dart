@@ -61,7 +61,7 @@ void main() async {
   LocalModeStorageService.cleanupOldPlayRecords();
 
   // 进入 App 前整理非配置类缓存，保留账号、服务器、主题等设置。
-  await AppCacheService().prepareBeforeAppEnter();
+  await AppCacheService.instance.prepareBeforeAppEnter();
 
   runApp(const IvyTvApp());
 

@@ -14,6 +14,8 @@ The project uses `flutter_lints` through `analysis_options.yaml` and has active 
 - Keep page-level workflows in screens and reusable controls in widgets.
 - For TV UI, test focus and route behavior under `test/tv_app/`.
 - Use `const` and `final` where supported by the current code style.
+- For image-heavy lists, reuse the shared default `AppCacheService.instance` for disk-cache policy checks and merge concurrent policy reads; keep injected `AppCacheService` instances available for isolated tests and special callers.
+- High-frequency image URL resolution must reuse the in-memory Douban image-source setting. Saving that setting must refresh the memory value before later cards resolve URLs.
 - For WebView HLS preload telemetry, fragment-load handlers must refresh both network speed and buffered ranges; `Hls.Events.FRAG_LOADED` should call `emitBufferedRanges()` so Flutter receives `cached_ranges` even when mobile WebView `progress` events are sparse.
 - When `VideoPlayerWidget` reuses an existing WebView adapter for episode or source switching, restore the cached-range subscription after `updateSource()`; switching cancels the old subscription before the new source starts reporting preload ranges.
 - Treat empty WebView `cached_ranges` as a clear signal for the active media key during source switches. Do not ignore it as "no update", or the previous episode's persisted preload progress can remain visible.

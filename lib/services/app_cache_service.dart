@@ -50,6 +50,9 @@ class AppCacheService {
   /// Android 原生存储空间通道。
   static const MethodChannel _storageChannel = MethodChannel('selene/storage');
 
+  /// 应用默认缓存服务，供图片卡片、启动清理和 TV 设置页共享策略缓存。
+  static final AppCacheService instance = AppCacheService();
+
   /// 低空间阈值，小于 200MB 时避免继续写入图片磁盘缓存。
   static const int lowStorageThresholdBytes = 200 * 1024 * 1024;
 
@@ -71,6 +74,12 @@ class AppCacheService {
   /// 缓存的图片磁盘写入判断。
   bool? _cachedUseImageDiskCache;
 
+  /// 正在进行的图片磁盘缓存策略读取，合并同一批并发调用。
+  Future<bool>? _imageDiskCachePolicyFuture;
+
+  /// 图片缓存策略读取代数，避免清理缓存时旧请求回写结果。
+  int _imageDiskCachePolicyGeneration = 0;
+
   /// 启动进入 App 前执行缓存整理。
   ///
   /// 常规启动会清理业务运行缓存和内存图片缓存；当系统剩余空间低于
@@ -87,16 +96,30 @@ class AppCacheService {
   }
 
   /// 判断当前是否允许图片写入磁盘缓存。
-  Future<bool> shouldUseImageDiskCache() async {
+  Future<bool> shouldUseImageDiskCache() {
     if (_cachedUseImageDiskCache != null) {
-      return _cachedUseImageDiskCache!;
+      return Future<bool>.value(_cachedUseImageDiskCache!);
     }
 
-    final availableBytes = await _availableStorageLoader();
-    final useDiskCache =
-        availableBytes == null || availableBytes >= lowStorageThresholdBytes;
-    _cachedUseImageDiskCache = useDiskCache;
-    return useDiskCache;
+    return _imageDiskCachePolicyFuture ??= _loadImageDiskCachePolicy();
+  }
+
+  /// 读取一次图片磁盘缓存策略，并复用给同一批卡片。
+  Future<bool> _loadImageDiskCachePolicy() async {
+    final generation = _imageDiskCachePolicyGeneration;
+    try {
+      final availableBytes = await _availableStorageLoader();
+      final useDiskCache =
+          availableBytes == null || availableBytes >= lowStorageThresholdBytes;
+      if (generation == _imageDiskCachePolicyGeneration) {
+        _cachedUseImageDiskCache = useDiskCache;
+      }
+      return useDiskCache;
+    } finally {
+      if (generation == _imageDiskCachePolicyGeneration) {
+        _imageDiskCachePolicyFuture = null;
+      }
+    }
   }
 
   /// 读取系统存储空间摘要。
@@ -139,6 +162,8 @@ class AppCacheService {
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();
     _cachedUseImageDiskCache = null;
+    _imageDiskCachePolicyFuture = null;
+    _imageDiskCachePolicyGeneration += 1;
   }
 
   /// 格式化缓存大小。

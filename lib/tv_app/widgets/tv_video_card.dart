@@ -614,7 +614,9 @@ class _TvCoverImageState extends State<_TvCoverImage> {
   void initState() {
     super.initState();
     _coverFuture = _resolveCoverUrl();
-    _useImageDiskCacheFuture = AppCacheService().shouldUseImageDiskCache();
+    // 所有 TV 卡片共享一次磁盘缓存策略查询，避免后续批次重复访问原生存储通道。
+    _useImageDiskCacheFuture =
+        AppCacheService.instance.shouldUseImageDiskCache();
   }
 
   @override
@@ -626,7 +628,8 @@ class _TvCoverImageState extends State<_TvCoverImage> {
       _canStartImageRequest = false;
       _didNotifyImageRequestStarted = false;
       _coverFuture = _resolveCoverUrl();
-      _useImageDiskCacheFuture = AppCacheService().shouldUseImageDiskCache();
+      _useImageDiskCacheFuture =
+          AppCacheService.instance.shouldUseImageDiskCache();
     }
   }
 

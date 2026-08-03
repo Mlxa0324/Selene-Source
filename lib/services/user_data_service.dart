@@ -85,6 +85,15 @@ class UserDataService {
   /// 豆瓣图片源设置 Key
   static const String _doubanImageSourceKey = 'douban_image_source';
 
+  /// 豆瓣图片源设置的进程内缓存，供分类卡片复用。
+  static String? _cachedDoubanImageSourceKey;
+
+  /// 正在进行的图片源设置读取，合并同一批并发调用。
+  static Future<String>? _doubanImageSourceKeyFuture;
+
+  /// 图片源设置读取代数，避免保存新设置时旧读取结果回写。
+  static int _doubanImageSourceGeneration = 0;
+
   /// M3U8 代理 URL Key
   static const String _m3u8ProxyUrlKey = 'm3u8_proxy_url';
 
@@ -237,6 +246,9 @@ class UserDataService {
     _cachedM3u8ProxyUrl = '';
     _hasCachedM3u8ProxyUrl = false;
     _tvPlayerKernelCache = null;
+    _cachedDoubanImageSourceKey = null;
+    _doubanImageSourceKeyFuture = null;
+    _doubanImageSourceGeneration += 1;
   }
 
   /// 搜索缓存是否已从磁盘加载标识
@@ -799,15 +811,41 @@ class UserDataService {
   // 保存豆瓣图片源设置（存储key值）
   static Future<void> saveDoubanImageSource(
       String imageSourceDisplayName) async {
+    // 保存开始时先使旧的异步读取失效，避免旧设置覆盖刚保存的新设置。
+    _doubanImageSourceGeneration += 1;
+    _doubanImageSourceKeyFuture = null;
     final prefs = await SharedPreferences.getInstance();
     final key = _getDoubanImageSourceKeyFromDisplayName(imageSourceDisplayName);
     await prefs.setString(_doubanImageSourceKey, key);
+    _cachedDoubanImageSourceKey = key;
+    // 让保存期间启动的旧读取不能再写回缓存。
+    _doubanImageSourceGeneration += 1;
   }
 
   // 获取豆瓣图片源设置（返回key值）
-  static Future<String> getDoubanImageSourceKey() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_doubanImageSourceKey) ?? 'official_cdn';
+  static Future<String> getDoubanImageSourceKey() {
+    final cachedKey = _cachedDoubanImageSourceKey;
+    if (cachedKey != null) {
+      return Future<String>.value(cachedKey);
+    }
+    return _doubanImageSourceKeyFuture ??= _loadDoubanImageSourceKey();
+  }
+
+  /// 从持久化设置读取豆瓣图片源，并只向当前代缓存结果。
+  static Future<String> _loadDoubanImageSourceKey() async {
+    final generation = _doubanImageSourceGeneration;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = prefs.getString(_doubanImageSourceKey) ?? 'official_cdn';
+      if (generation == _doubanImageSourceGeneration) {
+        _cachedDoubanImageSourceKey = key;
+      }
+      return key;
+    } finally {
+      if (generation == _doubanImageSourceGeneration) {
+        _doubanImageSourceKeyFuture = null;
+      }
+    }
   }
 
   // 获取豆瓣图片源显示名称

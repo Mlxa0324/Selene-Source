@@ -284,12 +284,12 @@ class TvSettingsScreen extends StatefulWidget {
 
   /// 默认缓存大小加载逻辑。
   static Future<int> defaultLoadCacheSize() {
-    return AppCacheService().calculateCacheSizeBytes();
+    return AppCacheService.instance.calculateCacheSizeBytes();
   }
 
   /// 默认清理全部缓存逻辑。
   static Future<void> defaultClearAllCaches() {
-    return AppCacheService().clearAllCaches();
+    return AppCacheService.instance.clearAllCaches();
   }
 }
 

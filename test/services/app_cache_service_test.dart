@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +30,26 @@ void main() {
     );
 
     expect(await service.shouldUseImageDiskCache(), isTrue);
+  });
+
+  test('shares an in-flight image disk cache decision across callers',
+      () async {
+    final availableStorage = Completer<int?>();
+    var readCount = 0;
+    final service = AppCacheService(
+      availableStorageLoader: () {
+        readCount += 1;
+        return availableStorage.future;
+      },
+    );
+
+    final first = service.shouldUseImageDiskCache();
+    final second = service.shouldUseImageDiskCache();
+
+    expect(readCount, 1);
+    availableStorage.complete(AppCacheService.lowStorageThresholdBytes + 1);
+    expect(await first, isTrue);
+    expect(await second, isTrue);
   });
 
   test('loads storage summary with total and available space', () async {
