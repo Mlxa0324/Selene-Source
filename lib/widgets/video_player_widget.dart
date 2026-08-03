@@ -35,6 +35,82 @@ String buildVideoSurfaceKey({
   return 'video_${surface.name}_$adapterType';
 }
 
+/// 当前 Flutter 播放器需要同步到 Android PIP 系统菜单的动作状态。
+@visibleForTesting
+class PipActionsState {
+  /// 当前播放器是否正在播放。
+  final bool isPlaying;
+
+  /// 当前集是否存在上一集。
+  final bool hasPrevious;
+
+  /// 当前集是否存在下一集。
+  final bool hasNext;
+
+  /// 创建一份不可变的 PIP 动作状态快照。
+  const PipActionsState({
+    required this.isPlaying,
+    required this.hasPrevious,
+    required this.hasNext,
+  });
+}
+
+/// 根据播放器集数和播放状态生成 PIP 动作快照。
+@visibleForTesting
+PipActionsState buildPipActionsState({
+  required bool isPlaying,
+  required int? currentEpisodeIndex,
+  required int? totalEpisodes,
+  bool isLastEpisode = false,
+}) {
+  final index = currentEpisodeIndex ?? 0;
+  final hasNext = totalEpisodes != null && totalEpisodes > 0
+      ? index < totalEpisodes - 1
+      : !isLastEpisode;
+  return PipActionsState(
+    isPlaying: isPlaying,
+    hasPrevious: index > 0,
+    hasNext: hasNext,
+  );
+}
+
+/// 判断指定的 PIP 系统动作是否适用于当前播放器状态。
+@visibleForTesting
+bool isPipActionAvailable({
+  required PipActionsState state,
+  required String action,
+}) {
+  switch (action) {
+    case 'previous':
+      return state.hasPrevious;
+    case 'toggle_play_pause':
+      return true;
+    case 'next':
+      return state.hasNext;
+    default:
+      return false;
+  }
+}
+
+/// 串行执行 PIP setup 和动作状态写入，避免旧参数覆盖新参数。
+@visibleForTesting
+class PipActionSyncQueue {
+  Future<void> _tail = Future<void>.value();
+
+  /// 将一次 PIP 同步操作追加到队列尾部。
+  Future<void> enqueue(Future<void> Function() operation) {
+    final next = _tail.then((_) => operation());
+    // 当前操作失败时仍允许后续播放器状态继续同步，避免队列永久阻塞。
+    _tail = next.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('[PiP控制] 同步队列操作失败: $error');
+      },
+    );
+    return next;
+  }
+}
+
 /// 当前运行环境下，TV 桌面表面是否应优先使用 Android Exo 后端。
 @visibleForTesting
 bool preferExoForAndroidTvPlayback({
@@ -514,7 +590,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
   bool _isBuffering = false;
   VoidCallback? _exitWebFullscreenCallback;
   final Pip _pip = Pip();
+  final PipActionSyncQueue _pipActionSyncQueue = PipActionSyncQueue();
   bool _isPipMode = false;
+  bool _pipSyncClosed = false;
   bool _lastKnownPlaying = false;
   late VideoFitType _currentFitType;
   bool _controlsVisible = true;
@@ -920,36 +998,73 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       return;
     }
 
-    unawaited(_setupPip(autoEnterEnabled: enabled));
+    // 播放状态变化同时影响自动进入配置和系统动作，必须共用同一条写入队列。
+    unawaited(_enqueuePipSync(
+      reason: enabled ? 'playing_changed_setup' : 'paused_changed_setup',
+      configure: true,
+      autoEnterEnabled: enabled,
+    ));
   }
 
-  bool _hasPreviousEpisode() {
-    final index = widget.currentEpisodeIndex ?? 0;
-    return index > 0;
+  /// 读取当前播放器状态，生成一次 PIP 动作同步快照。
+  PipActionsState _currentPipActionsState() {
+    return buildPipActionsState(
+      isPlaying: _adapter?.state.playing ?? _lastKnownPlaying,
+      currentEpisodeIndex: widget.currentEpisodeIndex,
+      totalEpisodes: widget.totalEpisodes,
+      isLastEpisode: widget.isLastEpisode,
+    );
   }
 
-  bool _hasNextEpisode() {
-    final total = widget.totalEpisodes;
-    final index = widget.currentEpisodeIndex ?? 0;
-    if (total != null && total > 0) {
-      return index < total - 1;
+  /// 执行一次 PIP setup 和动作同步，页面销毁后直接丢弃。
+  Future<void> _syncPipState({
+    required String reason,
+    required bool configure,
+    required bool autoEnterEnabled,
+  }) async {
+    if (!mounted || _playerDisposed || _pipSyncClosed) {
+      debugPrint('[PiP控制] 丢弃过期同步: 原因=$reason');
+      return;
     }
-    return !widget.isLastEpisode;
+
+    if (configure) {
+      await _setupPip(autoEnterEnabled: autoEnterEnabled);
+    }
+    await _pushPipActionsState(reason: reason);
+  }
+
+  /// 将所有 PIP 写入排队，保证旧 setup 不会覆盖新的动作状态。
+  Future<void> _enqueuePipSync({
+    required String reason,
+    bool configure = false,
+    bool autoEnterEnabled = true,
+  }) {
+    return _pipActionSyncQueue.enqueue(
+      () => _syncPipState(
+        reason: reason,
+        configure: configure,
+        autoEnterEnabled: autoEnterEnabled,
+      ),
+    );
   }
 
   Future<void> _pushPipActionsState({required String reason}) async {
-    if (!Platform.isAndroid || !widget.enablePip) {
+    if (!Platform.isAndroid ||
+        !widget.enablePip ||
+        !mounted ||
+        _playerDisposed ||
+        _pipSyncClosed) {
       return;
     }
+    final state = _currentPipActionsState();
     try {
-      final isPlaying = _adapter?.state.playing ?? _lastKnownPlaying;
       await _pipControlChannel.invokeMethod('updatePipActions', {
-        'isPlaying': isPlaying,
-        'hasPrevious': _hasPreviousEpisode(),
-        'hasNext': _hasNextEpisode(),
+        'isPlaying': state.isPlaying,
+        'hasPrevious': state.hasPrevious,
+        'hasNext': state.hasNext,
       });
-      debugPrint(
-          '[PiP控制] 已同步动作状态: 播放=$isPlaying, 上一集=${_hasPreviousEpisode()}, 下一集=${_hasNextEpisode()}, 原因=$reason');
+      debugPrint('[PiP控制] 已同步动作状态: 播放=${state.isPlaying}, '
+          '上一集=${state.hasPrevious}, 下一集=${state.hasNext}, 原因=$reason');
     } catch (error) {
       debugPrint('[PiP控制] 同步动作状态失败: $error, 原因=$reason');
     }
@@ -968,38 +1083,60 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         return;
       }
       final action = arguments['action']?.toString() ?? '';
+      if (!mounted || _pipSyncClosed) {
+        debugPrint('[PiP控制] 收到动作但播放器已销毁: $action');
+        return;
+      }
+      debugPrint('[PiP控制] Flutter 收到动作: $action, 集数索引='
+          '${widget.currentEpisodeIndex ?? 0}');
       await _handlePipAction(action);
     });
   }
 
   Future<void> _handlePipAction(String action) async {
+    final state = _currentPipActionsState();
+    if (!isPipActionAvailable(state: state, action: action)) {
+      debugPrint('[PiP控制] 动作被丢弃: action=$action, '
+          '上一集=${state.hasPrevious}, 下一集=${state.hasNext}');
+      await _enqueuePipSync(reason: 'action_rejected');
+      return;
+    }
+
     switch (action) {
       case 'previous':
-        if (_hasPreviousEpisode()) {
+        final callback = widget.onPreviousEpisode;
+        if (callback != null) {
           debugPrint('[PiP控制] 点击上一集');
-          widget.onPreviousEpisode?.call();
+          callback();
+        } else {
+          debugPrint('[PiP控制] 上一集动作被丢弃: 回调不可用');
         }
         break;
       case 'toggle_play_pause':
-        final playing = _adapter?.state.playing ?? false;
-        debugPrint('[PiP控制] 点击${playing ? '暂停' : '播放'}');
-        if (playing) {
-          await _adapter?.pause();
+        final adapter = _adapter;
+        debugPrint('[PiP控制] 点击${state.isPlaying ? '暂停' : '播放'}');
+        if (adapter == null) {
+          debugPrint('[PiP控制] 播放暂停动作被丢弃: 播放器不可用');
+        } else if (state.isPlaying) {
+          await adapter.pause();
         } else {
-          await _adapter?.play();
+          await adapter.play();
         }
         break;
       case 'next':
-        if (_hasNextEpisode()) {
+        final callback = widget.onNextEpisode;
+        if (callback != null) {
           debugPrint('[PiP控制] 点击下一集');
-          widget.onNextEpisode?.call();
+          callback();
+        } else {
+          debugPrint('[PiP控制] 下一集动作被丢弃: 回调不可用');
         }
         break;
       default:
         debugPrint('[PiP控制] 收到未知动作: $action');
         break;
     }
-    unawaited(_pushPipActionsState(reason: 'handle_pip_action'));
+    await _enqueuePipSync(reason: 'handle_pip_action');
   }
 
   @override
@@ -1014,10 +1151,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _activateCachedRangesMediaKey(url: _currentUrl);
     if (_currentUrl != null && _currentUrl!.isNotEmpty) {
       _initializePlayer();
-      unawaited(_setupPip());
       _registerPipObserver();
       _bindPipControlChannel();
-      unawaited(_pushPipActionsState(reason: 'init_state'));
+      unawaited(_enqueuePipSync(
+        reason: 'init_state',
+        configure: true,
+      ));
     } else {
       // 预览占位态先只回传控制器，避免空 URL 时提前拉起重型 WebView / PiP 初始化。
       _safeSetState(() {
@@ -1055,10 +1194,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
     if (widget.url != oldWidget.url && widget.url != null) {
       if ((_currentUrl == null || _currentUrl!.isEmpty) && _adapter == null) {
-        unawaited(_setupPip());
         _registerPipObserver();
         _bindPipControlChannel();
-        unawaited(_pushPipActionsState(reason: 'first_url_attached'));
+        unawaited(_enqueuePipSync(
+          reason: 'first_url_attached',
+          configure: true,
+        ));
       }
       unawaited(_updateDataSource(widget.url!));
     }
@@ -1066,7 +1207,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     if (widget.currentEpisodeIndex != oldWidget.currentEpisodeIndex ||
         widget.totalEpisodes != oldWidget.totalEpisodes ||
         widget.isLastEpisode != oldWidget.isLastEpisode) {
-      unawaited(_pushPipActionsState(reason: 'episode_info_changed'));
+      unawaited(_enqueuePipSync(reason: 'episode_info_changed'));
     }
 
     // 💡 优化：当集数从外部改变时（如点击选集），同步 PageView
@@ -1337,7 +1478,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         widget.onPlay?.call();
         _configurePipAutoEnter(true);
       }
-      unawaited(_pushPipActionsState(reason: 'playing_changed'));
     });
 
     if (!widget.live) {
@@ -1803,10 +1943,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
         if (!mounted) return;
       }
 
-      await _setupPip();
+      // 先完成插件参数配置和当前动作写入，避免进入 PIP 时使用旧快照。
+      await _enqueuePipSync(
+        reason: 'before_start_pip',
+        configure: true,
+      );
       await _adapter?.play();
       _lastKnownPlaying = true;
-      await _pushPipActionsState(reason: 'before_start_pip');
+      await _enqueuePipSync(reason: 'before_start_pip_playing');
 
       if (widget.isShortDrama) {
         await Future.delayed(_shortDramaPipPreStartDelay);
@@ -1814,19 +1958,31 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       }
 
       var started = await _pip.start();
+      if (started) {
+        // pip 插件的 start() 会重新写一份不带 RemoteAction 的参数，进入后立即恢复动作。
+        await _enqueuePipSync(reason: 'after_start_pip');
+      }
       if (!started) {
         debugPrint(
             'PiP \u9996\u6b21\u8fdb\u5165\u5931\u8d25\uff0c\u91cd\u8bd5\u4e00\u6b21');
         await Future.delayed(_pipRetryDelay);
-        await _setupPip();
+        await _enqueuePipSync(
+          reason: 'retry_setup',
+          configure: true,
+        );
         started = await _pip.start();
         if (!started) {
           debugPrint('PiP \u91cd\u8bd5\u540e\u4ecd\u5931\u8d25');
+        } else {
+          await _enqueuePipSync(reason: 'after_retry_start_pip');
         }
       }
     } catch (e) {
       debugPrint('Failed to enter PiP mode: $e');
-      unawaited(_setupPip());
+      await _enqueuePipSync(
+        reason: 'enter_pip_failed_recovery',
+        configure: true,
+      );
     }
   }
 
@@ -1915,6 +2071,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
 
   @override
   void dispose() {
+    // 先关闭同步队列，再解除通道，避免销毁中的旧播放器继续写入 PIP 状态。
+    _pipSyncClosed = true;
     WidgetsBinding.instance.removeObserver(this);
     if (Platform.isAndroid || Platform.isIOS) {
       _pip.unregisterStateChangedObserver();

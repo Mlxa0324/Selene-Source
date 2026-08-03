@@ -15,6 +15,7 @@ Read these files before editing `lib/screens/`, `lib/widgets/`, `lib/tv_app/`, U
 | [Hook Guidelines](./hook-guidelines.md) | Flutter equivalents for reusable stateful logic | Filled |
 | [State Management](./state-management.md) | Local state, Provider state, persisted state, TV focus state | Filled |
 | [Quality Guidelines](./quality-guidelines.md) | Linting, widget tests, review checklist | Filled |
+| [Android PIP Controls](./pip-controls.md) | Flutter Android PIP action bridge contract | Filled |
 | [Type Safety](./type-safety.md) | Dart model, enum, callback, and JSON type rules | Filled |
 | [TV Mode](./tv-mode.md) | TV-specific screens, focus, launch, and validation rules | Filled |
 

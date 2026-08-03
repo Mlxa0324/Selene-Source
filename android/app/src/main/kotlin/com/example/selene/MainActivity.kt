@@ -34,7 +34,7 @@ class MainActivity : FlutterActivity() {
     private val deviceChannelName = "selene/device"
     private val storageChannelName = "selene/storage"
 
-    private lateinit var pipControlChannel: MethodChannel
+    private var pipControlChannel: MethodChannel? = null
     private var pipIsPlaying: Boolean = true
     private var pipHasPrevious: Boolean = false
     private var pipHasNext: Boolean = false
@@ -169,9 +169,10 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
-        pipControlChannel =
+        val pipChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, pipControlChannelName)
-        pipControlChannel.setMethodCallHandler { call, result ->
+        pipControlChannel = pipChannel
+        pipChannel.setMethodCallHandler { call, result ->
             when (call.method) {
                 "updatePipActions" -> {
                     pipIsPlaying = call.argument<Boolean>("isPlaying") ?: pipIsPlaying
@@ -192,8 +193,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 ACTION_PIP_PLAY_PAUSE -> {
-                    pipIsPlaying = !pipIsPlaying
-                    updatePipActions()
+                    // 播放状态由 Flutter 播放器确认，宿主不做乐观翻转，避免回写旧状态。
                     sendPipActionToFlutter("toggle_play_pause")
                 }
 
@@ -259,6 +259,8 @@ class MainActivity : FlutterActivity() {
         if (isInPictureInPictureMode) {
             Log.d(tag, "进入 PiP，保持 Flutter 生命周期为 resumed")
             flutterEngine?.lifecycleChannel?.appIsResumed()
+            // pip 插件的 enter 参数不包含自定义 RemoteAction，进入后立即恢复当前动作集合。
+            updatePipActions()
         }
     }
 
@@ -284,8 +286,17 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun sendPipActionToFlutter(action: String) {
+        val channel = pipControlChannel
+        if (channel == null) {
+            Log.d(tag, "PiP 动作丢弃，Flutter 通道不可用: $action")
+            return
+        }
         Log.d(tag, "回调 Flutter PiP 动作: $action")
-        pipControlChannel.invokeMethod("onPipAction", mapOf("action" to action))
+        runCatching {
+            channel.invokeMethod("onPipAction", mapOf("action" to action))
+        }.onFailure { error ->
+            Log.d(tag, "PiP 动作回调 Flutter 失败: action=$action, error=$error")
+        }
     }
 
     private fun createPipAction(
@@ -314,6 +325,10 @@ class MainActivity : FlutterActivity() {
 
     private fun updatePipActions() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return
+        }
+        if (isFinishing || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed)) {
+            Log.d(tag, "PiP 动作写入跳过，Activity 已销毁或正在退出")
             return
         }
 
@@ -348,6 +363,11 @@ class MainActivity : FlutterActivity() {
         }
 
         val paramsBuilder = PictureInPictureParams.Builder().setActions(actions)
+        Log.d(
+            tag,
+            "写入 PiP 动作: count=${actions.size}, playing=$pipIsPlaying, " +
+                "previous=$pipHasPrevious, next=$pipHasNext",
+        )
         setPictureInPictureParams(paramsBuilder.build())
     }
 
@@ -425,8 +445,20 @@ class MainActivity : FlutterActivity() {
         }
 
         fun dispatchPipActionFromReceiver(action: String) {
-            pipActionHandler?.invoke(action)
-                ?: Log.d("PipControls", "PiP 动作丢弃，当前无可用 Handler: $action")
+            if (action.isBlank()) {
+                Log.d("PipControls", "PiP 动作丢弃，action 为空")
+                return
+            }
+            val handler = pipActionHandler
+            if (handler == null) {
+                Log.d("PipControls", "PiP 动作丢弃，当前无可用 Handler: $action")
+                return
+            }
+            Log.d("PipControls", "宿主分发 PiP 动作: $action")
+            runCatching { handler.invoke(action) }
+                .onFailure { error ->
+                    Log.d("PipControls", "PiP 动作分发失败: action=$action, error=$error")
+                }
         }
     }
 
@@ -434,6 +466,7 @@ class MainActivity : FlutterActivity() {
         physicalOrientationListener?.disable()
         physicalOrientationListener = null
         setPipActionHandler(null)
+        pipControlChannel = null
         super.onDestroy()
     }
 }
