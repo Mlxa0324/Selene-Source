@@ -5,6 +5,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:selene/widgets/video_player_widget.dart';
 
 void main() {
+  test('pip bridge stays bindable before the first media URL is attached', () {
+    expect(
+      shouldBindPipControlChannel(isAndroid: true, enablePip: true),
+      isTrue,
+    );
+    expect(
+      shouldBindPipControlChannel(isAndroid: true, enablePip: false),
+      isFalse,
+    );
+    expect(
+      shouldBindPipControlChannel(isAndroid: false, enablePip: true),
+      isFalse,
+    );
+  });
+
   test('pip action state follows episode boundaries', () {
     final first = buildPipActionsState(
       isPlaying: true,

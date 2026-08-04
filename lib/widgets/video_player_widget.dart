@@ -35,6 +35,17 @@ String buildVideoSurfaceKey({
   return 'video_${surface.name}_$adapterType';
 }
 
+/// 判断当前播放器实例是否需要注册 Android PIP 动作桥接。
+///
+/// PIP 桥接属于播放器生命周期能力，不依赖媒体 URL 是否已经注入。
+@visibleForTesting
+bool shouldBindPipControlChannel({
+  required bool isAndroid,
+  required bool enablePip,
+}) {
+  return isAndroid && enablePip;
+}
+
 /// 当前 Flutter 播放器需要同步到 Android PIP 系统菜单的动作状态。
 @visibleForTesting
 class PipActionsState {
@@ -1149,10 +1160,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     _currentUrl = widget.url;
     _currentHeaders = widget.headers;
     _activateCachedRangesMediaKey(url: _currentUrl);
-    if (_currentUrl != null && _currentUrl!.isNotEmpty) {
-      _initializePlayer();
+
+    // PIP 动作接收属于播放器生命周期，主播放页可能通过控制器后置注入 URL。
+    if (shouldBindPipControlChannel(
+      isAndroid: Platform.isAndroid,
+      enablePip: widget.enablePip,
+    )) {
       _registerPipObserver();
       _bindPipControlChannel();
+    }
+
+    if (_currentUrl != null && _currentUrl!.isNotEmpty) {
+      _initializePlayer();
       unawaited(_enqueuePipSync(
         reason: 'init_state',
         configure: true,
@@ -1194,8 +1213,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
     }
     if (widget.url != oldWidget.url && widget.url != null) {
       if ((_currentUrl == null || _currentUrl!.isEmpty) && _adapter == null) {
-        _registerPipObserver();
-        _bindPipControlChannel();
         unawaited(_enqueuePipSync(
           reason: 'first_url_attached',
           configure: true,
