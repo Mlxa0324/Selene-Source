@@ -614,3 +614,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 修复 Flutter Android PIP 动作回调
+
+**Date**: 2026-08-04
+**Task**: 修复 Flutter Android PIP 动作回调
+**Branch**: `ivyTV`
+
+### Summary
+
+定位主播放器始终以 url=null 构建、随后通过 VideoPlayerWidgetController.updateDataSource 注入媒体地址，导致原 PIP MethodChannel 仅在 URL 变化分支绑定而无人接收系统动作。已将 Android PIP 通道绑定提升到播放器初始化阶段，保留 TV enablePip=false，补充回归测试和 PIP 生命周期 spec。flutter analyze、相关 20 项测试、Android Debug 构建均通过；真机 PIP 点击因 ADB 无设备待后续验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c2e0b0d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

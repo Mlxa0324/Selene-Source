@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 17
-- **Last Active**: 2026-07-10
+- **Total Sessions**: 18
+- **Last Active**: 2026-08-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~616 | Active |
+| `journal-1.md` | ~649 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-08-04 | 修复 Flutter Android PIP 动作回调 | `c2e0b0d` | `ivyTV` |
 | 17 | 2026-07-10 | 修复设置页方向键焦点导航 | `33464c6`, `f8ece29` | `tvtv` |
 | 16 | 2026-06-19 | 修复移动端播放器预加载与iOS恢复 | `a9df5aa`, `15dbfbb`, `99b71b9` | `tvtv` |
 | 15 | 2026-06-19 | 重做详情页截图样式 | `389d085` | `tvtv` |
