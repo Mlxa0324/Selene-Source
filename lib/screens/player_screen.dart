@@ -3075,8 +3075,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _performScrollToCurrentSource() {
     if (currentDetail == null || !_sourcesScrollController.hasClients) return;
 
-    // 找到当前源在allSources中的索引
-    final currentSourceIndex = allSources.indexWhere(
+    // 找到当前源在排序后列表中的索引(与横向列表展示顺序一致)
+    final sortedSources = PlayerSourcesPanel.sortByEpisodeCountDesc(allSources);
+    final currentSourceIndex = sortedSources.indexWhere(
         (source) => source.source == currentSource && source.id == currentID);
 
     if (currentSourceIndex == -1) return;
@@ -4860,6 +4861,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   /// 构建源卡片横向滚动区域
   Widget _buildSourcesHorizontalScroll(ThemeData theme) {
     final isDarkMode = theme.brightness == Brightness.dark;
+    // 与换源弹框保持同一套排序口径:按集数倒序。
+    final sortedSources = PlayerSourcesPanel.sortByEpisodeCountDesc(allSources);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4893,9 +4896,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ListView.builder(
                     controller: _sourcesScrollController,
                     scrollDirection: Axis.horizontal,
-                    itemCount: allSources.length,
+                    itemCount: sortedSources.length,
                     itemBuilder: (context, index) {
-                      final source = allSources[index];
+                      final source = sortedSources[index];
                       final isCurrentSource = source.source == currentSource &&
                           source.id == currentID;
                       final sourceKey = '${source.source}_${source.id}';

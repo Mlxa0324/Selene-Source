@@ -30,7 +30,7 @@ void main() {
         _src(id: 'c', source: 's3', title: 'C', episodeCount: 12),
       ];
 
-      final result = PlayerSourcesPanel.computeSortedSourcesForTest(input);
+      final result = PlayerSourcesPanel.sortByEpisodeCountDesc(input);
 
       expect(result.map((e) => e.id).toList(), ['b', 'c', 'a']);
     });
@@ -43,7 +43,7 @@ void main() {
         _src(id: 'fourth', source: 's4', title: 'D', episodeCount: 12),
       ];
 
-      final result = PlayerSourcesPanel.computeSortedSourcesForTest(input);
+      final result = PlayerSourcesPanel.sortByEpisodeCountDesc(input);
 
       // 同集数保持原顺序:24s -> second, third;12s -> first, fourth。
       expect(
@@ -59,7 +59,7 @@ void main() {
         _src(id: 'c', source: 's3', title: 'C', episodeCount: 1),
       ];
 
-      final result = PlayerSourcesPanel.computeSortedSourcesForTest(input);
+      final result = PlayerSourcesPanel.sortByEpisodeCountDesc(input);
 
       expect(result.map((e) => e.id).toList(), ['a', 'b', 'c']);
     });
@@ -72,14 +72,14 @@ void main() {
         _src(id: 'tiny', source: 's3', title: 'C', episodeCount: 2),
       ];
 
-      final result = PlayerSourcesPanel.computeSortedSourcesForTest(input);
+      final result = PlayerSourcesPanel.sortByEpisodeCountDesc(input);
 
       // 按集数绝对值倒序,不做单集 / 多集分组。
       expect(result.map((e) => e.id).toList(), ['multi', 'tiny', 'single']);
     });
 
     test('empty list returns empty list', () {
-      final result = PlayerSourcesPanel.computeSortedSourcesForTest(const []);
+      final result = PlayerSourcesPanel.sortByEpisodeCountDesc(const []);
       expect(result, isEmpty);
     });
 
@@ -90,7 +90,7 @@ void main() {
       ];
       final originalOrder = input.map((e) => e.id).toList();
 
-      PlayerSourcesPanel.computeSortedSourcesForTest(input);
+      PlayerSourcesPanel.sortByEpisodeCountDesc(input);
 
       expect(input.map((e) => e.id).toList(), originalOrder);
     });

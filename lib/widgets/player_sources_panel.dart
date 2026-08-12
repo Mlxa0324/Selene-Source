@@ -47,9 +47,10 @@ class PlayerSourcesPanel extends StatefulWidget {
 
   /// 按 `episodes.length` 倒序稳定排序。Dart 的 `sort` 不是稳定排序,
   /// 因此用 `index` 作为次序兜底,保证同集数源的相对顺序与传入顺序一致。
+  /// 公共静态方法,供 `PlayerSourcesPanel` 内部和外部调用方(如非全屏横向
+  /// 换源列表)统一复用,确保所有展示换源列表的位置排序口径一致。
   @visibleForTesting
-  static List<SearchResult> computeSortedSourcesForTest(
-      List<SearchResult> sources) {
+  static List<SearchResult> sortByEpisodeCountDesc(List<SearchResult> sources) {
     final indexed = sources.asMap().entries.toList();
     indexed.sort((a, b) {
       final cmp = b.value.episodes.length.compareTo(a.value.episodes.length);
@@ -98,10 +99,10 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
     }
   }
 
-  /// 按 `episodes.length` 倒序稳定排序。委托给 `PlayerSourcesPanel.computeSortedSourcesForTest`,
+  /// 按 `episodes.length` 倒序稳定排序。委托给 `PlayerSourcesPanel.sortByEpisodeCountDesc`,
   /// 便于测试覆盖同一份排序逻辑。
   List<SearchResult> _computeSortedSources(List<SearchResult> sources) {
-    return PlayerSourcesPanel.computeSortedSourcesForTest(sources);
+    return PlayerSourcesPanel.sortByEpisodeCountDesc(sources);
   }
 
   @override
