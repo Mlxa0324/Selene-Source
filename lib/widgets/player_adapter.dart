@@ -120,12 +120,14 @@ String buildWebViewPlayerHtmlForTest({
   bool adFilterEnabled = false,
   PlaybackPreloadLevel preloadLevel = PlaybackPreloadLevel.off,
   bool seekBoostEnabled = false,
+  bool isAndroidNetwork = false,
 }) {
   return WebViewPlayerAdapter(
     url: url,
     adFilterEnabled: adFilterEnabled,
     preloadLevel: preloadLevel,
     seekBoostEnabled: seekBoostEnabled,
+    isAndroidNetwork: isAndroidNetwork,
   )._buildHtmlContent();
 }
 
@@ -515,6 +517,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   final bool adFilterEnabled;
   final bool seekBoostEnabled;
   final PlaybackPreloadLevel preloadLevel;
+  // Android 在线播放走特定优化分支:关闭 hls.js 低延迟模式、取消并发预热、放宽 seekBoost 紧容差。
+  final bool isAndroidNetwork;
 
   /// 进度拖放搜索预热并行性（代码可配置）
   static const int defaultSeekWarmupConcurrency = 2;
@@ -580,6 +584,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     this.adFilterEnabled = false,
     this.seekBoostEnabled = false,
     this.preloadLevel = PlaybackPreloadLevel.off,
+    this.isAndroidNetwork = false,
   })  : _url = url,
         _headers = headers,
         _startAt = startAt {
@@ -1086,6 +1091,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     final seekBoostEnabledJs = seekBoostEnabled ? 'true' : 'false';
     final preloadEnabledJs = preloadLevel.isEnabled ? 'true' : 'false';
     final preloadAttributeJs = preloadTuning.preloadAttribute;
+    final isAndroidNetworkJs = isAndroidNetwork ? 'true' : 'false';
     final targetForwardBufferSecondsJs =
         preloadTuning.targetForwardBuffer?.inSeconds ?? 0;
     final backBufferRetentionSecondsJs =
@@ -1113,7 +1119,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
   $hlsJsTag
 </head>
 <body>
-  <video id="player" playsinline></video>
+  <video id="player" playsinline preload="$preloadAttributeJs"></video>
   <script>
     var player = document.getElementById('player');
     window.player = player;
@@ -1126,6 +1132,7 @@ class WebViewPlayerAdapter implements PlayerAdapter {
     var seekBoostEnabled = $seekBoostEnabledJs;
     var preloadEnabled = $preloadEnabledJs;
     var preloadAttribute = '$preloadAttributeJs';
+    var isAndroidNetwork = $isAndroidNetworkJs;
     var targetForwardBufferSeconds = $targetForwardBufferSecondsJs;
     var backBufferRetentionSeconds = $backBufferRetentionSecondsJs;
     var seekWarmupConcurrency = $seekWarmupConcurrencyJs;
@@ -1698,7 +1705,10 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         }
       } catch (e) {}
 
-      warmupByConcurrentFetch(sec);
+      // Android 跳过并发预热:它和 hls.js 抢同一台 CDN 的同一分片,移动网络下会显著拉长 seek 恢复时间。
+      if (!isAndroidNetwork) {
+        warmupByConcurrentFetch(sec);
+      }
 
       sendEvent('timeupdate', { currentTime: sec });
     }
@@ -1942,7 +1952,8 @@ class WebViewPlayerAdapter implements PlayerAdapter {
 
     if (isM3u8) {
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-        var config = { enableWorker: true, lowLatencyMode: true };
+        // Android 关闭低延迟模式:低延迟模式会削弱 maxBufferLength 的实际效果,seek 后前向缓冲填得慢。
+        var config = { enableWorker: true, lowLatencyMode: !isAndroidNetwork };
         if (preloadEnabled) {
           config.maxBufferLength = Math.max(30, targetForwardBufferSeconds);
           config.maxMaxBufferLength = Math.max(30, targetForwardBufferSeconds);
@@ -1953,8 +1964,11 @@ class WebViewPlayerAdapter implements PlayerAdapter {
         }
         if (seekBoostEnabled) {
           config.nudgeMaxRetry = 1;
-          config.maxFragLookUpTolerance = 0.1;
-          config.maxBufferHole = 0.1;
+          if (!isAndroidNetwork) {
+            // 紧容差仅 iOS 路径保留;Android 上把容差压到 100ms 会触发频繁的分片重新加载。
+            config.maxFragLookUpTolerance = 0.1;
+            config.maxBufferHole = 0.1;
+          }
         }
         
         class CustomHlsJsLoader extends Hls.DefaultConfig.loader {

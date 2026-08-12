@@ -100,6 +100,51 @@ void main() {
     expect(html, contains('scheduleResumePlaybackRecovery(resumeTime'));
   });
 
+  test(
+      'web view html on iOS keeps low latency mode, tight tolerances and warmup',
+      () {
+    final html = buildWebViewPlayerHtmlForTest(
+      url: 'https://example.com/video.m3u8',
+      preloadLevel: PlaybackPreloadLevel.medium,
+      seekBoostEnabled: true,
+      isAndroidNetwork: false,
+    );
+
+    expect(html, contains('var isAndroidNetwork = false'));
+    // lowLatencyMode 由 isAndroidNetwork 反向决定:iOS 仍为 true。
+    expect(html, contains('lowLatencyMode: !isAndroidNetwork'));
+    // 紧容差与 warmup 都以 isAndroidNetwork 门控,iOS 运行时执行。
+    expect(html, contains('config.maxFragLookUpTolerance = 0.1;'));
+    expect(html, contains('config.maxBufferHole = 0.1;'));
+    expect(html, contains('warmupByConcurrentFetch(sec);'));
+    expect(html, contains('if (!isAndroidNetwork)'));
+  });
+
+  test(
+      'web view html on Android disables low latency mode, drops tight tolerances and skips warmup',
+      () {
+    final html = buildWebViewPlayerHtmlForTest(
+      url: 'https://example.com/video.m3u8',
+      preloadLevel: PlaybackPreloadLevel.medium,
+      seekBoostEnabled: true,
+      isAndroidNetwork: true,
+    );
+
+    expect(html, contains('var isAndroidNetwork = true'));
+    // lowLatencyMode: !isAndroidNetwork 在 Android 运行时为 false。
+    expect(html, contains('lowLatencyMode: !isAndroidNetwork'));
+    // 门控结构必须存在,Android 运行时跳过这些分支。
+    // 至少出现两处 if (!isAndroidNetwork):一处包紧容差,一处包 warmup。
+    expect(
+      html.split('if (!isAndroidNetwork)').length,
+      greaterThanOrEqualTo(3),
+    );
+    // <video> 元素应显式带上 preload 属性。
+    expect(html, contains('<video id="player" playsinline preload="auto">'));
+    // seekBoostEnabled 仍然能进入配置块(保留 nudgeMaxRetry)。
+    expect(html, contains('config.nudgeMaxRetry = 1;'));
+  });
+
   test('decodeWebViewCachedRanges parses confirmed buffered ranges', () {
     final ranges = decodeWebViewCachedRanges([
       {

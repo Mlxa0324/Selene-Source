@@ -791,6 +791,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget>
       preloadLevel: widget.isLocal
           ? PlaybackPreloadLevel.off
           : widget.playbackPreloadLevel,
+      isAndroidNetwork: Platform.isAndroid,
       onDebugToast: widget.onDebugToast,
       onReady: () {
         debugPrint('VideoPlayerWidget: WebView ready');
