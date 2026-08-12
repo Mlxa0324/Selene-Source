@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import '../models/search_result.dart';
 import '../utils/device_utils.dart';
 import '../utils/font_utils.dart';
@@ -44,6 +45,20 @@ class PlayerSourcesPanel extends StatefulWidget {
     this.isCompact = true,
   });
 
+  /// 按 `episodes.length` 倒序稳定排序。Dart 的 `sort` 不是稳定排序,
+  /// 因此用 `index` 作为次序兜底,保证同集数源的相对顺序与传入顺序一致。
+  @visibleForTesting
+  static List<SearchResult> computeSortedSourcesForTest(
+      List<SearchResult> sources) {
+    final indexed = sources.asMap().entries.toList();
+    indexed.sort((a, b) {
+      final cmp = b.value.episodes.length.compareTo(a.value.episodes.length);
+      if (cmp != 0) return cmp;
+      return a.key.compareTo(b.key);
+    });
+    return indexed.map((e) => e.value).toList();
+  }
+
   @override
   State<PlayerSourcesPanel> createState() => _PlayerSourcesPanelState();
 }
@@ -55,6 +70,10 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
   late ScrollController _scrollController;
   bool _isHoveringPager = false;
 
+  /// 按 `episodes.length` 倒序的稳定排序结果。所有 build 遍历都基于此列表,
+  /// 保证换源弹框(全屏 / 非全屏 / 短剧)统一按集数多的优先展示。
+  late List<SearchResult> _sortedSources;
+
   @override
   void initState() {
     super.initState();
@@ -63,11 +82,26 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
       vsync: this,
     );
     _scrollController = ScrollController();
+    _sortedSources = _computeSortedSources(widget.sources);
 
     // 延迟滚动到当前源
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToCurrentSource();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant PlayerSourcesPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.sources, widget.sources)) {
+      _sortedSources = _computeSortedSources(widget.sources);
+    }
+  }
+
+  /// 按 `episodes.length` 倒序稳定排序。委托给 `PlayerSourcesPanel.computeSortedSourcesForTest`,
+  /// 便于测试覆盖同一份排序逻辑。
+  List<SearchResult> _computeSortedSources(List<SearchResult> sources) {
+    return PlayerSourcesPanel.computeSortedSourcesForTest(sources);
   }
 
   @override
@@ -90,7 +124,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
     if (!_scrollController.hasClients) return;
 
     // 找到当前源在列表中的索引
-    final currentIndex = widget.sources.indexWhere((source) =>
+    final currentIndex = _sortedSources.indexWhere((source) =>
         source.source == widget.currentSource && source.id == widget.currentId);
 
     if (currentIndex == -1) return;
@@ -168,7 +202,7 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '换源 (${widget.sources.length})',
+                  '换源 (${_sortedSources.length})',
                   style: TextStyle(
                     color: textColor,
                     fontSize: widget.isCompact ? 16 : 19,
@@ -221,9 +255,9 @@ class _PlayerSourcesPanelState extends State<PlayerSourcesPanel>
                     controller: _scrollController,
                     padding: EdgeInsets.fromLTRB(
                         16, 4, 16, widget.isCompact ? 16 : 24),
-                    itemCount: widget.sources.length,
+                    itemCount: _sortedSources.length,
                     itemBuilder: (context, index) {
-                      final source = widget.sources[index];
+                      final source = _sortedSources[index];
                       final isCurrent = source.source == widget.currentSource &&
                           source.id == widget.currentId;
                       final speedInfo =
